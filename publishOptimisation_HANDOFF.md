@@ -1,4 +1,4 @@
-# Publish optimisation — handoff (S10 complete, 2026-11-02)
+# Publish optimisation — handoff (S10b complete, 2026-11-02)
 
 **Branch:** `publishOptimisation` (from `03313a3`, release 1.9.0+32).
 **Plan:** `publishOptimisation_PLAN.md` (product decisions A.3, engineering decisions A.4, deviations A.6, measurements Appendix A).
@@ -41,12 +41,20 @@ product owner's go-ahead ("go ahead for the next item", 2026-11-02). J8 was
 **not measured**: the product owner skipped the live probe and treats it as
 confirmed by public reports; **its fix is an open product decision (§S10
 options, plan J8) and must be taken before Phase 2 ships.**
+S10b — J8 fix (resume + pacing) — **complete** (§S10b), started on the
+product owner's go-ahead ("go ahead for the next item", 2026-11-02). At the
+start the product owner **decided J8: options (a) resume + (b) pacing, as a
+session of its own before S11**, and allowed the one real-API check (a later
+tree may name blobs from a refused attempt) on a throwaway `PLFIndia` repo;
+it passed (§S10b). **J8 is closed.** New observation J15 (no progress count
+during a long paced upload).
 **S11 (Fix 2, backup publish state) has NOT started. Do not start it until
 the product owner explicitly says so.** Open decisions for the product
-owner: plan J8 (§S10), J11 (§S9), J12–J14 (§G4).
+owner: J11 (§S9), J12–J14 (§G4), J15 (§S10b), and the copy of the new
+rate-limit messages (§S10b).
 
-> Read this file first in any new session. §S10 is the newest state, then
-> §G4 (device evidence), §S9, §S8, §S7, §S6, §S5, §S4, §S3, §S2 and §0
+> Read this file first in any new session. §S10b is the newest state, then
+> §S10, §G4 (device evidence), §S9, §S8, §S7, §S6, §S5, §S4, §S3, §S2 and §0
 > (S1). §1–§5 are the S0 record (plan Appendix A cites the verbatim lines
 > in §3), kept unchanged.
 
@@ -58,6 +66,151 @@ owner: plan J8 (§S10), J11 (§S9), J12–J14 (§G4).
 > settled and needs no new review: borrower names and loan details (P1, in the
 > vault) and credentials and tokens (security, `AGENTS.md` §6). `PRIVACY.md`
 > only has to state accurately what is uploaded (a store requirement).
+
+---
+
+## S10b — J8: a large GitHub publish finishes across attempts (resume + pacing)
+
+**Started:** 2026-11-02, product owner's go-ahead "go ahead for the next
+item". Asked which item that meant, the product owner chose **"J8: resume +
+pacing, own session"** (options (a) + (b), before S11) and allowed the one
+real-API check **"Yes, on PLFIndia"**.
+
+**Commits:** the code + tests commit, then the docs commit (plan, ADR 0020
+Decision 6 J8 amendment, ARCHITECTURE §5.8 and the records table,
+CHANGELOG, this handoff).
+
+**What changed for users (once released):** nothing on the site, and
+nothing for ordinary publishes (one to three files, about a second each on
+a phone, barely paced). For a first GitHub publish or a move of a large
+library:
+- blob uploads go at most one a second;
+- when GitHub's hourly limit (about 500) stops the upload, the card says
+  so with the real progress, and **the next publish continues where this one
+  stopped** — the files GitHub already holds are not sent again;
+- the site still changes in ONE atomic commit at the very end (nothing
+  half-published is ever visible);
+- after a refusal Pitak waits as GitHub asks (at least a minute, at most an
+  hour) before ANY commit — the availability lane's too.
+
+**The rules (as built; plan A.6 #100–#108):**
+
+| Part | Where | Rule |
+|---|---|---|
+| Pacing (b) | `GitHubCommitWriter` (`infrastructure/http_github_commit.dart`, the commit flow moved out of `HttpGitHubApi`) | Blob requests start ≥ `GitHubContentLimit.blobSpacing` (1 s) apart; a slower request waits nothing; a clock jump never waits more than 1 s. |
+| Recognition | same | 403/429 that is a 429, or has `retry-after`, `x-ratelimit-remaining: 0`, or "rate limit" in its JSON message (body ≤ 64 KiB), at any step → `PublishCommitRateLimited(filesHeld, filesToSend, wait, refusedNow)`. Plain 403 stays an HTTP error. |
+| Report | port `commitFiles(onBlobStored:)` | Awaited per blob whose returned sha equals the planned sha, as soon as GitHub confirms it — also before a later failure or a thrown transport error. |
+| Resume (a) | `ResumableUploadGitHubApi` (decorator inside `CommitRecordingGitHubApi`, in `gitHubApiProvider`) | Remembers confirmed shas per repository in `GitHubUploadJournal` (`github_upload_journal.json`, app documents; saved every 20 blobs and at the end however the attempt ends); the next plan names them (`GitHubCommitPlan.withAlsoHeld`). Success forgets what the tree names. |
+| The pause | same + `GitHubContentLimit.pauseAfterRefusal` | After a refusal: max(GitHub's hint, 1·2·4… min), within 1 min–1 h; progress restarts the doubling. While it runs no request at all (`refusedNow: false`). A pause longer than an hour at the current clock is ignored. |
+| Fail safe | `GitHubUploadJournal`, store | Unreadable/lost journal = empty = more uploads. Entries live a week. A 422 for a tree that named remembered blobs forgets exactly those (the ones stored in that attempt stay). |
+
+**Real-API check (plan A.6 #100) — `PLFIndia/pitak-j8-blob-reuse`**
+(throwaway public repo, created 15:25:55 IST, archived at the end; the gh
+token cannot delete repos, so **the product owner deletes it by hand**,
+like `PLFIndia/pitak-cv5-proof`). Script outside the repo:
+`/tmp/j8b/probe_reuse.py` (log `/tmp/j8b/events.log`, `summary.json`).
+
+| Step | What | Result |
+|---|---|---|
+| 1 | 5 random 40 kB blobs, referenced by no tree ("the refused attempt") | 201 each; GitHub's sha = the local git blob sha (all 5); `x-ratelimit-*` are the core 5,000/h headers, no `retry-after` |
+| 2 | 2 min later: a tree naming dangling blobs 1–2 → commit → ref move | tree **201**, commit 201, ref 200, head tree holds both at the new paths |
+| 3 | a tree naming a sha never uploaded | **422** "tree.sha 07681c…142d is not a valid blob" |
+| 4 | GET a dangling blob | 200 (40,000 bytes) |
+| 5 | 65 min after step 2 (≈ 67 min after the blobs were created): a tree naming dangling blobs 3–5 → commit → ref | tree **201**, commit 201, ref 200 (16:33:15 IST, commit `5c09989`), head tree holds all three |
+| 6 | archive | 200 (16:33:16). 14 write requests in total; step 2's commit was `39f1af4` |
+
+**Copy for the product owner to read (plan A.6 #105; pinned by
+`github_error_messages_test.dart`):**
+- Refused: "GitHub limits how much one account can upload in an hour, and
+  it paused this upload. 450 of 1004 files are already on GitHub and will not
+  be sent again. Nothing on your site has changed yet. Publish again in about
+  an hour to send the rest." (all sent: "… Publish again in about an hour.";
+  nothing to send: no counts.)
+- Held back during the pause: "GitHub asked Pitak to wait before uploading
+  again, so nothing was sent this time. 3 of 5 files are already on GitHub and
+  will not be sent again. Nothing on your site has changed yet. Publish again
+  in about 4 minutes to send the rest."
+- A move: "… Your current site was not changed. Choose Move to other host
+  again in about an hour to send the rest." A retirement: "… Your old address
+  was not changed yet. Retry the pending move in about an hour."
+- The availability lane: "GitHub paused uploads from your account for a
+  while." (the row adds "Next try at …").
+- "Files", not "covers": `books.json`, the viewer and `library.json` count
+  too. The plain 403 sentence ("…You may have hit a rate limit or lack
+  permission… Try again later.") is unchanged; it is now shown only when
+  GitHub's answer does not say "rate limit".
+
+**New observation for the product owner — plan J15:** with pacing, an
+attempt that sends a few hundred files shows only "Uploading…" for several
+minutes (≈ 8 min for 500). Progress is kept, but there is no count on the
+screen. `onBlobStored` could feed a "Sending files: N of M" line. Not built
+(product decision).
+
+**For S11 (do not lose this):** the journal is device state like the lane
+store — `publish_state.json` must NOT carry it (plan A.6 #108). A restored
+phone simply starts with an empty journal.
+
+**Files changed (code):** new `domain/github_content_limit.dart`,
+`domain/github_upload_journal.dart`, `domain/github_upload_journal_store.dart`,
+`infrastructure/http_github_commit.dart`,
+`infrastructure/resumable_upload_github_api.dart`,
+`infrastructure/file_github_upload_journal_store.dart`; changed
+`domain/github_api.dart` (`PublishCommitRateLimited`, `onBlobStored`),
+`domain/github_commit_plan.dart` (`withAlsoHeld`, `uploadShas`, `namedShas`),
+`domain/github_error_messages.dart`, `infrastructure/http_github_api.dart`
+(547 → 445 lines; delegates the commit, takes `sleep`/`clock`),
+`infrastructure/commit_recording_github_api.dart` (forwards the callback),
+`core/di/src/publish_providers.dart` (+ `.g`; `gitHubApiProvider` chain,
+`gitHubUploadJournalStoreProvider`), and the five callers
+(`publish_library_use_case.dart`, `publish_events_use_case.dart`,
+`publish_availability_use_case.dart`, `github_move_destination.dart`,
+`github_move_source.dart`).
+**Tests:** new `domain/github_content_limit_test.dart` (6),
+`domain/github_upload_journal_test.dart` (42),
+`infrastructure/http_github_commit_test.dart` (20: pacing, report, every
+rate-limit form, sha-less answers, the 422),
+`infrastructure/resumable_upload_github_api_test.dart` (14: a 10-file first
+publish over four attempts with the REAL adapter against
+`support/fake_github_git_server.dart` — 4 + 3 + 3 accepted, no blob sent
+twice, nothing sent during the pause, one commit; an interrupted upload keeps
+20 then 25; the 422 rule; bookkeeping; forwarding),
+`infrastructure/file_github_upload_journal_store_test.dart` (9),
+`core/di/github_upload_journal_provider_test.dart` (2), support
+`github_upload_journal_fakes.dart`; new cases in the plan, message, catalogue,
+events, availability, move-destination and retirement suites; the preflight
+suite's 429-on-read case now expects the rate-limited result; the
+`http_github_api.dart` ratchet entry is gone. All nine fakes of the port take
+`onBlobStored`.
+
+**Gates at the end of S10b (2026-11-02, macOS, Flutter 3.44.2 via
+`.fvm/flutter_sdk`):**
+- build_runner: `publish_providers.g.dart` changed (new
+  `gitHubUploadJournalStoreProvider`, `gitHubApiProvider` source hash),
+  committed with the source; a second run changed nothing (the pre-commit
+  hook confirmed it).
+- `flutter analyze lib test integration_test`: no issues.
+- `dart format --set-exit-if-changed lib test integration_test`: 0 changed.
+- `flutter test --coverage`: **5,513 passed** (S10 ended at 5,404); the 10
+  failures are the same 10 macOS goldens in `test/golden/key_screens_test.dart`
+  (checked by name against the S10 list). S10b changes no screen.
+- Line coverage: `github_content_limit.dart`, `github_upload_journal.dart`,
+  `github_commit_plan.dart`, `github_error_messages.dart`,
+  `http_github_commit.dart`, `resumable_upload_github_api.dart`,
+  `file_github_upload_journal_store.dart`, `commit_recording_github_api.dart`
+  100 %; `publish_availability_use_case.dart` 98.5 %,
+  `publish_library_use_case.dart` 97.8 %, `http_github_api.dart` 94.5 %,
+  `publish_events_use_case.dart` 94.5 %, `github_move_source.dart` 94.1 %,
+  `github_move_destination.dart` 90.1 %. Every missed line predates S10b
+  (`currentUserLogin`, the adapter's transport catch, older failure
+  branches).
+- File sizes ≤ 500 (largest touched: `publish_providers.dart` 487,
+  `publish_library_use_case.dart` 454, `http_github_api.dart` 445, off the
+  ratchet now).
+- No new dependency; `pubspec.lock` and Rust untouched. CSP unchanged.
+- Security review (skill checklist): no secret involved; headers parsed as
+  integers and clamped; response bodies searched (≤ 64 KiB), never shown;
+  the journal decoded strictly with caps (sha and repository patterns,
+  counts, version) and stored atomically; logs carry error types only.
 
 ---
 
@@ -1412,7 +1565,7 @@ throwaway repo.
 
 ---
 
-## 6. Next: the J8 decision; goldens (deferred); S11 only on go-ahead
+## 6. Next: goldens (deferred); S11 only on go-ahead
 
 S8's code and docs are done (§S8) and the G.4 device evidence is recorded
 (§G4, item 2 below). Phase 1 becomes the release candidate (plan G.5) once
@@ -1469,24 +1622,23 @@ availability now" on GitHub still counts towards the 10-per-hour budget.
 read, 9 reused on an unchanged republish). **ADR 0020 is accepted.**
 **S10 is done (§S10)**: CV5 in code, proven against the real API.
 
+**S10b is done (§S10b)**: J8 decided by the product owner ((a) resume +
+(b) pacing) and built; the one real-API fact it needs was verified.
+
 **Open decisions for the product owner:**
-- **plan J8 (blocks Phase 2 shipping, not Phase 1):** how a large GitHub
-  first publish or move gets past GitHub's content-creation limit; options
-  and the recommendation (a resume + b pacing) are in §S10. Option (a)
-  first needs one real-API check (a later tree may name blobs from a refused
-  attempt); that needs a GitHub account, so ask before doing it.
+- the wording of the new rate-limit messages (§S10b, plan A.6 #105);
 - plan J11 (a replacement prepares twice), J12–J14 (§G4 observations: a
   pending set re-published after a catalogue publish, the switch-off
-  fallback to publish-time tags, a silent move with the vault locked).
-- Delete the archived throwaway repo `PLFIndia/pitak-cv5-proof` (§S10;
-  the gh token cannot).
+  fallback to publish-time tags, a silent move with the vault locked), J15
+  (§S10b: no progress count during a long paced upload).
+- Delete the archived throwaway repos `PLFIndia/pitak-cv5-proof` (§S10) and
+  `PLFIndia/pitak-j8-blob-reuse` (§S10b); the gh token cannot.
 
 **Then: S11 (Phase 2, Fix 2 — backup publish state, CV6/CV7, ADR 0014
 amendment) — only on the product owner's go-ahead.** Plan Part D.3 / Part F
-"S11", and §S9 "For S11" (Decision 4 vs adopting the archive's records). It
-first verifies plan J5 (the original Kotlin app tolerates the new backup
-entry). If the product owner picks J8 option (a), decide whether it is its
-own session before S11 or part of it.
+"S11", and §S9 "For S11" (Decision 4 vs adopting the archive's records), and §S10b "For S11"
+(the upload journal stays out of the backup). It first verifies plan J5
+(the original Kotlin app tolerates the new backup entry).
 
 Run the gates with the pinned SDK: `export PATH="$PWD/.fvm/flutter_sdk/bin:$PATH"`
 (the `flutter` on PATH is 3.41.1; the pubspec needs 3.44.2). Every gate in

@@ -107,6 +107,32 @@ heading as part of the `chore(release):` commit.
   longer re-send bytes. `uploadedPaths`, the "uploading" phase and the S0
   `bytes` count report real uploads only. Deletions are unchanged. Proven
   against the real API on a throwaway repository.
+- **A large GitHub publish finishes across attempts instead of never (plan
+  J8; publish-optimisation S10b, product decision (a) resume + (b) pacing).**
+  GitHub limits content creation to about 80 requests a minute and 500 an
+  hour, so a first publish or a move of more than a few hundred new covers
+  was refused partway, and every retry re-sent everything. Now:
+  - blob requests are paced, at most one a second (`GitHubContentLimit`);
+  - GitHub's rate-limit answer (403/429 with "rate limit", `retry-after` or
+    `x-ratelimit-remaining: 0`) is its own result, `PublishCommitRateLimited`,
+    with the message "GitHub limits how much one account can upload in an
+    hour, and it paused this upload. N of M files are already on GitHub and
+    will not be sent again. Nothing on your site has changed yet. Publish
+    again in about an hour to send the rest." (a move and a retirement name
+    their own next step; the availability lane says "GitHub paused uploads
+    from your account for a while.");
+  - every blob GitHub confirms storing is remembered per repository in
+    `github_upload_journal.json` (app documents; public shas and times only),
+    and the next attempt names those blobs instead of sending them
+    (`ResumableUploadGitHubApi`, wrapping every commit). The site still
+    changes in ONE atomic commit at the end. GitHub's pause is kept too
+    (`retry-after`, else 1, 2, 4 … minutes, at most an hour): no commit, not
+    even the lane's, is sent before it ends.
+  - The commit flow moved from `HttpGitHubApi` to `GitHubCommitWriter`
+    (`http_github_commit.dart`; 547 → 445 lines, off the size ratchet).
+  Verified against the real API: a tree may name blobs a refused attempt
+  left behind, 2 minutes and 65 minutes later; a tree naming an unknown blob
+  is refused with 422, which makes the journal forget the blobs it named.
 - `PRIVACY.md` (effective 2026-11-02): availability updates automatically;
   the viewer requests and saves `availability.json`.
 

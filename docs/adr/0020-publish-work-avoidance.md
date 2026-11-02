@@ -3,6 +3,8 @@
 - **Status:** Accepted (2026-11-02) by the product owner, as written.
   Proposed the same day in session S9, which put Decisions 1–5 (plan
   CV1–CV4) into code; Decisions 6–10 are the agreed design for S10–S14.
+  Decision 6 gained the product owner's J8 decision the same day (resume +
+  pacing, session S10b; see its J8 amendment).
 - **Date:** 2026-11-02
 - **Amends:** nothing yet. ADR 0014 gains an amendment with Fix 2 (S11,
   Decision 7) and ADR 0017 with the non-blocking GitHub outcome (S12,
@@ -172,6 +174,53 @@ need to do.
    or a move of more than a few hundred NEW covers can still be refused, and
    a retry still re-sends what the refused attempt sent. That fix is a
    separate product decision (plan J8).
+
+   *J8 amendment (2026-11-02, session S10b; plan A.6 #100–#108).* **The
+   product owner decided J8: (a) resume + (b) pacing, in a session of its own
+   before S11.** As built:
+   - **Pacing.** `GitHubCommitWriter` (`http_github_commit.dart`, the commit
+     flow moved out of `HttpGitHubApi`) starts blob requests at least
+     `GitHubContentLimit.blobSpacing` (1 s) apart: at most 60 a minute, under
+     the documented 80, so a large publish stays under the per-minute limit
+     by construction. The hourly limit (about 500) is what resume is for.
+   - **Recognition.** A 403 or 429 that says "rate limit", or carries
+     `retry-after` or `x-ratelimit-remaining: 0`, at any step of the commit,
+     is `PublishCommitRateLimited` (files held, files to send, GitHub's hint,
+     refused now or held back) instead of an HTTP error. Response text is only
+     searched, never shown; a forged answer can only make Pitak wait. Every
+     flow has a fixed message built from counts (`gitHubRateLimitedMessage`;
+     the lane's `gitHubPausedMessage`).
+   - **Resume.** The port's `commitFiles` reports each blob GitHub confirmed
+     storing (`onBlobStored`, only when GitHub's sha equals the planned one).
+     `ResumableUploadGitHubApi`, a decorator around the one commit method
+     (inside `CommitRecordingGitHubApi`), keeps them per repository in
+     `GitHubUploadJournal` (`github_upload_journal.json`, saved every 20 blobs
+     and when the attempt ends, however it ends), and the next attempt names
+     them through `GitHubCommitPlan.withAlsoHeld` — rule 2 of this decision,
+     extended to blobs that are in the repository but in no tree yet. The
+     site still changes in ONE atomic commit at the end. A landed commit
+     forgets the blobs its tree names.
+   - **The pause.** GitHub's docs ask clients not to retry before
+     `retry-after`, else to wait at least a minute and longer each time, and
+     warn that ignoring this can ban the integration — one OAuth app shared by
+     every library. The journal keeps the pause
+     (`GitHubContentLimit.pauseAfterRefusal`: the larger of the hint and 1, 2,
+     4 … minutes, within 1 min–1 h); while it runs, no commit of any flow
+     sends a request (`refusedNow: false`, "… in about N minutes").
+   - **Fail safe both ways.** A lost or unreadable journal only means more
+     uploads. Entries expire after a week. A tree naming a blob GitHub no
+     longer holds is refused with 422 (verified), so nothing is committed, and
+     the journal forgets the blobs that tree named; the next attempt sends
+     them again.
+   - **Verified against the real API** (throwaway public repository, product
+     owner's consent; plan A.6 #100): a tree naming blobs that no tree
+     referenced was accepted 2 minutes and 65 minutes after the blobs were
+     created; a tree naming an unknown sha was refused with 422 "tree.sha … is
+     not a valid blob"; GitHub's blob shas equal the locally computed ones.
+   - *Not adopted:* batched commits (several Pages builds, no longer atomic,
+     option (c)); message only (option (d)). Text files inlined in the tree
+     request instead of blobs would save a few requests per commit, but covers
+     are binary and need blobs anyway.
 
 7. **Backups carry the publish state (CV6, CV7, S11; ADR 0014 amendment).**
    `publish_state.json`: the cover salt, both records and the active host —

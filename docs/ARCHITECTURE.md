@@ -602,6 +602,7 @@ target passed to the current operation — that is what lets a move publish the
 | `publish_host_state` | one preferences key | no | Active host, the single `verifiedTarget`, and any pending move |
 | `publish_manifest.json` | app documents | no | GitHub schema 2: which app-owned files this phone owns |
 | `cloudflare_publish_manifest.json` | app documents | no | Cloudflare schema 2: the complete Worker asset set it owns |
+| `github_upload_journal.json` | app documents | no | Version 1: blob shas GitHub stored for a commit that did not land yet, per repository, and GitHub's pause (plan J8, §5.8) |
 | `cf_connection` | hardened secure storage | **whole record** | Token plus optional account/Worker/address |
 | Artifact spool | OS temporary directory | no | Public bytes while one publish runs; deleted afterwards and stale `run-` folders swept at the next operation |
 
@@ -679,6 +680,26 @@ target passed to the current operation — that is what lets a move publish the
   Reusing a blob claims and deletes nothing. GitHub limits content-creating
   requests (about 80 a minute and 500 an hour, plan J8), so every blob not
   sent keeps large publishes further from that limit.
+- **A GitHub upload GitHub's limit stops resumes next time** (plan J8,
+  ADR 0020 Decision 6 amendment). `GitHubCommitWriter`
+  (`http_github_commit.dart`, behind `HttpGitHubApi.commitFiles`) paces blob
+  requests to one a second (`GitHubContentLimit.blobSpacing`), turns GitHub's
+  rate-limit answer into `PublishCommitRateLimited` (counts and GitHub's
+  hint, never response text) and reports each blob GitHub confirmed storing
+  (`onBlobStored`, only for the exact sha it planned). `ResumableUploadGitHubApi`
+  wraps the one commit method for every flow: it keeps those shas per
+  repository in `GitHubUploadJournal` (`github_upload_journal.json` in the app
+  documents, written atomically every 20 blobs and when the attempt ends;
+  public shas and times only; a week's lifetime; 20,000 blobs and 4
+  repositories at most), names them in the next attempt's plan
+  (`GitHubCommitPlan.withAlsoHeld`), and keeps GitHub's pause
+  (`GitHubContentLimit.pauseAfterRefusal`: `retry-after`, else 1, 2, 4 …
+  minutes, within 1 min–1 h) so nothing is sent before it ends. The commit is
+  still one atomic commit. Safe both ways: a lost journal only means more
+  uploads, and a remembered blob GitHub discarded makes it refuse the tree
+  (422), after which the journal forgets the blobs it named. Decorator order
+  in `gitHubApiProvider`: `CommitRecordingGitHubApi(ResumableUploadGitHubApi(
+  HttpGitHubApi))`.
 
 ### 5.9 `availability.json` and the availability lane (ADR 0019)
 
