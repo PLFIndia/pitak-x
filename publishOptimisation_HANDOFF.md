@@ -1,4 +1,4 @@
-# Publish optimisation — handoff (S8 code and docs complete, 2026-11-02)
+# Publish optimisation — handoff (S9 complete, 2026-11-02)
 
 **Branch:** `publishOptimisation` (from `03313a3`, release 1.9.0+32).
 **Plan:** `publishOptimisation_PLAN.md` (product decisions A.3, engineering decisions A.4, deviations A.6, measurements Appendix A).
@@ -24,13 +24,19 @@ product owner and the phone), and the Linux golden regeneration, which the
 product owner **deferred until all fixes are done** (2026-11-02: "golden
 images we do after we are done with all fixes"); the branch stays unpushed
 until then. §6 is the checklist for both.
-**S9 (Phase 2) has NOT started. Do not start it until the product owner
-explicitly says so** (the product owner also decides whether the G.4 rows
-run before S9 or later; plan G.5 needs them before Phase 1 is released).
+S9 — ADR 0020 and Fix 1 (covers) — **complete** (§S9), started on the
+product owner's go-ahead ("go ahead for next session", 2026-11-02, the same
+words that started S3–S8). The G.4 rows were not run first: no phone was
+attached (`adb devices` empty), so the G.4 rows and the goldens are still
+open exactly as §6 describes. **ADR 0020 is _proposed_: the product owner
+should accept it (or amend it) before S10 starts.**
+**S10 (Fix 3, GitHub blob reuse) has NOT started. Do not start it until the
+product owner explicitly says so.** Open decision for the product owner:
+plan J11 (§S9).
 
-> Read this file first in any new session. §S8 is the newest state, then
-> §S7, §S6, §S5, §S4, §S3, §S2 and §0 (S1). §1–§5 are the S0 record (plan
-> Appendix A cites the verbatim lines in §3), kept unchanged.
+> Read this file first in any new session. §S9 is the newest state, then
+> §S8, §S7, §S6, §S5, §S4, §S3, §S2 and §0 (S1). §1–§5 are the S0 record
+> (plan Appendix A cites the verbatim lines in §3), kept unchanged.
 
 > **Standing product decision P8 — public by design (product owner,
 > 2026-11-01).** Pitak is for **public libraries** whose catalogues exist for
@@ -40,6 +46,99 @@ run before S9 or later; plan G.5 needs them before Phase 1 is released).
 > settled and needs no new review: borrower names and loan details (P1, in the
 > vault) and credentials and tokens (security, `AGENTS.md` §6). `PRIVACY.md`
 > only has to state accurately what is uploaded (a store requirement).
+
+---
+
+## S9 — ADR 0020 and Fix 1: covers already online are not produced again
+
+**Commits:** `7b812cf` (code + tests), then the docs commit
+(ADR 0020, plan, ARCHITECTURE, CHANGELOG, this handoff).
+
+**What changed for users (once released):** nothing on the site — no
+published byte changes. A catalogue publish no longer re-reads and
+re-encodes covers that are already online: an unchanged republish produces
+**0** covers and adding one book produces **1**, whatever the library size
+(S0: 4 min 46 s of cover work per publish at 1,000 covers). The **first**
+catalogue publish after the update still produces every cover once (and
+fetches every remote cover once more); identical bytes upload nothing. A
+restore makes the next publish read the local covers once again.
+
+**The rule (ADR 0020 Decisions 1–5):** `PublishCoverDecider` reuses a cover
+— no read, no re-encode, no upload — when the publish is incremental, the
+record holds the cover's path, names the same (trimmed) source for its key
+and carries the current `coverRendition`. Otherwise it produces the cover;
+if that fails and the record holds the path, it keeps the published file;
+else the sanitized remote URL or no cover. It is safe because a stored
+cover file never changes (CV1, a new picture = a new file name).
+
+**Decisions (plan A.6 #84–#92; engineering choices, none needed the
+product owner, but #84 and #88 have a user-visible one-time cost):**
+
+| A.6 | Decision |
+|---|---|
+| #84 | ONE reuse rule for local AND remote covers: the remote skip now also needs the current rendition, so a recipe change reaches every cover (CV3). One-time cost: the first publish after the update fetches remote covers again. |
+| #85 | The record stores the source each DECISION says the published file shows (`CoverDecision.source`), trimmed. A fall-back to the old file records the record's previous source, only under a current rendition, else nothing (tried again next time). Fixes a pre-existing hole: a remote cover whose new URL failed once kept its old picture for good. |
+| #86 | GitHub `reconciledFrom` drops `coverRendition` when a recorded cover changed on the branch (someone else edited it): the next publish produces every cover and puts ours back, as before ADR 0020. |
+| #87 | `PreviousPublication.reusableCoverRendition`: Cloudflare only while `hashesTrusted`, else reused covers would become missing hashes and a needless replacement. |
+| #88 | The J9 reset (`CatalogueKeysReset.beforeIdsChange`) also removes LOCAL cover sources (`covers/…`, `file://…`) from both records and the unconfirmed attempt before a restore's generation switch (and an overwrite merge). An archive may hold other bytes under a known name. Fail closed as before. |
+| #89 | `PublishCoverRendition` (domain): `current = 1` + 400/600/80; `publish_cover_rendition_test.dart` pins number, parameters and the `ImageDownscaler` defaults together (explicit arguments were refused by the `avoid_redundant_argument_values` lint). |
+| #90 | The decider takes the publish mode; `PublishMode.complete` never reuses (CV4 by construction). |
+| #91 | `CloudflareAssetEntry`/`CloudflareMergeResult` moved unchanged into `cloudflare_asset_entry.dart` (re-exported) to keep `cloudflare_site_manifest.dart` under 500 lines. |
+| #92 | `cover_files_immutable_test.dart` classifies every file that reaches the covers folder (writer or reader), checks readers write nothing, pins each writer's exact write calls and guards, and the two port implementers. |
+
+**Open item for the product owner — plan J11:** a whole-site replacement
+prepares its complete snapshot twice (review, then confirm; ≈ 5 min each at
+1,000 covers, S0 rows 12–13). ADR 0020 Decision 5 leaves it unchanged; the
+product owner decides whether a later session should keep the first
+preparation's spooled covers for the confirmation.
+
+**For S11 (do not lose this):** Decision 4 makes a restore forget local
+cover sources. S11's `publish_state.json` adoption writes the archive's
+records after the generation switch; those records describe the archive's
+own covers, so S11 must decide whether to keep their local sources (ADR 0020
+Decision 7) and keep `publish_salt_invariant_test.dart` and
+`cover_files_immutable_test.dart` green.
+
+**Files changed (code):** new `domain/publish_cover_rendition.dart`,
+`domain/cloudflare/cloudflare_asset_entry.dart`; `previous_publication.dart`,
+`publish_manifest.dart`, `cloudflare_site_manifest.dart`,
+`publish_section.dart`, `section_merge.dart`, `publish_cover_decider.dart`,
+`catalogue_section_builder.dart`, `cloudflare_publish_artifacts.dart`, the
+record call sites in `publish_library_use_case.dart`,
+`publish_events_use_case.dart`, `publish_availability_use_case.dart`,
+`github_move_destination.dart`; `catalogue_keys_reset.dart`,
+`core/storage/catalogue_ids_change_guard.dart`; doc comments only in
+`local_cover_reader.dart`, `publish_providers.dart`,
+`core/images/image_downscaler.dart`. **Tests (new):**
+`publish_cover_rendition_test.dart`, `publish_cover_decider_test.dart` (20),
+`catalogue_cover_reuse_test.dart` (10, counted reads across chained
+publishes), `test/architecture/cover_files_immutable_test.dart` (7).
+**Extended:** both record tests (JSON, transitions, reconcile rule, local
+sources), the reset test, the GitHub library (end to end 0/1 reads, foreign
+edit healed, legacy remote record), events and availability use-case tests
+(rendition carried), the Cloudflare use-case test (0 reads on republish, the
+cover carried by its hash; events deploy keeps the rendition); the
+`S8PublishHarness` gained a `readLocalCover` seam (default unchanged).
+
+**Gates at the end of S9 (2026-11-02, macOS, Flutter 3.44.2 via
+`.fvm/flutter_sdk`):**
+- build_runner: no generated file changed (no provider signature changed).
+- `flutter analyze lib test integration_test`: no issues.
+- `dart format --set-exit-if-changed lib test integration_test`: 0 changed.
+- `flutter test --coverage`: **5,386 passed** (S8 ended at 5,324); the 10
+  failures are the macOS goldens in `test/golden/key_screens_test.dart`, and
+  a clean worktree of `5935a1c` (the S8 head) fails exactly the same 10
+  (checked by name). S9 changes no screen, so no new golden is affected.
+- Line coverage: `publish_cover_rendition.dart`, `publish_cover_decider.dart`,
+  `catalogue_keys_reset.dart`, `publish_section.dart` 100 %;
+  `publish_manifest.dart` 98.4 %, `cloudflare_site_manifest.dart` 97.3 %,
+  `catalogue_section_builder.dart` 98.6 %, `cloudflare_publish_artifacts.dart`
+  97.5 % — every missed line predates S9 (`toString`s, older branches, the
+  private merged record's never-read getters).
+- File sizes ≤ 500 (largest touched: `publish_providers.dart` 463,
+  `catalogue_section_builder.dart` 466, `publish_manifest.dart` 469,
+  `cloudflare_site_manifest.dart` 454).
+- No new dependency; `pubspec.lock` and Rust untouched. CSP unchanged.
 
 ---
 
@@ -1072,7 +1171,7 @@ throwaway repo.
 
 ---
 
-## 6. Next: finish S8 (needs the product owner), then S9 on go-ahead
+## 6. Next: finish S8 (needs the product owner); S10 only on go-ahead
 
 S8's code and docs are done (§S8). Phase 1 becomes the release candidate
 (plan G.5) only after the two items below. Neither can be done by an agent
@@ -1119,8 +1218,16 @@ catalogue publish (J9/J10); a move made with the vault locked shows no tags
 at the new site until the vault is next unlocked (A.6 #81); "Update
 availability now" on GitHub still counts towards the 10-per-hour budget.
 
-**Then: S9 (Phase 2, covers) — only on the product owner's go-ahead.** Plan
-Part D / Part F "S9": ADR 0020, Fix 1 (CV1–CV4) and its invariant test.
+**S9 is done (§S9).** When the G.4 rows run, the build includes Fix 1 too:
+the first catalogue publish on the phone produces every cover once (expected,
+A.6 #84), and later ones produce only new covers — a useful extra check
+(`coverDecisions(coversRead=…, coversReused=…)` in the timings line).
+
+**Then: S10 (Phase 2, Fix 3 — GitHub blob reuse, CV5) — only on the product
+owner's go-ahead, ideally after ADR 0020 is accepted.** Plan Part D.2 /
+Part F "S10". First step: verify plan J8 (does `POST /git/blobs` count
+towards GitHub's content-creation limit?) against a throwaway repository —
+that needs the product owner's GitHub account, so ask before doing it.
 
 Run the gates with the pinned SDK: `export PATH="$PWD/.fvm/flutter_sdk/bin:$PATH"`
 (the `flutter` on PATH is 3.41.1; the pubspec needs 3.44.2). Every gate in

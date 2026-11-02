@@ -141,6 +141,7 @@ These fail the build; change them deliberately, never to "make it pass".
 | `test/architecture/layer_boundaries_test.dart` | no `presentation → infrastructure` imports; no `flutter/material` in `application`; no `print`/`debugPrint` outside `lib/core/platform/app_log.dart`; no `flutter_map` under `core/di` or `application/`; **file-size ratchet** (a file may not grow past its recorded line budget without an explicit allow-list entry — split it instead) |
 | `test/architecture/catalogue_item_validation_gate_test.dart` | every `CatalogueItem` construction site goes through `CatalogueItem.validate` (ADR 0004; the entity was `Book` until 2026-10) |
 | `test/core/database/migration_test.dart` | a drift schema snapshot exists for the current `schemaVersion`; every past version migrates forward with data intact (§5.4) |
+| `test/architecture/cover_files_immutable_test.dart` | a stored cover file never changes once saved (ADR 0020 Decision 1): every file that reaches the covers folder is reviewed, readers write nothing, and the four writers are pinned to fresh names, a not-yet-live generation, or a move that never overwrites |
 
 ---
 
@@ -656,6 +657,17 @@ target passed to the current operation — that is what lets a move publish the
 - **GitHub retirement** writes the moved `index.html`/`404.html` and deletes
   only exact app-owned paths from the validated manifest, in the same
   expected-head commit; unrelated files always survive.
+- **A cover already online is not produced again** (ADR 0020). Both records
+  keep each cover's source (`coverUrlByBookId`) and the recipe that made the
+  covers (`coverRendition`, `PublishCoverRendition`: 400 × 600, JPEG q80,
+  metadata stripped). An incremental publish reuses a cover — no read, no
+  re-encode, no upload — when its source is unchanged, the record holds its
+  path and the rendition is current; a complete snapshot reads every cover.
+  The rendition is unknown (every cover produced once) for a record written
+  before ADR 0020, for a GitHub record whose branch has a changed cover file,
+  and for a Cloudflare record whose hashes this build cannot use. A restore
+  makes both records forget their local cover sources first. Changing the
+  recipe on purpose means a new rendition number.
 
 ### 5.9 `availability.json` and the availability lane (ADR 0019)
 
@@ -795,6 +807,11 @@ loan never rebuilds the catalogue or reads a cover.
   host becomes a moved page only after the new site is verified and the old
   one is verifiably retired, and other phones never follow a move on their
   own.
+- **A stored cover file never changes** (ADR 0020 Decision 1). A new picture
+  always gets a new file name (`CoverStore`, the bundle store), so a cover's
+  source names one picture for good, which is what lets a publish skip a
+  cover it already put online (§5.8). Enforced by
+  `cover_files_immutable_test.dart`.
 - **Availability has its own lane** (ADR 0019, §5.9). The coarse *Available /
   Not available* tag is the only public data that changes all day, so it is a
   separate tiny file published by itself after a loan or return, bound to the

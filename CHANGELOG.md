@@ -52,6 +52,17 @@ heading as part of the `chore(release):` commit.
   60 s while visible; the native viewer keeps a third saved copy (ADR 0018).
 - **Guide:** "Put your catalogue online" gains **Which host suits you?** and
   a worked example (P7); its GitHub minutes are pinned to `AvailabilityPacing`.
+- **Covers already online are not produced again (ADR 0020, proposed;
+  publish-optimisation Phase 2 Fix 1, S9):** an incremental catalogue publish
+  reuses a cover — no read, no re-encode, no upload — when the publish record
+  names the same source for it, holds its file and carries the current
+  `coverRendition` (`PublishCoverRendition` 1 = `ImageDownscaler` defaults,
+  400 × 600 q80, metadata stripped). An unchanged republish now produces 0
+  covers and adding one book produces 1, whatever the library size (S0
+  measured 4 min 46 s of cover work per publish at 1,000 covers). Complete
+  snapshots (moves, replacements) still read every cover. The first catalogue
+  publish after this update produces every cover once (remote covers are
+  fetched once more), and identical bytes upload nothing.
 
 ### Changed
 - **`books.json`** (schema still 1, additive): every item carries `key`
@@ -68,6 +79,20 @@ heading as part of the `chore(release):` commit.
   (J9).
 - The Cloudflare deploy pipeline no longer depends on the replacement
   preparation; both Cloudflare use cases share `CloudflarePublishStarter`.
+- Both publish records gain the additive `coverRendition` (absent = unknown,
+  every cover produced once). It reads as unknown for a GitHub record whose
+  branch has a cover changed by someone else (the next publish puts this
+  phone's covers back) and for a Cloudflare record whose hashes this build
+  cannot use. A remote cover is now reused only under the current rendition
+  too, so a recipe change reaches every cover.
+- The record now stores the source each published cover file really shows,
+  trimmed; a cover that fell back to an older file of unknown origin records
+  none and is tried again next time.
+- A restore (and an overwrite merge) also makes both publish records forget
+  their LOCAL cover sources before the generation switch, so covers restored
+  under a known file name are read again (ADR 0020 Decision 4).
+- New fitness function `test/architecture/cover_files_immutable_test.dart`:
+  a stored cover file never changes once saved (CV1).
 - `PRIVACY.md` (effective 2026-11-02): availability updates automatically;
   the viewer requests and saves `availability.json`.
 
@@ -76,6 +101,9 @@ heading as part of the `chore(release):` commit.
   mark that commit live from an unchanged `books.json` (plan A.1 item 8).
 - Web viewer: the "This file was created by a newer Pitak" notice was
   overwritten by the item count at once.
+- A remote cover whose new URL failed to download once kept its old picture
+  for good: the record stored the new URL over the old file, so later
+  publishes skipped it (ADR 0020 Decision 2, plan A.6 #85).
 
 ## [1.9.0] - 2026-10 (tag `1.9.0`, versionCode 32)
 
