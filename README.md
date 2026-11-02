@@ -61,6 +61,15 @@ a **library network** (pins on a map, hub/member cards).
   **GitHub Pages** (device-flow auth + git data API) or **Cloudflare Workers**
   (a pasted `Workers Scripts · Edit` token, one account, assets-only Worker),
   with PII redaction and an https-only cover allow-list.
+  **Availability updates by itself** (ADR 0019): after a loan or return,
+  Pitak publishes a tiny `availability.json` so the site's *Available / Not
+  available* tags stay current — no cover is read and the catalogue is not
+  rebuilt. It is on by default (switch in **Settings → Data**), its status and
+  **Update availability now** sit on the publish screen, and it runs only
+  while the app is open. **Which host?** GitHub Pages is the quicker setup
+  but updates more slowly (about a minute per update and at most about 10 an
+  hour, so up to about 7 minutes in a busy hour); Cloudflare Workers takes
+  about ten minutes to set up once and usually shows a loan in under a minute.
   The optional GPS pin is governed by its own opt-in switch (off /
   approximate ~1 km / exact) and feeds both the page pin and the network
   descriptor. **Honest limits:** a Pitak Worker is *dedicated* to Pitak — a
@@ -100,9 +109,10 @@ a **library network** (pins on a map, hub/member cards).
   choose between; it never switches automatically.
   Tapping a saved library opens its published catalogue and events **inside
   Pitak** in a read-only native viewer (posters, search, filters, sort, item
-  detail) — no WebView,
-  no import, no persistent cache: the catalogue is fetched once per explicit
-  open and discarded when you leave. Every hop must stay on that library's own
+  detail, *Available / Not available* tags with an **Available now** filter
+  and an "N of M available" summary) — no WebView and no import. Each
+  explicit open revalidates a saved copy of the library's `books.json`,
+  `events.json` and `availability.json` (ADR 0018). Every hop must stay on that library's own
   site directory, and covers (both the library's own and the fixed public
   cover hosts) obey the same remote-cover switch as the local library, held in
   memory only. **Open in browser** remains the explicit fallback. The map
@@ -127,9 +137,10 @@ ISBN-lookup key and the Cloudflare token are the documented exceptions (their
 HTTP/plugin APIs are `String`-typed, so they transit as immutable strings), as
 are the short-lived Cloudflare upload/completion JWTs that live for at most
 one hour inside one publish.
-Network calls are user-initiated except for Google Play updates: ISBN lookup,
-publish and its bounded live-site read-back, network refresh, remote covers and map
-tiles. Covers are default off, host-allow-listed and downloaded once; map
+Network calls are user-initiated except for Google Play updates and the
+automatic availability updates of a site you publish (on by default; switch in
+Settings → Data): ISBN lookup, publish and its bounded live-site read-back,
+network refresh, remote covers and map tiles. Covers are default off, host-allow-listed and downloaded once; map
 tiles require consent; Refresh reads `library.json` from saved and discovered
 libraries. Play builds also check for updates once per launch and, after you
 accept Play's update dialog, can download one in the background; the F-Droid

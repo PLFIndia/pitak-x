@@ -232,9 +232,31 @@ anyone can open and search. It is free: on **GitHub Pages**, or on
 **You need:** a free GitHub account (github.com), or a free Cloudflare account
 (dash.cloudflare.com).
 
-**What goes online:** titles, authors, covers, and — if your vault is
-unlocked when you publish — whether a book is available.
+**What goes online:** titles, authors, covers, and whether each item is
+**Available** or **Not available**. Pitak updates that by itself after you
+lend or return something (switch it off in **Settings → Data**).
 **Never goes online:** borrowers, loans, notes, shelf locations.
+
+> **Updated 2026-11-02 (publish-optimisation S8, plan C.9, product decision
+> P7):** the host table and its worked example below are new; the minutes and
+> the "10 updates an hour" are pinned to `AvailabilityPacing` by
+> `guide_catalog_test.dart`.
+
+**Which host suits you?**
+
+| I want to… | Use |
+|---|---|
+| Get online today with the least setup | **GitHub Pages** — sign in with a code and name a folder. A few minutes. |
+| Show loans within a minute, even on a busy day | **Cloudflare Workers** — about ten minutes to set up, once. |
+| Start quickly and decide later | **GitHub Pages** now; **Move to other host** any time. |
+
+**An example.** Asha runs a reading room. On a busy Saturday morning she lends
+12 books in an hour. Pitak updates her page by itself as she lends. On
+**Cloudflare**, readers usually see **Not available** in under a minute,
+however busy she is. On **GitHub Pages**, each update takes about a minute to
+appear, and GitHub allows only about 10 updates an hour, so in a busy hour
+Pitak groups her loans together and a change can take up to about 7 minutes to
+show. On a quiet day both feel the same.
 
 **First time on GitHub Pages**
 
@@ -265,10 +287,10 @@ and move**.
 
 **Every time after that**
 
-Added or lent books? Open **Publish to web** and tap **Publish catalogue
-now** again. Only what changed is uploaded, so it takes seconds. It publishes
-to whichever host is active. When Pitak only checks an earlier publish, the
-message says **Verified** — nothing new was published.
+Added books? Open **Publish to web** and tap **Publish catalogue now**. Lent
+or returned something? Your page updates by itself. Only what changed is
+uploaded. It publishes to whichever host is active. When Pitak only checks an
+earlier publish, the message says **Verified** — nothing new was published.
 
 **Moving to the other host later**
 
@@ -558,8 +580,8 @@ without opening the vault.
 - **Require biometric to open Pitak** (Settings → Security) is a different
   thing: it covers the whole app with a prompt but does not encrypt
   anything. The vault is the encrypted part.
-- Your published page can show "available / on loan" — never who borrowed.
-  It only does so if the vault was unlocked when you published.
+- Your published page shows **Available / Not available** and updates by
+  itself after lending — never who borrowed.
 
 `[ Open Borrowers vault → ]`
 
@@ -628,7 +650,9 @@ have no books of its own.
    Folding "what each value is and where to find it" into the publish guide
    would have pushed it past the 3800 dp copy-length budget in
    `guide_page_test.dart`, so the publish guide keeps a short pointer and the
-   new guide holds the detail.
+   new guide holds the detail. (Publish-optimisation S8 raised the budget to
+   5000 dp for the product owner's "Which host suits you?" table and example,
+   P7.)
 8. **"You need" chips:** only the two hosting guides show one (an account to
    create before starting); every other guide works out of the box.
 
@@ -658,7 +682,8 @@ have no books of its own.
 | "Set up a repository" creates a public repo and enables Pages itself | `publish_page.dart` target-repo section; `setup_github_repo.dart` |
 | Site "can take a minute to update" | `github_connection_controller.dart` success message |
 | Only changed files are uploaded | `PublishLibraryUseCase` sha-skip via manifest |
-| Availability published only when vault unlocked; borrowers never | `PublishLibraryUseCase.availabilityOmitted`; publish page intro |
+| Available / Not available updates by itself after a loan or return (on by default, switch in Settings → Data); borrowers never (2026-11-02) | `AvailabilityAutoPublisher` started from `main.dart`; `PublishingSettingsGroup`; ADR 0019 |
+| GitHub: about a minute per update, at most about 10 an hour, up to about 7 minutes in a busy hour; Cloudflare usually under a minute (2026-11-02) | `AvailabilityPacing.gitHubSpacing` / `gitHubBudget` (pinned by `guide_catalog_test.dart`); ADR 0019 Decision 13a; plan G.4 measures the Cloudflare wording |
 | Location switch: Not shared / Approximate (~1 km) / Exact; default off | `basic_info_tab.dart`; `LocationSharing` |
 | Phone GPS is never read; coordinates are typed as "lat, lng" | `BuildOwnDescriptor.ownLocation` (D6); GPS field hint |
 | Approximate = rounded to 2 decimals ≈ 1.1 km | `GeoPoint.coarsen()` |

@@ -223,7 +223,8 @@ It does **not** bump the version, write changelogs, commit, tag or upload.
 9. If the release touches publishing (anything under
    `lib/features/publish/`, the `workers.dev` reader grammar, or
    `assets/publish/`), run the publish smoke matrix (§6.5) on a disposable
-   Cloudflare account and record the outcome.
+   Cloudflare account and record the outcome. If it touches the availability
+   lane (ADR 0019), also run the availability evidence (§6.6).
 10. Commit.
 
 ### 6.2 Google Play
@@ -376,6 +377,60 @@ Two deliberate asymmetries to confirm rather than "fix":
 - **A missing file is a real 404 on both hosts**, so a dropped asset is visible
   instead of silently served.
 
+### 6.6 Availability lane evidence (ADR 0019; publish-optimisation plan G.4)
+
+The availability lane publishes by itself after a loan or return, so its
+evidence is a **real-phone, real-host** pass on **both** hosts (a throwaway
+GitHub repository and the disposable Cloudflare account of §6.5). Record
+each row in `publishOptimisation_HANDOFF.md` (or, after the plan closes, the
+release notes) with date, commit, host, PASS/FAIL and the times; never paste
+a token, account id or raw response body.
+
+**Build.** Use a release build. For the timed rows (1, 2 and 8) build it with
+the timing flag; every other row can use the ordinary build. Always clean
+first — Flutter 3.44 can package a stale `libapp.so` (§4):
+
+```bash
+./.fvm/flutter_sdk/bin/flutter clean && ./.fvm/flutter_sdk/bin/flutter pub get --enforce-lockfile
+./.fvm/flutter_sdk/bin/flutter build apk --release --flavor fdroid --dart-define=publishTimings=true
+# The instrumented libapp.so must contain the timing string; an ordinary build must not:
+unzip -p build/app/outputs/flutter-apk/app-fdroid-release.apk lib/arm64-v8a/libapp.so | strings | grep -c 'publish timings'
+adb install -r build/app/outputs/flutter-apk/app-fdroid-release.apk
+adb logcat -s flutter | grep 'publish timings'
+```
+
+Each lane publish writes one line: `publish timings availability: …` on
+GitHub (debounce done → commit accepted; budget ≤ 10 s) and `publish timings
+cloudflareAvailability: …` on Cloudflare (debounce done → read back live;
+budget ≤ 20 s, p90 over at least five lends). **Lend → visible** is measured
+by hand: note the time you tap **Lend**, then reload the public page until it
+shows **Not available** (on GitHub, Pages adds its own build time).
+
+Before row 1: publish the catalogue once from this phone (the lane needs this
+phone's keyed `books.json`, status "Tap Publish catalogue now once…"
+otherwise), unlock the Borrowers vault, and keep the public page open in a
+desktop browser.
+
+| # | Do | Expected |
+|---|---|---|
+| 1 | Cloudflare: lend one single-copy book | Status "Availability will update in a moment", then "Availability updated <time>"; the page shows **Not available**; record the timing line and lend → visible |
+| 2 | GitHub: lend one single-copy book | Commit within debounce + ~10 s ("… · going live"), "Availability updated <time>" after the deferred check; visible after the Pages build; record both times |
+| 3 | Lend 5 books within one minute | ONE publish (one timing line, one commit or deploy) |
+| 4 | Lend the second copy of a 3-copy book | No publish; the status does not change |
+| 5 | Lend, then lock the vault within 20 s | The publish still happens (the set was saved when computed) |
+| 6 | Airplane mode, lend, wait past the debounce, airplane mode off, background and reopen the app | Status shows the pending reason with "Next try at …", then the update goes out on resume |
+| 7 | Settings → Data → turn **Update availability on my site automatically** off | Exactly one removal; `availability.json` is a 404; both viewers fall back to the inline tag from `books.json` (or none); the status reads "Availability updates are off…" |
+| 8 | GitHub, busy hour: 12 tag-changing loans/returns spread over an hour | At most 10 commits in any 60 minutes (catalogue publishes count too); the longest wait ≈ 7 minutes |
+| 9 | Fresh install (or cleared data), connect the host, do NOT republish the catalogue, lend | Status "Tap Publish catalogue now once; after that, availability updates by itself."; nothing sent (no commit, no deploy) |
+| 10 | Native viewer: open the library from Library Bookmarks with and without `availability.json` on the site | Tags, **Available now** and "N of M available" shown; "· updated <time>" only when the file decided the tags; without the file the inline tags (or none) and the catalogue still opens |
+
+If the Cloudflare p90 exceeds 20 s after the debounce, the guide's "usually
+under a minute" wording must change before release (plan G4/C.9). The build's
+kill switch is `availabilityLaneActivatedProvider` in
+`lib/core/di/src/availability_providers.dart`: set to `false`, a build
+behaves exactly as before the lane, and its next publish deletes the file it
+published.
+
 ---
 
 ## 7. Toolchain (what the pins mean)
@@ -409,7 +464,10 @@ Two deliberate asymmetries to confirm rather than "fix":
   repository or Cloudflare Worker), exports, network Refresh and map
   tiles are **user-directed transfers** to sites/OSM the user chose; a
   published location pin is the user's own deliberate publish choice (off by
-  default). If Play ever counts opt-in tiles as "sharing", the honest edit is
+  default). The automatic *Available / Not available* updates (ADR 0019; on
+  by default, switch in Settings → Data) go only to the user's own published
+  site and carry no borrower data — part of the same user-directed publish,
+  nothing reaches the developer. If Play ever counts opt-in tiles as "sharing", the honest edit is
   "Location → approximate, user-directed, not collected by the developer" —
   still no collection.
 - **Content rating** Everyone · **Target audience** 18+ (keeps the Families

@@ -1,6 +1,13 @@
 # Privacy Policy — Pitak
 
-_Effective date: 2026-10-30 · Publisher: Parallel Line Foundation_
+_Effective date: 2026-11-02 · Publisher: Parallel Line Foundation_
+
+_Changed 2026-11-02 — if you publish a site, the *Available / Not available*
+tags on it now update by themselves shortly after you lend or return an item
+(item 3; you can switch this off), and opening a saved library also requests
+and saves its `availability.json` (item 5). The tags were already public;
+they are just kept current. No borrower data is uploaded, and nothing new is
+collected about you._
 
 _Changed 2026-10-30 — wording only: the move paragraph now also says what
 Cancel move and Finish without retiring leave public, and that reconnecting to
@@ -70,8 +77,11 @@ produces a file you control.
 
 ## When anything leaves your device
 
-Network activity happens only when you explicitly ask for it, with one
-passive exception (item 8, Google Play builds only):
+Network activity happens only when you explicitly ask for it, with two
+exceptions: once you publish a site, Pitak keeps its *Available / Not
+available* tags up to date by itself (item 3; on by default, switch in
+Settings → Data), and the passive update check of Google Play builds
+(item 8):
 
 1. **ISBN lookup.** When you scan or type an ISBN and tap Lookup, that ISBN
    (and, if the first attempt finds nothing, its equivalent ISBN-10/ISBN-13
@@ -104,8 +114,17 @@ passive exception (item 8, Google Play builds only):
    repository you own, or a Cloudflare Worker in your own Cloudflare account.
    The published site is **public to anyone on the internet** — including the
    library name, any contact details or event posters you enter under
-   Publish, the book covers, and — if your borrowers vault is unlocked while
-   you publish — which items are available. Before upload, Pitak redacts
+   Publish, the book covers, and which items are available (only *Available*
+   or *Not available* — never who borrowed an item, how many copies are out
+   or when they are due). **Availability updates automatically:** by default,
+   shortly after you lend or return an item, Pitak uploads a small
+   `availability.json` file to the same site. It lists only the public item
+   keys (salted hashes that reveal no internal ID) of items whose every copy
+   is lent out, plus the time of the change. This happens only while Pitak is
+   open — nothing runs in the background — and a list that could not be sent
+   yet waits on your device (it holds only those public keys and times). You
+   can turn this off under Settings → Data; Pitak then deletes that file from
+   your site. Before upload, Pitak redacts
    private fields (notes, location, source, lender details), and photos are
    re-encoded with EXIF metadata — including GPS coordinates — stripped. If
    you type GPS coordinates under Publish › Basic info, a separate opt-in
@@ -150,9 +169,12 @@ passive exception (item 8, Google Play builds only):
    back from its public address to prove it serves the new files — up to 12
    cache-busted `books.json` requests, five seconds apart, for a catalogue
    publish; a Cloudflare publish also reads the marker, `library.json` (or its
-   absence), `events.json` and the poster files it just published. These are
-   unauthenticated public requests to the site you published, never API calls
-   that carry your token.
+   absence), `events.json` and the poster files it just published. An
+   automatic availability update is checked the same way: on GitHub Pages by
+   reading `availability.json` up to 13 times over about two and a half
+   minutes, on Cloudflare by reading the marker and `availability.json`. These
+   are unauthenticated public requests to the site you published, never API
+   calls that carry your token.
 
    You can also **move** a site from one host to the other. The new site is
    published and verified first; the old one then becomes a small "moved" page

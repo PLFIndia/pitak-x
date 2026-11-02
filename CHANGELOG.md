@@ -14,6 +14,69 @@ heading as part of the `chore(release):` commit.
 
 ## [Unreleased]
 
+### Added
+- **Availability fast lane (ADR 0019; publish-optimisation Phase 1, S2–S8):**
+  after a loan or return, the app publishes a small `availability.json`
+  (`{"schemaVersion":1,"keySet":…,"asOf":…,"out":[…]}`: the sorted public
+  keys of items whose every copy is lent out, never kind Other, `asOf`
+  floored to the minute) without rebuilding `books.json` or reading a cover.
+  The keepAlive `AvailabilityAutoPublisher` starts with the app
+  (`main.dart`) and drives the plain-Dart `AvailabilityLane`: the set is
+  saved before it is published (lane store, one SharedPreferences key, public
+  keys and times only), so it still goes out after the vault locks; 20 s
+  debounce; GitHub also 6 min spacing and ≤ 10 commits per rolling hour, every
+  commit counted by `CommitRecordingGitHubApi`; bounded backoff 1/2/5/10 min;
+  retries on resume (`AvailabilityLifecycleRelay`), **Update availability
+  now** and a successful catalogue publish. In-process only; the catalogue is
+  read only while loan counts are known.
+  - GitHub: `PublishAvailabilityUseCase` commits only that file (or its
+    deletion), saves the record `deployed`, and `DeferredPublishVerification`
+    proves it outside the publish queue (30 s, then every 10 s to 150 s).
+  - Cloudflare: `PublishAvailabilityToCloudflareUseCase` deploys a complete
+    version uploading only the file and the marker, reads both back (first
+    round at once), and can never prepare a whole-site replacement.
+  - Gates inside the queue: an active host, no pending move, and for a write
+    this phone's own keyed `books.json` live (`catalogueKeyed`). A file whose
+    keys the live catalogue may no longer carry is deleted.
+  - **Settings → Data → Publishing:** "Update availability on my site
+    automatically" (`AppSettings.autoPublishAvailability`, default on; off
+    publishes one removal). **Publish → Connection** gains an Availability
+    card with the status, **Update availability now** and a one-time notice.
+  - `availabilityLaneActivatedProvider` stays as the build's kill switch.
+- **Readers:** the web viewer (v8) and the native viewer read
+  `availability.json` (bound to the catalogue by `keySet`; AV15 caps: 1 MiB,
+  100,000 keys, key pattern, newer schema ignored) with one per-item rule,
+  pinned by shared fixtures and a web/native parity test; *Available / Not
+  available* labels ("All out" retired), an **Available now** filter and an
+  "N of M available · updated <time>" summary. The web viewer re-checks every
+  60 s while visible; the native viewer keeps a third saved copy (ADR 0018).
+- **Guide:** "Put your catalogue online" gains **Which host suits you?** and
+  a worked example (P7); its GitHub minutes are pinned to `AvailabilityPacing`.
+
+### Changed
+- **`books.json`** (schema still 1, additive): every item carries `key`
+  (SHA-256(salt ‖ `"item:" + id`), first 16 hex) and the document a top-level
+  `keySet`. Every catalogue publish now reads the cover salt and fails closed
+  ("Pitak could not read its publishing key. Nothing was published.").
+- The inline tag goes through `isBookUnavailable` (the clamp the old copy
+  lacked; identical output for valid rows).
+- GitHub records store the **proof path** of their last commit and the
+  pre-publish check reads it; a removal is proven by an exact 404.
+- A restore or an overwrite merge first clears `catalogueKeyed` in both
+  publish records and the lane's saved sets, inside the publish queue; a
+  reset that cannot be saved refuses the restore with the device unchanged
+  (J9).
+- The Cloudflare deploy pipeline no longer depends on the replacement
+  preparation; both Cloudflare use cases share `CloudflarePublishStarter`.
+- `PRIVACY.md` (effective 2026-11-02): availability updates automatically;
+  the viewer requests and saves `availability.json`.
+
+### Fixed
+- A GitHub catalogue publish after an unconfirmed **events** commit could
+  mark that commit live from an unchanged `books.json` (plan A.1 item 8).
+- Web viewer: the "This file was created by a newer Pitak" notice was
+  overwritten by the item count at once.
+
 ## [1.9.0] - 2026-10 (tag `1.9.0`, versionCode 32)
 
 Release sentinel (`tool/release_build.sh --sentinel`): `Set up Cloudflare Workers`.

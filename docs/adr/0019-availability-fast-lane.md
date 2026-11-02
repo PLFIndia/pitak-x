@@ -278,6 +278,17 @@ rebuilding the catalogue.** That automatic publisher is called the **lane**.
      - **Shipped dark.** The lane, the Settings switch and the status row exist
        from S6 behind one build switch that S8 turns on with the guide copy
        (AV16); until then every publish treats the lane as off.
+   - *Clarification (S8, plan A.6 #77–#80):*
+     - **Switched on.** The build switch is true and stays as the release
+       kill switch: set to false, a build behaves as before S6 and its next
+       publish deletes the file it published. `PitakaApp` (`main.dart`)
+       builds the lane at app start, so a set saved before the app closed is
+       retried then; the lifecycle relay sits next to `AppLockObserver`.
+     - **The catalogue is read only while loan counts are known.** With the
+       vault locked nothing can be computed, so the lane does not read every
+       row at app start.
+     - **The first thing to do comes first.** With unknown counts and nothing
+       ever published, a missing host is reported before "unlock the vault".
 
 10. **GitHub path (AV12).** An availability commit does **not** wait for Pages
     inside the queue. Its record is saved `deployed` with a **proof path**, and
@@ -349,6 +360,17 @@ rebuilding the catalogue.** That automatic publisher is called the **lane**.
     includes `availability.json` from the saved snapshot. Retirement deletes it
     like every other owned path. Its `asOf` is excluded from the replacement
     digest, as `exportedAt` already is (`publish_snapshot_digest.dart`).
+    - *Clarification (S8, plan A.6 #67 and #81):* the snapshot's file is
+      computed from the loan counts of the move itself, so it is included
+      when the vault is unlocked. A move made while the vault is **locked**
+      carries neither `availability.json` nor inline tags: the destination
+      shows no tag (never a wrong one) until the lane's next computation with
+      known counts, which publishes to the new site because its record no
+      longer describes the active target. Any loan or return needs the vault
+      unlocked, so the gap ends with the next one. Carrying the last
+      published set instead would need every key of it in the lane store
+      (up to 50,000) and its own J9/J10 guards, for a gap that closes by
+      itself.
 
 13. **Product-owner decisions taken in S1 (2026-11-01).**
     - **a. Targets.** The Cloudflare lane target is **≤ 20 s measured from the
@@ -357,6 +379,13 @@ rebuilding the catalogue.** That automatic publisher is called the **lane**.
       while every gate stays (see the trade-off below). Draft copy: Cloudflare
       "usually under a minute"; GitHub "about a minute, up to about 7 minutes in
       a busy hour". S8's device measurement sets the final words (G4).
+      *S8 (plan A.6 #80):* the guide ships these words, the GitHub numbers
+      pinned to `AvailabilityPacing` by a test; the Cloudflare wording stands
+      unless the G.4 measurement shows a p90 above 20 s after the debounce.
+      The lane's own sentences got their final words (they name **Publish
+      catalogue now**, **Settings → Data** and the **Borrowers vault**; the
+      repair sentence of Decision 11 now reads "Your site needs a full
+      publish: tap Publish catalogue now and review the replacement.").
     - **b.** `asOf` is rounded down to the whole minute. Readers show minutes,
       so nothing finer is published.
     - **c.** Items of kind Other are not listed in `out`. No reader shows their

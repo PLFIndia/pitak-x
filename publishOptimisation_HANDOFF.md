@@ -1,4 +1,4 @@
-# Publish optimisation — handoff (S7 complete, 2026-11-02)
+# Publish optimisation — handoff (S8 code and docs complete, 2026-11-02)
 
 **Branch:** `publishOptimisation` (from `03313a3`, release 1.9.0+32).
 **Plan:** `publishOptimisation_PLAN.md` (product decisions A.3, engineering decisions A.4, deviations A.6, measurements Appendix A).
@@ -17,11 +17,17 @@ go-ahead ("go ahead for next session", 2026-11-02, the same words again).
 S7 — Readers — **complete** (§S7), started on the product owner's go-ahead
 ("go ahead for next session", 2026-11-02, the same words again); the
 product owner decided J10 at its start (key-set id in both files).
-**S8 (switch on) has NOT started. Do not start it until the product owner
-explicitly says so** (§6 is the prepared checklist).
+S8 — Switch on — **code and docs complete** (§S8), started on the product
+owner's go-ahead ("go ahead for next session", 2026-11-02, the same words
+again). **Two S8 items need the product owner and are still open:** the G.4
+device evidence on both hosts, and the Linux golden regeneration (it needs
+this branch pushed). §6 is the checklist for both.
+**S9 (Phase 2) has NOT started. Do not start it until the product owner
+explicitly says so, and not before §6 is done** (Phase 1 is the release
+candidate, plan G.5).
 
-> Read this file first in any new session. §S7 is the newest state, then
-> §S6, §S5, §S4, §S3, §S2 and §0 (S1). §1–§5 are the S0 record (plan
+> Read this file first in any new session. §S8 is the newest state, then
+> §S7, §S6, §S5, §S4, §S3, §S2 and §0 (S1). §1–§5 are the S0 record (plan
 > Appendix A cites the verbatim lines in §3), kept unchanged.
 
 > **Standing product decision P8 — public by design (product owner,
@@ -32,6 +38,109 @@ explicitly says so** (§6 is the prepared checklist).
 > settled and needs no new review: borrower names and loan details (P1, in the
 > vault) and credentials and tokens (security, `AGENTS.md` §6). `PRIVACY.md`
 > only has to state accurately what is uploaded (a store requirement).
+
+---
+
+## S8 — Switch on (code and docs; the lane is live in this build)
+
+**Commits:** `de542f8` (switch, `main.dart`, final words, guide copy,
+tests), then the docs commit (PRIVACY, README, CHANGELOG, ARCHITECTURE,
+RELEASING, ADR 0019, mockup, plan, this handoff).
+
+**What changed for users (this build, once released):**
+- **Availability updates by itself.** After a loan or return the app
+  publishes `availability.json` to the active host (20 s debounce; GitHub
+  also 6 min spacing and ≤ 10 commits an hour). It starts at app start, so a
+  set saved before the app closed goes out then; a resume retries.
+- **Settings → Data → Publishing:** "Update availability on my site
+  automatically" (on by default). **Publish → Connection:** the
+  *Availability* card (status, **Update availability now**, the one-time
+  notice).
+- **Every catalogue publish with the vault unlocked** now also writes
+  `availability.json` in the same commit/deploy (AV8). With the lane off, the
+  next publish deletes it.
+- **Guide:** "Which host suits you?" + Asha's example; "What goes online",
+  "Every time after that" and the vault guide's last bullet say the page
+  updates by itself.
+
+**Decisions (plan A.6 #77–#83; none needed the product owner, but #80 is
+copy the product owner may want to read):**
+
+| A.6 | Decision |
+|---|---|
+| #77 | The build switch is `true` and **kept** as the release kill switch (one line takes the lane out of a build). `PitakaApp` builds the lane with `ref.listen`; `AvailabilityLifecycleRelay` wraps `MaterialApp` right inside `AppLockObserver`. |
+| #78 | The lane reads the catalogue only while loan counts are known (no full-table read at every app start with the vault locked). |
+| #79 | Unknown counts + nothing ever published: "Connect a publishing host first." comes before "unlock the vault". |
+| #80 | Final words — changed: `catalogueNotKeyed` "Tap Publish catalogue now once; after that, availability updates by itself."; `repairSite` "Your site needs a full publish: tap Publish catalogue now and review the replacement."; `unlockVault` "Unlock the Borrowers vault once so Pitak can see what is lent out."; off "Availability updates are off. Turn them on in Settings → Data."; notice "Availability now updates by itself after you lend or return an item. You can turn this off in Settings → Data." Everything else confirmed as drafted (guide: "after each loan" → "as she lends"). |
+| #81 | A.6 #67 decided: a move with the vault locked carries no set; the lane publishes to the new site at its next computation with known counts. ADR 0019 Decision 12 clarified. |
+| #82 | Guide copy-length budget 3800 → 5000 dp (`guide_page_test.dart`; the publish guide ends at ≈ 4,910 dp under the test font). New pins: the table's place, "about 10 updates an hour", no old "only if the vault was unlocked" sentence. The publish golden pins the Availability card to a fixed lane view. |
+| #83 | Fastlane `N.txt` files are written in the release commit (RELEASING §6.1); the drafted Play text is below. README's viewer line lost its outdated "no persistent cache" claim. |
+
+**Drafted Play / F-Droid notes for the release commit** (375 characters by
+`tool/check_fastlane_changelog_chars.py`'s rule; copy into `N.txt` and
+`N1–3.txt` when the versionCode is decided):
+
+```
+* Lend or return an item and your web page now shows Available / Not available by itself: usually in under a minute on Cloudflare, about a minute on GitHub Pages. Switch it off in Settings → Data.
+* Your page and saved libraries add an "Available now" filter and show how many items are available.
+* How Pitak works: which host suits you, with an example.
+* Publishing fixes.
+```
+
+The "usually in under a minute on Cloudflare" claim stands only if G.4
+measures a p90 ≤ 20 s after the debounce (plan C.9, G4).
+
+**Files changed (code):** `core/di/src/availability_providers.dart` (+ `.g`),
+`main.dart`, `availability_auto_publisher.dart` (+ `.g`),
+`availability_lane.dart`, `availability_lane_status.dart`,
+`availability_publish_result.dart`, `availability_status_row.dart`,
+`availability_lifecycle_relay.dart`, `connection_tab.dart`,
+`publishing_settings_group.dart` (doc comments), `publishing_guides.dart`,
+`library_guides.dart`. **Tests:** `widget_test.dart` (lane built once at app
+start; relay above `MaterialApp`; a resume reaches it),
+`availability_lane_test.dart` (host first; last time kept),
+`availability_auto_publisher_test.dart` (counted catalogue reads),
+`availability_status_row_test.dart` (final words pinned),
+`guide_catalog_test.dart` (counts `[1, 2, 3, 1, 6, 2, 1, 1, 3]`, minutes and
+budget pinned, table place, old sentence gone), `guide_page_test.dart`
+(budget, the table renders), `availability_providers_test.dart` (switch on),
+`availability_lifecycle_relay_test.dart` (wording), `key_screens_test.dart`
+(fixed lane view in the publish golden).
+
+**Docs:** `PRIVACY.md` (effective 2026-11-02: item 3 says availability
+updates automatically, what the file holds, that a waiting list stays on the
+device, the switch; the read-back of a lane update; the "only when you ask"
+sentence names the lane as an exception), `README.md`, `CHANGELOG.md`
+(`[Unreleased]` covers Phase 1), `docs/ARCHITECTURE.md` (§3 module map,
+new §5.9, a §6 bullet), `docs/RELEASING.md` (§6.1 item 9, new §6.6 = the G.4
+steps, §8 Data safety), ADR 0019 (S8 clarifications in Decisions 9, 12 and
+13a), `docs/mockups/how-pitak-works.md` (§3.3 mirror, §3.8, §4 item 7, §5
+facts), plan (status, A.6 #77–#83, C.4/C.9/C.11 notes).
+
+**Gates at the end of S8 (2026-11-02, macOS, Flutter 3.44.2 via
+`.fvm/flutter_sdk`):**
+- build_runner: committed with the source (`availability_providers.g.dart`
+  and `availability_auto_publisher.g.dart` source hashes); a second run
+  changed nothing.
+- `flutter analyze lib test integration_test`: no issues.
+- `dart format --set-exit-if-changed lib test integration_test`: 0 changed.
+- `flutter test --coverage`: **5,324 passed** (S7 ended at 5,315); the 10
+  failures are the same 10 macOS goldens in `test/golden/key_screens_test.dart`,
+  checked by name against the S7 list. Before the golden test pinned the
+  lane view, the publish golden logged "availability lane did not start:
+  MissingPluginException" — fixed (A.6 #82).
+- **Goldens to regenerate on Linux:** `published_catalogue_populated_light/dark`
+  (S7) and `publish_connection` (S8: the Availability card). See §6.
+- Line coverage: `availability_status_row.dart`, `availability_lifecycle_relay.dart`,
+  `availability_lane_status.dart`, `availability_publish_result.dart`,
+  `publishing_settings_group.dart` 100 %; `availability_lane.dart` 99.5 % and
+  `availability_auto_publisher.dart` 98.4 % and `availability_providers.dart`
+  97.7 % (the same fail-closed / lazy-journal lines as in S6);
+  `connection_tab.dart` 98.8 %; `main.dart` 71.4 % — the new lines are
+  covered, the misses are `main()` itself and the older FLAG_SECURE listener
+  body.
+- File sizes ≤ 500 (largest touched: `availability_lane.dart` 476).
+- No new dependency; `pubspec.lock` and Rust untouched. CSP unchanged.
 
 ---
 
@@ -961,52 +1070,56 @@ throwaway repo.
 
 ---
 
-## 6. Next: S8 (switch on) — on hold until the product owner says go
+## 6. Next: finish S8 (needs the product owner), then S9 on go-ahead
 
-S7 (readers) is done; §S7 records how its checklist landed (the old S7
-checklist is superseded by plan A.6 #68–#76). S8 depends on S6 and S7 and
-starts only on the product owner's go-ahead. It is the release candidate of
-Phase 1 (plan G.5).
+S8's code and docs are done (§S8). Phase 1 becomes the release candidate
+(plan G.5) only after the two items below. Neither can be done by an agent
+alone: the first needs the phone and the hosts, the second needs this
+branch on GitHub.
 
-**S8 — Switch on (plan Part F "S8"; C.9; Part H; G.4).**
+**1. Goldens (repository rule: only the Linux workflow regenerates them).**
+`published_catalogue_populated_light/dark` changed in S7; S8 changes
+`publish_connection` (the Availability card now renders, pinned to "Connect a
+publishing host first."). The other 7 macOS failures are the usual renderer
+difference and should come back unchanged.
 
-- Flip `availabilityLaneActivatedProvider` to `true` (one line,
-  `core/di/src/availability_providers.dart`) in the SAME change as the guide
-  copy (C.9, AV16) and the `PRIVACY.md` sentence that availability now
-  updates by itself (P8: a statement of fact; item 5 already names the file
-  the viewer reads).
-- Start the lane in `main.dart`: keep `availabilityAutoPublisherProvider`
-  alive with `ref.listen` in `PitakaApp` (like `screenCaptureProtected`), and
-  place `AvailabilityLifecycleRelay` next to `AppLockObserver`.
-- Final words for every draft sentence: `AvailabilityLaneMessages`,
-  `AvailabilityPublishMessages`, the status-row texts and the notice
-  (`availability_status_row.dart`), the Settings switch copy, and the S7
-  viewer texts (`published_availability_summary.dart`: from-file /
-  from-catalogue sentences and the two notes; web v8 summary wording).
-- Guide copy and its tests (C.9): the counts in `guide_catalog_test.dart`,
-  the "up to about ${gitHubSpacing.inMinutes + 1} minutes" pin, the mirror
-  in `docs/mockups/how-pitak-works.md` §3.3.
-- Decide A.6 #67 (AV18 for a move while the vault is locked).
-- Docs (Part H): ARCHITECTURE availability section and lane (§5/§6; S3 and
-  S7 already updated §5.7), README feature line and host choice, CHANGELOG
-  and fastlane notes, RELEASING G.4 evidence steps.
-- **Goldens:** run the Linux `update_goldens` workflow (S7 changed
-  `published_catalogue_populated_light/dark`; S8's own UI changes — the
-  Settings switch and the status row once activated — change
-  `publish_connection` and possibly more) and commit its PNGs.
-- G.4 device evidence on both hosts, rows 1–10 (row 10, the native viewer
-  with and without `availability.json`, is now testable); measure lend →
-  live with the `publishTimings` build (operations `availability` and
-  `cloudflareAvailability`; Appendix A "Lend → visible" rows). Build with
-  `flutter clean` first and check the packaged `libapp.so` (A.6 #13).
-- Remember: from S8 on, an unreadable lane store or a restore leaves the
-  lane "not ready" until the next catalogue publish (J9, by design); a new
-  phone (new salt) also waits for one catalogue publish, and readers then
-  ignore any old `availability.json` until it is overwritten (J10).
-- Run the gates with the pinned SDK: `export PATH="$PWD/.fvm/flutter_sdk/bin:$PATH"`
-  (the `flutter` on PATH is 3.41.1; the pubspec needs 3.44.2).
+```bash
+git push -u origin publishOptimisation          # first push of this branch
+gh workflow run update_goldens.yml --ref publishOptimisation
+gh run list --workflow update_goldens.yml --limit 1   # wait for it, then:
+gh run download <run-id> -n goldens -D test/golden/goldens   # the `goldens` artefact
+```
 
-Every gate in `AGENTS.md` §11 must be green at the end (CI runs
+Commit the PNGs (`test(golden): regenerate on Linux after S7/S8`) and check
+CI is green on the branch.
+
+**2. G.4 device evidence on both hosts** — the steps, the build commands
+(`flutter clean` first, the `publishTimings` build, the `libapp.so` check)
+and the ten rows are in `docs/RELEASING.md` §6.6. Record each row here
+(date, commit, host, PASS/FAIL, times) and fill plan Appendix A's two
+"Lend → visible" rows plus the `availability` / `cloudflareAvailability`
+timing lines. Device notes from S0 (§5) still apply: `adb` is at
+`$HOME/Library/Android/sdk/platform-tools`, device id `678c5642`; the
+F-Droid app's Cloudflare record is stale (the Worker serves the fixture
+site), so its first Cloudflare catalogue publish will offer a reviewed
+replacement — accept it, then run the rows. If the Cloudflare p90 after the
+debounce is above 20 s, change the "usually under a minute" wording (guide,
+README, the drafted Play notes) before release (plan C.9, G4). If a row
+fails in a way that cannot be fixed quickly, set
+`availabilityLaneActivatedProvider` to `false` (A.6 #77) and record why.
+
+Remember while testing (by design, not defects): a restore, an unreadable
+lane store or a new phone (new salt) leaves the lane "not ready" until one
+catalogue publish (J9/J10); a move made with the vault locked shows no tags
+at the new site until the vault is next unlocked (A.6 #81); "Update
+availability now" on GitHub still counts towards the 10-per-hour budget.
+
+**Then: S9 (Phase 2, covers) — only on the product owner's go-ahead.** Plan
+Part D / Part F "S9": ADR 0020, Fix 1 (CV1–CV4) and its invariant test.
+
+Run the gates with the pinned SDK: `export PATH="$PWD/.fvm/flutter_sdk/bin:$PATH"`
+(the `flutter` on PATH is 3.41.1; the pubspec needs 3.44.2). Every gate in
+`AGENTS.md` §11 must be green at the end (CI runs
 `flutter analyze lib test integration_test`; a bare `dart analyze` also scans
 the vendored `rust_builder/cargokit`, whose old findings are not ours).
 Commit messages use Conventional Commits.

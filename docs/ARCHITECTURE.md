@@ -191,7 +191,9 @@ lib/
                           assets (pasted restricted token, assets-only Worker);
                           shared section builders, strict complete snapshots,
                           sealed targets, schema-2 manifests, moves/retirement;
-                          PII redaction
+                          PII redaction; the availability lane (ADR 0019,
+                          §5.9): availability.json published by itself after
+                          a loan or return
     events/               event posters for the published site
     network/              library network/bookmarks (ADR 0012): network_libraries
                           table, library.json codec + bounded fetcher, card QR,
@@ -655,6 +657,55 @@ target passed to the current operation — that is what lets a move publish the
   only exact app-owned paths from the validated manifest, in the same
   expected-head commit; unrelated files always survive.
 
+### 5.9 `availability.json` and the availability lane (ADR 0019)
+
+The one frequently changing public fact — whether an item is *Available* or
+*Not available* — has its own small file and its own automatic publisher, so a
+loan never rebuilds the catalogue or reads a cover.
+
+- **The file** (owned by `SiteSection.availability`; schema **1**):
+  `{"schemaVersion":1,"keySet":"<16 hex>","asOf":<epoch ms, whole minute>,"out":["<key>",…]}`.
+  `out` lists, sorted and unique, the `key` of every live item whose every
+  copy is lent out (`isBookUnavailable`, the one rule the inline tag also
+  uses), never an item of kind Other; ≤ 50,000 keys from the writer. One
+  compact encoder, so the same set is the same bytes and is never re-sent.
+  No counts, due dates or borrower data (P1).
+- **Readers** (web viewer v8, native viewer) decide each item's tag in one
+  per-item rule: a valid file whose `keySet` equals the catalogue's decides
+  every item with a valid `key` (Not available when in `out`, else
+  Available); otherwise the inline `availability` of `books.json`, if any.
+  A missing, invalid (> 1 MiB, > 100,000 keys, bad key, newer schema) or
+  unbound file counts as missing. `asOf` is shown only when plausible. The
+  native viewer keeps a third saved copy (ADR 0018); the web viewer re-checks
+  every 60 s while visible, revalidating, never with a query string.
+- **The lane** (`features/publish/application/availability/`):
+  `AvailabilityAutoPublisher` (keepAlive notifier, built by `PitakaApp` at app
+  start) feeds the plain-Dart `AvailabilityLane`, which computes the set from
+  `activeLoanCountsProvider` and the catalogue, **saves it before publishing**
+  (the lane store, one SharedPreferences key holding only public keys and
+  times), paces it (20 s debounce; GitHub also 6 min spacing and ≤ 10 commits
+  per rolling hour, every GitHub commit counted at `CommitRecordingGitHubApi`)
+  and runs `AvailabilityPublishRunner` inside the publish queue. Unknown counts
+  (vault locked) never compute a set; a saved set still goes out. Retries: the
+  next change, app resume (`AvailabilityLifecycleRelay`), **Update
+  availability now**, a successful catalogue publish, or the bounded backoff
+  (1, 2, 5, 10 min). In-process only: nothing runs while the app is closed.
+- **Gates**, inside the queue: an active, connected host with no pending move;
+  for a write, the live `books.json` must be this phone's own keyed publish
+  (`catalogueKeyed` in the record, plus the GitHub head blob or the Cloudflare
+  marker). GitHub commits only `availability.json` (no Pages wait in the
+  queue; a deferred check proves it through the recorded proof path); a
+  Cloudflare deploy uploads only the file and the marker and reads both back.
+  The lane never starts a whole-site replacement.
+- **Keys and restores.** `key` and `keySet` come from the cover salt
+  (§5.7). A restore or an overwrite merge clears `catalogueKeyed` and the
+  lane's saved sets first (J9); a publish that writes no fresh set keeps a
+  recorded file only while the record still vouches for its keys.
+- **Switch and kill switch.** `AppSettings.autoPublishAvailability` (Settings
+  → Data, default on): off publishes one removal and clears the saved sets.
+  `availabilityLaneActivatedProvider` is the build's kill switch: false makes
+  a build behave as before the lane.
+
 ---
 
 ## 6. Standing design decisions (short form; details in `docs/adr/`)
@@ -744,6 +795,13 @@ target passed to the current operation — that is what lets a move publish the
   host becomes a moved page only after the new site is verified and the old
   one is verifiably retired, and other phones never follow a move on their
   own.
+- **Availability has its own lane** (ADR 0019, §5.9). The coarse *Available /
+  Not available* tag is the only public data that changes all day, so it is a
+  separate tiny file published by itself after a loan or return, bound to the
+  catalogue by `keySet`. Unknown never means "available": a locked vault
+  computes nothing, an unbound file is ignored, and a file whose keys the
+  live catalogue may no longer carry is deleted, so readers fall back to the
+  inline tag.
 - **Lookup order:** Open Library → Google Books → in-memory cache; ISBN-10↔13
   retry on double not-found.
 - **Catalogue-item hard delete stays vault-gated**; periodical-title hard
