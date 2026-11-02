@@ -1,4 +1,4 @@
-# Publish optimisation — handoff (S10b complete, 2026-11-02)
+# Publish optimisation — handoff (S11 complete, 2026-11-02)
 
 **Branch:** `publishOptimisation` (from `03313a3`, release 1.9.0+32).
 **Plan:** `publishOptimisation_PLAN.md` (product decisions A.3, engineering decisions A.4, deviations A.6, measurements Appendix A).
@@ -48,15 +48,23 @@ session of its own before S11**, and allowed the one real-API check (a later
 tree may name blobs from a refused attempt) on a throwaway `PLFIndia` repo;
 it passed (§S10b). **J8 is closed.** New observation J15 (no progress count
 during a long paced upload).
-**S11 (Fix 2, backup publish state) has NOT started. Do not start it until
-the product owner explicitly says so.** Open decisions for the product
-owner: J11 (§S9), J12–J14 (§G4), J15 (§S10b), and the copy of the new
-rate-limit messages (§S10b).
+S11 — Fix 2 (backup publish state) — **complete** (§S11), started on the
+product owner's go-ahead ("go ahead for the next item", 2026-11-02). At the
+start the product owner **decided the adoption rule: a restore adopts the
+backup's publishing record only on a phone that has not published itself**
+(plan A.6 #109). J5 is closed (A.6 #110). **Still open for Phase 2:** the
+device evidence "a restore on a second phone uploads no covers" (§S11 has
+the steps; A.6 #118).
+**S12 (Phase 3: SP1, GitHub returns after the commit; ADR 0017 amendment)
+has NOT started. Do not start it until the product owner explicitly says
+so.** Open decisions for the product owner: J11 (§S9), J12–J14 (§G4), J15
+(§S10b), the copy of the rate-limit messages (§S10b) and the copy of the
+backup/restore lines (§S11). New engineering observation J16 (§S11).
 
-> Read this file first in any new session. §S10b is the newest state, then
-> §S10, §G4 (device evidence), §S9, §S8, §S7, §S6, §S5, §S4, §S3, §S2 and §0
-> (S1). §1–§5 are the S0 record (plan Appendix A cites the verbatim lines
-> in §3), kept unchanged.
+> Read this file first in any new session. §S11 is the newest state, then
+> §S10b, §S10, §G4 (device evidence), §S9, §S8, §S7, §S6, §S5, §S4, §S3, §S2
+> and §0 (S1). §1–§5 are the S0 record (plan Appendix A cites the verbatim
+> lines in §3), kept unchanged.
 
 > **Standing product decision P8 — public by design (product owner,
 > 2026-11-01).** Pitak is for **public libraries** whose catalogues exist for
@@ -66,6 +74,179 @@ rate-limit messages (§S10b).
 > settled and needs no new review: borrower names and loan details (P1, in the
 > vault) and credentials and tokens (security, `AGENTS.md` §6). `PRIVACY.md`
 > only has to state accurately what is uploaded (a store requirement).
+
+---
+
+## S11 — Fix 2: a backup carries the publishing record (CV6/CV7)
+
+**Started:** 2026-11-02, product owner's go-ahead "go ahead for the next
+item" (taken as S11, the next session in plan Part F; stated in the question
+below). Before building, the product owner was asked one question and chose
+**"Only when this phone hasn't published yet (Recommended)"**: the plan's
+CV7 also adopted "when the records describe the same target as its current
+connection", which would let an OLDER backup record replace a NEWER phone
+record for the same site (files published since then stay on the site for
+good; with another salt every cover is renamed back; the most common case is
+the same phone restoring its own backup).
+
+**Commits:** `920c940` (code + tests), then the docs commit (ADR 0014
+amendment W5, ADR 0020 Decision 7 clarification, ADR index, ARCHITECTURE
+§5.5/§5.8, PRIVACY, SECURITY, README, CHANGELOG, the guide mockup, plan,
+this handoff).
+
+**What changed for users (once released):**
+- **Create backup** also saves the website publishing record when the phone
+  has published (`publish_state.json`): the cover-name salt, the GitHub and
+  Cloudflare records, the active host and verified address. Never a sign-in,
+  token, pending move, unconfirmed deploy, upload journal or lane store. If
+  it cannot be read the backup still saves and says so.
+- **Restore** lists it ("• Website publishing record for <site> (used only
+  if this phone has not published yet)") and, after the switch, either
+  adopts it — the phone keeps the same cover names and knows what is online,
+  so its next publish uploads no cover already there — or keeps this
+  phone's own publishing ("Publishing settings on this phone were kept.").
+  The user still signs in to GitHub/Cloudflare again (sign-ins are not in
+  backups); the share address of the backup's site is available at once.
+- After an adoption the availability lane says "Tap Publish catalogue now
+  once…" until the first catalogue publish (keys are re-vouched by this
+  phone).
+
+**The rules (as built; plan A.6 #109–#118):**
+
+| Part | Where | Rule |
+|---|---|---|
+| Entry | `PublishStateBackupCodec` (publish domain), `hasPublishState` | `{schemaVersion 1, coverSalt, gitHubRecord?, cloudflareRecord?, host?{active, verifiedTarget?}}`. Read ≤ 16 MiB (bytes, before UTF-8), depth ≤ 8, schema exactly 1, salt exactly 16 bytes, GitHub record checked field by field (repo, branch, 40-hex head/shas, only Pitak-owned safe paths, ≤ 20,000, known state, bool ownership, bounded cover sources), Cloudflare record must survive its own strict decoder, target via `PublishTargetJson`. One bad field = whole entry unreadable. No site named = refused. |
+| Writer | `PublishStateBackupReader` → `CreateBackupUseCase` | Only when a GitHub record with a valid repo, a Cloudflare record or a verified address exists; not via the publish queue (a paced upload must not block a backup). The use case re-decodes the encoded entry and checks the bound; otherwise left out + `missingPublishState`. |
+| Reader | `readBackupExtras` | Local cover sources kept only for `covers/<leaf>` files the archive carries (same entries + leaf check as `buildRestoredCovers`); `file://` never. |
+| Rule | `PublishStateAdoptionRule` | Keep this phone's state if: journal proves a site or has a pending move; either record names a site; an unconfirmed Cloudflare deploy exists; the phone chose another host; any connection (GitHub repo, Cloudflare Worker) is not exactly the backup's ACTIVE site. Else adopt. |
+| Adoption | `RestoredPublishStateAdopter` via `RestoreController` | After the switch, through `CatalogueKeysReset.beforeIdsChange` (publish queue; the lane forgets old-salt sets). Reads this phone inside the queue (unreadable → `notApplied`), then salt → GitHub record → Cloudflare record → journal (`PublishHostStateRepository.adoptFromBackup`, which re-checks the journal half). Records saved `withoutCatalogueKeys()`. Any failed write undoes the earlier ones (journal last). |
+| Salt | `ReplaceablePublishCoverSaltStore` | A separate port; `SecureStorageCoverSaltStore.replace` checks length/range first; only the adopter holds it (`publish_salt_invariant_test.dart`). |
+
+**Copy for the product owner to read (plan A.6 #117):**
+- Create backup, intro (added): "If you publish a website, its publishing
+  record is included too (which site, and which files are already online —
+  no passwords or tokens), so a restored phone does not upload every cover
+  again."
+- Create backup, "Not included": "…your events page and posters, library
+  logo, contact details, your GitHub or Cloudflare sign-in, and app settings
+  — those need to be set up again after a restore. The library identity,
+  saved-libraries list and publishing record travel as plain, unencrypted
+  text inside the file — keep the backup private."
+- Missing note: "Note: this backup does not carry your website publishing
+  record — it could not be read. Everything else is inside." (lists join as
+  "a, b and c").
+- Restore contents: "• Website publishing record for
+  https://…/ (used only if this phone has not published yet)"; unreadable:
+  "• Website publishing record (unreadable — it will not be used)".
+- Restore warning box: "…Events, the library logo, app settings and your
+  publishing sign-in are not restored. This cannot be undone." (was
+  "…and publishing setup are not restored.")
+- Outcome: adopted "This phone now continues the website from the backup:
+  covers already online will not be uploaded again. If Publish asks you to
+  connect, sign in to the same account and site."; kept "Publishing settings
+  on this phone were kept." (the plan's words); not applied "The website
+  publishing record in this backup could not be applied; publishing settings
+  on this phone are unchanged."; unreadable "…could not be read; publishing
+  settings on this phone are unchanged."
+- Guide "Backup — what is inside" (new paragraph): "If you publish a
+  website, its publishing record goes in too, so a new phone that has not
+  published yet continues the same site without uploading every cover
+  again." and "**Not inside:** events and posters, logo, contact details,
+  your GitHub or Cloudflare sign-in, app settings…". Mockup §3 and its facts
+  table mirror it.
+
+**Security notes (skill checklist):** no credential can reach the entry —
+the reader takes no credential store (pinned by a source check), the codec's
+top-level keys are a whitelist, and the round-trip test scans every archive
+entry for token-like text. Hostile input is bounded before parsing and
+whitelisted (a crafted record can claim only Pitak's own path shapes, so it
+cannot make a publish delete a person's files). Logs carry error types and
+store names only. One behaviour to know: an adopted verified address becomes
+the share/QR address at once, until this phone's first verified publish; a
+crafted backup could name any valid site — the same trust as restoring its
+catalogue, and the Restore screen names the site before the user restores.
+
+**Device evidence still open (G.5 Phase 2; A.6 #118).** Suggested steps, on
+the timing build (`--dart-define=publishTimings=true`, clean build):
+1. Phone A publishes the test library to GitHub (and/or Cloudflare); create a
+   backup; the manifest shows `hasPublishState: true`.
+2. Phone B (fresh install, or app data cleared): restore it. Expect "This
+   phone now continues the website…".
+3. On B: sign in to the same GitHub account, pick the same repo; publish
+   catalogue. Expect `coverDecisions=…(coversRead=0,coversReused=N)` and a
+   commit of only `books.json` (+ `availability.json` with the vault
+   unlocked); no new `covers/*` on the branch.
+4. Cloudflare variant: reconnect the same Worker; publish. Expect no
+   whole-site replacement prompt (nothing published since the backup) and an
+   upload of a few KB.
+5. Negative: restore the same backup on a phone that already publishes →
+   "Publishing settings on this phone were kept."; its record unchanged.
+
+**New engineering observation — plan J16:** `PublishManifest.fromJson`
+casts `ownershipConfirmed` with `as bool?`, so a damaged local
+`publish_manifest.json` with another type would throw a `TypeError` the
+file store does not catch. Pre-existing, local file only; the backup codec
+checks the type first. Not fixed (out of scope); small engineering fix.
+
+**Files changed (code):** new `domain/publish_state_backup.dart`,
+`publish_state_backup_codec.dart`, `publish_state_adoption.dart`,
+`publish_state_backup_ports.dart`, `publish_target_json.dart`;
+`domain/publish_cover_ids.dart` (`ReplaceablePublishCoverSaltStore`),
+`site/previous_publication.dart` (`coverSourcesKeptAfterNewCovers`), both
+records (`withoutLocalCoverSources(exceptLeaves:)`); new application
+`site/publish_state_backup_reader.dart`, `site/restored_publish_state_adopter.dart`;
+`site/publish_host_state_repository.dart` (`adoptFromBackup`);
+`infrastructure/secure_storage_cover_salt_store.dart` (`replace`),
+`prefs_publish_host_store.dart` (uses `PublishTargetJson`, stored format
+unchanged); backup `backup_manifest.dart`, `backup_archive_builder.dart`,
+`backup_archive_writer.dart` (484), `backup_extras_reader.dart`,
+`restore_summary.dart`, `archive_inspection.dart`, `create_backup_result.dart`,
+`restore_backup.dart` (497), `create_backup_use_case.dart`,
+`restore_controller.dart`; presentation `create_backup_page.dart`,
+`restore_page.dart` (500 → 263) and new `widgets/restore_summary_widgets.dart`
+(the two read-only views moved unchanged + the new lines); guide
+`data_and_network_guides.dart`; DI new `core/di/src/publish_state_providers.dart`
+(+ `.g`), `providers.dart`, `backup_providers.dart` (+ `.g`).
+**Tests:** new `domain/publish_target_json_test.dart` (6),
+`publish_state_backup_test.dart` (13), `publish_state_backup_codec_test.dart`
+(25), `publish_state_adoption_rule_test.dart` (12),
+`application/restored_publish_state_adopter_test.dart` (21),
+`publish_state_backup_reader_test.dart` (9),
+`infrastructure/secure_storage_cover_salt_store_test.dart` (4),
+`backup/backup_publish_state_round_trip_test.dart` (1),
+`backup/restore_summary_widgets_test.dart` (10),
+`core/di/publish_state_providers_test.dart` (3), support
+`publish_state_fixtures.dart`; new cases in the host-repository (6),
+manifest, writer, restore (5), restore-controller (5), create-use-case (5),
+create-page (3) and guide-count suites; `publish_salt_invariant_test.dart`
+rewritten (two salt writes; only the adopter holds the replaceable port; its
+saves clear `catalogueKeyed`; it replaces the salt only inside the keys
+guard). Existing builder call sites pass `publishStateJson`.
+
+**Gates at the end of S11 (2026-11-02, macOS, Flutter 3.44.2 via
+`.fvm/flutter_sdk`):**
+- build_runner: new `publish_state_providers.g.dart`; source hashes changed
+  in `backup_providers.g.dart` and `restore_controller.g.dart`; committed
+  with the source.
+- `flutter analyze lib test integration_test`: no issues.
+- `dart format --set-exit-if-changed lib test integration_test`: 0 changed.
+- `flutter test --coverage`: **5,646 passed** (S10b ended at 5,513); the 10
+  failures are the same 10 macOS goldens in `test/golden/key_screens_test.dart`
+  (a clean worktree of `d79d180` fails exactly the same 10, checked by name).
+- **Goldens to regenerate on Linux (deferred with the others):** add
+  `restore page, initial` — its warning text changed ("publishing sign-in").
+- Line coverage: every new file and `publish_cover_ids.dart`,
+  `previous_publication.dart`, both records, `secure_storage_cover_salt_store.dart`,
+  `restore_summary.dart`, `archive_inspection.dart`, `backup_archive_writer.dart`,
+  `restore_controller.dart`, `create_backup_page.dart`, both DI modules
+  100 %; `backup_extras_reader.dart` 98.1 %, `prefs_publish_host_store.dart`
+  96.7 %, `restore_backup.dart` 95.7 %, `backup_manifest.dart` 95.8 %,
+  `create_backup_use_case.dart` 94.3 %, `restore_page.dart` 93.1 %,
+  `restore_summary_widgets.dart` 91.2 %, `publish_host_state_repository.dart`
+  91.1 %. Every missed line predates S11 (older failure branches and copy).
+- File sizes ≤ 500 (largest touched: `restore_backup.dart` 497,
+  `backup_archive_writer.dart` 484, `publish_manifest.dart` 475).
+- No new dependency; `pubspec.lock` and Rust untouched. CSP unchanged.
 
 ---
 

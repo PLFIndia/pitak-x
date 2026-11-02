@@ -503,8 +503,11 @@ want to do:
 and issues, other items — plus wishlist, cover images, library identity and
 saved-libraries list, and the borrowers vault if you have one (it stays
 encrypted and opens with the same passphrase).
-**Not inside:** events and posters, logo, contact details, publishing setup,
-app settings — set those up again after a restore.
+If you publish a website, its publishing record goes in too, so a new phone
+that has not published yet continues the same site without uploading every
+cover again.
+**Not inside:** events and posters, logo, contact details, your GitHub or
+Cloudflare sign-in, app settings — set those up again after a restore.
 Keep the file somewhere private (your Drive, a computer) — it is your data in
 plain form, except the vault.
 
@@ -688,7 +691,8 @@ have no books of its own.
 | Phone GPS is never read; coordinates are typed as "lat, lng" | `BuildOwnDescriptor.ownLocation` (D6); GPS field hint |
 | Approximate = rounded to 2 decimals ≈ 1.1 km | `GeoPoint.coarsen()` |
 | Others see the pin after saving you and tapping Refresh | `RefreshNetworkUseCase`; map page |
-| Backup carries the whole catalogue, including magazine titles/issues and item kinds; events/posters, logo, contact details, publishing setup and app settings are excluded | `create_backup_page.dart`; `create_backup_use_case.dart`; `backup_manifest.dart`; `restore_page.dart`; ADR 0014 W2 |
+| Backup carries the whole catalogue, including magazine titles/issues and item kinds; events/posters, logo, contact details, publishing sign-ins and app settings are excluded | `create_backup_page.dart`; `create_backup_use_case.dart`; `backup_manifest.dart`; `restore_page.dart`; ADR 0014 W2 |
+| Backup carries the website publishing record (cover salt, both publish records, active host and verified address; never a token); a restored phone takes it over only if it has not published yet (2026-11-02) | `PublishStateBackupReader`; `RestoredPublishStateAdopter`; `PublishStateAdoptionRule`; ADR 0014 amendment of 2026-11-02 |
 | Restore is all-or-nothing; shows contents first; passphrase only if vault | `restore_page.dart`; `RestoreController` |
 | Export formats JSON/CSV/PDF; import adds, updates same-identity, skips same-ISBN | `export_page.dart`, `import_page.dart` |
 | Passphrase ≥ 8 chars, never stored, no reset | `VaultSessionController.minPassphraseLength`; vault page copy |

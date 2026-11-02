@@ -52,7 +52,11 @@ a **library network** (pins on a map, hub/member cards).
   wrapped key blob stay encrypted.
   The archive also carries your **library identity (name + ID) and your
   saved-libraries list as plain, unencrypted JSON**, so a restored phone keeps
-  the ID your hubs know. Treat backup files accordingly. Restore is
+  the ID your hubs know. If you publish a website, it also carries the
+  **publishing record** (the cover-name salt, which site, which files are
+  online; never a token), so a restored phone that has not published yet
+  continues the same site without re-uploading covers. Treat backup files
+  accordingly. Restore is
   all-or-nothing: the catalogue, covers and vault are written into a new data
   folder and the app switches to it in one step, so a failed or interrupted
   restore leaves your current data untouched (the previous folder is deleted

@@ -1,6 +1,7 @@
 # ADR 0014: Item kinds in the interchange, publish and backup formats
 
-- **Status:** Accepted
+- **Status:** Accepted; amended 2026-10-24, 2026-10-25 and 2026-11-02
+  (W5, the website publishing record — publish plan S11)
 - **Date:** 2026-10-21 (original magazines implementation plan, revision 5;
   decisions W1–W4)
 
@@ -218,6 +219,81 @@ those formats behave when data is ambiguous, corrupt, too large, or non-ASCII.
   blank, noncanonical or duplicate series UIDs and noncanonical/unresolved
   live-issue links fail closed with a safe `PublishFailure`. Removed series
   stay in this lookup for D8 cover fallback but publish no top-level entry.
+
+## Amendment 2026-11-02 — W5: the website publishing record (`publish_state.json`)
+
+Implements ADR 0020 Decision 7 (publish plan CV6/CV7, session S11) with the
+product owner's adoption rule of the same day. The existing extension
+mechanism is used (P5): one more plain entry announced by a default-false
+manifest flag. The manifest schema stays 1.
+
+**Why.** Cover file names on a published site are a salted hash of each
+item's id, and the salt lived only on the phone. A new phone made a new salt,
+so its first publish renamed — and re-uploaded — every cover and left the old
+copies behind as clutter on GitHub. A backup that carries the salt and the
+publish records lets a restored phone compute the same names and know what is
+already online.
+
+- **W5 — `publish_state.json` (`hasPublishState`):**
+
+  ```json
+  { "schemaVersion": 1,
+    "coverSalt": "<base64 of 16 bytes>",
+    "gitHubRecord": { <the GitHub publish record> },
+    "cloudflareRecord": { <the Cloudflare publish record> },
+    "host": { "active": "github", "verifiedTarget": { <target> } } }
+  ```
+
+  Absent parts are left out. It is written only when the phone has published
+  something (a GitHub record with a repository, a Cloudflare record, or a
+  verified address), and best-effort like `identity.json`: a record that
+  cannot be read, or would not pass the reader, is left out and the
+  Create-backup page says so; the backup is never blocked by it.
+- **Never inside:** a token or any credential, a pending move, the
+  unconfirmed Cloudflare deploy, the GitHub upload journal and the
+  availability lane's store. In-flight work belongs to the phone that started
+  it.
+- **Plain, like the other additive entries.** The salt is not a secret (it
+  only hides internal ids on the public page, and the archive already holds
+  the whole catalogue); the records hold public site identities, paths,
+  content hashes and cover sources. The Cloudflare account id is an
+  identifier, not a credential.
+- **Read as hostile input:** bounded to 16 MiB before UTF-8 decoding, nesting
+  ≤ 8, schema exactly 1, a salt of exactly 16 bytes, a GitHub record checked
+  field by field (repository, branch, 40-hex shas, only Pitak-owned safe
+  paths, bounded cover sources), a Cloudflare record that survives its own
+  strict decoder, a host target rebuilt from its parts. One bad field makes
+  the whole entry unreadable ("could not be read" on the summary), which only
+  means the restored phone publishes as a new phone did before.
+- **Adopted only by a phone that has not published itself** (product owner,
+  2026-11-02): nothing set up, or connected to the backup's own active site
+  but never published there. A phone that proves a site, holds a record,
+  has a move or an unconfirmed deploy in flight, chose another host, or is
+  connected to another site keeps its own state: "Publishing settings on this
+  phone were kept." Its own record is newer than the backup's; taking the
+  older one would leave files published since on the site for good.
+- **After the switch, inside the publish queue, fail closed.** The restore
+  controller offers the record after the catalogue switch (with the identity
+  and the network list); the publish feature decides inside its queue,
+  through the keys guard of ADR 0019 Decision 3, writes the salt, the GitHub
+  record, the Cloudflare record and then the host journal, and undoes every
+  earlier write if a later one fails. Both records are saved with
+  `catalogueKeyed` cleared, so the availability lane waits for this phone's
+  first catalogue publish.
+- **Covers (ADR 0020 Decisions 4 and 7):** an adopted record keeps a local
+  cover source (`covers/<leaf>`) only when the archive carries that file;
+  every other local source and every legacy `file://` source is forgotten, so
+  that cover is read again at the next publish.
+- **Compatibility:** an archive without the flag (Kotlin-era, or any earlier
+  Pitak archive) restores exactly as before. The Kotlin app is not a restore
+  target for Pitak archives (one-way compatibility, ARCHITECTURE §5.5), so
+  publish plan J5 needs no probe.
+- **Required tests (added):** codec round trip and every refusal; the
+  adoption rule; the adopter's writes, its queue, its undo and its outcomes;
+  the writer's entry and flag; writer → reader round trip with carried and
+  uncarried covers and a credential scan; the restore summary and the
+  controller's hand-off; the salt invariant (`publish_salt_invariant_test.dart`
+  pins the one reviewed salt writer).
 
 ## Consequences
 

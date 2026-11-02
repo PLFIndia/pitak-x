@@ -6,9 +6,9 @@
   Decision 6 gained the product owner's J8 decision the same day (resume +
   pacing, session S10b; see its J8 amendment).
 - **Date:** 2026-11-02
-- **Amends:** nothing yet. ADR 0014 gains an amendment with Fix 2 (S11,
-  Decision 7) and ADR 0017 with the non-blocking GitHub outcome (S12,
-  Decision 8). Builds on ADR 0017 Decision 4 (complete snapshots) and
+- **Amends:** nothing directly. ADR 0014 gained its amendment with Fix 2
+  (W5, 2026-11-02, S11, Decision 7); ADR 0017 gains one with the
+  non-blocking GitHub outcome (S12, Decision 8). Builds on ADR 0017 Decision 4 (complete snapshots) and
   ADR 0019 (the availability lane, the J9 reset).
 - **Plan:** `publishOptimisation_PLAN.md` — product decisions P4/P5 (A.3),
   engineering decisions CV1–CV7 and SP1–SP6 (A.4), Part D (Phase 2), Part E
@@ -230,6 +230,22 @@ need to do.
    S11 must decide how adoption meets Decision 4: records adopted from the
    archive describe the archive's own covers, so their local sources may be
    kept for those covers only; the salt invariant tests keep guarding it.
+
+   *S11 clarification (as built, 2026-11-02; plan A.6 #109–#118; ADR 0014
+   amendment W5).* **The product owner narrowed "or for the same target":** a
+   restore adopts only on a phone that has not published itself (nothing set
+   up, or connected to the backup's own active site but never published
+   there); a phone that already publishes keeps its own, newer state. The
+   adopted records keep a local cover source only for a `covers/<leaf>` file
+   the archive carries (they are restored byte for byte next to the record
+   that names them); every other local source is forgotten as Decision 4
+   says, through one shared rule (`coverSourcesKeptAfterNewCovers`). A stale
+   archive is still caught by the live checks: GitHub drops the rendition when
+   a recorded cover changed on the branch (A.6 #86), and Cloudflare's marker
+   mismatch forces a reviewed replacement. The salt is replaced only by
+   `RestoredPublishStateAdopter`, inside the publish queue through the J9
+   keys guard, with `catalogueKeyed` cleared in both records; the salt store
+   exposes `replace` on a separate, narrower port so no publish can call it.
 
 ### Phase 3 — speed (S12–S14)
 

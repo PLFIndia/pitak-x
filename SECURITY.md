@@ -37,8 +37,10 @@ notes (honest limits)"). Please do not report them as vulnerabilities:
   locked by the user or the app exits; backgrounding does not lock it.
 - **`.pitabak` archives are not fully encrypted** — books, magazine-series
   and issue records, other items, wishlist, covers, item-kind mappings,
-  library identity and the saved-libraries list are plaintext inside the
-  archive; only the borrowers vault and its wrapped key blob are encrypted.
+  library identity, the saved-libraries list and the website publishing
+  record (`publish_state.json`: the cover-name salt and public site records —
+  never a token or credential) are plaintext inside the archive; only the
+  borrowers vault and its wrapped key blob are encrypted.
 - **Passphrase change is a rewrap, not key rotation** — an old vault copy
   plus the old passphrase still opens that copy.
 - **App-lock ≠ vault lock** — the optional app gate is a screen cover; it

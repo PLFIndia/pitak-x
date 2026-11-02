@@ -63,6 +63,24 @@ heading as part of the `chore(release):` commit.
   snapshots (moves, replacements) still read every cover. The first catalogue
   publish after this update produces every cover once (remote covers are
   fetched once more), and identical bytes upload nothing.
+- **Backups carry the website publishing record (ADR 0014 amendment W5,
+  ADR 0020 Decision 7; publish-optimisation Phase 2 Fix 2, S11).** A new
+  plain entry `publish_state.json` (`hasPublishState`, manifest schema still
+  1): the cover salt, the GitHub and Cloudflare publish records and the
+  journal's active host and verified address — never a token or credential,
+  a pending move, the unconfirmed Cloudflare deploy, the upload journal or
+  the lane store. Written only when the phone has published, best-effort (a
+  record that cannot be read is left out and the Create-backup page says so).
+  A restore adopts it **only on a phone that has not published itself**
+  (product owner, 2026-11-02): nothing set up, or connected to the backup's
+  own site but never published there; otherwise "Publishing settings on this
+  phone were kept." Adoption runs after the switch inside the publish queue
+  (`RestoredPublishStateAdopter` through the J9 keys guard), writes salt →
+  records → journal with `catalogueKeyed` cleared, undoes every write on a
+  failure, and keeps local cover sources only for covers the archive carries.
+  A restored phone therefore keeps the same cover names and uploads no cover
+  that is already online. Archives without the entry restore exactly as
+  before.
 
 ### Changed
 - **`books.json`** (schema still 1, additive): every item carries `key`
@@ -133,8 +151,20 @@ heading as part of the `chore(release):` commit.
   Verified against the real API: a tree may name blobs a refused attempt
   left behind, 2 minutes and 65 minutes later; a tree naming an unknown blob
   is refused with 422, which makes the journal forget the blobs it named.
+- The cover salt can be replaced, by that adoption only: a separate port
+  `ReplaceablePublishCoverSaltStore.replace` (length-checked before the
+  write); `publish_salt_invariant_test.dart` pins the one reviewed writer.
+- `PublishTargetJson` (publish domain) is the one target JSON shape, shared
+  by the host journal (`PrefsPublishHostStore`, stored format unchanged) and
+  the backup entry.
+- The Restore screen's two read-only views moved to
+  `backup/presentation/widgets/restore_summary_widgets.dart` (the page sat at
+  the 500-line ratchet); the backup copy and the backup guide now say what
+  publishing data travels ("your GitHub or Cloudflare sign-in" is what does
+  not).
 - `PRIVACY.md` (effective 2026-11-02): availability updates automatically;
-  the viewer requests and saves `availability.json`.
+  the viewer requests and saves `availability.json`; backups carry the
+  website publishing record (no credentials).
 
 ### Fixed
 - A GitHub catalogue publish after an unconfirmed **events** commit could

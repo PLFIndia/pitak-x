@@ -404,10 +404,12 @@ to false** (the `hasX` forward-compat pattern):
 | `network.json` | `hasNetwork` | `{ "schemaVersion": 1, "libraries": [ <NetworkLibrary JSON> … ] }` — **plain** |
 | `item_kinds.json` | `hasItemKinds` | `{ "schemaVersion": 1, "kinds": [ { "bookUid": "…", "kind": "magazine-issue" } … ] }` — every **non-book** row; a uid listed nowhere is a book (ADR 0014) — **plain** |
 | `periodicals.json` | `hasPeriodicals` | `{ "schemaVersion": 1, "periodicals": [ <the Pitaka-JSON periodical object> … ], "issues": [ { "bookUid", "periodicalUid", "volume", "issueNumber", "issueDate", "boundUntil", "label" } … ] }` (ADR 0014) — **plain** |
+| `publish_state.json` | `hasPublishState` | `{ "schemaVersion": 1, "coverSalt": "<base64, 16 bytes>", "gitHubRecord": {…}, "cloudflareRecord": {…}, "host": { "active", "verifiedTarget" } }` — the website publishing record (ADR 0014 W5, §5.8); written only when the phone has published; never a token, a pending move, an unconfirmed deploy, the upload journal or the lane store — **plain** |
 
 - **Honest limit:** books, full magazine-series and issue records, other
-  items, wishlist, covers, item-kind mappings, identity and network are plain
-  inside the archive; only the vault and its wrapped key blob are encrypted.
+  items, wishlist, covers, item-kind mappings, identity, network and the
+  website publishing record are plain inside the archive; only the vault and
+  its wrapped key blob are encrypted.
   Whole-archive encryption is deferred (trigger: a user asks, or a review
   flags it).
 - Restore is **all-or-nothing**: everything is written into a new data folder
@@ -424,6 +426,12 @@ to false** (the `hasX` forward-compat pattern):
   collection (the codec constants are authoritative; equality is accepted).
   `identity.json` has its own 4 KiB cap; `network.json` has its own 4 MiB /
   5000-row caps. Rows are revalidated, with invalid rows dropped and counted.
+  `publish_state.json` is capped at 16 MiB and nesting 8, and is all or
+  nothing: one bad field (a salt that is not 16 bytes, a GitHub path that is
+  not Pitak-owned, a sha that is not 40-hex, a Cloudflare record its own
+  decoder empties, a target whose URL disagrees with its parts) makes the
+  whole entry unreadable (`PublishStateBackupCodec`). The writer re-decodes it
+  before including it, so it never emits an entry its reader refuses.
 - The writer mirrors the W2 reader's `maxBytes` / `maxRows`: it encodes and
   checks both W2 entries before creating a scratch directory, SQLite file, or
   archive bytes. An entry exactly at a cap is readable; anything larger fails
@@ -667,8 +675,27 @@ target passed to the current operation — that is what lets a move publish the
   The rendition is unknown (every cover produced once) for a record written
   before ADR 0020, for a GitHub record whose branch has a changed cover file,
   and for a Cloudflare record whose hashes this build cannot use. A restore
-  makes both records forget their local cover sources first. Changing the
-  recipe on purpose means a new rendition number.
+  makes both records forget their local cover sources first (a record adopted
+  from the backup keeps them only for covers the backup carried). Changing
+  the recipe on purpose means a new rendition number.
+- **A backup carries the publishing record; a restore adopts it only on a
+  phone that has not published** (ADR 0014 W5, ADR 0020 Decision 7, plan
+  S11). `PublishStateBackupReader` takes the cover salt, both records and the
+  journal's active host and verified address (never a credential, pending
+  move, unconfirmed deploy, upload journal or lane store) without waiting for
+  the publish queue. After a restore's switch, `RestoredPublishStateAdopter`
+  runs through the J9 keys guard (inside the publish queue; the lane forgets
+  keys made with the old salt), applies `PublishStateAdoptionRule` to this
+  phone's state — no verified site, no record, no pending move or
+  unconfirmed deploy, no other host chosen, every connection pointing at the
+  backup's active site — and then writes salt → GitHub record → Cloudflare
+  record → journal (`PublishHostStateRepository.adoptFromBackup`), undoing the
+  earlier writes if a later one fails. Records are saved with
+  `catalogueKeyed` cleared and keep a local cover source only for a cover file
+  the archive carried. The salt store exposes `replace` only on the narrower
+  `ReplaceablePublishCoverSaltStore` port, held by the adopter alone
+  (`publish_salt_invariant_test.dart`). Targets are stored as JSON by one
+  shared codec, `PublishTargetJson` (journal and backup).
 - **GitHub never receives bytes it already holds** (ADR 0020 Decision 6,
   CV5). Every GitHub commit (catalogue, events, availability, a move, a
   retirement) goes through one pure `GitHubCommitPlan`. The port's

@@ -7,7 +7,9 @@ tags on it now update by themselves shortly after you lend or return an item
 (item 3; you can switch this off), and opening a saved library also requests
 and saves its `availability.json` (item 5). The tags were already public;
 they are just kept current. No borrower data is uploaded, and nothing new is
-collected about you._
+collected about you. Backups now also carry your website's publishing record
+(item 7) — no passwords or tokens — so a restored phone does not upload every
+cover again._
 
 _Changed 2026-10-30 — wording only: the move paragraph now also says what
 Cancel move and Finish without retiring leave public, and that reconnecting to
@@ -264,7 +266,16 @@ Settings → Data), and the passive update check of Google Play builds
    bound-volume end dates. The backup
    also carries your library identity (library name and ID) and your
    saved-libraries list as plain, unencrypted JSON, so a restored phone stays
-   recognisable to your hubs. Anyone who receives your backup file can read
+   recognisable to your hubs. If you publish a website, the backup also
+   carries its publishing record as plain JSON (`publish_state.json`): the
+   random code that makes your published cover file names (it hides internal
+   item numbers), which site you publish to (the GitHub repository, or the
+   Cloudflare account ID, Worker name and address), which files Pitak put
+   online with their content fingerprints, and which cover each published
+   picture came from (a file name on your phone or the public cover web
+   address). It never contains your GitHub or Cloudflare sign-in, tokens or
+   passwords. A restored phone uses it only if it has not published a site
+   itself. Anyone who receives your backup file can read
    those fields, so share backups only with people you trust with that data.
    Restoring writes the new catalogue, covers and vault into a fresh
    app-private folder and switches to it in one step; the previous folder is

@@ -19,7 +19,7 @@ delete — mark superseded instead.
 | [0011](0011-book-repository-isp-deferred.md) | `BookRepository` ISP split deferred (now `CatalogueItemRepository`) |
 | [0012](0012-library-network-replaces-bookmarks.md) | Library network replaces bookmarks; the fingerprint — not the raw library ID — is the published identity |
 | [0013](0013-catalogue-item-kinds.md) | Catalogue item kinds: one base row per item of any kind, per-kind detail tables, the base row is the lendable unit; magazines/issues/periodicals and Others |
-| [0014](0014-catalogue-interchange-and-backup.md) | Item kinds in Pitaka-JSON (v4), `books.json` (additive) and `.pitabak` (`item_kinds.json` / `periodicals.json`) |
+| [0014](0014-catalogue-interchange-and-backup.md) | Item kinds in Pitaka-JSON (v4), `books.json` (additive) and `.pitabak` (`item_kinds.json` / `periodicals.json`); amended 2026-11-02: `publish_state.json`, the website publishing record a restored phone adopts only if it has not published itself |
 | [0015](0015-native-saved-library-viewer.md) | A saved network row opens a read-only native view of its published `books.json`; no WebView, no persistent cache, memory-only consent-gated covers |
 | [0016](0016-native-published-events.md) | Native Announcements & Events use an independently-published, bounded `events.json`; no HTML scraping or WebView |
 | [0017](0017-cloudflare-workers-publishing.md) | Cloudflare Workers publishing: a dedicated assets-only Worker, one active host, complete snapshots, an exact target/journal, marker freshness and the disclosed single-writer limitation |
