@@ -164,6 +164,7 @@ final class PublishManifest implements PreviousPublication {
   /// INVARIANT (ADR 0019 Decision 3): keys depend on the cover salt and the
   /// internal ids. Any flow that replaces the salt or renumbers ids must
   /// clear this flag (`test/architecture/publish_salt_invariant_test.dart`).
+  @override
   final bool catalogueKeyed;
 
   /// The empty manifest (no publication recorded on this phone).
@@ -314,6 +315,24 @@ final class PublishManifest implements PreviousPublication {
     coverUrlByBookId: coverUrlByBookId,
     proofPath: proofPath,
     catalogueKeyed: catalogueKeyed,
+  );
+
+  /// The same record, but no longer vouching for the keys in its
+  /// `books.json` ([catalogueKeyed] false); everything else is kept.
+  ///
+  /// Used when the ids behind the keys may now name other items: a restore
+  /// that activates a new data generation (plan J9, S6). The next catalogue
+  /// publish writes fresh keys and sets the flag again.
+  PublishManifest withoutCatalogueKeys() => PublishManifest(
+    schema: schema,
+    repo: repo,
+    branch: branch,
+    headSha: headSha,
+    ownershipConfirmed: ownershipConfirmed,
+    state: state,
+    fileShas: fileShas,
+    coverUrlByBookId: coverUrlByBookId,
+    proofPath: proofPath,
   );
 
   /// The exact moved-page record after retirement read-back succeeds.

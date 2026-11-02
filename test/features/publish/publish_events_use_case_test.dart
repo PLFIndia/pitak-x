@@ -8,6 +8,7 @@ import 'package:pitaka/features/publish/application/publish_events_use_case.dart
 import 'package:pitaka/features/publish/application/publish_library_use_case.dart'
     show PublishManifestGateway;
 import 'package:pitaka/features/publish/application/site/publish_host_state_repository.dart';
+import 'package:pitaka/features/publish/domain/availability/availability_request.dart';
 import 'package:pitaka/features/publish/domain/events_posters_html.dart';
 import 'package:pitaka/features/publish/domain/git_blob_sha.dart';
 import 'package:pitaka/features/publish/domain/github_api.dart';
@@ -215,6 +216,7 @@ void main() {
     _FakeVerifier? verifier,
     PublishHostStateRecorder? hostState,
     GitHubPublishTarget? target,
+    AvailabilityRequest availability = const AvailabilityRemoval(),
   }) {
     // R6: the fake remote starts as what this phone recorded (see the
     // catalogue suite for the same rule).
@@ -236,6 +238,7 @@ void main() {
       buildEventsJson: const EventsJsonBuilder().build,
       settings: const PublishPageSettings(libraryName: 'Test Library'),
       hostState: hostState ?? _Recorder(),
+      availability: availability,
       verifier: verifier,
       reader: verifier,
       sleep: (_) async {}, // no real waiting in tests
@@ -763,6 +766,75 @@ void main() {
 
       expect(result, isA<PublishEventsSuccess>());
       expect((result as PublishEventsSuccess).localStateSaved, isFalse);
+    });
+  });
+
+  group('plan S6 — the availability rule rides in the events commit', () {
+    PublishManifest withFile({required bool keyed}) => PublishManifest(
+      repo: 'me/lib',
+      branch: 'main',
+      headSha: 'HEAD',
+      ownershipConfirmed: true,
+      fileShas: const {
+        'index.html': 'abc',
+        'books.json': 'def',
+        'availability.json': 'live-avail',
+      },
+      catalogueKeyed: keyed,
+    );
+
+    test('lane off: the recorded file is deleted in the same commit', () async {
+      final api = _CapturingApi();
+      final manifest = _MemManifest(withFile(keyed: true));
+      final result = await make(
+        api: api,
+        manifest: manifest,
+      ).call(twoPosters());
+
+      expect(result, isA<PublishEventsSuccess>());
+      expect(api.deleted, contains('availability.json'));
+      expect(manifest.saved!.shaFor('availability.json'), isNull);
+      expect(manifest.saved!.proofPath, PublishProofPath.eventsJson);
+      expect(manifest.saved!.catalogueKeyed, isTrue, reason: 'books.json kept');
+    });
+
+    test('lane on + keyed catalogue: the file is left alone', () async {
+      final api = _CapturingApi();
+      final manifest = _MemManifest(withFile(keyed: true));
+      await make(
+        api: api,
+        manifest: manifest,
+        availability: const AvailabilityFromLoanCounts(),
+      ).call(twoPosters());
+
+      expect(api.deleted, isNot(contains('availability.json')));
+      expect(
+        api.committed!.map((f) => f.path),
+        isNot(contains('availability.json')),
+      );
+      expect(manifest.saved!.shaFor('availability.json'), 'live-avail');
+    });
+
+    test('lane on + keys no longer vouched for: the file is deleted', () async {
+      final api = _CapturingApi();
+      final manifest = _MemManifest(withFile(keyed: false));
+      await make(
+        api: api,
+        manifest: manifest,
+        availability: const AvailabilityFromLoanCounts(),
+      ).call(twoPosters());
+
+      expect(api.deleted, contains('availability.json'));
+      expect(manifest.saved!.shaFor('availability.json'), isNull);
+    });
+
+    test('nothing recorded: nothing is deleted', () async {
+      final api = _CapturingApi();
+      await make(
+        api: api,
+        manifest: _MemManifest(published()),
+      ).call(twoPosters());
+      expect(api.deleted, isNot(contains('availability.json')));
     });
   });
 }

@@ -179,4 +179,7 @@ class _Previous implements PreviousPublication {
 
   @override
   Iterable<String> get ownedPaths => shas.keys;
+
+  @override
+  bool get catalogueKeyed => false;
 }

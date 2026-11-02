@@ -266,6 +266,7 @@ final class CloudflareSiteManifest implements PreviousPublication {
   /// INVARIANT (ADR 0019 Decision 3): keys depend on the cover salt and the
   /// internal ids. Any flow that replaces the salt or renumbers ids must
   /// clear this flag (`test/architecture/publish_salt_invariant_test.dart`).
+  @override
   final bool catalogueKeyed;
 
   static const String _booksJsonPath = 'books.json';
@@ -344,6 +345,14 @@ final class CloudflareSiteManifest implements PreviousPublication {
   /// The same record, now proven to be served by the live site.
   CloudflareSiteManifest asLive() => _copy(state: PublishState.live);
 
+  /// The same record, but no longer vouching for the keys in its
+  /// `books.json` ([catalogueKeyed] false); everything else is kept.
+  ///
+  /// Used when the ids behind the keys may now name other items: a restore
+  /// that activates a new data generation (plan J9, S6).
+  CloudflareSiteManifest withoutCatalogueKeys() =>
+      _copy(state: state, catalogueKeyed: false);
+
   /// The same record after the site became a moved page.
   ///
   /// A retirement deploy is a fresh deploy with a fresh publish id and only the
@@ -408,18 +417,20 @@ final class CloudflareSiteManifest implements PreviousPublication {
     'catalogueKeyed': catalogueKeyed,
   };
 
-  CloudflareSiteManifest _copy({required PublishState state}) =>
-      CloudflareSiteManifest(
-        schema: schema,
-        target: target,
-        state: state,
-        publishId: publishId,
-        liveId: liveId,
-        hashScheme: hashScheme,
-        files: files,
-        coverUrlByBookId: coverUrlByBookId,
-        catalogueKeyed: catalogueKeyed,
-      );
+  CloudflareSiteManifest _copy({
+    required PublishState state,
+    bool? catalogueKeyed,
+  }) => CloudflareSiteManifest(
+    schema: schema,
+    target: target,
+    state: state,
+    publishId: publishId,
+    liveId: liveId,
+    hashScheme: hashScheme,
+    files: files,
+    coverUrlByBookId: coverUrlByBookId,
+    catalogueKeyed: catalogueKeyed ?? this.catalogueKeyed,
+  );
 
   static Map<String, Object?> _targetJson(CloudflarePublishTarget target) => {
     'accountId': target.accountId.value,

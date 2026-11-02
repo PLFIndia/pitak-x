@@ -35,11 +35,13 @@ import 'package:pitaka/features/publish/application/github_publication_reconcile
 import 'package:pitaka/features/publish/application/github_unconfirmed_commit_check.dart';
 import 'package:pitaka/features/publish/application/publish_library_use_case.dart'
     show PublishManifestGateway;
+import 'package:pitaka/features/publish/application/site/availability_section_builder.dart';
 import 'package:pitaka/features/publish/application/site/events_section_builder.dart';
 import 'package:pitaka/features/publish/application/site/publish_host_state_repository.dart';
 import 'package:pitaka/features/publish/application/site/publish_timings.dart';
 import 'package:pitaka/features/publish/application/site/publish_verification_check.dart';
 import 'package:pitaka/features/publish/application/site/published_file_read_back.dart';
+import 'package:pitaka/features/publish/domain/availability/availability_request.dart';
 import 'package:pitaka/features/publish/domain/github_api.dart';
 import 'package:pitaka/features/publish/domain/github_error_messages.dart';
 import 'package:pitaka/features/publish/domain/github_models.dart';
@@ -111,6 +113,7 @@ final class PublishEventsUseCase {
     required EventsJsonFactory buildEventsJson,
     required PublishPageSettings settings,
     required PublishHostStateRecorder hostState,
+    required AvailabilityRequest availability,
     PublishedSiteVerifier? verifier,
     PublishedSiteReadVerifier? reader,
     Future<void> Function(Duration)? sleep,
@@ -127,6 +130,7 @@ final class PublishEventsUseCase {
        ),
        _settings = settings,
        _hostState = hostState,
+       _availability = availability,
        _verifier = verifier,
        _unconfirmed = GitHubUnconfirmedCommitCheck(
          reader: reader,
@@ -149,6 +153,11 @@ final class PublishEventsUseCase {
 
   /// Records the verified live target after a read-back proves it (R33).
   final PublishHostStateRecorder _hostState;
+
+  /// What this publish does with a recorded `availability.json`. An events
+  /// publish never computes a set, so the shared "no fresh set" rule decides
+  /// (ADR 0019 Decision 6; plan A.6 #33 left this publish out until S6).
+  final AvailabilityRequest _availability;
 
   /// Null ⇒ read-back skipped (tests / no network port wired).
   final PublishedSiteVerifier? _verifier;
@@ -279,7 +288,17 @@ final class PublishEventsUseCase {
       });
     }
     final section = built.toNullable()!;
-    final merge = mergeSection(previous: manifest, section: section);
+    // The deletion of a recorded availability.json rides in the same commit
+    // when the lane is off, or when the live catalogue no longer vouches for
+    // its keys; otherwise the file is left exactly as it is (plan S6).
+    final availability = AvailabilitySectionBuilder.withoutFreshSet(
+      request: _availability,
+      previous: manifest,
+    );
+    final merge = mergeSections(
+      previous: manifest,
+      sections: [section, ?availability],
+    );
 
     final now = _clock();
     final uploadBytes = timings.enabled

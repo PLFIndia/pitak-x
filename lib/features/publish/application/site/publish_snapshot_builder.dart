@@ -258,6 +258,9 @@ final class PublishSnapshotBuilder {
   ///   time (rounded down to the minute by the snapshot).
   /// - [AvailabilityRemoval] (the lane is off): the deletion when [previous]
   ///   records the file (plan AV4, A.6 #20).
+  /// - Without a fresh set (unknown counts, or no catalogue), the shared
+  ///   [AvailabilitySectionBuilder.withoutFreshSet] rule decides: the live
+  ///   file stays only while [previous] still vouches for its keys (plan S6).
   static Either<Failure, PublishSection?> _availabilitySection({
     required AvailabilityRequest request,
     required CatalogueInputs? catalogue,
@@ -267,12 +270,25 @@ final class PublishSnapshotBuilder {
   }) {
     switch (request) {
       case AvailabilityRemoval():
-        return Right(AvailabilitySectionBuilder.removal(previous: previous));
+        return Right(
+          AvailabilitySectionBuilder.withoutFreshSet(
+            request: request,
+            previous: previous,
+          ),
+        );
       case AvailabilityFromLoanCounts():
         final counts = catalogue?.activeLoanCounts;
         // Unknown counts are "unknown", never "everything is available"
-        // (AV5): the live file stays as the lane last published it.
-        if (catalogue == null || counts == null) return const Right(null);
+        // (AV5): the live file stays as the lane last published it, unless
+        // its keys can no longer be vouched for (plan J9, S6).
+        if (catalogue == null || counts == null) {
+          return Right(
+            AvailabilitySectionBuilder.withoutFreshSet(
+              request: request,
+              previous: previous,
+            ),
+          );
+        }
         final snapshot = AvailabilitySnapshot.fromIds(
           ids: notAvailableItemIds(
             items: catalogue.items,

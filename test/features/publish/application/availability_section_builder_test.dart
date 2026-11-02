@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/features/publish/application/site/availability_section_builder.dart';
 import 'package:pitaka/features/publish/domain/availability/availability_document.dart';
+import 'package:pitaka/features/publish/domain/availability/availability_request.dart';
 import 'package:pitaka/features/publish/domain/availability/availability_snapshot.dart';
 import 'package:pitaka/features/publish/domain/git_blob_sha.dart';
 import 'package:pitaka/features/publish/domain/publish_manifest.dart';
@@ -117,6 +118,64 @@ void main() {
       final merge = mergeSection(previous: record, section: section);
       expect(merge.deletePaths, [AvailabilityDocument.path]);
       expect(merge.fileShas, {'books.json': 'sha-b', 'events.json': 'sha-e'});
+    });
+  });
+
+  group('withoutFreshSet (plan S6, J9)', () {
+    const recorded = PublishManifest(
+      repo: 'me/lib',
+      fileShas: {'books.json': 'b1', 'availability.json': 'a1'},
+      catalogueKeyed: true,
+    );
+    final unvouched = recorded.withoutCatalogueKeys();
+    const nothingRecorded = PublishManifest(
+      repo: 'me/lib',
+      fileShas: {'books.json': 'b1'},
+    );
+
+    test('lane off: the recorded file is deleted, keyed or not', () {
+      for (final previous in [recorded, unvouched]) {
+        final section = AvailabilitySectionBuilder.withoutFreshSet(
+          request: const AvailabilityRemoval(),
+          previous: previous,
+        );
+        expect(section!.deletePaths, [AvailabilityDocument.path]);
+        expect(section.files, isEmpty);
+      }
+    });
+
+    test('lane on: a file the keyed catalogue vouches for is left alone', () {
+      expect(
+        AvailabilitySectionBuilder.withoutFreshSet(
+          request: const AvailabilityFromLoanCounts(),
+          previous: recorded,
+        ),
+        isNull,
+      );
+    });
+
+    test('lane on: an unvouched file is deleted (keys may name others)', () {
+      final section = AvailabilitySectionBuilder.withoutFreshSet(
+        request: const AvailabilityFromLoanCounts(),
+        previous: unvouched,
+      );
+      expect(section!.section, SiteSection.availability);
+      expect(section.deletePaths, [AvailabilityDocument.path]);
+    });
+
+    test('nothing recorded: nothing to do either way (R13)', () {
+      for (final request in const [
+        AvailabilityRemoval(),
+        AvailabilityFromLoanCounts(),
+      ]) {
+        expect(
+          AvailabilitySectionBuilder.withoutFreshSet(
+            request: request,
+            previous: nothingRecorded,
+          ),
+          isNull,
+        );
+      }
     });
   });
 }

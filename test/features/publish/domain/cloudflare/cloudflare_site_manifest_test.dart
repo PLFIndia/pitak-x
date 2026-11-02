@@ -391,6 +391,21 @@ void main() {
       expect(decoded.shaFor('availability.json'), 'sha-availability');
     });
 
+    test('withoutCatalogueKeys clears only the flag (plan J9)', () {
+      final cleared = keyed().withoutCatalogueKeys();
+      expect(cleared.catalogueKeyed, isFalse);
+      expect(cleared.describes(target), isTrue);
+      expect(cleared.state, PublishState.live);
+      expect(cleared.publishId, 'a' * 32);
+      expect(cleared.shaFor('availability.json'), 'sha-availability');
+      expect(cleared.hashesTrusted, isTrue);
+      expect(
+        CloudflareSiteManifest.fromJson(cleared.toJson()).catalogueKeyed,
+        isFalse,
+      );
+      expect(keyed().asLive().catalogueKeyed, isTrue);
+    });
+
     test('an older record without the field reads as false, files kept', () {
       final json = keyed().toJson()..remove('catalogueKeyed');
       final decoded = CloudflareSiteManifest.fromJson(json);

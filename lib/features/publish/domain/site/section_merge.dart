@@ -135,6 +135,11 @@ final class _MergedRecord implements PreviousPublication {
 
   @override
   Iterable<String> get ownedPaths => _fileShas.keys;
+
+  /// Never read by [mergeSection]; false is the safe answer for a view that
+  /// carries no keys of its own.
+  @override
+  bool get catalogueKeyed => false;
 }
 
 /// The previous record's entries that pass the path policy.

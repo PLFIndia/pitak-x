@@ -479,7 +479,8 @@ void main() {
         ..counts = null;
       const recorded = PublishManifest(
         repo: 'me/lib',
-        fileShas: {'availability.json': 'sha-live'},
+        fileShas: {'books.json': 'sha-books', 'availability.json': 'sha-live'},
+        catalogueKeyed: true,
       );
       final snapshot = (await readAndBuild(
         reads,
@@ -488,6 +489,45 @@ void main() {
       expect(snapshot.availability, isNull);
       expect(snapshot.availabilityOmitted, isTrue);
     });
+
+    test('lane on + locked vault + keys no longer vouched for: the live file '
+        'is deleted (plan J9, S6)', () async {
+      final reads = _FakeReads()
+        ..availabilityResult = right(const AvailabilityFromLoanCounts())
+        ..books = [book()]
+        ..counts = null;
+      const unvouched = PublishManifest(
+        repo: 'me/lib',
+        fileShas: {'books.json': 'sha-books', 'availability.json': 'sha-live'},
+      );
+      final snapshot = (await readAndBuild(
+        reads,
+        previous: unvouched,
+      )).toNullable()!;
+      expect(snapshot.availability!.deletePaths, ['availability.json']);
+      expect(snapshot.availability!.files, isEmpty);
+    });
+
+    test(
+      'lane on + events-only + keys no longer vouched for: deleted too',
+      () async {
+        final reads = _FakeReads()
+          ..availabilityResult = right(const AvailabilityFromLoanCounts());
+        const unvouched = PublishManifest(
+          repo: 'me/lib',
+          fileShas: {
+            'books.json': 'sha-books',
+            'availability.json': 'sha-live',
+          },
+        );
+        final snapshot = (await readAndBuild(
+          reads,
+          previous: unvouched,
+          sections: const {SiteSection.events},
+        )).toNullable()!;
+        expect(snapshot.availability!.deletePaths, ['availability.json']);
+      },
+    );
 
     test('lane on + events-only publish: nothing to compute from', () async {
       final reads = _FakeReads()

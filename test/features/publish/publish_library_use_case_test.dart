@@ -1956,6 +1956,7 @@ void main() {
             headSha: 'HEAD',
             ownershipConfirmed: true,
             fileShas: {'availability.json': 'live-avail', 'books.json': 'old'},
+            catalogueKeyed: true,
           ),
         );
         await makeUseCase(
@@ -1974,6 +1975,35 @@ void main() {
         expect(manifest.current.shaFor('availability.json'), 'live-avail');
       },
     );
+
+    test('lane on + locked vault + unvouched keys: the commit deletes the file '
+        '(plan J9, S6)', () async {
+      final api = _CapturingApi();
+      final manifest = _MemManifest(
+        const PublishManifest(
+          repo: 'me/lib',
+          branch: 'main',
+          headSha: 'HEAD',
+          ownershipConfirmed: true,
+          fileShas: {'availability.json': 'live-avail', 'books.json': 'old'},
+        ),
+      );
+      await makeUseCase(
+        api,
+        manifest,
+        books: twoBooks,
+        activeLoanCounts: null,
+        availability: const AvailabilityFromLoanCounts(),
+      ).run();
+
+      expect(api.deleted, contains('availability.json'));
+      expect(manifest.current.shaFor('availability.json'), isNull);
+      expect(
+        manifest.current.catalogueKeyed,
+        isTrue,
+        reason: 'this commit wrote fresh keys',
+      );
+    });
 
     test(
       'lane off: the catalogue commit deletes a recorded file (A.6 #20)',

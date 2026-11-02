@@ -16,6 +16,7 @@ library;
 import 'dart:convert';
 
 import 'package:pitaka/features/publish/domain/availability/availability_document.dart';
+import 'package:pitaka/features/publish/domain/availability/availability_request.dart';
 import 'package:pitaka/features/publish/domain/availability/availability_snapshot.dart';
 import 'package:pitaka/features/publish/domain/git_blob_sha.dart';
 import 'package:pitaka/features/publish/domain/site/previous_publication.dart';
@@ -65,4 +66,28 @@ abstract final class AvailabilitySectionBuilder {
       deletePaths: [AvailabilityDocument.path],
     );
   }
+
+  /// What a publish that writes NO fresh set does with a recorded
+  /// `availability.json`: the vault is locked, or the publish builds no
+  /// catalogue (an events publish). Null leaves the live file as it is.
+  ///
+  /// - [AvailabilityRemoval] (the lane is off): delete it (AV4, A.6 #20).
+  /// - [AvailabilityFromLoanCounts] (the lane is on): keep it only while
+  ///   [PreviousPublication.catalogueKeyed] still vouches for the keys it was
+  ///   published against. Otherwise its keys may name other items — after a
+  ///   restore of another library (plan J9), or after another writer replaced
+  ///   `books.json` — so it is deleted, and readers fall back to the inline
+  ///   tag. Deleting is always the safe direction (plan S6).
+  ///
+  /// The ONE rule for every publish that can carry the file without
+  /// computing it: the snapshot builder (catalogue, Cloudflare events, moves,
+  /// replacements) and the GitHub events publish.
+  static PublishSection? withoutFreshSet({
+    required AvailabilityRequest request,
+    required PreviousPublication previous,
+  }) => switch (request) {
+    AvailabilityRemoval() => removal(previous: previous),
+    AvailabilityFromLoanCounts() =>
+      previous.catalogueKeyed ? null : removal(previous: previous),
+  };
 }

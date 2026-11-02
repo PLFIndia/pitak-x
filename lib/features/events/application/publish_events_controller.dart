@@ -138,6 +138,17 @@ class PublishEventsController extends _$PublishEventsController {
         PublishSnapshotBuilder.settingsUnavailableMessage,
       );
     }
+    // The ONE availability rule every publish reads (ADR 0019 Decision 6):
+    // the catalogue controller's strict read, so this publish deletes a
+    // recorded availability.json exactly when a catalogue publish would.
+    final availability =
+        (await ref.read(publishControllerProvider.notifier).availability())
+            .toNullable();
+    if (availability == null) {
+      return const PublishFailure(
+        PublishSnapshotBuilder.settingsUnavailableMessage,
+      );
+    }
     final buildEventsHtml = ref.read(eventsHtmlFactoryProvider);
     final buildEventsJson = ref.read(eventsJsonFactoryProvider);
     final verifier = ref.read(publishedSiteVerifierProvider);
@@ -153,6 +164,7 @@ class PublishEventsController extends _$PublishEventsController {
       buildEventsHtml: buildEventsHtml,
       buildEventsJson: buildEventsJson,
       settings: PublishPageSettings(libraryName: settings.libraryName),
+      availability: availability,
       hostState: LazyPublishHostStateRecorder(
         () => ref.read(publishHostStateRepositoryProvider.future),
       ),

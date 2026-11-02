@@ -29,4 +29,15 @@ abstract interface class PreviousPublication {
   /// EXACT deletions (never a prefix sweep — R13): a section may only delete
   /// paths it owns, and only those it really published.
   Iterable<String> get ownedPaths;
+
+  /// True when the recorded `books.json` carries item keys THIS phone wrote
+  /// (ADR 0019 Decision 7b), so a recorded `availability.json` names the
+  /// items readers see.
+  ///
+  /// A publish that cannot write a fresh `availability.json` (the vault is
+  /// locked, or it builds no catalogue) keeps a recorded one only while this
+  /// is true. Otherwise its keys may name other items — after a restore of
+  /// another library (plan J9), or after another writer replaced
+  /// `books.json` — so the file is deleted instead (plan S6).
+  bool get catalogueKeyed;
 }

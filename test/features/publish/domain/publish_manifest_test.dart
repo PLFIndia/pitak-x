@@ -618,4 +618,34 @@ void main() {
       });
     });
   });
+
+  group('withoutCatalogueKeys (plan J9)', () {
+    test('clears only the flag; files, head, proof and state stay', () {
+      const keyed = PublishManifest(
+        repo: 'me/lib',
+        branch: 'main',
+        headSha: 'head-a',
+        ownershipConfirmed: true,
+        state: PublishState.live,
+        fileShas: {'books.json': 'b1', 'availability.json': 'a1'},
+        coverUrlByBookId: {'7': 'https://example.org/c.jpg'},
+        proofPath: PublishProofPath.availabilityJson,
+        catalogueKeyed: true,
+      );
+      final cleared = keyed.withoutCatalogueKeys();
+      expect(cleared.catalogueKeyed, isFalse);
+      expect(cleared.repo, 'me/lib');
+      expect(cleared.branch, 'main');
+      expect(cleared.headSha, 'head-a');
+      expect(cleared.ownershipConfirmed, isTrue);
+      expect(cleared.state, PublishState.live);
+      expect(cleared.fileShas, keyed.fileShas);
+      expect(cleared.coverUrlByBookId, keyed.coverUrlByBookId);
+      expect(cleared.proofPath, PublishProofPath.availabilityJson);
+      expect(
+        PublishManifest.fromJson(cleared.toJson()).catalogueKeyed,
+        isFalse,
+      );
+    });
+  });
 }
