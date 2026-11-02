@@ -29,7 +29,6 @@ import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_api.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_api_models.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_connection.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_error_messages.dart';
-import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_limits.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_site_manifest.dart';
 import 'package:pitaka/features/publish/domain/publish_target.dart';
 
@@ -65,7 +64,7 @@ final class CloudflareDeployPipeline {
   /// [initial] is the preflight the operation was prepared against; it is
   /// compared with a fresh read immediately before the deploy.
   ///
-  /// [readBack] says which files prove this deploy, and picks the matching
+  /// [readBack] says which files prove this deploy; every scope uses the
   /// after-deploy budget. [resultUrl] is the address a success reports.
   ///
   /// [onLocalBytesMissing] decides what this operation reports when
@@ -285,13 +284,8 @@ final class CloudflareDeployPipeline {
       deletedPaths: publication.deletedPaths,
       revision: _clock(),
       scope: readBack,
-      budget: switch (readBack) {
-        CloudflareReadBackScope.ordinary =>
-          CloudflareReadBackBudget.afterDeploy,
-        // AV13: the first round reads at once (two tiny files).
-        CloudflareReadBackScope.availabilityOnly =>
-          CloudflareReadBackBudget.afterAvailabilityDeploy,
-      },
+      // The default budget is `afterDeploy`, shared by every scope; its first
+      // round reads at once (plan SP2; before SP2 only the lane's did).
       onRounds: (timings?.enabled ?? false)
           ? (rounds) => readBackRounds = rounds
           : null,

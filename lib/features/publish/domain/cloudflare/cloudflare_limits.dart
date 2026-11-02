@@ -202,38 +202,29 @@ abstract final class CloudflareLimits {
 /// describe the live site?" must be cheap and must not hold the publish queue
 /// for minutes. Both keep a total deadline, so a hung read can never make the
 /// check unbounded.
+///
+/// The first round always reads at once; [interval] is the wait before each
+/// LATER round (plan SP2, 2026-11-02). Before SP2 every round waited first,
+/// and only the availability lane's deploys read at once (plan AV13).
 final class CloudflareReadBackBudget {
   /// Creates a budget.
   const CloudflareReadBackBudget({
     required this.rounds,
     required this.interval,
     required this.deadline,
-    this.immediateFirstRound = false,
   });
 
-  /// Rounds for a deployment made moments ago: 12 × 5 s inside 90 s.
+  /// Rounds for a deployment made moments ago: 12 rounds, 5 s apart, inside
+  /// 90 s. Ordinary, combined and availability-only deploys and moves share
+  /// it.
   static const afterDeploy = CloudflareReadBackBudget(
     rounds: 12,
     interval: Duration(seconds: 5),
     deadline: Duration(seconds: 90),
   );
 
-  /// Rounds for an availability-only deployment made moments ago (ADR 0019
-  /// Decision 11, plan AV13): the [afterDeploy] budget, except that the first
-  /// round reads straight away instead of waiting [interval] first.
-  ///
-  /// Why only this deploy (beginner note): it reads two tiny files, and a
-  /// Worker version is atomic, so the first read usually already proves it.
-  /// Making EVERY deploy read immediately is plan SP2 (Phase 3), a separate,
-  /// measured change.
-  static const afterAvailabilityDeploy = CloudflareReadBackBudget(
-    rounds: 12,
-    interval: Duration(seconds: 5),
-    deadline: Duration(seconds: 90),
-    immediateFirstRound: true,
-  );
-
-  /// Rounds for a record written by an earlier publish: 3 × 2 s inside 20 s.
+  /// Rounds for a record written by an earlier publish: 3 rounds, 2 s apart,
+  /// inside 20 s.
   static const earlierDeployment = CloudflareReadBackBudget(
     rounds: 3,
     interval: Duration(seconds: 2),
@@ -243,13 +234,9 @@ final class CloudflareReadBackBudget {
   /// Maximum polling rounds.
   final int rounds;
 
-  /// Delay before each polling round (after the first one when
-  /// [immediateFirstRound] is true).
+  /// Delay before each polling round after the first one (the first round
+  /// reads at once).
   final Duration interval;
-
-  /// True when the first round reads at once; every later round still waits
-  /// [interval]. The round count and the deadline are unchanged.
-  final bool immediateFirstRound;
 
   /// Total wall-clock budget. A read already in flight may overrun it by its
   /// own transport limit (15 s); no new read starts after it.

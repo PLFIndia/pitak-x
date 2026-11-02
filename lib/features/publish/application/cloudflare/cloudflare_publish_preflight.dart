@@ -151,20 +151,69 @@ final class CloudflarePublishPreflightReader {
   final CloudflarePublishMarkerProbe _markerProbe;
 
   /// Runs the read-only preflight for [target].
+  ///
+  /// Speed (plan SP3): the subdomain read, the Worker-presence read and the
+  /// marker probe do not depend on each other, so they start together; the
+  /// route read starts as soon as presence shows the Worker exists. The
+  /// answers are then checked in the order the reads used to run one after
+  /// another (subdomain, presence, marker, route), so the result and every
+  /// failure are exactly what that order produced.
+  ///
+  /// One difference, on failure paths only (beginner note): when an early
+  /// check fails — for example the account's workers.dev address changed —
+  /// the later reads were already sent. They are reads (nothing is written),
+  /// and their answers are ignored. On every successful run the requests are
+  /// exactly the same as before.
   Future<Either<Failure, CloudflarePublishPreflight>> call({
     required CloudflareApiToken token,
     required CloudflarePublishTarget target,
     required CloudflareSiteManifest local,
     required String cacheBuster,
   }) async {
+    final subdomainRead = _capture(
+      () => _accountApi.readAccountSubdomain(
+        token: token,
+        accountId: target.accountId,
+      ),
+    );
+    final presenceRead = _capture(
+      () => _deployApi.workerPresence(
+        token: token,
+        accountId: target.accountId,
+        workerName: target.workerName,
+      ),
+    );
+    final markerRead = _capture(
+      () => _markerProbe.call(target: target, cacheBuster: cacheBuster),
+    );
+    // The route belongs to an existing Worker only, so it still waits for
+    // presence. Null means "not read" (absent Worker, or presence failed).
+    final routeRead = presenceRead.then(
+      (presence) => switch (presence) {
+        _Answered(:final value) when value.exists => _capture(
+          () => _deployApi.readWorkerRoute(
+            token: token,
+            accountId: target.accountId,
+            workerName: target.workerName,
+          ),
+        ),
+        _ => Future<_ReadResult<CloudflareWorkerRoute>?>.value(),
+      },
+    );
+    // Every read is awaited before any answer is checked: a check that ends
+    // the preflight early must not leave a read nobody listens to.
+    final (subdomainResult, presenceResult, markerResult, routeResult) = await (
+      subdomainRead,
+      presenceRead,
+      markerRead,
+      routeRead,
+    ).wait;
+
     try {
       // A 403 is the documented manual-address limitation, not drift. Any
       // explicit readable absence or different subdomain is SiteUnavailable.
       try {
-        final subdomain = await _accountApi.readAccountSubdomain(
-          token: token,
-          accountId: target.accountId,
-        );
+        final subdomain = subdomainResult.valueOrThrow();
         if (subdomain == null ||
             subdomain.value != target.accountSubdomain.value) {
           return const Left(
@@ -175,26 +224,14 @@ final class CloudflarePublishPreflightReader {
         if (error.kind != CloudflareApiExceptionKind.forbidden) rethrow;
       }
 
-      final presence = await _deployApi.workerPresence(
-        token: token,
-        accountId: target.accountId,
-        workerName: target.workerName,
-      );
+      final presence = presenceResult.valueOrThrow();
       // No case-variant listing here any more: Cloudflare refuses a Worker
       // name with capitals (HTTP 400, code 10016, real host 2026-10-30), so no
       // differently-capitalised Worker can own this lower-case address.
       final workerExists = presence.exists;
-      final probe = await _markerProbe.call(
-        target: target,
-        cacheBuster: cacheBuster,
-      );
-      final route = workerExists
-          ? await _deployApi.readWorkerRoute(
-              token: token,
-              accountId: target.accountId,
-              workerName: target.workerName,
-            )
-          : null;
+      final probe = markerResult.valueOrThrow();
+      // `routeResult` is non-null exactly when the Worker exists (above).
+      final route = workerExists ? routeResult!.valueOrThrow() : null;
       // Content, not existence, decides freshness: an empty Worker classifies
       // like an absent one (see `workerHasContent`).
       final freshness = classifyFreshness(
@@ -220,4 +257,48 @@ final class CloudflarePublishPreflightReader {
       return const Left(CloudflareFailure(CloudflareErrorMessages.generic));
     }
   }
+
+  /// Runs [read] and keeps what it produced: its value, or the exception it
+  /// threw. The exception is NOT swallowed: [call] throws it again, with its
+  /// stack trace, at the point where the one-by-one order would have met it.
+  /// An `Error` (a bug) is not caught and propagates as before.
+  static Future<_ReadResult<T>> _capture<T>(Future<T> Function() read) async {
+    try {
+      return _Answered(await read());
+    } on Exception catch (error, stackTrace) {
+      return _Threw(error, stackTrace);
+    }
+  }
+}
+
+/// What one concurrent preflight read produced (plan SP3).
+///
+/// Why a small sealed type (beginner note): the reads now run side by side,
+/// but their failures must still be judged in the old order. Keeping each
+/// result lets [CloudflarePublishPreflightReader.call] look at them one by
+/// one, exactly like the sequential code did.
+sealed class _ReadResult<T> {
+  const _ReadResult();
+
+  /// The value, or the read's exception thrown again with its stack trace.
+  T valueOrThrow();
+}
+
+final class _Answered<T> extends _ReadResult<T> {
+  const _Answered(this.value);
+
+  final T value;
+
+  @override
+  T valueOrThrow() => value;
+}
+
+final class _Threw<T> extends _ReadResult<T> {
+  const _Threw(this.error, this.stackTrace);
+
+  final Exception error;
+  final StackTrace stackTrace;
+
+  @override
+  T valueOrThrow() => Error.throwWithStackTrace(error, stackTrace);
 }

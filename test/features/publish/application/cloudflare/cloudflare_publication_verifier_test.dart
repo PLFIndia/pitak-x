@@ -1,7 +1,10 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_publication_verifier.dart';
+import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_html_routing.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_limits.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_site_manifest.dart';
 import 'package:pitaka/features/publish/domain/site/publish_file.dart';
@@ -379,59 +382,342 @@ void main() {
     });
   });
 
-  group('immediateFirstRound (plan AV13)', () {
-    test(
-      'the first round reads before any wait; later rounds still wait',
-      () async {
-        final events = <String>[];
-        // A path that never matches keeps every round going.
-        reader.body('books.json', utf8.encode('stale'));
-        final logging = _LoggingReader(reader, events);
+  group('round one reads at once (plan SP2)', () {
+    test('a deploy that is already served is proven in one round with no '
+        'wait at all', () async {
+      final events = <String>[];
+      final logging = _LoggingReader(reader, events);
+      int? rounds;
 
-        final result =
-            await CloudflarePublicationVerifier(
-              reader: logging,
-              sleep: (delay) async => events.add('sleep ${delay.inSeconds}'),
+      final result =
+          await CloudflarePublicationVerifier(
+            reader: logging,
+            sleep: (delay) async => events.add('sleep ${delay.inSeconds}'),
+          ).verify(
+            target: target,
+            manifest: manifest,
+            revision: 1,
+            markerBytes: files['pitak-publish.json']!.bytes,
+            // The default budget: CloudflareReadBackBudget.afterDeploy.
+            onRounds: (value) => rounds = value,
+          );
+
+      expect(result, CloudflarePublicationVerification.verified);
+      expect(rounds, 1);
+      expect(events, everyElement(startsWith('read ')));
+    });
+
+    test('later rounds still wait the interval first', () async {
+      final events = <String>[];
+      // A path that never matches keeps every round going.
+      reader.body('books.json', utf8.encode('stale'));
+      final logging = _LoggingReader(reader, events);
+
+      final result =
+          await CloudflarePublicationVerifier(
+            reader: logging,
+            sleep: (delay) async => events.add('sleep ${delay.inSeconds}'),
+          ).verify(
+            target: target,
+            manifest: manifest,
+            revision: 1,
+            budget: const CloudflareReadBackBudget(
+              rounds: 3,
+              interval: Duration(seconds: 5),
+              deadline: Duration(minutes: 1),
+            ),
+          );
+
+      expect(result, CloudflarePublicationVerification.contradicted);
+      expect(events.first, startsWith('read '));
+      // Three rounds, two waits: only the first one is immediate.
+      expect(events.where((e) => e.startsWith('sleep ')), [
+        'sleep 5',
+        'sleep 5',
+      ]);
+    });
+
+    test('an earlier record is read at once too', () async {
+      final events = <String>[];
+      final logging = _LoggingReader(reader, events);
+
+      final result =
+          await CloudflarePublicationVerifier(
+            reader: logging,
+            sleep: (delay) async => events.add('sleep ${delay.inSeconds}'),
+          ).verify(
+            target: target,
+            manifest: manifest,
+            revision: 1,
+            budget: CloudflareReadBackBudget.earlierDeployment,
+          );
+
+      expect(result, CloudflarePublicationVerification.verified);
+      expect(events, everyElement(startsWith('read ')));
+    });
+  });
+
+  group('reads of one round run side by side (plan SP2)', () {
+    test(
+      'never more than four at once, and they start in path order',
+      () async {
+        final held = _HeldReader(reader);
+        final verification =
+            CloudflarePublicationVerifier(
+              reader: held,
+              sleep: (_) async {},
             ).verify(
               target: target,
               manifest: manifest,
               revision: 1,
-              budget: const CloudflareReadBackBudget(
-                rounds: 3,
-                interval: Duration(seconds: 5),
-                deadline: Duration(minutes: 1),
-                immediateFirstRound: true,
-              ),
+              markerBytes: files['pitak-publish.json']!.bytes,
+              deletedPaths: const ['posters/old.jpg'],
+              budget: oneRound,
             );
 
-        expect(result, CloudflarePublicationVerification.contradicted);
-        expect(events.first, startsWith('read '));
-        // Three rounds, two waits: only the first one is immediate.
-        expect(events.where((e) => e.startsWith('sleep ')), [
-          'sleep 5',
-          'sleep 5',
+        await pumpEventQueue();
+        expect(held.started, hasLength(4), reason: 'four reads at once');
+        // Release one at a time: each answer lets exactly one more read start.
+        while (held.waiting.isNotEmpty) {
+          expect(held.inFlight, lessThanOrEqualTo(4));
+          held.releaseFirst();
+          await pumpEventQueue();
+        }
+
+        expect(await verification, CloudflarePublicationVerification.verified);
+        expect(held.maxInFlight, 4);
+        // Eight paths in the documented set here; reads START in path order
+        // (sorted by file name), exactly as they did one by one.
+        expect(held.started, [
+          'books.json',
+          'events', // events.html, read where the Worker serves it
+          'events.json',
+          '', // index.html, read at the root
+          'library.json',
+          'pitak-publish.json',
+          'posters/a.jpg',
+          'posters/old.jpg',
         ]);
       },
     );
 
-    test('without it, the first round waits first (unchanged)', () async {
-      final events = <String>[];
-      final logging = _LoggingReader(reader, events);
+    test('a set of two reads both at once (the availability lane)', () async {
+      final availability = s8File(
+        'availability.json',
+        utf8.encode('{"schemaVersion":1,"asOf":0,"out":[]}'),
+      );
+      reader.body('availability.json', availability.bytes);
+      final held = _HeldReader(reader);
 
-      await CloudflarePublicationVerifier(
-        reader: logging,
-        sleep: (delay) async => events.add('sleep ${delay.inSeconds}'),
-      ).verify(
-        target: target,
-        manifest: manifest,
-        revision: 1,
-        markerBytes: files['pitak-publish.json']!.bytes,
-        // The default budget: CloudflareReadBackBudget.afterDeploy.
+      final verification =
+          CloudflarePublicationVerifier(
+            reader: held,
+            sleep: (_) async {},
+          ).verify(
+            target: target,
+            manifest: s8Manifest(
+              target: target,
+              publishId: cloudflareTestPublishId,
+              additional: {...additional, 'availability.json': availability},
+            ),
+            revision: 1,
+            markerBytes: files['pitak-publish.json']!.bytes,
+            scope: CloudflareReadBackScope.availabilityOnly,
+          );
+
+      await pumpEventQueue();
+      expect(held.started, ['availability.json', 'pitak-publish.json']);
+      held
+        ..releaseFirst()
+        ..releaseFirst();
+      expect(await verification, CloudflarePublicationVerification.verified);
+    });
+
+    test('no read starts once the deadline has passed; reads in flight '
+        'finish', () async {
+      var now = 0;
+      final starts = <int>[];
+      // Every read takes 6 s (counted when it answers), so the 10 s deadline
+      // passes during round one while four reads are in flight.
+      final slow = _SlowReader(
+        reader,
+        onStart: () => starts.add(now),
+        takes: () async {
+          await Future<void>.value();
+          now += 6000;
+        },
       );
 
-      expect(events.first, 'sleep 5');
+      final result =
+          await CloudflarePublicationVerifier(
+            reader: slow,
+            sleep: (delay) async => now += delay.inMilliseconds,
+            clock: () => now,
+          ).verify(
+            target: target,
+            manifest: manifest,
+            revision: 1,
+            markerBytes: files['pitak-publish.json']!.bytes,
+            budget: const CloudflareReadBackBudget(
+              rounds: 5,
+              interval: Duration(seconds: 5),
+              deadline: Duration(seconds: 10),
+            ),
+          );
+
+      expect(result, CloudflarePublicationVerification.unreachable);
+      // Four start at once at 0 s. Every later start (if any) happened while
+      // time was left, and the round was cut short: the set has eight paths.
+      expect(starts.take(4), [0, 0, 0, 0]);
+      expect(starts, everyElement(lessThan(10000)));
+      expect(starts.length, lessThan(8));
+      expect(now, greaterThan(10000), reason: 'reads in flight finished');
+    });
+
+    test('a read that throws counts as unreadable and does not stop the '
+        'other reads of its round', () async {
+      final throwing = _ThrowingReader(reader, failingPath: 'books.json');
+
+      final result =
+          await CloudflarePublicationVerifier(
+            reader: throwing,
+            sleep: (_) async {},
+          ).verify(
+            target: target,
+            manifest: manifest,
+            revision: 1,
+            markerBytes: files['pitak-publish.json']!.bytes,
+            budget: oneRound,
+          );
+
+      expect(result, CloudflarePublicationVerification.unreachable);
+      expect(throwing.paths, hasLength(7), reason: 'every path was read');
+    });
+
+    test('a single-read verifier (the one-by-one order) reads one at a '
+        'time', () async {
+      final held = _HeldReader(reader);
+      final verification =
+          CloudflarePublicationVerifier(
+            reader: held,
+            sleep: (_) async {},
+            maxConcurrentReads: 0, // below 1 counts as 1
+          ).verify(
+            target: target,
+            manifest: manifest,
+            revision: 1,
+            budget: oneRound,
+          );
+
+      await pumpEventQueue();
+      expect(held.started, hasLength(1));
+      while (held.waiting.isNotEmpty) {
+        held.releaseFirst();
+        await pumpEventQueue();
+      }
+      expect(await verification, CloudflarePublicationVerification.verified);
+      expect(held.maxInFlight, 1);
     });
   });
+
+  group(
+    'side-by-side reads decide exactly like one-by-one reads (plan SP2)',
+    () {
+      // A seeded matrix: every path of the set gets a script of answers over
+      // the rounds (always right, always wrong, never readable, a 404, right
+      // only from round 2, wrong then unreadable, unreadable then right), and
+      // answers arrive in a scrambled order. The outcome, the round count and
+      // the reads of every round must match the one-at-a-time verifier.
+      const scripts = _Script.values;
+      final availability = s8File(
+        'availability.json',
+        utf8.encode('{"schemaVersion":1,"asOf":0,"out":[]}'),
+      );
+      final paths = <String>[
+        'pitak-publish.json',
+        'books.json',
+        '',
+        'library.json',
+        'events',
+        'events.json',
+        'posters/a.jpg',
+        'posters/old.jpg',
+        'availability.json',
+      ];
+      final rightBodies = <String, List<int>>{
+        for (final entry in files.entries)
+          if (entry.key != 'covers/1.jpg')
+            (CloudflareHtmlRouting.servedPath(entry.key) ?? entry.key):
+                entry.value.bytes,
+        'availability.json': availability.bytes,
+      };
+
+      for (final scope in CloudflareReadBackScope.values) {
+        test('scope ${scope.name}: 300 seeded cases', () async {
+          final random = Random(20261102 + scope.index);
+          for (var i = 0; i < 300; i++) {
+            final plan = {
+              for (final path in paths)
+                path: scripts[random.nextInt(scripts.length)],
+            };
+            final writesAvailability = random.nextBool();
+            final rounds = 1 + random.nextInt(4);
+            Future<(CloudflarePublicationVerification, int?, String)> run(
+              int concurrency,
+            ) async {
+              final scripted = _ScriptedReader(
+                plan: plan,
+                rightBodies: rightBodies,
+                scrambleSeed: i,
+              );
+              int? roundsRun;
+              final outcome =
+                  await CloudflarePublicationVerifier(
+                    reader: scripted,
+                    sleep: (_) async {},
+                    maxConcurrentReads: concurrency,
+                  ).verify(
+                    target: target,
+                    manifest: s8Manifest(
+                      target: target,
+                      publishId: cloudflareTestPublishId,
+                      additional: {
+                        ...additional,
+                        if (writesAvailability)
+                          'availability.json': availability,
+                      },
+                    ),
+                    revision: 7,
+                    markerBytes: files['pitak-publish.json']!.bytes,
+                    deletedPaths: [
+                      'posters/old.jpg',
+                      if (!writesAvailability) 'availability.json',
+                    ],
+                    scope: scope,
+                    budget: CloudflareReadBackBudget(
+                      rounds: rounds,
+                      interval: const Duration(seconds: 5),
+                      deadline: const Duration(minutes: 5),
+                    ),
+                    onRounds: (value) => roundsRun = value,
+                  );
+              return (outcome, roundsRun, scripted.readsByRound());
+            }
+
+            final oneByOne = await run(1);
+            final sideBySide = await run(4);
+            expect(
+              sideBySide,
+              oneByOne,
+              reason:
+                  'case $i: $plan, availability written: '
+                  '$writesAvailability, rounds: $rounds',
+            );
+          }
+        });
+      }
+    },
+  );
 
   test(
     'a later propagation round can still finish the grouped verification',
@@ -559,6 +845,167 @@ final class _PropagatingReader implements PublishedSiteReadVerifier {
     String? cacheBuster,
   }) {
     if (path == 'books.json') onBooks();
+    return _inner.readOutcome(
+      siteUrl: siteUrl,
+      path: path,
+      maxBytes: maxBytes,
+      cacheBuster: cacheBuster,
+    );
+  }
+}
+
+/// Holds every read until the test releases it, and records the order reads
+/// start in and how many are in flight (plan SP2).
+final class _HeldReader implements PublishedSiteReadVerifier {
+  _HeldReader(this._inner);
+
+  final PublishedSiteReadVerifier _inner;
+  final List<String> started = [];
+  final List<Completer<void>> waiting = [];
+  int inFlight = 0;
+  int maxInFlight = 0;
+
+  /// Lets the oldest held read answer.
+  void releaseFirst() => waiting.removeAt(0).complete();
+
+  @override
+  Future<PublishedSiteReadOutcome> readOutcome({
+    required String siteUrl,
+    required String path,
+    required int maxBytes,
+    String? cacheBuster,
+  }) async {
+    started.add(path);
+    inFlight++;
+    if (inFlight > maxInFlight) maxInFlight = inFlight;
+    final gate = Completer<void>();
+    waiting.add(gate);
+    await gate.future;
+    inFlight--;
+    return _inner.readOutcome(
+      siteUrl: siteUrl,
+      path: path,
+      maxBytes: maxBytes,
+      cacheBuster: cacheBuster,
+    );
+  }
+}
+
+/// A read that takes time on the test's fake clock: [onStart] runs when the
+/// read starts, [takes] before it answers.
+final class _SlowReader implements PublishedSiteReadVerifier {
+  _SlowReader(this._inner, {required this.onStart, required this.takes});
+
+  final PublishedSiteReadVerifier _inner;
+  final void Function() onStart;
+  final Future<void> Function() takes;
+
+  @override
+  Future<PublishedSiteReadOutcome> readOutcome({
+    required String siteUrl,
+    required String path,
+    required int maxBytes,
+    String? cacheBuster,
+  }) async {
+    onStart();
+    await takes();
+    return _inner.readOutcome(
+      siteUrl: siteUrl,
+      path: path,
+      maxBytes: maxBytes,
+      cacheBuster: cacheBuster,
+    );
+  }
+}
+
+/// What one path answers, round by round, in the SP2 comparison matrix.
+enum _Script {
+  right,
+  wrong,
+  unreadable,
+  absent,
+  rightFromRoundTwo,
+  wrongThenUnreadable,
+  unreadableThenRight,
+}
+
+/// Answers each path by its [_Script] for the round named in the cache
+/// buster (`<revision>-<round>`), after a scrambled number of event-loop
+/// turns, so side-by-side reads answer in a different order than they
+/// started.
+final class _ScriptedReader implements PublishedSiteReadVerifier {
+  _ScriptedReader({
+    required this.plan,
+    required this.rightBodies,
+    required this.scrambleSeed,
+  });
+
+  final Map<String, _Script> plan;
+  final Map<String, List<int>> rightBodies;
+  final int scrambleSeed;
+  final Map<int, List<String>> _reads = {};
+
+  /// Every round's reads, as one comparable line (paths sorted per round).
+  String readsByRound() {
+    final rounds = _reads.keys.toList()..sort();
+    return [
+      for (final round in rounds)
+        '$round:${(_reads[round]!..sort()).join(',')}',
+    ].join(' | ');
+  }
+
+  @override
+  Future<PublishedSiteReadOutcome> readOutcome({
+    required String siteUrl,
+    required String path,
+    required int maxBytes,
+    String? cacheBuster,
+  }) async {
+    final round = int.parse(cacheBuster!.split('-').last);
+    _reads.putIfAbsent(round, () => []).add(path);
+    final hops = (path.length * 7 + round * 3 + scrambleSeed) % 5;
+    for (var i = 0; i < hops; i++) {
+      await Future<void>.value();
+    }
+    final right = rightBodies[path];
+    final rightAnswer = right == null
+        ? const PublishedSiteReadAbsent()
+        : PublishedSiteReadBody(right) as PublishedSiteReadOutcome;
+    final wrongAnswer = PublishedSiteReadBody(utf8.encode('wrong $path'));
+    const unreadable = PublishedSiteReadUnreadable();
+    return switch (plan[path]!) {
+      _Script.right => rightAnswer,
+      _Script.wrong => wrongAnswer,
+      _Script.unreadable => unreadable,
+      _Script.absent => const PublishedSiteReadAbsent(),
+      _Script.rightFromRoundTwo => round == 1 ? wrongAnswer : rightAnswer,
+      _Script.wrongThenUnreadable => round == 1 ? wrongAnswer : unreadable,
+      _Script.unreadableThenRight => round == 1 ? unreadable : rightAnswer,
+    };
+  }
+}
+
+/// Throws (like a transport bug) for [failingPath]; answers every other path
+/// from the inner reader. Records every path asked for.
+final class _ThrowingReader implements PublishedSiteReadVerifier {
+  _ThrowingReader(this._inner, {required this.failingPath});
+
+  final PublishedSiteReadVerifier _inner;
+  final String failingPath;
+  final List<String> paths = [];
+
+  @override
+  Future<PublishedSiteReadOutcome> readOutcome({
+    required String siteUrl,
+    required String path,
+    required int maxBytes,
+    String? cacheBuster,
+  }) async {
+    paths.add(path);
+    await Future<void>.value();
+    if (path == failingPath) {
+      throw const FormatException('synthetic transport failure');
+    }
     return _inner.readOutcome(
       siteUrl: siteUrl,
       path: path,

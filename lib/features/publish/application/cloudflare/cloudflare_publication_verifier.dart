@@ -14,6 +14,12 @@
 /// Three outcomes replace the old verified/not-verified pair, because "the
 /// site answered with different bytes" and "the site could not be reached" need
 /// different next steps.
+///
+/// Speed (plan SP2): the first round reads at once, and the reads of one round
+/// run side by side, at most
+/// [CloudflarePublicationVerifier.defaultMaxConcurrentReads] at a time. The
+/// budget, the three outcomes and the "last observation per path decides" rule
+/// are the same as when every read waited for the previous one.
 library;
 
 import 'package:pitaka/features/publish/domain/availability/availability_document.dart';
@@ -66,17 +72,33 @@ final class CloudflarePublicationVerifier {
   ///
   /// [clock] returns epoch milliseconds and defaults to the system clock; the
   /// deadline tests inject a fake one.
+  ///
+  /// [maxConcurrentReads] defaults to [defaultMaxConcurrentReads]; a value
+  /// below 1 counts as 1. Production never passes it: the tests pass 1 to
+  /// compare the side-by-side reads with one-at-a-time reads.
   const CloudflarePublicationVerifier({
     required PublishedSiteReadVerifier reader,
     required Future<void> Function(Duration) sleep,
     int Function()? clock,
+    int maxConcurrentReads = defaultMaxConcurrentReads,
   }) : _reader = reader,
        _sleep = sleep,
-       _clock = clock;
+       _clock = clock,
+       _maxConcurrentReads = maxConcurrentReads < 1 ? 1 : maxConcurrentReads;
 
   final PublishedSiteReadVerifier _reader;
   final Future<void> Function(Duration) _sleep;
   final int Function()? _clock;
+  final int _maxConcurrentReads;
+
+  /// The most reads one round keeps in flight at once (plan SP2).
+  ///
+  /// Why four (beginner note): the ordinary set is up to about ten small
+  /// files. Four at a time finishes a round in two or three network round
+  /// trips instead of ten, without a phone opening a burst of connections
+  /// to one site. The saved-library refresh uses the same number for the
+  /// same reason (`RefreshNetworkUseCase.defaultConcurrency`).
+  static const int defaultMaxConcurrentReads = 4;
 
   int _now() => (_clock ?? _systemClock)();
 
@@ -115,28 +137,31 @@ final class CloudflarePublicationVerifier {
 
     final deadline = budget.deadline.inMilliseconds;
     final started = _now();
+    bool pastDeadline() => _now() - started >= deadline;
     // The LAST observation per path decides contradicted vs unreachable.
     final wrongContent = <String>{};
     var attempt = 0;
     while (pending.isNotEmpty && attempt < budget.rounds) {
-      if (_now() - started >= deadline) break;
-      // AV13: an availability-only deploy reads once straight away; every
-      // other round (and every round of the other budgets) waits first.
-      if (attempt > 0 || !budget.immediateFirstRound) {
-        await _sleep(budget.interval);
-      }
+      if (pastDeadline()) break;
+      // SP2: round one reads at once (a deploy that is already served is
+      // proven without any wait); every later round waits [interval] first.
+      if (attempt > 0) await _sleep(budget.interval);
       attempt++;
       final paths = pending.keys.toList()..sort();
+      final verdicts = await _readRound(
+        siteUrl: target.siteUrl,
+        paths: paths,
+        expectations: pending,
+        cacheBuster: '$revision-$attempt',
+        pastDeadline: pastDeadline,
+      );
+      // Applied in path order after the round. Each path is read at most once
+      // per round, so the order cannot change the result; a path the deadline
+      // left unread this round keeps its previous observation.
       for (final path in paths) {
-        if (_now() - started >= deadline) break;
-        final expectation = pending[path]!;
-        final outcome = await _read(
-          siteUrl: target.siteUrl,
-          path: path,
-          maxBytes: expectation.maxBytes,
-          cacheBuster: '$revision-$attempt',
-        );
-        switch (expectation.classify(outcome)) {
+        final verdict = verdicts[path];
+        if (verdict == null) continue;
+        switch (verdict) {
           case _Verdict.matched:
             pending.remove(path);
             wrongContent.remove(path);
@@ -249,6 +274,47 @@ final class CloudflarePublicationVerifier {
     // or removed. The file is tiny, so it costs one small read.
     if (availability != null) pending[AvailabilityDocument.path] = availability;
     return pending;
+  }
+
+  /// Reads [paths] once each with at most [_maxConcurrentReads] in flight, and
+  /// returns the verdict of every path that was read.
+  ///
+  /// The worker-pool pattern of the saved-library refresh (`refresh_run.dart`):
+  /// a few workers take the next path from one shared queue. Dart runs on one
+  /// thread, and there is no `await` between the queue check and the take, so
+  /// no two workers can take the same path. Reads therefore START in path
+  /// order, exactly as they did one by one. No read starts once
+  /// [pastDeadline] is true; a read already in flight finishes, bounded by its
+  /// own transport limit (as the budget documents).
+  Future<Map<String, _Verdict>> _readRound({
+    required String siteUrl,
+    required List<String> paths,
+    required Map<String, _Expectation> expectations,
+    required String cacheBuster,
+    required bool Function() pastDeadline,
+  }) async {
+    final queue = [...paths];
+    final verdicts = <String, _Verdict>{};
+    Future<void> worker() async {
+      while (queue.isNotEmpty) {
+        if (pastDeadline()) return;
+        final path = queue.removeAt(0);
+        final expectation = expectations[path]!;
+        final outcome = await _read(
+          siteUrl: siteUrl,
+          path: path,
+          maxBytes: expectation.maxBytes,
+          cacheBuster: cacheBuster,
+        );
+        verdicts[path] = expectation.classify(outcome);
+      }
+    }
+
+    final workers = queue.length < _maxConcurrentReads
+        ? queue.length
+        : _maxConcurrentReads;
+    await Future.wait([for (var i = 0; i < workers; i++) worker()]);
+    return verdicts;
   }
 
   Future<PublishedSiteReadOutcome> _read({

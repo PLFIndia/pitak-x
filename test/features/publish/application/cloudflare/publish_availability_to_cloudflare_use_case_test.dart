@@ -294,7 +294,7 @@ void main() {
       expect(goingLive.localStateSaved, isTrue);
       expect(h.manifestStore.current.state, PublishState.deployed);
       // The after-deploy budget, first round immediate: 12 rounds, 11 waits.
-      const budget = CloudflareReadBackBudget.afterAvailabilityDeploy;
+      const budget = CloudflareReadBackBudget.afterDeploy;
       expect(h.readBackWaits, hasLength(budget.rounds - 1));
       expect(h.readBackWaits, everyElement(budget.interval));
     });
