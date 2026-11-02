@@ -393,8 +393,9 @@ first — Flutter 3.44 can package a stale `libapp.so` (§4):
 ```bash
 ./.fvm/flutter_sdk/bin/flutter clean && ./.fvm/flutter_sdk/bin/flutter pub get --enforce-lockfile
 ./.fvm/flutter_sdk/bin/flutter build apk --release --flavor fdroid --dart-define=publishTimings=true
-# The instrumented libapp.so must contain the timing string; an ordinary build must not:
-unzip -p build/app/outputs/flutter-apk/app-fdroid-release.apk lib/arm64-v8a/libapp.so | strings | grep -c 'publish timings'
+# The instrumented libapp.so must contain the timing string (count 1); an ordinary build must not (0).
+# Grep the raw bytes: piping into macOS `strings` prints 0 even for a correct build (G.4, 2026-11-02).
+unzip -p build/app/outputs/flutter-apk/app-fdroid-release.apk lib/arm64-v8a/libapp.so | LC_ALL=C grep -a -c 'publish timings'
 adb install -r build/app/outputs/flutter-apk/app-fdroid-release.apk
 adb logcat -s flutter | grep 'publish timings'
 ```

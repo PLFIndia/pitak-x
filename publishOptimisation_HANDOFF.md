@@ -1,4 +1,4 @@
-# Publish optimisation — handoff (S9 complete, 2026-11-02)
+# Publish optimisation — handoff (S9 complete + G.4 device evidence, 2026-11-02)
 
 **Branch:** `publishOptimisation` (from `03313a3`, release 1.9.0+32).
 **Plan:** `publishOptimisation_PLAN.md` (product decisions A.3, engineering decisions A.4, deviations A.6, measurements Appendix A).
@@ -19,24 +19,30 @@ S7 — Readers — **complete** (§S7), started on the product owner's go-ahead
 product owner decided J10 at its start (key-set id in both files).
 S8 — Switch on — **code and docs complete** (§S8), started on the product
 owner's go-ahead ("go ahead for next session", 2026-11-02, the same words
-again). **Still open:** the G.4 device evidence on both hosts (needs the
-product owner and the phone), and the Linux golden regeneration, which the
-product owner **deferred until all fixes are done** (2026-11-02: "golden
-images we do after we are done with all fixes"); the branch stays unpushed
-until then. §6 is the checklist for both.
+again). The G.4 device evidence is now done (§G4). **Still open:** the
+Linux golden regeneration, which the product owner **deferred until all
+fixes are done** (2026-11-02: "golden images we do after we are done with
+all fixes"); the branch stays unpushed until then. §6 is the checklist.
 S9 — ADR 0020 and Fix 1 (covers) — **complete** (§S9), started on the
 product owner's go-ahead ("go ahead for next session", 2026-11-02, the same
 words that started S3–S8). The G.4 rows were not run first: no phone was
-attached (`adb devices` empty), so the G.4 rows and the goldens are still
-open exactly as §6 describes. **ADR 0020 is _proposed_: the product owner
+attached (`adb devices` empty); they ran after S9 instead (§G4). **ADR 0020 is _proposed_: the product owner
 should accept it (or amend it) before S10 starts.**
+G.4 — device evidence — **done** (§G4, 2026-11-02, the product owner on the
+phone, build `6ac2ee1`): every Cloudflare row and GitHub rows 2 and 9 PASS;
+row 8 shortened by the product owner (plan A.6 #94); "usually under a
+minute" kept by the product owner although the p90 rule was missed (A.6
+#93); Fix 1 confirmed on both hosts. Three observations for the product
+owner: plan J12–J14. **Phase 1's only open G.5 item is now the Linux golden
+regeneration (still deferred; the branch stays unpushed).**
 **S10 (Fix 3, GitHub blob reuse) has NOT started. Do not start it until the
 product owner explicitly says so.** Open decision for the product owner:
 plan J11 (§S9).
 
-> Read this file first in any new session. §S9 is the newest state, then
-> §S8, §S7, §S6, §S5, §S4, §S3, §S2 and §0 (S1). §1–§5 are the S0 record
-> (plan Appendix A cites the verbatim lines in §3), kept unchanged.
+> Read this file first in any new session. §G4 (device evidence) and §S9
+> are the newest state, then §S8, §S7, §S6, §S5, §S4, §S3, §S2 and §0
+> (S1). §1–§5 are the S0 record (plan Appendix A cites the verbatim lines
+> in §3), kept unchanged.
 
 > **Standing product decision P8 — public by design (product owner,
 > 2026-11-01).** Pitak is for **public libraries** whose catalogues exist for
@@ -46,6 +52,114 @@ plan J11 (§S9).
 > settled and needs no new review: borrower names and loan details (P1, in the
 > vault) and credentials and tokens (security, `AGENTS.md` §6). `PRIVACY.md`
 > only has to state accurately what is uploaded (a store requirement).
+
+---
+
+## G4 — Device evidence for the availability lane (RELEASING §6.6)
+
+**Date / build:** 2026-11-02, 09:15–10:41 IST. Commit `6ac2ee1` (S9 head).
+Clean release build: `flutter clean`, `pub get --enforce-lockfile`, `flutter
+build apk --release --flavor fdroid --dart-define=publishTimings=true`
+(3 min 43 s, a real build). The packaged arm64 `libapp.so` was byte-equal to
+the freshly stripped build output and contained `publish timings`, `Update
+availability on my site automatically`, `PublishCoverDecider` and
+`cloudflareAvailability` (1 hit each). APK SHA-256 `a4dcb534…ac1a9f8`.
+Installed over the F-Droid app with `adb install -r` (data kept,
+`firstInstallTime` 2026-10-29). Phone: OnePlus 9R `678c5642`, Android 14.
+The product owner did every tap; the agent read `adb logcat -s flutter`
+and polled the public `availability.json` of each host every 1.5–2 s (and the
+repo's commits through `gh api`), so "visible" below means "first served to
+an anonymous HTTP client".
+
+**Method for lend → visible.** Lend time = (timing line's log time − its
+total) − the 20 s debounce. A hand stopwatch was not needed.
+
+**Doc fix found:** RELEASING §6.6's `… | strings | grep -c 'publish
+timings'` prints 0 on macOS even for a correct build (macOS `strings` on a
+pipe). §6.6 now uses `LC_ALL=C grep -a -c`, as `tool/release_build.sh`
+already does.
+
+### Results
+
+| Row | Host | Result | Evidence |
+|---|---|---|---|
+| prep | CF | PASS | Status before: "Tap Publish catalogue now once; after that, availability updates by itself." The Worker still served the S0 fixture site, so the first catalogue publish offered a reviewed whole-site replacement (review 6.0 s); confirmed: 24.3 s, 43,688 B uploaded. |
+| Fix 1 | CF | PASS | Unchanged republish: `coverDecisions=512ms(coversRead=0,coversReused=9)` (S0: 1,428 ms, 8 read). |
+| 1 | CF | PASS | Lend → "Availability will update in a moment" → "Availability updated <time>"; the file showed the key 15–18 s after the debounce. |
+| 4 | CF | PASS | 3-copy book: lending copies 1 and 2 published nothing; lending the 3rd and returning one each published once. |
+| 3 | CF | PASS | 5 lends → ONE deploy (09:45:33, `out` 0 → 5); 5 returns → ONE deploy (09:47:34, 5 → 0). |
+| 5 | CF | PASS | Lend, vault locked before the status changed: the set still went out (09:49:05). |
+| 6 | CF | PASS | Airplane mode: "Cloudflare could not be reached. Next try at 9:53 AM", then "… 9:55 AM" (backoff 1, 2 min). Network back 09:55:50; app resumed 09:56:15.9; lane started 09:56:16.2 (0.3 s later, not at the 10:00 retry); served 09:56:29. Status then "Availability updated 9:51 AM" (the set's `asOf`, the lend time). |
+| 7 | CF | PASS | Switch off: "Availability updates are off. Turn them on in Settings → Data."; exactly one removal (09:58:34, 102 B); `availability.json` 404. Both viewers fell back to the inline tags of the 09:31 catalogue publish (all 9 `available`, so the 2 lent books showed Available: J13). |
+| 10 | CF | PASS | Without the file: the native viewer showed "Availability is the snapshot from publish time, not a live loan check." With the switch back on (one deploy, 10:05:47): the 2 lent books show Not available. |
+| move | CF → GH | PASS (by design) | The vault was locked during the move, so it carried neither `availability.json` nor inline tags (ADR 0019 Decision 12); the next lend published to GitHub. The card kept saying "Availability updated 10:05 AM" about the old site (J14). CF is now retired (moved page, marker `retired`). |
+| 2 | GH | PASS | Lend ≈ 10:12:44 → commit 10:13:06 (`availability: total=5729ms`, budget 10 s) → "Availability updated 10:12 AM · going live" → Pages build 38 s → served 10:13:47 (**≈ 63 s lend → visible**) → the deferred check turned the card into "Availability updated 10:12 AM". |
+| 8 | GH | SHORTENED (A.6 #94) | A return made right after the row 2 commit: "Availability will update at 10:19 AM. GitHub may delay this update."; commit 10:19:06, exactly 6 min after 10:13:06; served 10:19:44. The move's commit did not delay row 2: spacing is between availability publishes, the move counts only towards the hourly budget (`availability_pacing.dart`). |
+| Fix 1 | GH | PASS | Catalogue publish after the move, vault unlocked: `coverDecisions=610ms(coversRead=0,coversReused=9)`; the commit changed only `books.json` (inline tags 2 out, 7 available) and `availability.json`; no lane commit followed (J12 needs a pending set). |
+| 9 | GH | PASS | Fresh install of the Play flavour (same Dart snapshot, byte-equal), new vault, 1 book, 1 borrower, GitHub connected to `degt3rt/my-library`, no catalogue publish, lend: "Tap Publish catalogue now once; after that, availability updates by itself."; no commit and no timing line between the previous publish (10:22) and the check at 10:41. The Play app was uninstalled afterwards (product owner). |
+
+### Cloudflare timing (A.6 #93)
+
+| Lane write | Timing total | Debounce done → served |
+|---|---|---|
+| lend/return #1–#4 (rows 1 and 4; order of the two books not recorded) | 29.5, 25.1, 16.1, 15.1 s | 18.1, 15.7, 12.6, 12.2 s |
+| row 3 lends / returns | 14.9, 15.4 s | 12.6, 13.0 s |
+| row 5 | 15.4 s | 11.5 s |
+| row 6 (resume) | 15.9 s | 13.1 s |
+| row 7 switch back on | 15.8 s | 14.6 s |
+
+Median 15.8 s; **p90 26.0 s** (linear; nearest-rank 29.5 s) — the ≤ 20 s
+rule is missed. Debounce done → served: 11.5–18.1 s, p90 16.1 s. In the two
+slow writes the file was already public 11.4 s and 9.4 s before the line
+ended (post-deploy gates). Lend → visible ≈ 32–38 s every time. **Product
+owner: keep "usually under a minute"; no copy change.** Not counted above:
+the J12 retry (18.4 s) and the row 7 removal (16.5 s).
+
+### Verbatim lines (`adb logcat -s flutter`, IST)
+
+```
+09:29:37.421 publish timings cloudflare: total=6007ms reads=547ms reconcile=3347ms
+09:30:04.620 publish timings cloudflare: total=24280ms reads=161ms reconcile=2720ms upload=4404ms(bytes=43688) deploy=1425ms readBack=6728ms(rounds=1)
+09:30:23.261 publish timings cloudflareAvailability: total=18365ms reconcile=3134ms upload=5833ms(bytes=179) deploy=1635ms readBack=475ms(rounds=1)
+09:31:17.422 publish timings cloudflare: total=26270ms reads=21ms reconcile=5087ms coverDecisions=512ms(coversRead=0,coversReused=9) build=617ms upload=4185ms(bytes=3593) deploy=1169ms readBack=7909ms(rounds=1)
+09:32:43.489 publish timings cloudflareAvailability: total=29504ms reconcile=4210ms upload=5328ms(bytes=197) deploy=2100ms readBack=618ms(rounds=1)
+09:34:24.893 publish timings cloudflareAvailability: total=25063ms reconcile=3316ms upload=3007ms(bytes=179) deploy=5153ms readBack=2829ms(rounds=1)
+09:36:58.924 publish timings cloudflareAvailability: total=16072ms reconcile=3904ms upload=3653ms(bytes=197) deploy=1468ms readBack=506ms(rounds=1)
+09:38:35.488 publish timings cloudflareAvailability: total=15144ms reconcile=3474ms upload=2844ms(bytes=179) deploy=1148ms readBack=1061ms(rounds=1)
+09:45:33.974 publish timings cloudflareAvailability: total=14943ms reconcile=3432ms upload=2543ms(bytes=273) deploy=1140ms readBack=800ms(rounds=1)
+09:47:34.663 publish timings cloudflareAvailability: total=15418ms reconcile=3332ms upload=3373ms(bytes=179) deploy=1154ms readBack=780ms(rounds=1)
+09:49:05.229 publish timings cloudflareAvailability: total=15414ms reconcile=3308ms upload=3072ms(bytes=197) deploy=1199ms readBack=693ms(rounds=1)
+09:56:32.025 publish timings cloudflareAvailability: total=15873ms reconcile=3596ms upload=3169ms(bytes=216) deploy=1793ms readBack=479ms(rounds=1)
+09:58:34.879 publish timings cloudflareAvailability: total=16464ms reconcile=6372ms upload=1533ms(bytes=102) deploy=1244ms readBack=459ms(rounds=1)
+10:05:47.658 publish timings cloudflareAvailability: total=15789ms reconcile=3819ms upload=2766ms(bytes=216) deploy=1486ms readBack=698ms(rounds=1)
+10:13:09.695 publish timings availability: total=5729ms reconcile=1969ms commit=3681ms(bytes=133)
+10:19:09.632 publish timings availability: total=5499ms reconcile=1969ms commit=3470ms(bytes=114)
+10:22:02.999 publish timings catalogue: total=48828ms reads=484ms reconcile=1876ms coverDecisions=610ms(coversRead=0,coversReused=9) build=716ms commit=4086ms(bytes=3281) readBack=41571ms(rounds=8)
+```
+
+### Observations for the product owner (plan Part J; none blocks Phase 1)
+
+- **J12 — a pending set is re-published after a catalogue publish.** Right
+  after the first catalogue publish (09:30:04) the lane deployed its set
+  saved at 09:26 while it waited "not ready": same keys, but `asOf` went
+  back from 09:29 to 09:26. One extra deploy (or one GitHub commit). Only
+  when a set is pending at that moment.
+- **J13 — switch off shows publish-time tags.** Expected by the checklist,
+  but the web page gives no hint that "9 of 9 available" is a publish-time
+  snapshot. Product decision.
+- **J14 — a move with the vault locked is silent.** Correct behaviour, but
+  `availabilityOmitted` is never shown and the card describes the old site.
+
+### Device and site state at the end
+
+- `dev.khoj.pitaka.fdroid`: the `6ac2ee1` timing build (it writes `publish
+  timings` lines; install an ordinary build before daily use), test library
+  of 9 items, 2 lent out, lane on. **Active host: GitHub Pages**
+  (`degt3rt.github.io/my-library`, serving the catalogue and
+  `availability.json`). The Cloudflare Worker `pitak-worker` is **retired**
+  (moved page, marker `state: "retired"`); the S0 fixture is gone from it.
+- `dev.khoj.pitaka` (Play): uninstalled (product owner).
+- APKs kept outside the repo: `/tmp/g4/apk/` (lost on reboot; rebuildable).
 
 ---
 
@@ -189,7 +303,9 @@ copy the product owner may want to read):**
 ```
 
 The "usually in under a minute on Cloudflare" claim stands only if G.4
-measures a p90 ≤ 20 s after the debounce (plan C.9, G4).
+measures a p90 ≤ 20 s after the debounce (plan C.9, G4). **G.4 result:** p90
+26.0 s on the timing line, lend → visible 32–38 s every time; the product
+owner kept the wording (plan A.6 #93), so these notes stand as drafted.
 
 **Files changed (code):** `core/di/src/availability_providers.dart` (+ `.g`),
 `main.dart`, `availability_auto_publisher.dart` (+ `.g`),
@@ -1171,12 +1287,12 @@ throwaway repo.
 
 ---
 
-## 6. Next: finish S8 (needs the product owner); S10 only on go-ahead
+## 6. Next: goldens (deferred); S10 only on go-ahead
 
-S8's code and docs are done (§S8). Phase 1 becomes the release candidate
-(plan G.5) only after the two items below. Neither can be done by an agent
-alone: the first needs this branch on GitHub, the second the phone and the
-hosts.
+S8's code and docs are done (§S8) and the G.4 device evidence is recorded
+(§G4, item 2 below). Phase 1 becomes the release candidate (plan G.5) once
+item 1 is done; it needs this branch on GitHub, so it waits for the product
+owner.
 
 **1. Goldens — deferred by the product owner until all fixes are done
 (2026-11-02).** Do not push the branch or run the workflow before then; the
@@ -1197,7 +1313,13 @@ gh run download <run-id> -n goldens -D test/golden/goldens   # the `goldens` art
 Commit the PNGs (`test(golden): regenerate on Linux after S7/S8`) and check
 CI is green on the branch.
 
-**2. G.4 device evidence on both hosts** — the steps, the build commands
+**2. G.4 device evidence on both hosts — DONE 2026-11-02 (§G4).** The
+original instructions are kept below for the next release that touches the
+lane. The device state has changed since S0: see §G4 "Device and site state
+at the end" (active host GitHub, Cloudflare retired, a timing build on the
+phone).
+
+The steps, the build commands
 (`flutter clean` first, the `publishTimings` build, the `libapp.so` check)
 and the ten rows are in `docs/RELEASING.md` §6.6. Record each row here
 (date, commit, host, PASS/FAIL, times) and fill plan Appendix A's two
@@ -1218,10 +1340,14 @@ catalogue publish (J9/J10); a move made with the vault locked shows no tags
 at the new site until the vault is next unlocked (A.6 #81); "Update
 availability now" on GitHub still counts towards the 10-per-hour budget.
 
-**S9 is done (§S9).** When the G.4 rows run, the build includes Fix 1 too:
-the first catalogue publish on the phone produces every cover once (expected,
-A.6 #84), and later ones produce only new covers — a useful extra check
-(`coverDecisions(coversRead=…, coversReused=…)` in the timings line).
+**S9 is done (§S9)**, and G.4 confirmed Fix 1 on both hosts (0 covers
+read, 9 reused on an unchanged republish).
+
+**Open decisions for the product owner (none blocks Phase 1):** accept or
+amend ADR 0020; plan J11 (replacement prepares twice); plan J12–J14 (§G4
+observations: a pending set re-published after a catalogue publish, the
+switch-off fallback to publish-time tags, a silent move with the vault
+locked).
 
 **Then: S10 (Phase 2, Fix 3 — GitHub blob reuse, CV5) — only on the product
 owner's go-ahead, ideally after ADR 0020 is accepted.** Plan Part D.2 /
