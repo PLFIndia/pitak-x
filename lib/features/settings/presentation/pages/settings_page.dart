@@ -30,6 +30,7 @@ import 'package:pitaka/features/settings/domain/app_settings.dart';
 import 'package:pitaka/features/settings/presentation/settings_write.dart';
 import 'package:pitaka/features/settings/presentation/widgets/community_library_section.dart';
 import 'package:pitaka/features/settings/presentation/widgets/google_books_key_tile.dart';
+import 'package:pitaka/features/settings/presentation/widgets/publishing_settings_group.dart';
 import 'package:pitaka/features/vault/domain/biometric_unlock.dart';
 import 'package:pitaka/features/vault/presentation/pages/biometric_settings_page.dart';
 import 'package:pitaka/features/vault/presentation/pages/change_passphrase_page.dart';
@@ -220,6 +221,8 @@ class _DataTab extends ConsumerWidget {
           onTap: () => go(const MergePage()),
         ),
         const CommunityLibrarySection(),
+        // Renders nothing until the availability lane ships (plan S8).
+        const PublishingSettingsGroup(),
         const Divider(),
         ListTile(
           leading: const Icon(Icons.backup_outlined),

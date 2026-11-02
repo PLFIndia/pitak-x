@@ -8,7 +8,9 @@ import 'dart:async' show unawaited;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/features/publish/application/github_connection_controller.dart';
+import 'package:pitaka/features/publish/presentation/widgets/availability_status_row.dart';
 import 'package:pitaka/features/publish/presentation/widgets/cloudflare_connection_section.dart';
 import 'package:pitaka/features/publish/presentation/widgets/github_connection_dialogs.dart';
 import 'package:pitaka/features/publish/presentation/widgets/github_tile.dart';
@@ -168,6 +170,10 @@ class _ConnectionTabState extends ConsumerState<ConnectionTab> {
         ),
         const CloudflareConnectionSection(),
         const PublishCard(),
+        // Built only when this build runs the lane (plan S8): watching the
+        // lane's provider is what starts it.
+        if (ref.watch(availabilityLaneActivatedProvider))
+          const AvailabilityStatusRow(),
         if (ui.statusMessage != null) ...[
           const SizedBox(height: 8),
           Text(ui.statusMessage!),
