@@ -83,4 +83,59 @@ void main() {
       saltStorePath,
     ]);
   });
+
+  group('plan J9: flows that change what ids name clear catalogueKeyed', () {
+    // The same invariant for the OTHER half of a key: the internal id. A
+    // restore (new data generation) or an overwrite merge (new ids) must run
+    // through `CatalogueKeysReset.beforeIdsChange`, which clears the flag in
+    // both records first (ADR 0019 Decision 3, plan S6).
+
+    test('the restore generation switch runs through the keys reset', () {
+      final source = File(
+        'lib/core/di/src/backup_providers.dart',
+      ).readAsStringSync();
+      final activate = source.indexOf('activate: (generation)');
+      final reset = source.indexOf('catalogueKeysResetProvider', activate);
+      final guard = source.indexOf('beforeIdsChange(', activate);
+      final switchCall = source.indexOf('.activate(generation)', activate);
+      expect(activate, greaterThan(0));
+      expect(reset, greaterThan(activate));
+      expect(guard, greaterThan(reset));
+      expect(
+        switchCall,
+        greaterThan(guard),
+        reason: 'the switch happens INSIDE the guard',
+      );
+    });
+
+    test('the overwrite merge is wired with the keys reset', () {
+      final source = File(
+        'lib/core/di/src/import_export_providers.dart',
+      ).readAsStringSync();
+      expect(source, contains('catalogueKeysResetProvider'));
+      expect(source, contains('idsChangeGuard: beforeIdsChange'));
+      final merge = File(
+        'lib/features/import_export/application/merge_library_use_case.dart',
+      ).readAsStringSync();
+      expect(merge, contains('_idsChangeGuard(() => _overwrite(decision))'));
+    });
+
+    test('nothing else switches the data generation', () {
+      final offenders = [
+        for (final file in libFiles())
+          if (file.readAsStringSync().contains(
+                'activeDataGenerationProvider.notifier',
+              ) &&
+              path(file) != 'lib/core/di/src/backup_providers.dart')
+            path(file),
+      ];
+      expect(
+        offenders,
+        isEmpty,
+        reason:
+            'A new caller of ActiveDataGeneration.activate must run through '
+            'CatalogueKeysReset.beforeIdsChange (plan J9).',
+      );
+    });
+  });
 }

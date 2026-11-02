@@ -13,6 +13,8 @@
 /// direction only.
 library;
 
+import 'dart:async';
+
 import 'package:pitaka/core/async/serial_op_queue.dart';
 import 'package:pitaka/core/di/src/database_providers.dart';
 import 'package:pitaka/core/di/src/events_providers.dart';
@@ -21,6 +23,7 @@ import 'package:pitaka/core/di/src/platform_providers.dart';
 import 'package:pitaka/core/images/image_downscaler.dart';
 import 'package:pitaka/core/platform/app_log.dart';
 import 'package:pitaka/features/library/application/materialize_remote_cover_use_case.dart';
+import 'package:pitaka/features/publish/application/availability/availability_lane_repository.dart';
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_manifest_store.dart';
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_publish_marker_probe.dart';
 import 'package:pitaka/features/publish/application/cloudflare/setup_cloudflare_site.dart';
@@ -51,6 +54,7 @@ import 'package:pitaka/features/publish/domain/site/published_site_verifier.dart
 import 'package:pitaka/features/publish/infrastructure/bounded_cover_fetcher.dart';
 import 'package:pitaka/features/publish/infrastructure/bounded_published_site_verifier.dart';
 import 'package:pitaka/features/publish/infrastructure/cloudflare_publish_marker_codec.dart';
+import 'package:pitaka/features/publish/infrastructure/commit_recording_github_api.dart';
 import 'package:pitaka/features/publish/infrastructure/events_html_builder.dart';
 import 'package:pitaka/features/publish/infrastructure/events_json_builder.dart';
 import 'package:pitaka/features/publish/infrastructure/file_cloudflare_manifest_store.dart';
@@ -58,6 +62,7 @@ import 'package:pitaka/features/publish/infrastructure/file_publish_manifest_sto
 import 'package:pitaka/features/publish/infrastructure/http_cloudflare_api.dart';
 import 'package:pitaka/features/publish/infrastructure/http_github_api.dart';
 import 'package:pitaka/features/publish/infrastructure/local_cover_reader.dart';
+import 'package:pitaka/features/publish/infrastructure/prefs_availability_lane_store.dart';
 import 'package:pitaka/features/publish/infrastructure/prefs_publish_host_store.dart';
 import 'package:pitaka/features/publish/infrastructure/prefs_share_card_style_store.dart';
 import 'package:pitaka/features/publish/infrastructure/secure_storage_cloudflare_credential_store.dart';
@@ -70,9 +75,51 @@ part 'publish_providers.g.dart';
 
 /// GitHub API client for publishing (device flow + git data). Shares the app
 /// HTTP client.
+///
+/// Every accepted commit — catalogue, events, moves, retirements and the
+/// availability lane — is reported to [gitHubCommitRecorder], so the lane's
+/// hourly budget counts all of them (ADR 0019 Decision 8, plan AV6). One
+/// decorator around the one commit method means no flow can forget.
 @riverpod
-GitHubApi gitHubApi(GitHubApiRef ref) =>
-    HttpGitHubApi(client: ref.watch(httpClientProvider));
+GitHubApi gitHubApi(GitHubApiRef ref) => CommitRecordingGitHubApi(
+  inner: HttpGitHubApi(client: ref.watch(httpClientProvider)),
+  onCommitted: ref.watch(gitHubCommitRecorderProvider),
+  clock: ref.watch(clockProvider),
+);
+
+/// Adds an accepted GitHub commit's time to the availability lane's store.
+///
+/// keepAlive: the callback outlives any one publish, and it uses its own
+/// `ref` later, when a commit lands. Best effort: the store is resolved only
+/// then (never while building the API), and a failure is logged by type,
+/// because the commit already happened and the budget is a courtesy limit.
+@Riverpod(keepAlive: true)
+void Function(int acceptedAt) gitHubCommitRecorder(
+  GitHubCommitRecorderRef ref,
+) => (acceptedAt) {
+  unawaited(() async {
+    try {
+      final lane = await ref.read(availabilityLaneRepositoryProvider.future);
+      await lane.recordGitHubCommit(acceptedAt);
+    } on Object catch (error) {
+      appLog('GitHub commit time not recorded: ${error.runtimeType}');
+    }
+  }());
+};
+
+/// The ONE writer of the availability lane's saved state (ADR 0019
+/// Decision 9).
+///
+/// keepAlive: the repository serialises every read-modify-write on its own
+/// queue. A second instance would have a second queue, and two writers could
+/// then drop each other's changes (the lane's pending set versus a GitHub
+/// commit time). The store holds public keys and timestamps only (plan C.4).
+@Riverpod(keepAlive: true)
+Future<AvailabilityLaneRepository> availabilityLaneRepository(
+  AvailabilityLaneRepositoryRef ref,
+) async => AvailabilityLaneRepository(
+  PrefsAvailabilityLaneStore(await ref.watch(sharedPreferencesProvider.future)),
+);
 
 /// Fixed-origin Cloudflare account/deploy HTTP adapters (S6).
 ///

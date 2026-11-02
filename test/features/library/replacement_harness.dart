@@ -24,6 +24,7 @@ import 'package:pitaka/features/vault/domain/entities/vault_data.dart';
 import 'package:pitaka/features/vault/domain/repositories/vault_repository.dart';
 import 'package:pitaka/features/vault/infrastructure/vault_store.dart';
 
+import '../publish/support/availability_lane_fakes.dart';
 import '../vault/vault_repository_write_stub.dart';
 
 class ReplacementVault with VaultWriteUnsupported implements VaultRepository {
@@ -127,6 +128,11 @@ class ReplacementHarness {
     books = DriftCatalogueItemRepository(db);
     container = ProviderContainer(
       overrides: [
+        // Plan J9: the overwrite merge runs through the publish feature's
+        // keys reset; in memory here (no prefs, no publish records on disk).
+        catalogueKeysResetProvider.overrideWith(
+          (ref) async => MemoryKeysReset().reset,
+        ),
         appDocsDirProvider.overrideWith((ref) async => directory),
         if (!generations) ...[
           // The real coversDir resolves through the active data generation,

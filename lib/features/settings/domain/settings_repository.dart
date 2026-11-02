@@ -85,4 +85,10 @@ abstract interface class SettingsRepository {
 
   /// Persists the opt-in app-wide biometric gate flag (default false).
   Future<Either<Failure, Unit>> setAppLockBiometric({required bool enabled});
+
+  /// Persists the automatic availability switch (ADR 0019, plan P3). An
+  /// absent value reads as on.
+  Future<Either<Failure, Unit>> setAutoPublishAvailability({
+    required bool enabled,
+  });
 }

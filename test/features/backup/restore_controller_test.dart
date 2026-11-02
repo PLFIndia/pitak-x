@@ -11,6 +11,7 @@ import 'package:path/path.dart' as p;
 import 'package:pitaka/core/crypto/secret_bytes.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/core/storage/active_data_generation.dart';
 import 'package:pitaka/features/backup/application/restore_controller.dart';
 import 'package:pitaka/features/library/application/library_controller.dart';
 import 'package:pitaka/features/network/application/network_controller.dart';
@@ -18,6 +19,7 @@ import 'package:pitaka/features/network/application/network_refresh_controller.d
 import 'package:pitaka/features/network/domain/entities/network_library.dart';
 import 'package:pitaka/features/network/domain/repositories/network_repository.dart';
 import 'package:pitaka/features/periodicals/application/periodicals_controller.dart';
+import 'package:pitaka/features/publish/domain/publish_manifest.dart';
 import 'package:pitaka/features/settings/application/settings_controller.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
 import 'package:pitaka/features/settings/domain/settings_repository.dart';
@@ -30,6 +32,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../library/replacement_test_guard.dart';
 import '../periodicals/application/periodical_fakes.dart';
+import '../publish/support/availability_lane_fakes.dart';
 import '../vault/vault_repository_write_stub.dart';
 import 'generation_fixture.dart';
 
@@ -103,6 +106,11 @@ class _LogoSettingsRepo implements SettingsRepository {
   Future<Either<Failure, Unit>> setAppLockBiometric({
     required bool enabled,
   }) async => right(unit);
+
+  @override
+  Future<Either<Failure, Unit>> setAutoPublishAvailability({
+    required bool enabled,
+  }) async => right(unit);
 }
 
 void main() {
@@ -124,9 +132,14 @@ void main() {
     SettingsRepository? settings,
     NetworkRepository? network,
     FakePeriodicals? periodicals,
+    MemoryKeysReset? keys,
   }) {
+    // Plan J9: the generation switch runs through the publish feature's
+    // keys reset; in memory here (no prefs, no publish records on disk).
+    final keysReset = keys ?? MemoryKeysReset();
     final container = ProviderContainer(
       overrides: [
+        catalogueKeysResetProvider.overrideWith((ref) async => keysReset.reset),
         appDocsDirProvider.overrideWith((ref) async => tmp),
         vaultRepositoryProvider.overrideWithValue(_FakeVault()),
         nowTickProvider.overrideWith((ref) => 0),
@@ -292,6 +305,74 @@ void main() {
     final state = container.read(restoreControllerProvider);
     expect(state.hasValue, isTrue);
     expect(state.value?.booksRestored, 0);
+  });
+
+  group('plan J9 — a restore marks the published keys unusable first', () {
+    Uint8List emptyArchive() {
+      final manifest = utf8.encode(
+        jsonEncode({
+          'schemaVersion': 1,
+          'exportedAt': 123,
+          'hasBooks': false,
+          'hasWishlist': false,
+          'hasBorrowers': false,
+          'hasBackupBlob': false,
+          'hasCovers': false,
+        }),
+      );
+      final a = Archive()
+        ..addFile(ArchiveFile('manifest.json', manifest.length, manifest));
+      return Uint8List.fromList(ZipEncoder().encode(a)!);
+    }
+
+    test('flags cleared before the switch, then the lane is told', () async {
+      final keys = MemoryKeysReset();
+      keys.gitHub.current = const PublishManifest(
+        repo: 'me/lib',
+        fileShas: {'books.json': 'b1', 'availability.json': 'a1'},
+        catalogueKeyed: true,
+      );
+      final container = makeContainer(keys: keys);
+      final before = await container.read(activeDataGenerationProvider.future);
+
+      await container
+          .read(restoreControllerProvider.notifier)
+          .restore(archiveBytes: emptyArchive());
+
+      expect(container.read(restoreControllerProvider).hasValue, isTrue);
+      final after = await container.read(activeDataGenerationProvider.future);
+      expect(after.name, isNot(before.name), reason: 'the switch happened');
+      expect(keys.gitHub.current.catalogueKeyed, isFalse);
+      expect(
+        keys.gitHub.current.shaFor('availability.json'),
+        'a1',
+        reason: 'the file stays recorded, so a later publish can delete it',
+      );
+      expect(keys.idsChanged, 1);
+    });
+
+    test('a reset that cannot be saved stops the restore first', () async {
+      final keys = MemoryKeysReset();
+      keys.gitHub
+        ..current = const PublishManifest(
+          repo: 'me/lib',
+          fileShas: {'books.json': 'b1'},
+          catalogueKeyed: true,
+        )
+        ..saveFails = true;
+      final container = makeContainer(keys: keys);
+      final before = await container.read(activeDataGenerationProvider.future);
+
+      await container
+          .read(restoreControllerProvider.notifier)
+          .restore(archiveBytes: emptyArchive());
+
+      expect(container.read(restoreControllerProvider).hasError, isTrue);
+      final after = await container.read(activeDataGenerationProvider.future);
+      expect(after.name, before.name, reason: 'fail closed: nothing switched');
+      expect(keys.gitHub.current.catalogueKeyed, isTrue);
+      expect(keys.idsChanged, 0);
+    });
   });
 
   group('N04 — dangling library-logo reference after restore (S9 note)', () {

@@ -8,6 +8,7 @@ import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/crypto/secret_bytes.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/core/storage/catalogue_ids_change_guard.dart';
 import 'package:pitaka/features/import_export/application/merge_library_use_case.dart';
 import 'package:pitaka/features/import_export/infrastructure/pitaka_json_importer.dart';
 import 'package:pitaka/features/library/domain/catalogue_item_page.dart';
@@ -17,6 +18,8 @@ import 'package:pitaka/features/library/domain/merge/library_merge_engine.dart';
 import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
 import 'package:pitaka/features/library/domain/value_objects/item_details.dart';
 import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
+import 'package:pitaka/features/publish/application/availability/catalogue_keys_reset.dart';
+import 'package:pitaka/features/publish/domain/publish_manifest.dart';
 import 'package:pitaka/features/settings/domain/library_namespace.dart';
 import 'package:pitaka/features/vault/application/vault_session_controller.dart';
 import 'package:pitaka/features/vault/domain/entities/borrower.dart';
@@ -28,6 +31,7 @@ import '../../support/raw_catalogue_rows.dart';
 import '../library/replacement_harness.dart';
 import '../library/replacement_test_guard.dart';
 import '../periodicals/application/periodical_fakes.dart';
+import '../publish/support/availability_lane_fakes.dart';
 import '../vault/vault_repository_write_stub.dart';
 import 'bundle_test_fixture.dart';
 
@@ -245,6 +249,10 @@ void main() {
     final settings = ReplacementSettings()..id = matchingId;
     final container = ProviderContainer(
       overrides: [
+        // Plan J9: the overwrite runs through the keys reset (in memory).
+        catalogueKeysResetProvider.overrideWith(
+          (ref) async => MemoryKeysReset().reset,
+        ),
         vaultStoreProvider.overrideWith((ref) async => store),
         vaultRepositoryProvider.overrideWithValue(_LoanVault()),
         catalogueItemRepositoryProvider.overrideWith((ref) async => books),
@@ -650,6 +658,74 @@ void main() {
     expect(repo.books.any((b) => b.title == 'OldBook'), isFalse);
     expect(repo.books.any((b) => b.title == 'FreshReplica'), isTrue);
     expect(settings.libraryId, otherId);
+  });
+
+  group('plan J9: an overwrite runs through the ids-change guard', () {
+    const decision = MergeDiffersDecision(
+      incomingBooks: [
+        CatalogueItem(itemUid: 'u9', title: 'FreshReplica', addedDate: 1),
+      ],
+      incomingLibraryId: otherId,
+      incomingLibraryName: 'Riverside',
+      localLibraryName: 'Mine',
+      localIsEmpty: false,
+    );
+
+    MergeLibraryUseCase useCaseWith(
+      _FakeBooks repo,
+      CatalogueIdsChangeGuard guard,
+    ) => MergeLibraryUseCase(
+      jsonParser: const PitakaJsonImporter(),
+      bookRepo: repo,
+      periodicalRepo: FakePeriodicals(),
+      namespace: _FakeNamespace(libraryId: matchingId, libraryName: 'Mine'),
+      replacementGuard: FakeReplacementGuard(),
+      planner: planMergeInline,
+      idsChangeGuard: guard,
+    );
+
+    test('the keys reset runs first, then the replacement', () async {
+      final repo = _FakeBooks([
+        const CatalogueItem(id: 1, itemUid: 'old', title: 'Old', addedDate: 1),
+      ]);
+      final keys = MemoryKeysReset();
+      keys.gitHub.current = const PublishManifest(
+        repo: 'me/lib',
+        fileShas: {'books.json': 'b1'},
+        catalogueKeyed: true,
+      );
+
+      final res = await useCaseWith(
+        repo,
+        keys.reset.beforeIdsChange,
+      ).applyOverwrite(decision);
+
+      expect(res.isRight(), isTrue);
+      expect(keys.gitHub.current.catalogueKeyed, isFalse);
+      expect(keys.idsChanged, 1);
+      expect(repo.books.single.title, 'FreshReplica');
+    });
+
+    test('a refused reset leaves the catalogue untouched', () async {
+      final repo = _FakeBooks([
+        const CatalogueItem(id: 1, itemUid: 'old', title: 'Old', addedDate: 1),
+      ]);
+      final keys = MemoryKeysReset();
+      keys.gitHub
+        ..current = const PublishManifest(
+          repo: 'me/lib',
+          fileShas: {'books.json': 'b1'},
+          catalogueKeyed: true,
+        )
+        ..saveFails = true;
+
+      await expectLater(
+        useCaseWith(repo, keys.reset.beforeIdsChange).applyOverwrite(decision),
+        throwsA(isA<CatalogueKeysResetRefused>()),
+      );
+      expect(repo.books.single.title, 'Old');
+      expect(keys.idsChanged, 0);
+    });
   });
 
   // Regression for REVIEW_FINDINGS_2 S5 Major: two incoming rows sharing a

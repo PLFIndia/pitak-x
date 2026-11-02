@@ -42,6 +42,9 @@ class PrefsSettingsRepository implements SettingsRepository {
   static const _networkMapTilesConsentKey = 'network_map_tiles_consent';
   static const _libraryLogoKey = 'library_logo';
   static const _appLockBiometricKey = 'app_lock_biometric';
+  // Automatic availability updates (ADR 0019, plan P3). Absent ⇒ true: the
+  // product default is ON, also for installs from before the switch existed.
+  static const _autoPublishAvailabilityKey = 'auto_publish_availability';
 
   @override
   Future<AppSettings> load() async {
@@ -61,6 +64,8 @@ class PrefsSettingsRepository implements SettingsRepository {
           _prefs.getBool(_networkMapTilesConsentKey) ?? false,
       libraryLogo: _prefs.getString(_libraryLogoKey) ?? '',
       appLockBiometric: _prefs.getBool(_appLockBiometricKey) ?? false,
+      autoPublishAvailability:
+          _prefs.getBool(_autoPublishAvailabilityKey) ?? true,
     );
   }
 
@@ -218,4 +223,9 @@ class PrefsSettingsRepository implements SettingsRepository {
   @override
   Future<Either<Failure, Unit>> setAppLockBiometric({required bool enabled}) =>
       _writeBool(_appLockBiometricKey, enabled);
+
+  @override
+  Future<Either<Failure, Unit>> setAutoPublishAvailability({
+    required bool enabled,
+  }) => _writeBool(_autoPublishAvailabilityKey, enabled);
 }

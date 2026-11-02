@@ -344,8 +344,22 @@ void main() {
         expect(h.api.routeUpdates, isEmpty);
         expect(h.api.deployCalls, 0);
         expect(readBackPaths(h), isEmpty);
+        expect(result.staleFileRecorded, isFalse);
       },
     );
+
+    test('an unkeyed record that still shows the file reports it, so the '
+        'lane removes it (plan S6)', () async {
+      final h = publishedSite(keyed: false, published: setA);
+
+      final result = await h.availabilityUseCase(
+        target: h.target,
+        update: AvailabilityWrite(setB),
+      );
+
+      expect((result as AvailabilityNotReady).staleFileRecorded, isTrue);
+      expect(h.api.deployCalls, 0, reason: 'the use case itself sends none');
+    });
 
     test('no record for this Worker (a fresh phone): not ready', () async {
       final h = S8PublishHarness(dir, workerExists: true);

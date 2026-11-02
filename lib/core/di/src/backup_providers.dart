@@ -7,6 +7,7 @@
 library;
 
 import 'package:path/path.dart' as p;
+import 'package:pitaka/core/di/src/availability_providers.dart';
 import 'package:pitaka/core/di/src/database_providers.dart';
 import 'package:pitaka/core/di/src/library_providers.dart';
 import 'package:pitaka/core/di/src/network_providers.dart';
@@ -68,8 +69,19 @@ Future<RestoreBackup> restoreBackup(RestoreBackupRef ref) async {
     vault: vault,
     generations: generations,
     activeGeneration: () => ref.read(activeDataGenerationProvider.future),
-    activate: (generation) =>
-        ref.read(activeDataGenerationProvider.notifier).activate(generation),
+    // Plan J9 (ADR 0019 Decision 3): the restored ids may name other books,
+    // so the published item keys are marked unusable inside the publish
+    // queue BEFORE the switch. If that cannot be saved, the switch does not
+    // happen and the restore fails with the device unchanged. Resolved only
+    // here, when a restore really switches, never while building.
+    activate: (generation) async {
+      final keys = await ref.read(catalogueKeysResetProvider.future);
+      return keys.beforeIdsChange(
+        () => ref
+            .read(activeDataGenerationProvider.notifier)
+            .activate(generation),
+      );
+    },
     workDir: p.join(dir.path, 'restore_work'),
     replacementGuard: ref.read(vaultSessionControllerProvider.notifier),
   );

@@ -114,6 +114,7 @@ class AppSettings {
     this.networkMapTilesConsent = false,
     this.libraryLogo = '',
     this.appLockBiometric = false,
+    this.autoPublishAvailability = true,
   });
 
   /// Sensible first-run defaults.
@@ -189,6 +190,14 @@ class AppSettings {
   /// store); it deters casual snooping on an unlocked device.
   final bool appLockBiometric;
 
+  /// Whether the published site's *Available / Not available* tags update by
+  /// themselves after a loan or a return (ADR 0019, plan P3/AV4). **On by
+  /// default**: a public library's catalogue is public by design (plan P8),
+  /// and the tag carries no borrower data (P1). Turning it off makes the next
+  /// publish delete `availability.json`, so readers fall back to the tag in
+  /// `books.json` instead of a file that silently stopped updating.
+  final bool autoPublishAvailability;
+
   /// Returns a copy with the given fields replaced.
   AppSettings copyWith({
     AppThemeMode? themeMode,
@@ -205,6 +214,7 @@ class AppSettings {
     bool? networkMapTilesConsent,
     String? libraryLogo,
     bool? appLockBiometric,
+    bool? autoPublishAvailability,
   }) {
     return AppSettings(
       themeMode: themeMode ?? this.themeMode,
@@ -224,6 +234,8 @@ class AppSettings {
           networkMapTilesConsent ?? this.networkMapTilesConsent,
       libraryLogo: libraryLogo ?? this.libraryLogo,
       appLockBiometric: appLockBiometric ?? this.appLockBiometric,
+      autoPublishAvailability:
+          autoPublishAvailability ?? this.autoPublishAvailability,
     );
   }
 }

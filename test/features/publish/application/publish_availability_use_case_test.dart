@@ -220,8 +220,25 @@ void main() {
         tree: {...keyedLive().fileShas, 'books.json': 'someone-else'},
       );
 
-      expect(await write(h.useCase), isA<AvailabilityNotReady>());
+      final result = await write(h.useCase) as AvailabilityNotReady;
       expect(h.api.commits, isEmpty);
+      expect(result.staleFileRecorded, isFalse, reason: 'no file recorded');
+    });
+
+    test('a recorded file that the live books.json no longer vouches for is '
+        'reported, so the lane removes it (plan S6)', () async {
+      final record = keyedLive(
+        extra: {'availability.json': laneSha(twoOutBytes)},
+      );
+      final h = harness(
+        record: record,
+        tree: {...record.fileShas, 'books.json': 'someone-else'},
+      );
+
+      final result = await write(h.useCase) as AvailabilityNotReady;
+
+      expect(result.staleFileRecorded, isTrue);
+      expect(h.api.commits, isEmpty, reason: 'the use case itself sends none');
     });
 
     test('a record of another repository never counts', () async {

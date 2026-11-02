@@ -9,6 +9,7 @@ library;
 import 'dart:typed_data';
 
 import 'package:flutter/services.dart' show rootBundle;
+import 'package:pitaka/core/di/src/availability_providers.dart';
 import 'package:pitaka/core/di/src/database_providers.dart';
 import 'package:pitaka/core/di/src/library_providers.dart';
 import 'package:pitaka/features/import_export/application/export_library_use_case.dart';
@@ -125,6 +126,13 @@ Future<MergeLibraryUseCase> mergeLibraryUseCase(
 ) async {
   final bookRepo = await ref.watch(catalogueItemRepositoryProvider.future);
   final periodicalRepo = await ref.watch(periodicalRepositoryProvider.future);
+  // Plan J9: an overwrite renumbers every book, so the published keys are
+  // marked unusable first (CatalogueKeysReset). Resolved only when an
+  // overwrite really runs, never while building.
+  Future<T> beforeIdsChange<T>(Future<T> Function() change) async =>
+      (await ref.read(
+        catalogueKeysResetProvider.future,
+      )).beforeIdsChange(change);
   return MergeLibraryUseCase(
     bookRepo: bookRepo,
     periodicalRepo: periodicalRepo,
@@ -133,5 +141,6 @@ Future<MergeLibraryUseCase> mergeLibraryUseCase(
     replacementGuard: ref.read(vaultSessionControllerProvider.notifier),
     // N10-c: the plan is computed on a worker isolate.
     planner: planMergeInBackground,
+    idsChangeGuard: beforeIdsChange,
   );
 }

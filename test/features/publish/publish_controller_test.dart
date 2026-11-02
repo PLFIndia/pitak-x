@@ -8,6 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/features/events/application/publish_events_controller.dart';
 import 'package:pitaka/features/events/domain/entities/event_poster.dart';
 import 'package:pitaka/features/events/domain/repositories/events_repository.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
@@ -22,6 +23,7 @@ import 'package:pitaka/features/publish/application/publish_controller.dart';
 import 'package:pitaka/features/publish/application/publish_library_use_case.dart';
 import 'package:pitaka/features/publish/application/site/catalogue_section_builder.dart';
 import 'package:pitaka/features/publish/application/site/publish_host_state_repository.dart';
+import 'package:pitaka/features/publish/application/site/publish_snapshot_builder.dart';
 import 'package:pitaka/features/publish/application/site/published_file_read_back.dart';
 import 'package:pitaka/features/publish/domain/availability/availability_request.dart';
 import 'package:pitaka/features/publish/domain/github_api.dart';
@@ -268,6 +270,82 @@ void main() {
           .read(publishControllerProvider.notifier)
           .availability();
       expect(request.toNullable(), isA<AvailabilityRemoval>());
+    });
+
+    test('lane active: the Settings switch decides (plan S6)', () async {
+      final on = _Harness(laneActivated: true);
+      expect(
+        (await on.container
+                .read(publishControllerProvider.notifier)
+                .availability())
+            .toNullable(),
+        isA<AvailabilityFromLoanCounts>(),
+      );
+
+      final off = _Harness(laneActivated: true)
+        ..settings.autoPublishAvailability = false;
+      expect(
+        (await off.container
+                .read(publishControllerProvider.notifier)
+                .availability())
+            .toNullable(),
+        isA<AvailabilityRemoval>(),
+      );
+    });
+
+    test('lane active + unreadable settings: the publish stops', () async {
+      final h = _Harness(laneActivated: true)..settings.loadFails = true;
+      final request = await h.container
+          .read(publishControllerProvider.notifier)
+          .availability();
+      expect(
+        (request.getLeft().toNullable()! as PublishReadFailure).message,
+        PublishSnapshotBuilder.settingsUnavailableMessage,
+      );
+    });
+
+    testWidgets('the GitHub events publish deletes a recorded file when the '
+        'lane is off (plan S6, A.6 #60)', (tester) async {
+      final h = _Harness(laneActivated: true)
+        ..settings.autoPublishAvailability = false;
+      h.manifest.current = const PublishManifest(
+        repo: 'me/lib',
+        branch: 'main',
+        headSha: 'synthetic-commit',
+        ownershipConfirmed: true,
+        fileShas: {
+          'index.html': 'i1',
+          'books.json': 'b1',
+          'availability.json': 'a1',
+        },
+        catalogueKeyed: true,
+      );
+      h.api.tree = {...h.manifest.current.fileShas};
+
+      final pending = h.container
+          .read(publishEventsControllerProvider.notifier)
+          .publish();
+      await tester.pump();
+      await tester.pump(const Duration(minutes: 2)); // the read-back rounds
+      final result = await pending;
+
+      expect(result, isA<PublishSuccess>());
+      expect(h.api.deletions.single, contains('availability.json'));
+      expect(h.manifest.current.shaFor('availability.json'), isNull);
+    });
+
+    testWidgets('lane active + known counts: the catalogue commit carries '
+        'availability.json (AV8)', (tester) async {
+      final h = _Harness(laneActivated: true, loanCounts: const {5: 1});
+      h.books.read = () async =>
+          right(const [CatalogueItem(id: 5, title: 'Keyed')]);
+
+      final result = await h.publish(tester);
+
+      expect(result, isA<PublishSuccess>());
+      final paths = h.api.commits.single.map((file) => file.path);
+      expect(paths, contains('availability.json'));
+      expect(h.manifest.current.shaFor('availability.json'), isNotNull);
     });
   });
 
@@ -673,6 +751,8 @@ class _Harness {
     bool observe = true,
     bool networkUnavailable = false,
     bool saltAvailable = true,
+    bool laneActivated = false,
+    Map<int, int>? loanCounts,
   }) {
     // R6: the fake remote starts as what this phone recorded.
     api.tree = {...manifest.current.fileShas};
@@ -710,13 +790,20 @@ class _Harness {
         // (which would CREATE `data/` under the docs dir above). Pin it so
         // this fixture keeps its no-disk-access promise.
         coversDirProvider.overrideWith((ref) async => 'covers'),
-        activeLoanCountsProvider.overrideWith((ref) => null),
+        activeLoanCountsProvider.overrideWith((ref) => loanCounts),
+        availabilityLaneActivatedProvider.overrideWithValue(laneActivated),
         // The snapshot wiring resolves the poster-reader handle up front (the
         // builder is shared by every host). Stubbing it keeps this fixture's
         // no-disk-access promise intact.
         eventsPosterReaderProvider.overrideWith(
           (ref) async =>
               (_) async => null,
+        ),
+        // The events page template is a bundled asset; the events test only
+        // needs some bytes.
+        eventsHtmlFactoryProvider.overrideWithValue(
+          ({required libraryName, required posters}) async =>
+              utf8.encode('<html>events</html>'),
         ),
         viewerHtmlFactoryProvider.overrideWithValue(({
           required libraryName,
@@ -764,7 +851,15 @@ class _Harness {
       }
       return null;
     }
-    return committed.firstWhere((file) => file.path == 'books.json').bytes;
+    // An events commit carries events.json (and no books.json): serve the
+    // committed file for its own path.
+    for (final file in committed) {
+      if (file.path == path) return file.bytes;
+    }
+    for (final file in committed) {
+      if (file.path == 'books.json') return file.bytes;
+    }
+    return null;
   });
   final books = _Books();
   final periodicals = _Periodicals();
@@ -859,8 +954,19 @@ class _Settings implements SettingsRepository {
   /// published descriptor behind a "Published!".
   bool identityMalformed = false;
 
+  /// The automatic availability switch (ADR 0019; default on).
+  bool autoPublishAvailability = true;
+
+  /// Makes the first settings load fail (an unreadable settings store).
+  bool loadFails = false;
+
   @override
-  Future<AppSettings> load() async => AppSettings.defaults;
+  Future<AppSettings> load() async {
+    if (loadFails) throw const FileSystemException('synthetic');
+    return AppSettings.defaults.copyWith(
+      autoPublishAvailability: autoPublishAvailability,
+    );
+  }
 
   // The library.json descriptor needs the identity (docs/ARCHITECTURE.md §5.1), so
   // a publish now legitimately READS it through the controller's current().
@@ -982,6 +1088,9 @@ class _Api implements GitHubApi {
   int reads = 0;
   final commits = <List<DesiredFile>>[];
 
+  /// The paths each commit deleted, in order.
+  final deletions = <List<String>>[];
+
   /// The fake remote branch: head + tree, updated by every successful commit
   /// so a second publish sees exactly what the first one wrote (R6).
   String head = 'synthetic-commit';
@@ -1032,6 +1141,7 @@ class _Api implements GitHubApi {
     // R6: never overwrite a head this publish was not built from.
     if (expectedHead != head) return const PublishCommitStale();
     commits.add(files);
+    deletions.add(deletePaths);
     tree = {for (final f in files) f.path: f.gitSha};
     return PublishCommitSuccess(head, ['books.json']);
   }

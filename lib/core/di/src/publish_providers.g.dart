@@ -6,10 +6,15 @@ part of 'publish_providers.dart';
 // RiverpodGenerator
 // **************************************************************************
 
-String _$gitHubApiHash() => r'5baecc276f9c998db49e26fc2598557889b56e8c';
+String _$gitHubApiHash() => r'44597ae437bb538872688d2a89347496d77e614d';
 
 /// GitHub API client for publishing (device flow + git data). Shares the app
 /// HTTP client.
+///
+/// Every accepted commit — catalogue, events, moves, retirements and the
+/// availability lane — is reported to [gitHubCommitRecorder], so the lane's
+/// hourly budget counts all of them (ADR 0019 Decision 8, plan AV6). One
+/// decorator around the one commit method means no flow can forget.
 ///
 /// Copied from [gitHubApi].
 @ProviderFor(gitHubApi)
@@ -26,6 +31,60 @@ final gitHubApiProvider = AutoDisposeProvider<GitHubApi>.internal(
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef GitHubApiRef = AutoDisposeProviderRef<GitHubApi>;
+String _$gitHubCommitRecorderHash() =>
+    r'002026307ecccd6e041513d8bf3c5e0a576334d1';
+
+/// Adds an accepted GitHub commit's time to the availability lane's store.
+///
+/// keepAlive: the callback outlives any one publish, and it uses its own
+/// `ref` later, when a commit lands. Best effort: the store is resolved only
+/// then (never while building the API), and a failure is logged by type,
+/// because the commit already happened and the budget is a courtesy limit.
+///
+/// Copied from [gitHubCommitRecorder].
+@ProviderFor(gitHubCommitRecorder)
+final gitHubCommitRecorderProvider =
+    Provider<void Function(int acceptedAt)>.internal(
+      gitHubCommitRecorder,
+      name: r'gitHubCommitRecorderProvider',
+      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+          ? null
+          : _$gitHubCommitRecorderHash,
+      dependencies: null,
+      allTransitiveDependencies: null,
+    );
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef GitHubCommitRecorderRef = ProviderRef<void Function(int acceptedAt)>;
+String _$availabilityLaneRepositoryHash() =>
+    r'2613a257b10867b3612fff71a98573e34cae0a18';
+
+/// The ONE writer of the availability lane's saved state (ADR 0019
+/// Decision 9).
+///
+/// keepAlive: the repository serialises every read-modify-write on its own
+/// queue. A second instance would have a second queue, and two writers could
+/// then drop each other's changes (the lane's pending set versus a GitHub
+/// commit time). The store holds public keys and timestamps only (plan C.4).
+///
+/// Copied from [availabilityLaneRepository].
+@ProviderFor(availabilityLaneRepository)
+final availabilityLaneRepositoryProvider =
+    FutureProvider<AvailabilityLaneRepository>.internal(
+      availabilityLaneRepository,
+      name: r'availabilityLaneRepositoryProvider',
+      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+          ? null
+          : _$availabilityLaneRepositoryHash,
+      dependencies: null,
+      allTransitiveDependencies: null,
+    );
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef AvailabilityLaneRepositoryRef =
+    FutureProviderRef<AvailabilityLaneRepository>;
 String _$cloudflareApiHash() => r'23c1205bd7389572e9500391aa386542d1f30acc';
 
 /// Fixed-origin Cloudflare account/deploy HTTP adapters (S6).

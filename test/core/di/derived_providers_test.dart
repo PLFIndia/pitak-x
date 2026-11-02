@@ -170,6 +170,11 @@ class _FakeSettingsRepo implements SettingsRepository {
   Future<Either<Failure, Unit>> setAppLockBiometric({
     required bool enabled,
   }) async => right(unit);
+
+  @override
+  Future<Either<Failure, Unit>> setAutoPublishAvailability({
+    required bool enabled,
+  }) async => right(unit);
 }
 
 /// A session controller that is simply unlocked with fixed data — the derived

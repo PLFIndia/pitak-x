@@ -251,4 +251,73 @@ void main() {
       expect(full().toString(), isNot(contains(a)));
     });
   });
+
+  group('changes the lane makes (plan S6)', () {
+    test('withPending replaces the pending set and keeps the rest', () {
+      final next = full().withPending(snapshot([a], 180000));
+      expect(next.pending!.keys, [a]);
+      expect(next.pending!.asOf, 180000);
+      expect(next.published!.publishedAt, 90000);
+      expect(next.gitHubCommitTimes, [10000, 20000, 30000]);
+      expect(next.noticeShown, isTrue);
+    });
+
+    test('afterPublished clears the pending set only when it was sent', () {
+      final sent = snapshot([b, a], 120000);
+      final record = AvailabilityPublished.of(
+        target: github,
+        snapshot: sent,
+        publishedAt: 130000,
+      );
+      final cleared = full().afterPublished(sent: sent, record: record);
+      expect(cleared.pending, isNull);
+      expect(cleared.published!.publishedAt, 130000);
+      expect(cleared.gitHubCommitTimes, [10000, 20000, 30000]);
+      expect(cleared.noticeShown, isTrue);
+    });
+
+    test('afterPublished keeps a newer pending set saved meanwhile', () {
+      final sent = snapshot([a]);
+      final record = AvailabilityPublished.of(
+        target: github,
+        snapshot: sent,
+        publishedAt: 70000,
+      );
+      final kept = full().afterPublished(sent: sent, record: record);
+      expect(kept.pending!.keys, [a, b], reason: 'other keys: still due');
+      final sameKeysLater = full()
+          .withPending(snapshot([a], 240000))
+          .afterPublished(sent: sent, record: record);
+      expect(
+        sameKeysLater.pending!.asOf,
+        240000,
+        reason: 'a later change with the same keys is a different set',
+      );
+    });
+
+    test('withoutSnapshots forgets both sets, keeps budget and notice', () {
+      final next = full().withoutSnapshots();
+      expect(next.pending, isNull);
+      expect(next.published, isNull);
+      expect(next.holdsNoSnapshots, isTrue);
+      expect(next.gitHubCommitTimes, [10000, 20000, 30000]);
+      expect(next.noticeShown, isTrue);
+      expect(full().holdsNoSnapshots, isFalse);
+    });
+
+    test('withoutPublished keeps the pending set', () {
+      final next = full().withoutPublished();
+      expect(next.published, isNull);
+      expect(next.pending!.keys, [a, b]);
+      expect(next.gitHubCommitTimes, [10000, 20000, 30000]);
+    });
+
+    test('withNoticeShown sets only the flag', () {
+      final next = AvailabilityLaneState(
+        pending: snapshot([a]),
+      ).withNoticeShown();
+      expect(next.noticeShown, isTrue);
+      expect(next.pending!.keys, [a]);
+    });
+  });
 }

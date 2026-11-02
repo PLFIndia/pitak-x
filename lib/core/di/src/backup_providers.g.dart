@@ -32,7 +32,7 @@ final createBackupUseCaseProvider =
 // ignore: unused_element
 typedef CreateBackupUseCaseRef =
     AutoDisposeFutureProviderRef<CreateBackupUseCase>;
-String _$restoreBackupHash() => r'8d7aa949f4ca117a64bafc962132974dc72c3d08';
+String _$restoreBackupHash() => r'81a08374eacb31a27c8900d6950de4bfa967453f';
 
 /// Backup-archive restorer (authoritative overwrite of local state).
 ///

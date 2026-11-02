@@ -90,10 +90,18 @@ final class AvailabilityAlreadyPublished extends AvailabilityPublishResult {
 /// catalogue publish fixes it, so the lane waits instead of retrying.
 final class AvailabilityNotReady extends AvailabilityPublishResult {
   /// Creates the outcome with a fixed, safe [reason].
-  const AvailabilityNotReady(this.reason);
+  const AvailabilityNotReady(this.reason, {this.staleFileRecorded = false});
 
   /// Why, as a fixed sentence for the status row.
   final String reason;
+
+  /// True when this phone's record still shows an `availability.json` on the
+  /// site although the live catalogue no longer carries this phone's keys
+  /// (another writer replaced `books.json`, or a restore cleared the flag;
+  /// plan J9). Its keys may then match nothing, which shows every item as
+  /// Available — the dangerous direction — so the lane publishes the removal
+  /// at once (plan S6; a removal needs no gate 7b, A.6 #47).
+  final bool staleFileRecorded;
 }
 
 /// Nothing was changed on the site (offline, stale head, credentials, Pages
@@ -109,6 +117,11 @@ final class AvailabilityPending extends AvailabilityPublishResult {
 
   /// Why, as a fixed sentence for the status row.
   final String reason;
+
+  /// True when only the user can fix this: the site needs the reviewed repair
+  /// that Publish to web offers ([AvailabilityPublishMessages.repairSite]).
+  /// The lane still retries (AV11), but at its slowest pace (plan S6).
+  bool get needsRepair => reason == AvailabilityPublishMessages.repairSite;
 }
 
 /// Fixed sentences only the availability lane shows (plan C.4 drafts; plan S8

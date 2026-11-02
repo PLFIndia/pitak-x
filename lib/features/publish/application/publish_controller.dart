@@ -382,15 +382,35 @@ class PublishController extends _$PublishController implements PublishReads {
     );
   }
 
+  /// The ONE availability rule every publish reads (ADR 0019 Decision 6):
+  /// the catalogue, Cloudflare events, moves and replacements through the
+  /// snapshot builder, and the GitHub events publish directly.
+  ///
+  /// The lane counts as ON only when this build runs it AND the Settings
+  /// switch is on. Before plan S8 activates the lane, it is OFF, the safe
+  /// reading: no publish writes `availability.json`, and one this phone's
+  /// record still shows is deleted, so readers never see a file that has
+  /// stopped updating. Unreadable settings fail the publish, exactly like
+  /// [pageSettings].
   @override
   Future<Either<Failure, AvailabilityRequest>> availability() async {
-    // The availability lane does not exist in this build yet: its switch,
-    // store and timers arrive in plan S6 and it starts in S8. Until then the
-    // lane counts as OFF, which is the safe reading (ADR 0019 Decision 6):
-    // no publish writes `availability.json`, and one that this phone's record
-    // still shows (for example after going back from a newer build) is
-    // deleted, so readers never see a file that has stopped updating.
-    return right(const AvailabilityRemoval());
+    if (!ref.read(availabilityLaneActivatedProvider)) {
+      return right(const AvailabilityRemoval());
+    }
+    final loadedSettings = await ref
+        .read(settingsControllerProvider.notifier)
+        .loaded();
+    return loadedSettings
+        .mapLeft(
+          (_) => const PublishReadFailure(
+            PublishSnapshotBuilder.settingsUnavailableMessage,
+          ),
+        )
+        .map(
+          (settings) => settings.autoPublishAvailability
+              ? const AvailabilityFromLoanCounts()
+              : const AvailabilityRemoval(),
+        );
   }
 
   @override

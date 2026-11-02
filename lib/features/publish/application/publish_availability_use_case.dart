@@ -161,8 +161,12 @@ final class PublishAvailabilityUseCase {
     // Gate 7b (writes only; see the file header). Checked before any public
     // read, because nothing can be published here until a catalogue publish.
     if (update is AvailabilityWrite && !reconciled.catalogueKeyed) {
-      return const AvailabilityNotReady(
+      // A file still on the branch was published against keys the live
+      // books.json no longer carries; the lane removes it (plan S6).
+      return AvailabilityNotReady(
         AvailabilityPublishMessages.catalogueNotKeyed,
+        staleFileRecorded:
+            AvailabilitySectionBuilder.removal(previous: reconciled) != null,
       );
     }
 

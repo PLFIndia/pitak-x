@@ -51,6 +51,7 @@ library;
 
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/core/storage/catalogue_ids_change_guard.dart';
 import 'package:pitaka/features/import_export/application/import_payload_guard.dart';
 import 'package:pitaka/features/import_export/application/merge_overwrite_validator.dart';
 import 'package:pitaka/features/import_export/application/merge_planner.dart';
@@ -93,12 +94,18 @@ final class MergeLibraryUseCase {
     // one. Required on purpose — a silently synchronous default would put the
     // plan back on the UI isolate the moment someone forgot to wire it.
     required MergePlanner planner,
+    // Plan J9 (ADR 0019 Decision 3): an overwrite gives every book a new id,
+    // so the published item keys stop naming the same books. Production
+    // passes the publish feature's guard, which marks those keys unusable
+    // first; the default runs the change directly (tests without publishing).
+    CatalogueIdsChangeGuard? idsChangeGuard,
   }) : _bookRepo = bookRepo,
        _periodicalRepo = periodicalRepo,
        _namespace = namespace,
        _json = jsonParser,
        _replacementGuard = replacementGuard,
        _planner = planner,
+       _idsChangeGuard = idsChangeGuard ?? _runDirectly,
        _resolution = MergeResolutionApplier(books: bookRepo),
        _reprojection = IssueReprojection(
          periodicals: periodicalRepo,
@@ -107,6 +114,9 @@ final class MergeLibraryUseCase {
 
   final CatalogueReplacementGuard _replacementGuard;
   final MergePlanner _planner;
+  final CatalogueIdsChangeGuard _idsChangeGuard;
+
+  static Future<T> _runDirectly<T>(Future<T> Function() change) => change();
   final CatalogueItemRepository _bookRepo;
   final PeriodicalRepository _periodicalRepo;
   final LibraryNamespace _namespace;
@@ -237,7 +247,14 @@ final class MergeLibraryUseCase {
   /// Returns a [MergeResult] with `replaced: true` and `added` = the number of
   /// books now on the device, so the page can describe a replacement as a
   /// replacement (N07) — not as a zero-count merge.
+  ///
+  /// It runs through the ids-change guard (plan J9): the published keys are
+  /// marked unusable before any row is replaced.
   Future<Either<Failure, MergeResult>> applyOverwrite(
+    MergeDiffersDecision decision,
+  ) => _idsChangeGuard(() => _overwrite(decision));
+
+  Future<Either<Failure, MergeResult>> _overwrite(
     MergeDiffersDecision decision,
   ) => _replacementGuard.protectReplacement((scope) async {
     final replaced = await _bookRepo.runInTransaction<int>(() async {

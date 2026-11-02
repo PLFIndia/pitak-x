@@ -312,4 +312,14 @@ class SettingsController extends _$SettingsController
         (repo) => repo.setAppLockBiometric(enabled: enabled),
         (s) => s.copyWith(appLockBiometric: enabled),
       );
+
+  /// Turns automatic availability updates on or off (ADR 0019, plan P3;
+  /// default on). The lane reacts to the new value: off publishes one
+  /// removal of `availability.json`, on publishes the current set.
+  Future<Either<Failure, Unit>> setAutoPublishAvailability({
+    required bool enabled,
+  }) => _update(
+    (repo) => repo.setAutoPublishAvailability(enabled: enabled),
+    (s) => s.copyWith(autoPublishAvailability: enabled),
+  );
 }

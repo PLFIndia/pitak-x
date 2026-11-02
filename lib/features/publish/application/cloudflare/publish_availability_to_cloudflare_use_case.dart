@@ -199,8 +199,12 @@ final class PublishAvailabilityToCloudflareUseCase {
     // would show every item as Available, the dangerous direction. An empty
     // record (no publish for this target) is never keyed.
     if (update is AvailabilityWrite && !local.catalogueKeyed) {
-      return const AvailabilityNotReady(
+      // A recorded file was published against keys this record no longer
+      // vouches for (plan J9); the lane removes it (plan S6).
+      return AvailabilityNotReady(
         AvailabilityPublishMessages.catalogueNotKeyed,
+        staleFileRecorded:
+            AvailabilitySectionBuilder.removal(previous: local) != null,
       );
     }
     // Step 4: the live site must be the version this phone's record

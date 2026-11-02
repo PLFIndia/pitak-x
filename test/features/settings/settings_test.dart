@@ -32,6 +32,10 @@ class _FailingSettingsRepo implements SettingsRepository {
   Future<Either<Failure, Unit>> setAppLockBiometric({required bool enabled}) =>
       throw _boom;
   @override
+  Future<Either<Failure, Unit>> setAutoPublishAvailability({
+    required bool enabled,
+  }) => throw _boom;
+  @override
   Future<Either<Failure, Unit>> setLibraryId(String id) => throw _boom;
   @override
   Future<Either<Failure, Unit>> setLibraryLogo(String reference) => throw _boom;
@@ -123,6 +127,10 @@ class _GatedSettingsRepo implements SettingsRepository {
   @override
   Future<Either<Failure, Unit>> setAppLockBiometric({required bool enabled}) =>
       _gate('appLock');
+  @override
+  Future<Either<Failure, Unit>> setAutoPublishAvailability({
+    required bool enabled,
+  }) => _gate('autoAvailability');
   @override
   Future<Either<Failure, Unit>> setLibraryId(String id) => _gate('setId');
   @override
@@ -545,6 +553,36 @@ void main() {
       await notifier.setLibraryLogo('');
       expect(container.read(settingsControllerProvider).value!.libraryLogo, '');
     });
+
+    test(
+      'automatic availability: absent reads ON; off persists (ADR 0019)',
+      () async {
+        SharedPreferences.setMockInitialValues({});
+        final container = ProviderContainer();
+        addTearDown(container.dispose);
+        final loaded = await container.read(settingsControllerProvider.future);
+        expect(loaded.autoPublishAvailability, isTrue, reason: 'P3: on');
+
+        final written = await container
+            .read(settingsControllerProvider.notifier)
+            .setAutoPublishAvailability(enabled: false);
+
+        expect(written.isRight(), isTrue);
+        expect(
+          container
+              .read(settingsControllerProvider)
+              .value!
+              .autoPublishAvailability,
+          isFalse,
+        );
+        final prefs = await container.read(sharedPreferencesProvider.future);
+        expect(prefs.getBool('auto_publish_availability'), isFalse);
+        expect(
+          (await PrefsSettingsRepository(prefs).load()).autoPublishAvailability,
+          isFalse,
+        );
+      },
+    );
 
     test('setPublishLocationSharing persists and updates state', () async {
       SharedPreferences.setMockInitialValues({});

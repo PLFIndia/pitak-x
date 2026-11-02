@@ -120,6 +120,69 @@ final class AvailabilityLaneState {
     noticeShown: noticeShown,
   );
 
+  /// The same state with [snapshot] waiting to be published (it replaces any
+  /// older pending set: only the newest set is ever worth sending).
+  AvailabilityLaneState withPending(AvailabilitySnapshot snapshot) =>
+      AvailabilityLaneState(
+        pending: snapshot,
+        published: published,
+        gitHubCommitTimes: gitHubCommitTimes,
+        noticeShown: noticeShown,
+      );
+
+  /// The state after [sent] reached the site described by [record].
+  ///
+  /// The pending set is cleared only when it IS the set that was sent. A
+  /// loan change saved while the publish was running left a newer set
+  /// pending, and that one must still go out (beginner note: the publish
+  /// runs outside this state, so the state may have moved on meanwhile).
+  AvailabilityLaneState afterPublished({
+    required AvailabilitySnapshot sent,
+    required AvailabilityPublished record,
+  }) {
+    final waiting = pending;
+    final isTheSentSet =
+        waiting != null &&
+        waiting.sameKeysAs(sent) &&
+        waiting.asOf == sent.asOf;
+    final stillWaiting = waiting != null && !isTheSentSet;
+    return AvailabilityLaneState(
+      pending: stillWaiting ? waiting : null,
+      published: record,
+      gitHubCommitTimes: gitHubCommitTimes,
+      noticeShown: noticeShown,
+    );
+  }
+
+  /// The same state without any saved set: nothing pending, nothing recorded
+  /// as published. Used once a switch-off removal is on the site (ADR 0019
+  /// Decision 9: turning the lane back on never publishes an old set) and
+  /// when a restore makes every saved key meaningless (plan J9).
+  AvailabilityLaneState withoutSnapshots() => AvailabilityLaneState(
+    gitHubCommitTimes: gitHubCommitTimes,
+    noticeShown: noticeShown,
+  );
+
+  /// The same state without the published record, keeping any pending set:
+  /// the site no longer shows a set from this phone (its file was removed
+  /// while the lane stayed on, for example a stale file after gate 7b).
+  AvailabilityLaneState withoutPublished() => AvailabilityLaneState(
+    pending: pending,
+    gitHubCommitTimes: gitHubCommitTimes,
+    noticeShown: noticeShown,
+  );
+
+  /// The same state with the one-time notice marked as shown.
+  AvailabilityLaneState withNoticeShown() => AvailabilityLaneState(
+    pending: pending,
+    published: published,
+    gitHubCommitTimes: gitHubCommitTimes,
+    noticeShown: true,
+  );
+
+  /// True when nothing is saved: no pending set and no published record.
+  bool get holdsNoSnapshots => pending == null && published == null;
+
   /// Decodes a stored value.
   ///
   /// [raw] is the decoded JSON, or null when nothing was ever stored:
