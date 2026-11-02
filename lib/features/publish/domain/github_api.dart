@@ -167,6 +167,45 @@ final class PublishCommitStale extends PublishCommitResult {
   const PublishCommitStale();
 }
 
+/// GitHub's rate limit stopped the commit before it landed, or Pitak did not
+/// send anything because an earlier refusal's pause has not ended (plan J8).
+/// Either way nothing was committed: the branch, and so the site, is
+/// unchanged.
+///
+/// Why its own result (beginner note): "GitHub refused (403)" used to mean
+/// both "you may not write here" and "you are sending too fast". The second
+/// is not a failure the user can fix — only time fixes it — and its message
+/// must say how far the upload got and when to try again. Blobs GitHub
+/// accepted before the refusal are kept by GitHub and remembered by Pitak, so
+/// the next attempt does not send them again (`ResumableUploadGitHubApi`).
+final class PublishCommitRateLimited extends PublishCommitResult {
+  /// Creates the result.
+  const PublishCommitRateLimited({
+    required this.filesHeld,
+    required this.filesToSend,
+    required this.wait,
+    required this.refusedNow,
+  });
+
+  /// Of the [filesToSend] files, how many GitHub now holds: sent by this
+  /// attempt or by an earlier one.
+  final int filesHeld;
+
+  /// How many files this commit had to send (distinct contents; files the
+  /// branch already holds are not counted).
+  final int filesToSend;
+
+  /// How long until Pitak sends to GitHub again; null when unknown.
+  ///
+  /// From the HTTP adapter this is GitHub's own hint (`retry-after`); the
+  /// journaling decorator replaces it with the pause it keeps.
+  final Duration? wait;
+
+  /// True when GitHub refused a request during this attempt; false when Pitak
+  /// sent nothing because it is still waiting out an earlier refusal.
+  final bool refusedNow;
+}
+
 /// Transport-level failure crossing the GitHub boundary.
 final class GitHubApiException implements Exception {
   /// Creates the exception with a short [message].
@@ -312,6 +351,15 @@ abstract interface class GitHubGitDataApi {
   /// Resolves its head and base tree before any writes. HTTP read failures
   /// return [PublishCommitHttpError]; malformed responses and transport
   /// failures throw [GitHubApiException]. Never initializes a missing branch.
+  ///
+  /// Blob requests are paced (`GitHubContentLimit.blobSpacing`), and an
+  /// answer that says "rate limited" returns [PublishCommitRateLimited]
+  /// instead of an HTTP error (plan J8).
+  ///
+  /// [onBlobStored] is awaited once for each planned upload GitHub confirmed
+  /// storing, with its sha, as soon as it is confirmed — also when the commit
+  /// later fails or throws. Callers that remember blobs across attempts use
+  /// it; the publish use cases leave it null.
   Future<PublishCommitResult> commitFiles({
     required String owner,
     required String repo,
@@ -321,6 +369,7 @@ abstract interface class GitHubGitDataApi {
     required String commitMessage,
     required String expectedHead,
     List<String> deletePaths,
+    Future<void> Function(String gitSha)? onBlobStored,
   });
 }
 

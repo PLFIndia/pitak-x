@@ -407,6 +407,11 @@ final class PublishLibraryUseCase {
         // The response body is deliberately dropped: a hostile network can
         // inject arbitrary text into it (§5 "safe message only").
         return PublishFailure(gitHubHttpErrorMessage(code));
+      case final PublishCommitRateLimited limited:
+        // GitHub's limit stopped the upload, or its pause is still on (plan
+        // J8). Nothing was committed; what GitHub accepted is remembered, so
+        // the next publish continues from there.
+        return PublishFailure(gitHubRateLimitedMessage(limited));
     }
   }
 

@@ -233,6 +233,7 @@ class _CapturingApi implements GitHubGitDataApi {
     required String commitMessage,
     required String expectedHead,
     List<String> deletePaths = const [],
+    Future<void> Function(String gitSha)? onBlobStored,
   }) async {
     final files = plan.files;
     committed = files;
@@ -1572,6 +1573,28 @@ void main() {
       final result = await useCase.run();
       expect((result as PublishFailure).reason, gitHubStalePublishMessage);
       expect(manifest.saved, isNull);
+      expect(manifest.saves, isEmpty);
+    });
+
+    test("J8: GitHub's rate limit is its own message with the progress; "
+        'nothing is saved', () async {
+      final api = _CapturingApi();
+      final manifest = _MemManifest();
+      final useCase = makeUseCase(api, manifest, books: [book()]);
+      api.result = const PublishCommitRateLimited(
+        filesHeld: 2,
+        filesToSend: 5,
+        wait: Duration(minutes: 1),
+        refusedNow: true,
+      );
+
+      final result = await useCase.run();
+      expect(
+        (result as PublishFailure).reason,
+        gitHubRateLimitedMessage(api.result! as PublishCommitRateLimited),
+      );
+      expect(result.reason, contains('2 of 5 files'));
+      expect(result.canRetryVerification, isFalse);
       expect(manifest.saves, isEmpty);
     });
 

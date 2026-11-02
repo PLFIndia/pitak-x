@@ -191,6 +191,7 @@ final class LaneGitHub implements GitHubGitDataApi {
     required String commitMessage,
     required String expectedHead,
     List<String> deletePaths = const [],
+    Future<void> Function(String gitSha)? onBlobStored,
   }) async {
     final files = plan.files;
     commits.add((files: files, deleted: deletePaths, head: expectedHead));

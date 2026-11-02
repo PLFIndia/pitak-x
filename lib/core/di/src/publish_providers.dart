@@ -43,6 +43,7 @@ import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_api.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_credential_store.dart';
 import 'package:pitaka/features/publish/domain/cover_fetch_result.dart';
 import 'package:pitaka/features/publish/domain/github_api.dart';
+import 'package:pitaka/features/publish/domain/github_upload_journal_store.dart';
 import 'package:pitaka/features/publish/domain/publish_cover_ids.dart';
 import 'package:pitaka/features/publish/domain/publish_credential_store.dart';
 import 'package:pitaka/features/publish/domain/publish_events_ports.dart';
@@ -58,6 +59,7 @@ import 'package:pitaka/features/publish/infrastructure/commit_recording_github_a
 import 'package:pitaka/features/publish/infrastructure/events_html_builder.dart';
 import 'package:pitaka/features/publish/infrastructure/events_json_builder.dart';
 import 'package:pitaka/features/publish/infrastructure/file_cloudflare_manifest_store.dart';
+import 'package:pitaka/features/publish/infrastructure/file_github_upload_journal_store.dart';
 import 'package:pitaka/features/publish/infrastructure/file_publish_manifest_store.dart';
 import 'package:pitaka/features/publish/infrastructure/http_cloudflare_api.dart';
 import 'package:pitaka/features/publish/infrastructure/http_github_api.dart';
@@ -65,6 +67,7 @@ import 'package:pitaka/features/publish/infrastructure/local_cover_reader.dart';
 import 'package:pitaka/features/publish/infrastructure/prefs_availability_lane_store.dart';
 import 'package:pitaka/features/publish/infrastructure/prefs_publish_host_store.dart';
 import 'package:pitaka/features/publish/infrastructure/prefs_share_card_style_store.dart';
+import 'package:pitaka/features/publish/infrastructure/resumable_upload_github_api.dart';
 import 'package:pitaka/features/publish/infrastructure/secure_storage_cloudflare_credential_store.dart';
 import 'package:pitaka/features/publish/infrastructure/secure_storage_cover_salt_store.dart';
 import 'package:pitaka/features/publish/infrastructure/secure_storage_publish_credential_store.dart';
@@ -76,15 +79,36 @@ part 'publish_providers.g.dart';
 /// GitHub API client for publishing (device flow + git data). Shares the app
 /// HTTP client.
 ///
-/// Every accepted commit — catalogue, events, moves, retirements and the
-/// availability lane — is reported to [gitHubCommitRecorder], so the lane's
-/// hourly budget counts all of them (ADR 0019 Decision 8, plan AV6). One
-/// decorator around the one commit method means no flow can forget.
+/// Two decorators wrap the one commit method, so no flow can forget either:
+///  - [ResumableUploadGitHubApi] (inside): a commit names the blobs a
+///    refused attempt already sent, and nothing is sent while GitHub's pause
+///    is on (plan J8);
+///  - [CommitRecordingGitHubApi] (outside): every accepted commit —
+///    catalogue, events, moves, retirements and the availability lane — is
+///    reported to [gitHubCommitRecorder], so the lane's hourly budget counts
+///    all of them (ADR 0019 Decision 8, plan AV6).
 @riverpod
 GitHubApi gitHubApi(GitHubApiRef ref) => CommitRecordingGitHubApi(
-  inner: HttpGitHubApi(client: ref.watch(httpClientProvider)),
+  inner: ResumableUploadGitHubApi(
+    inner: HttpGitHubApi(client: ref.watch(httpClientProvider)),
+    journal: ref.watch(gitHubUploadJournalStoreProvider),
+    clock: ref.watch(clockProvider),
+  ),
   onCommitted: ref.watch(gitHubCommitRecorderProvider),
   clock: ref.watch(clockProvider),
+);
+
+/// Where the GitHub upload journal lives: one JSON file in the app
+/// documents directory, next to the publish record (plan J8).
+///
+/// keepAlive: the directory is resolved through this provider's own `ref`
+/// later, when a commit runs (like [gitHubCommitRecorder]); the store holds
+/// nothing but that resolver.
+@Riverpod(keepAlive: true)
+GitHubUploadJournalStore gitHubUploadJournalStore(
+  GitHubUploadJournalStoreRef ref,
+) => FileGitHubUploadJournalStore(
+  directory: () async => (await ref.read(appDocsDirProvider.future)).path,
 );
 
 /// Adds an accepted GitHub commit's time to the availability lane's store.

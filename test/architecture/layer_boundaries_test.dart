@@ -194,7 +194,10 @@ void main() {
       'lib/features/library/presentation/pages/add_book_page.dart': 526,
       'lib/features/import_export/infrastructure/pdf_library_renderer.dart':
           605,
-      'lib/features/publish/infrastructure/http_github_api.dart': 600,
+      // http_github_api.dart left this list on 2026-11-02 (publish plan
+      // S10b, J8): the commit flow moved to http_github_commit.dart
+      // (`GitHubCommitWriter`) when it gained pacing and rate-limit
+      // recognition (547 → <500).
       // drift_catalogue_item_repository.dart left this list on 2026-10-22 (plan
       // S8): its SQL helpers moved to drift_catalogue_sql.dart (599 → <500).
       // restore_backup.dart left this list on 2026-10-23 (plan S21): the W2

@@ -12,6 +12,7 @@ import 'package:pitaka/features/publish/application/site/moved_site_verifier.dar
 import 'package:pitaka/features/publish/domain/github_api.dart';
 import 'package:pitaka/features/publish/domain/github_branch_name.dart';
 import 'package:pitaka/features/publish/domain/github_commit_plan.dart';
+import 'package:pitaka/features/publish/domain/github_error_messages.dart';
 import 'package:pitaka/features/publish/domain/github_models.dart';
 import 'package:pitaka/features/publish/domain/publish_credential_store.dart';
 import 'package:pitaka/features/publish/domain/publish_target.dart';
@@ -139,6 +140,15 @@ final class GitHubMoveSource implements MoveSourceOperations {
         case PublishCommitHttpError():
           return const Left(
             ValidationFailure(MoveSiteMessages.retirementFailed),
+          );
+        case final PublishCommitRateLimited limited:
+          return Left(
+            ValidationFailure(
+              gitHubRateLimitedMessage(
+                limited,
+                operation: GitHubLimitedOperation.retirement,
+              ),
+            ),
           );
       }
     }

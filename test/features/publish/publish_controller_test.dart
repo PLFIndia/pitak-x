@@ -1138,6 +1138,7 @@ class _Api implements GitHubApi {
     required String commitMessage,
     required String expectedHead,
     List<String> deletePaths = const [],
+    Future<void> Function(String gitSha)? onBlobStored,
   }) async {
     final files = plan.files;
     // R6: never overwrite a head this publish was not built from.

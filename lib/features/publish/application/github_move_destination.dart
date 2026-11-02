@@ -13,6 +13,7 @@ import 'package:pitaka/features/publish/application/site/move_snapshot_preparati
 import 'package:pitaka/features/publish/application/site/publish_snapshot_builder.dart';
 import 'package:pitaka/features/publish/domain/github_api.dart';
 import 'package:pitaka/features/publish/domain/github_commit_plan.dart';
+import 'package:pitaka/features/publish/domain/github_error_messages.dart';
 import 'package:pitaka/features/publish/domain/publish_manifest.dart';
 import 'package:pitaka/features/publish/domain/publish_target.dart';
 import 'package:pitaka/features/publish/domain/site/pending_move.dart';
@@ -155,6 +156,15 @@ final class GitHubMoveDestination implements MoveDestinationPublisher {
         return const MoveDestinationFailed(MoveSiteMessages.stale);
       case PublishCommitHttpError():
         return const MoveDestinationFailed(MoveSiteMessages.generic);
+      case final PublishCommitRateLimited limited:
+        // Plan J8: a large move is the case GitHub's hourly limit stops most
+        // often. Moving again continues where this attempt stopped.
+        return MoveDestinationFailed(
+          gitHubRateLimitedMessage(
+            limited,
+            operation: GitHubLimitedOperation.move,
+          ),
+        );
       case PublishCommitSuccess(:final commitSha):
         final deployed = previous.afterCommit(
           commitSha: commitSha,

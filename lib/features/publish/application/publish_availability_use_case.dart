@@ -247,6 +247,10 @@ final class PublishAvailabilityUseCase {
       case PublishCommitHttpError(:final code):
         // The response body is dropped: it may carry injected text (§5).
         return AvailabilityPending(gitHubHttpErrorMessage(code));
+      case PublishCommitRateLimited():
+        // GitHub's pause (plan J8): the lane's backoff tries again later, and
+        // until the pause ends that try sends nothing.
+        return const AvailabilityPending(gitHubPausedMessage);
       case PublishCommitSuccess(:final commitSha):
         // R5/R9: `deployed` with the proof of THIS commit. The catalogue's
         // books.json is unchanged, so `catalogueKeyed` carries over.

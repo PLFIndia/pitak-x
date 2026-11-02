@@ -14,6 +14,7 @@ import 'package:pitaka/features/publish/domain/availability/availability_request
 import 'package:pitaka/features/publish/domain/git_blob_sha.dart';
 import 'package:pitaka/features/publish/domain/github_api.dart';
 import 'package:pitaka/features/publish/domain/github_commit_plan.dart';
+import 'package:pitaka/features/publish/domain/github_error_messages.dart';
 import 'package:pitaka/features/publish/domain/github_models.dart';
 import 'package:pitaka/features/publish/domain/publish_cover_ids.dart';
 import 'package:pitaka/features/publish/domain/publish_credential_store.dart';
@@ -287,6 +288,35 @@ void main() {
     expect(destinationManifest.saves, 0);
   });
 
+  test("J8: a move stopped by GitHub's rate limit says how far it got and "
+      'to move again later; nothing is recorded', () async {
+    final prepared = await destination.prepare(
+      oldTarget: moveCloudflareTarget,
+      newTarget: moveGitHubTarget,
+      sourceAnchor: moveAnchor(moveCloudflareTarget),
+    );
+    const limited = PublishCommitRateLimited(
+      filesHeld: 120,
+      filesToSend: 600,
+      wait: Duration(minutes: 1),
+      refusedNow: true,
+    );
+    api.commitResult = limited;
+
+    final result = await destination.publish(
+      confirmation: prepared.toNullable()!,
+      beforeWrite: () async => true,
+    );
+
+    final failure = result as MoveDestinationFailed;
+    expect(
+      failure.reason,
+      gitHubRateLimitedMessage(limited, operation: GitHubLimitedOperation.move),
+    );
+    expect(failure.reason, contains('120 of 600 files'));
+    expect(destinationManifest.saves, 0);
+  });
+
   test(
     'a failed commit record is reported with the failed read-back (L12)',
     () async {
@@ -427,6 +457,7 @@ final class _FakeDestinationApi implements GitHubGitDataApi {
     required String commitMessage,
     required String expectedHead,
     List<String> deletePaths = const [],
+    Future<void> Function(String gitSha)? onBlobStored,
   }) async {
     final files = plan.files;
     commits.add((

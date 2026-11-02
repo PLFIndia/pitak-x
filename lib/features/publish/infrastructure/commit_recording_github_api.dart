@@ -46,6 +46,7 @@ final class CommitRecordingGitHubApi implements GitHubApi {
     required String commitMessage,
     required String expectedHead,
     List<String> deletePaths = const [],
+    Future<void> Function(String gitSha)? onBlobStored,
   }) async {
     final result = await _inner.commitFiles(
       owner: owner,
@@ -56,6 +57,7 @@ final class CommitRecordingGitHubApi implements GitHubApi {
       commitMessage: commitMessage,
       expectedHead: expectedHead,
       deletePaths: deletePaths,
+      onBlobStored: onBlobStored,
     );
     if (result is PublishCommitSuccess) _onCommitted(_clock());
     return result;

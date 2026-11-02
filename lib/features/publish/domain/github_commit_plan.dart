@@ -24,6 +24,13 @@
 /// exact owned paths the caller computed, so blob reuse can never widen what
 /// a commit deletes.
 ///
+/// Rule 2 also covers blobs GitHub confirmed storing for an earlier attempt
+/// that was refused before its commit landed (plan J8 (a),
+/// `GitHubCommitPlan.withAlsoHeld`):
+/// such a blob is in no tree yet, but it is in the repository, and GitHub
+/// accepts a tree that names it (verified against the real API, plan
+/// A.6 #100).
+///
 /// It is safe in both directions. An empty or incomplete known set only means
 /// more uploads (the behaviour before ADR 0020). And if a named sha were
 /// missing from the repository, GitHub refuses the tree, so the commit fails
@@ -73,8 +80,40 @@ final class GitHubCommitPlan {
   /// name an existing blob by its sha.
   final List<DesiredFile> files;
 
+  /// This plan with every upload whose sha is in [heldShas] turned into a
+  /// named entry (rule 2 for blobs a refused attempt already sent, plan J8).
+  ///
+  /// Only uploads change: an entry that already names a blob stays as it is,
+  /// and the order, paths and shas never change, so the tree is the same
+  /// tree. Returns this plan itself when nothing is held.
+  GitHubCommitPlan withAlsoHeld(Set<String> heldShas) {
+    if (!files.any((f) => f.upload && heldShas.contains(f.gitSha))) {
+      return this;
+    }
+    return GitHubCommitPlan._(
+      List.unmodifiable([
+        for (final f in files)
+          f.upload && heldShas.contains(f.gitSha)
+              ? DesiredFile(
+                  path: f.path,
+                  bytes: f.bytes,
+                  gitSha: f.gitSha,
+                  upload: false,
+                )
+              : f,
+      ]),
+    );
+  }
+
   /// The entries whose bytes this commit sends.
   Iterable<DesiredFile> get uploads => files.where((f) => f.upload);
+
+  /// The shas this commit sends, one per upload (rule 3 already made each
+  /// content appear once).
+  Set<String> get uploadShas => {for (final f in uploads) f.gitSha};
+
+  /// The shas every tree entry names, sent or not.
+  Set<String> get namedShas => {for (final f in files) f.gitSha};
 
   /// Whether this commit sends any bytes at all.
   bool get hasUploads => files.any((f) => f.upload);

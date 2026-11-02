@@ -8,6 +8,7 @@ import 'package:pitaka/features/publish/application/site/move_site_operations.da
 import 'package:pitaka/features/publish/application/site/moved_site_verifier.dart';
 import 'package:pitaka/features/publish/domain/github_api.dart';
 import 'package:pitaka/features/publish/domain/github_commit_plan.dart';
+import 'package:pitaka/features/publish/domain/github_error_messages.dart';
 import 'package:pitaka/features/publish/domain/github_models.dart';
 import 'package:pitaka/features/publish/domain/publish_credential_store.dart';
 import 'package:pitaka/features/publish/domain/publish_manifest.dart';
@@ -190,6 +191,31 @@ void main() {
     expect(manifest.saves, 0);
   });
 
+  test('J8: a rate-limited retirement says to retry the pending move later, '
+      'and saves nothing', () async {
+    final pending = _pending();
+    const limited = PublishCommitRateLimited(
+      filesHeld: 0,
+      filesToSend: 1,
+      wait: Duration(minutes: 1),
+      refusedNow: true,
+    );
+    gitData.commitResult = limited;
+
+    final result = await source.retire(pending);
+
+    final failure = result.swap().toNullable()! as ValidationFailure;
+    expect(
+      failure.message,
+      gitHubRateLimitedMessage(
+        limited,
+        operation: GitHubLimitedOperation.retirement,
+      ),
+    );
+    expect(failure.message, contains('Retry the pending move'));
+    expect(manifest.saves, 0);
+  });
+
   test('failed retirement read-back saves nothing', () async {
     final pending = _pending();
     reader
@@ -366,6 +392,7 @@ final class _FakeGitData implements GitHubGitDataApi {
     required String commitMessage,
     required String expectedHead,
     List<String> deletePaths = const [],
+    Future<void> Function(String gitSha)? onBlobStored,
   }) async {
     final files = plan.files;
     commits.add((

@@ -131,6 +131,61 @@ void main() {
     expect(plan.uploadBytes, 0);
   });
 
+  group('withAlsoHeld (plan J8: blobs a refused attempt already sent)', () {
+    test('an upload whose sha is held becomes a named entry; the tree is the '
+        'same tree', () {
+      final plan = GitHubCommitPlan(
+        files: [
+          built('books.json', 'b'),
+          built('covers/1.jpg', 'c1'),
+          built('covers/2.jpg', 'c2'),
+        ],
+        knownBlobShas: const {},
+      );
+      final resumed = plan.withAlsoHeld({sha('c1'), 'not-in-this-plan'});
+      expect(resumed.files.map((f) => f.upload), [true, false, true]);
+      expect(resumed.files.map((f) => f.path), plan.files.map((f) => f.path));
+      expect(
+        resumed.files.map((f) => f.gitSha),
+        plan.files.map((f) => f.gitSha),
+      );
+      expect(resumed.uploadedPaths, ['books.json', 'covers/2.jpg']);
+      expect(resumed.uploadShas, {sha('b'), sha('c2')});
+      expect(resumed.namedShas, plan.namedShas);
+      // The original plan is unchanged (immutable).
+      expect(plan.uploadedPaths, [
+        'books.json',
+        'covers/1.jpg',
+        'covers/2.jpg',
+      ]);
+      expect(
+        () => resumed.files.add(
+          const DesiredFile(path: 'x', bytes: [], gitSha: 'x', upload: true),
+        ),
+        throwsUnsupportedError,
+      );
+    });
+
+    test('nothing held returns the same plan', () {
+      final plan = GitHubCommitPlan(
+        files: [built('books.json', 'b'), built('i.html', 'i', upload: false)],
+        knownBlobShas: const {},
+      );
+      expect(identical(plan.withAlsoHeld({sha('i'), 'x'}), plan), isTrue);
+      expect(identical(plan.withAlsoHeld(const {}), plan), isTrue);
+    });
+
+    test('a held duplicate is sent by neither file', () {
+      final plan = GitHubCommitPlan(
+        files: [built('index.html', 'moved'), built('404.html', 'moved')],
+        knownBlobShas: const {},
+      ).withAlsoHeld({sha('moved')});
+      expect(plan.hasUploads, isFalse);
+      expect(plan.uploadShas, isEmpty);
+      expect(plan.namedShas, {sha('moved')});
+    });
+  });
+
   group('GitHubTreeSnapshot.blobShas', () {
     test('holds every blob sha of the tree, owned or not, once', () {
       const tree = GitHubTreeSnapshot(

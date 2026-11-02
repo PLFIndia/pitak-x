@@ -6,15 +6,19 @@ part of 'publish_providers.dart';
 // RiverpodGenerator
 // **************************************************************************
 
-String _$gitHubApiHash() => r'44597ae437bb538872688d2a89347496d77e614d';
+String _$gitHubApiHash() => r'e46804aa09de90e1aebe72e6b4f519c0ac18f48a';
 
 /// GitHub API client for publishing (device flow + git data). Shares the app
 /// HTTP client.
 ///
-/// Every accepted commit — catalogue, events, moves, retirements and the
-/// availability lane — is reported to [gitHubCommitRecorder], so the lane's
-/// hourly budget counts all of them (ADR 0019 Decision 8, plan AV6). One
-/// decorator around the one commit method means no flow can forget.
+/// Two decorators wrap the one commit method, so no flow can forget either:
+///  - [ResumableUploadGitHubApi] (inside): a commit names the blobs a
+///    refused attempt already sent, and nothing is sent while GitHub's pause
+///    is on (plan J8);
+///  - [CommitRecordingGitHubApi] (outside): every accepted commit —
+///    catalogue, events, moves, retirements and the availability lane — is
+///    reported to [gitHubCommitRecorder], so the lane's hourly budget counts
+///    all of them (ADR 0019 Decision 8, plan AV6).
 ///
 /// Copied from [gitHubApi].
 @ProviderFor(gitHubApi)
@@ -31,6 +35,32 @@ final gitHubApiProvider = AutoDisposeProvider<GitHubApi>.internal(
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef GitHubApiRef = AutoDisposeProviderRef<GitHubApi>;
+String _$gitHubUploadJournalStoreHash() =>
+    r'04a13662ead43e819e4f801977c1f7ba5bedbeee';
+
+/// Where the GitHub upload journal lives: one JSON file in the app
+/// documents directory, next to the publish record (plan J8).
+///
+/// keepAlive: the directory is resolved through this provider's own `ref`
+/// later, when a commit runs (like [gitHubCommitRecorder]); the store holds
+/// nothing but that resolver.
+///
+/// Copied from [gitHubUploadJournalStore].
+@ProviderFor(gitHubUploadJournalStore)
+final gitHubUploadJournalStoreProvider =
+    Provider<GitHubUploadJournalStore>.internal(
+      gitHubUploadJournalStore,
+      name: r'gitHubUploadJournalStoreProvider',
+      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+          ? null
+          : _$gitHubUploadJournalStoreHash,
+      dependencies: null,
+      allTransitiveDependencies: null,
+    );
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef GitHubUploadJournalStoreRef = ProviderRef<GitHubUploadJournalStore>;
 String _$gitHubCommitRecorderHash() =>
     r'002026307ecccd6e041513d8bf3c5e0a576334d1';
 

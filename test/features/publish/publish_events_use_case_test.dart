@@ -178,6 +178,7 @@ class _CapturingApi implements GitHubGitDataApi {
     required String commitMessage,
     required String expectedHead,
     List<String> deletePaths = const [],
+    Future<void> Function(String gitSha)? onBlobStored,
   }) async {
     final files = plan.files;
     committed = files;
@@ -590,6 +591,23 @@ void main() {
     ).call(twoPosters());
     expect(result, isA<PublishEventsFailure>());
     expect((result as PublishEventsFailure).reason, contains('422'));
+  });
+
+  test('J8: a rate-limited commit is the rate-limit message', () async {
+    final api = _CapturingApi()
+      ..result = const PublishCommitRateLimited(
+        filesHeld: 0,
+        filesToSend: 3,
+        wait: Duration(minutes: 4),
+        refusedNow: false,
+      );
+    final manifest = _MemManifest(published());
+    final result = await make(api: api, manifest: manifest).call(twoPosters());
+    expect(
+      (result as PublishEventsFailure).reason,
+      gitHubRateLimitedMessage(api.result as PublishCommitRateLimited),
+    );
+    expect(result.reason, contains('about 4 minutes'));
   });
 
   group("N09 — events share the catalogue's Pages resolution", () {

@@ -2,11 +2,13 @@
 ///
 /// Ports the Kotlin GitHub stack (`GitHubAuthApi`, `GitHubContentsApi`,
 /// `GitHubGitDataApi`, `GitTreePublisher`) into one cohesive client over
-/// `http`. The Git Data flow is the atomic-incremental commit:
-///   ref → blobs(only those GitHub does not hold) → tree(base_tree + changed)
-///   → commit → move ref.
+/// `http`. The Git Data flow is the atomic-incremental commit, written by
+/// `GitHubCommitWriter` (`http_github_commit.dart`):
+///   ref → blobs(only those GitHub does not hold, paced) → tree(base_tree +
+///   changed) → commit → move ref.
 /// The branch ref moves exactly once at the end, so a failed publish leaves the
-/// live page on its previous commit.
+/// live page on its previous commit. Reading the state a commit plans against
+/// is `GitHubTreeReader` (`http_github_tree.dart`).
 ///
 /// Auth host is github.com (device flow); API host is api.github.com. Tokens
 /// are passed per-call as a Bearer header — an unauthenticated API call can't
@@ -21,24 +23,34 @@ import 'package:pitaka/features/publish/domain/github_branch_name.dart';
 import 'package:pitaka/features/publish/domain/github_commit_plan.dart';
 import 'package:pitaka/features/publish/domain/github_models.dart';
 import 'package:pitaka/features/publish/infrastructure/github_http_support.dart';
+import 'package:pitaka/features/publish/infrastructure/http_github_commit.dart';
 import 'package:pitaka/features/publish/infrastructure/http_github_tree.dart';
 
 /// `http`-backed GitHub client.
 final class HttpGitHubApi implements GitHubApi {
   /// Creates the client. [authBase]/[apiBase] are overridable for tests.
-  HttpGitHubApi({required http.Client client, Uri? authBase, Uri? apiBase})
-    : _client = client,
-      _authBase = authBase ?? Uri.parse('https://github.com'),
-      _apiBase = apiBase ?? Uri.parse('https://api.github.com');
+  ///
+  /// [sleep] and [clock] (epoch ms) pace a commit's blob uploads (plan J8);
+  /// tests pass fakes so a multi-file commit does not wait in real time.
+  HttpGitHubApi({
+    required http.Client client,
+    Uri? authBase,
+    Uri? apiBase,
+    Future<void> Function(Duration)? sleep,
+    int Function()? clock,
+  }) : _client = client,
+       _authBase = authBase ?? Uri.parse('https://github.com'),
+       _apiBase = apiBase ?? Uri.parse('https://api.github.com'),
+       _sleep = sleep ?? Future<void>.delayed,
+       _clock = clock ?? (() => DateTime.now().millisecondsSinceEpoch);
 
   final http.Client _client;
   final Uri _authBase;
   final Uri _apiBase;
+  final Future<void> Function(Duration) _sleep;
+  final int Function() _clock;
 
   static const String _accept = 'application/vnd.github+json';
-
-  /// Git file mode for a normal (non-executable) blob.
-  static const String _modeFile = '100644';
 
   /// Git branch names the app will put into a URL path. Git allows far more,
   /// but every branch the app creates or serves Pages from is plain
@@ -381,126 +393,24 @@ final class HttpGitHubApi implements GitHubApi {
     required String commitMessage,
     required String expectedHead,
     List<String> deletePaths = const [],
-  }) async {
-    _requireBranchName(branch);
-    final headers = _authHeaders(token);
-
-    // 1. Resolve both head and base tree before ANY writes. Setup creates repos
-    // with auto_init, so a missing/unreadable branch is an error, not permission
-    // to bootstrap. GitHub's 404/409 do not prove that the repository is empty.
-    final refResp = await _get(
-      _apiBase.replace(path: '/repos/$owner/$repo/git/ref/heads/$branch'),
-      headers: headers,
-    );
-    if (refResp.statusCode != 200) {
-      return PublishCommitHttpError(
-        refResp.statusCode,
-        gitHubExcerpt(refResp.body),
+    Future<void> Function(String gitSha)? onBlobStored,
+  }) =>
+      GitHubCommitWriter(
+        client: _client,
+        apiBase: _apiBase,
+        sleep: _sleep,
+        clock: _clock,
+      ).commit(
+        owner: owner,
+        repo: repo,
+        branch: branch,
+        token: token,
+        plan: plan,
+        commitMessage: commitMessage,
+        expectedHead: expectedHead,
+        deletePaths: deletePaths,
+        onBlobStored: onBlobStored,
       );
-    }
-    final headSha = gitHubObjectSha(refResp.body, 'object');
-    // R6 compare-and-swap, checked BEFORE a single blob is uploaded: if the
-    // branch is no longer the head this publish was built from, another writer
-    // changed the site and our planned deletions may be wrong.
-    if (headSha != expectedHead) return const PublishCommitStale();
-    final headCommitResp = await _get(
-      _apiBase.replace(path: '/repos/$owner/$repo/git/commits/$headSha'),
-      headers: headers,
-    );
-    if (headCommitResp.statusCode != 200) {
-      return PublishCommitHttpError(
-        headCommitResp.statusCode,
-        gitHubExcerpt(headCommitResp.body),
-      );
-    }
-    final baseTreeSha = gitHubObjectSha(headCommitResp.body, 'tree');
-
-    // 2. Upload the blobs the plan says GitHub does not hold yet (serially).
-    // Everything else is named by sha in the tree below (ADR 0020 Decision 6).
-    for (final f in plan.uploads) {
-      final blobResp = await _post(
-        _apiBase.replace(path: '/repos/$owner/$repo/git/blobs'),
-        headers: headers,
-        jsonBody: {'content': base64Encode(f.bytes), 'encoding': 'base64'},
-      );
-      if (blobResp.statusCode >= 400) {
-        return PublishCommitHttpError(
-          blobResp.statusCode,
-          gitHubExcerpt(blobResp.body),
-        );
-      }
-    }
-
-    // 3. New tree: every desired file as an entry, by sha. M14: paths with
-    // a null sha are deleted from the base tree (GitHub's documented
-    // create-tree contract), so obsolete app-owned files leave the branch in
-    // the SAME atomic commit that updates the rest.
-    final treeEntries = [
-      for (final f in plan.files)
-        {'path': f.path, 'mode': _modeFile, 'type': 'blob', 'sha': f.gitSha},
-      for (final path in deletePaths)
-        {'path': path, 'mode': _modeFile, 'type': 'blob', 'sha': null},
-    ];
-    final treeResp = await _post(
-      _apiBase.replace(path: '/repos/$owner/$repo/git/trees'),
-      headers: headers,
-      jsonBody: {'base_tree': baseTreeSha, 'tree': treeEntries},
-    );
-    if (treeResp.statusCode >= 400) {
-      return PublishCommitHttpError(
-        treeResp.statusCode,
-        gitHubExcerpt(treeResp.body),
-      );
-    }
-    final newTreeSha = decodeGitHubObject(treeResp.body)['sha'] as String?;
-    if (newTreeSha == null) {
-      return PublishCommitHttpError(treeResp.statusCode, 'Empty tree sha');
-    }
-
-    // 4. Commit pointing at the new tree.
-    final commitResp = await _post(
-      _apiBase.replace(path: '/repos/$owner/$repo/git/commits'),
-      headers: headers,
-      jsonBody: {
-        'message': commitMessage,
-        'tree': newTreeSha,
-        'parents': [headSha],
-      },
-    );
-    if (commitResp.statusCode >= 400) {
-      return PublishCommitHttpError(
-        commitResp.statusCode,
-        gitHubExcerpt(commitResp.body),
-      );
-    }
-    final newCommitSha = decodeGitHubObject(commitResp.body)['sha'] as String?;
-    if (newCommitSha == null) {
-      return PublishCommitHttpError(commitResp.statusCode, 'Empty commit sha');
-    }
-
-    // 5. Move the existing branch ref — the single atomic flip. A concurrent
-    // branch advance must be rejected by GitHub, never overwritten by force.
-    //
-    // The pre-check above already returned [PublishCommitStale] when the head
-    // was not the expected one. A branch that moves BETWEEN that read and this
-    // patch comes back as a rejected (non-fast-forward) update; which status
-    // code that is depends on GitHub's side, and it can also mean a malformed
-    // request, so it stays a plain HTTP error with the fixed retry copy rather
-    // than being guessed into "the site changed".
-    final refMove = await _patch(
-      _apiBase.replace(path: '/repos/$owner/$repo/git/refs/heads/$branch'),
-      headers: headers,
-      jsonBody: {'sha': newCommitSha, 'force': false},
-    );
-    if (refMove.statusCode >= 400) {
-      return PublishCommitHttpError(
-        refMove.statusCode,
-        gitHubExcerpt(refMove.body),
-      );
-    }
-
-    return PublishCommitSuccess(newCommitSha, plan.uploadedPaths);
-  }
 
   // --- helpers -------------------------------------------------------------
 
@@ -522,18 +432,6 @@ final class HttpGitHubApi implements GitHubApi {
     }
     return _client.post(uri, headers: headers, body: body);
   });
-
-  Future<http.Response> _patch(
-    Uri uri, {
-    required Map<String, String> headers,
-    required Object jsonBody,
-  }) => _guard(
-    () => _client.patch(
-      uri,
-      headers: {...headers, 'Content-Type': 'application/json'},
-      body: jsonEncode(jsonBody),
-    ),
-  );
 
   Future<http.Response> _guard(Future<http.Response> Function() call) async {
     try {

@@ -98,6 +98,7 @@ final class _ScriptedApi implements GitHubApi {
     required String commitMessage,
     required String expectedHead,
     List<String> deletePaths = const [],
+    Future<void> Function(String gitSha)? onBlobStored,
   }) async {
     lastDeletePaths = deletePaths;
     if (throwOnCommit) throw const GitHubApiException('synthetic');

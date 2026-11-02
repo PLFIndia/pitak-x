@@ -401,6 +401,9 @@ final class PublishEventsUseCase {
         // The response body is deliberately dropped: a hostile network can
         // inject arbitrary text into it (§5 "safe message only").
         return PublishEventsFailure(gitHubHttpErrorMessage(code));
+      case final PublishCommitRateLimited limited:
+        // GitHub's limit or its pause (plan J8); nothing was committed.
+        return PublishEventsFailure(gitHubRateLimitedMessage(limited));
     }
   }
 }

@@ -135,8 +135,17 @@ void main() {
         );
         final result = await fixture.publish();
         expect(fixture.writes, isEmpty);
-        expect(result, isA<PublishCommitHttpError>());
-        expect((result as PublishCommitHttpError).code, status);
+        if (status == 429) {
+          // GitHub's REST docs: 429 always means "rate limited". Since plan
+          // J8 it is its own result (nothing sent, nothing held), so the
+          // caller can say "wait" instead of "HTTP error".
+          final limited = result as PublishCommitRateLimited;
+          expect(limited.filesHeld, 0);
+          expect(limited.refusedNow, isTrue);
+        } else {
+          expect(result, isA<PublishCommitHttpError>());
+          expect((result as PublishCommitHttpError).code, status);
+        }
         expect(fixture.calls, [
           _refRead,
           if (stage.value == _commitRead) _commitRead,

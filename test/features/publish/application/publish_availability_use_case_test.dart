@@ -424,6 +424,22 @@ void main() {
       },
     );
 
+    test("J8: GitHub's pause is pending with the lane's own sentence (the "
+        'lane backs off; nothing saved)', () async {
+      final limited = harness()
+        ..api.forcedResult = const PublishCommitRateLimited(
+          filesHeld: 0,
+          filesToSend: 1,
+          wait: Duration(minutes: 1),
+          refusedNow: true,
+        );
+      expect(
+        (await write(limited.useCase) as AvailabilityPending).reason,
+        gitHubPausedMessage,
+      );
+      expect(limited.manifest.saves, isEmpty);
+    });
+
     test('an HTTP error keeps its fixed message; a thrown commit is a '
         'network error', () async {
       final refused = harness()

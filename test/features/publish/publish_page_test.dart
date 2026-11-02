@@ -170,6 +170,7 @@ class _FakeGitHubApi implements GitHubApi {
     required String commitMessage,
     required String expectedHead,
     List<String> deletePaths = const [],
+    Future<void> Function(String gitSha)? onBlobStored,
   }) async => const PublishCommitSuccess('sha', []);
 }
 

@@ -9,6 +9,8 @@
 /// used elsewhere in the app.)
 library;
 
+import 'package:pitaka/features/publish/domain/github_api.dart';
+
 /// Maps an HTTP status [code] from the GitHub API to a fixed, safe message.
 ///
 /// Never include response-body text in the returned string.
@@ -30,6 +32,74 @@ String gitHubHttpErrorMessage(int code) => switch (code) {
         'minutes.',
   _ => 'GitHub returned an unexpected error (HTTP $code). Try again.',
 };
+
+/// What the user does again once GitHub's pause is over; it picks the last
+/// sentence of [gitHubRateLimitedMessage].
+enum GitHubLimitedOperation {
+  /// A catalogue or events publish ("Publish again …").
+  publish,
+
+  /// A move to another host ("Choose Move to other host again …").
+  move,
+
+  /// Retiring the old site of a pending move ("Retry the pending move …").
+  retirement,
+}
+
+/// The message for a commit GitHub's rate limit stopped, or that Pitak did
+/// not send because GitHub's pause has not ended (plan J8).
+///
+/// Built only from counts and a duration Pitak itself computed, never from
+/// response text (§5). It says what happened, how far the upload got, that
+/// the site is unchanged, and when to try again: "in about an hour" after a
+/// real refusal (the window of GitHub's hourly limit), the pause still left
+/// when Pitak held back.
+String gitHubRateLimitedMessage(
+  PublishCommitRateLimited result, {
+  GitHubLimitedOperation operation = GitHubLimitedOperation.publish,
+}) {
+  final opening = result.refusedNow
+      ? 'GitHub limits how much one account can upload in an hour, and it '
+            'paused this upload.'
+      : 'GitHub asked Pitak to wait before uploading again, so nothing was '
+            'sent this time.';
+  final total = result.filesToSend < 0 ? 0 : result.filesToSend;
+  final held = result.filesHeld.clamp(0, total);
+  final progress = total == 0
+      ? ''
+      : ' $held of $total files are already on GitHub and will not be sent '
+            'again.';
+  final unchanged = switch (operation) {
+    GitHubLimitedOperation.publish => ' Nothing on your site has changed yet.',
+    GitHubLimitedOperation.move => ' Your current site was not changed.',
+    GitHubLimitedOperation.retirement =>
+      ' Your old address was not changed yet.',
+  };
+  final when = result.refusedNow ? 'in about an hour' : _inAbout(result.wait);
+  final rest = held < total ? ' to send the rest' : '';
+  final action = switch (operation) {
+    GitHubLimitedOperation.publish => ' Publish again $when$rest.',
+    GitHubLimitedOperation.move =>
+      ' Choose Move to other host again $when$rest.',
+    GitHubLimitedOperation.retirement => ' Retry the pending move $when.',
+  };
+  return '$opening$progress$unchanged$action';
+}
+
+/// "in about N minutes" for a pause Pitak keeps; never more precise than a
+/// minute, never longer than an hour (the pause's own cap).
+String _inAbout(Duration? wait) {
+  if (wait == null) return 'in about an hour';
+  final minutes = (wait.inSeconds + 59) ~/ 60;
+  if (minutes >= 50) return 'in about an hour';
+  if (minutes <= 1) return 'in about a minute';
+  return 'in about $minutes minutes';
+}
+
+/// The availability lane's sentence for the same situation (plan J8). The
+/// status row adds "Next try at …" itself, so it carries no time.
+const String gitHubPausedMessage =
+    'GitHub paused uploads from your account for a while.';
 
 /// Fixed message for transport-level failures (timeouts, DNS, TLS, malformed
 /// responses). Exception text is deliberately not included.
