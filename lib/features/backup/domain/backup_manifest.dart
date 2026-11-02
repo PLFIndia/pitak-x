@@ -24,6 +24,7 @@ class BackupManifest {
     this.hasNetwork = false,
     this.hasItemKinds = false,
     this.hasPeriodicals = false,
+    this.hasPublishState = false,
     this.backupHint,
   });
 
@@ -74,6 +75,13 @@ class BackupManifest {
   /// rule as [hasItemKinds].
   final bool hasPeriodicals;
 
+  /// Whether the archive contains `publish_state.json` (ADR 0014 amendment of
+  /// 2026-11-02, plan CV6): the cover salt and the website publishing record,
+  /// so a restored phone does not upload every cover again. Same
+  /// default-false rule as [hasIdentity]: an archive without it restores
+  /// exactly as before.
+  final bool hasPublishState;
+
   /// Optional user-facing passphrase hint.
   final String? backupHint;
 
@@ -102,6 +110,7 @@ class BackupManifest {
       hasNetwork: _asBool(decoded['hasNetwork']) ?? false,
       hasItemKinds: _asBool(decoded['hasItemKinds']) ?? false,
       hasPeriodicals: _asBool(decoded['hasPeriodicals']) ?? false,
+      hasPublishState: _asBool(decoded['hasPublishState']) ?? false,
       backupHint: decoded['backupHint'] is String
           ? decoded['backupHint'] as String
           : null,
@@ -125,6 +134,7 @@ class BackupManifest {
       'hasNetwork': hasNetwork,
       'hasItemKinds': hasItemKinds,
       'hasPeriodicals': hasPeriodicals,
+      'hasPublishState': hasPublishState,
       if (backupHint != null) 'backupHint': backupHint,
     };
     return const JsonEncoder.withIndent('  ').convert(map);

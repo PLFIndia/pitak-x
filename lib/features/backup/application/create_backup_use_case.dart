@@ -14,7 +14,13 @@
 /// without it — a catalogue backup must never be blocked by the parts that
 /// are merely nice to carry. The omission is reported on the result so the
 /// UI can say so plainly.
+///
+/// The website publishing record (`publish_state.json`, ADR 0014 amendment,
+/// plan CV6) follows the same best-effort rule, through the publish
+/// feature's [PublishStateBackupSource] port.
 library;
+
+import 'dart:convert';
 
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/error/failure.dart';
@@ -25,6 +31,8 @@ import 'package:pitaka/features/library/domain/repositories/catalogue_item_repos
 import 'package:pitaka/features/network/domain/network_archive_codec.dart';
 import 'package:pitaka/features/network/domain/repositories/network_repository.dart';
 import 'package:pitaka/features/periodicals/domain/repositories/periodical_repository.dart';
+import 'package:pitaka/features/publish/domain/publish_state_backup_codec.dart';
+import 'package:pitaka/features/publish/domain/publish_state_backup_ports.dart';
 import 'package:pitaka/features/settings/domain/library_namespace.dart';
 import 'package:pitaka/features/wishlist/domain/repositories/wishlist_repository.dart';
 
@@ -39,6 +47,7 @@ class CreateBackupUseCase {
     required this.workDir,
     required this.namespace,
     required this.network,
+    required this.publishState,
   });
 
   /// Library source.
@@ -64,6 +73,9 @@ class CreateBackupUseCase {
 
   /// The saved-libraries source (rows for `network.json`).
   final NetworkRepository network;
+
+  /// The website publishing record source (`publish_state.json`).
+  final PublishStateBackupSource publishState;
 
   /// Builds the archive, or a [Failure] if the catalog can't be read. The
   /// identity and network entries never turn the result into a Left — see
@@ -94,6 +106,7 @@ class CreateBackupUseCase {
     // network list: a read throw is contained and the entry is skipped.
     final identityJson = await _gatherIdentity();
     final networkJson = await _gatherNetwork();
+    final publishStateEntry = await _gatherPublishState();
 
     try {
       // N10-c: the builder runs on a worker isolate; awaiting here keeps the
@@ -112,12 +125,14 @@ class CreateBackupUseCase {
         exportedAt: DateTime.now().millisecondsSinceEpoch,
         identityJson: identityJson,
         networkJson: networkJson,
+        publishStateJson: publishStateEntry.json,
       );
       return built.map(
         (bytes) => CreateBackupResult(
           bytes: bytes,
           includesIdentity: identityJson != null,
           includesNetwork: networkJson != null,
+          missingPublishState: publishStateEntry.missing,
         ),
       );
     } on Object catch (e) {
@@ -136,6 +151,31 @@ class CreateBackupUseCase {
       );
     } on Object {
       return null; // best-effort: never block the catalogue backup
+    }
+  }
+
+  /// `publish_state.json` content (null when there is none to carry or it
+  /// cannot be carried) and whether a record that exists was left out.
+  ///
+  /// The entry is checked against the RESTORE reader before it is used: the
+  /// writer must never emit an entry its own reader refuses (the S5 rule of
+  /// the W2 entries), so an oversized or unreadable record is left out and
+  /// reported instead.
+  Future<({String? json, bool missing})> _gatherPublishState() async {
+    try {
+      final read = await publishState.forBackup();
+      return read.match((_) => (json: null, missing: true), (state) {
+        if (state == null) return (json: null, missing: false);
+        final json = PublishStateBackupCodec.encode(state);
+        final readable =
+            utf8.encode(json).length <= PublishStateBackupCodec.maxBytes &&
+            PublishStateBackupCodec.decode(json) != null;
+        return readable
+            ? (json: json, missing: false)
+            : (json: null, missing: true);
+      });
+    } on Object {
+      return (json: null, missing: true); // best-effort, like the others
     }
   }
 

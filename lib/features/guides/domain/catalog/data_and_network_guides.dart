@@ -53,9 +53,12 @@ const Guide backupGuide = Guide(
             'items — plus wishlist, cover images, library identity and '
             'saved-libraries list, and the borrowers vault if you have one '
             '(it stays encrypted and opens with the same passphrase).',
-        '**Not inside:** events and posters, logo, contact details, '
-            'publishing setup, app settings — set those up again after a '
-            'restore.',
+        'If you publish a website, its publishing record goes in too, so a '
+            'new phone that has not published yet continues the same site '
+            'without uploading every cover again.',
+        '**Not inside:** events and posters, logo, contact details, your '
+            'GitHub or Cloudflare sign-in, app settings — set those up again '
+            'after a restore.',
         'Keep the file somewhere private (your Drive, a computer) — it is '
             'your data in plain form, except the vault.',
       ],

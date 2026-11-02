@@ -41,6 +41,7 @@ void main() {
       exportedAt: 1,
       identityJson: null,
       networkJson: null,
+      publishStateJson: null,
     );
 
     final failure = result.getLeft().toNullable();

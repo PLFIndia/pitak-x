@@ -18,8 +18,8 @@ import 'package:pitaka/core/storage/prefs_write.dart';
 import 'package:pitaka/features/publish/application/site/publish_host_state_repository.dart';
 import 'package:pitaka/features/publish/domain/github_branch_name.dart';
 import 'package:pitaka/features/publish/domain/publish_target.dart';
+import 'package:pitaka/features/publish/domain/publish_target_json.dart';
 import 'package:pitaka/features/publish/domain/site/pending_move.dart';
-import 'package:pitaka/features/publish/domain/site/publish_host.dart';
 import 'package:pitaka/features/publish/domain/site/publish_host_state.dart';
 import 'package:pitaka/features/publish/domain/site/publish_marker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -54,13 +54,16 @@ final class PrefsPublishHostStore implements PublishHostStateStore {
       if (decoded is! Map<String, dynamic> || decoded['schema'] != schema) {
         return _unreadable();
       }
-      final host = _hostFrom(decoded['activeHost']);
+      final host = PublishTargetJson.hostFrom(decoded['activeHost']);
       if (decoded.containsKey('activeHost') && host == null) {
         return _unreadable();
       }
       final state = PublishHostState(
         activeHost: host,
-        verifiedTarget: _targetFrom(decoded['verifiedTarget'], host),
+        verifiedTarget: PublishTargetJson.decode(
+          decoded['verifiedTarget'],
+          expectedHost: host,
+        ),
         pendingMove: _pendingFrom(decoded['pendingMove']),
       );
       // Never turn a malformed pending record into a genuinely absent one.
@@ -97,7 +100,7 @@ final class PrefsPublishHostStore implements PublishHostStateStore {
     final encoded = jsonEncode({
       'schema': schema,
       if (state.activeHost case final host?) 'activeHost': host.name,
-      if (target != null) 'verifiedTarget': _targetJson(target),
+      if (target != null) 'verifiedTarget': PublishTargetJson.encode(target),
       if (state.pendingMove case final pending?)
         'pendingMove': _pendingJson(pending),
     });
@@ -115,13 +118,6 @@ final class PrefsPublishHostStore implements PublishHostStateStore {
     );
   }
 
-  Map<String, Object?> _targetJson(PublishTarget target) => {
-    ..._identityOf(target),
-    'host': target.host.name,
-    'targetId': target.targetId,
-    'siteUrl': target.siteUrl,
-  };
-
   Map<String, Object?> _pendingJson(PendingMove pending) {
     final descriptor = pending.retirement;
     final marker = descriptor.marker;
@@ -131,8 +127,8 @@ final class PrefsPublishHostStore implements PublishHostStateStore {
       'sourceOwnedPaths': pending.sourceAnchor.ownedPaths,
       if (descriptor.sourceBranch case final branch?)
         'sourceBranch': branch.value,
-      'oldTarget': _targetJson(pending.oldTarget),
-      'newTarget': _targetJson(pending.newTarget),
+      'oldTarget': PublishTargetJson.encode(pending.oldTarget),
+      'newTarget': PublishTargetJson.encode(pending.newTarget),
       'indexHtml': base64Encode(descriptor.indexHtml),
       'notFoundHtml': base64Encode(descriptor.notFoundHtml),
       'movedPageSchema': descriptor.movedPageSchema,
@@ -150,8 +146,8 @@ final class PrefsPublishHostStore implements PublishHostStateStore {
         raw['phase'] != PendingMovePhase.retirementPending.name) {
       return null;
     }
-    final oldTarget = _targetFrom(raw['oldTarget'], null);
-    final newTarget = _targetFrom(raw['newTarget'], null);
+    final oldTarget = PublishTargetJson.decode(raw['oldTarget']);
+    final newTarget = PublishTargetJson.decode(raw['newTarget']);
     final anchor = raw['sourceAnchor'];
     final paths = _stringList(raw['sourceOwnedPaths']);
     final index = _bytes(raw['indexHtml']);
@@ -200,51 +196,6 @@ final class PrefsPublishHostStore implements PublishHostStateStore {
       libraryName: libraryName,
       retirementMarker: marker,
     );
-  }
-
-  /// The parts that rebuild a sealed target; never the URL alone.
-  Map<String, Object?> _identityOf(PublishTarget target) => switch (target) {
-    GitHubPublishTarget() => {'repo': target.ownerRepo},
-    CloudflarePublishTarget() => {
-      'accountId': target.accountId.value,
-      'workerName': target.workerName.value,
-      'accountSubdomain': target.accountSubdomain.value,
-    },
-  };
-
-  static PublishHost? _hostFrom(Object? raw) {
-    for (final host in PublishHost.values) {
-      if (host.name == raw) return host;
-    }
-    return null;
-  }
-
-  PublishTarget? _targetFrom(Object? raw, PublishHost? expectedHost) {
-    if (raw is! Map<String, dynamic>) return null;
-    final host = _hostFrom(raw['host']);
-    if (host == null || (expectedHost != null && host != expectedHost)) {
-      return null;
-    }
-    final target = switch (host) {
-      PublishHost.github => GitHubPublishTarget.create(
-        raw['repo'] is String ? raw['repo'] as String : null,
-      ),
-      PublishHost.cloudflare => CloudflarePublishTarget.create(
-        accountId: raw['accountId'] is String
-            ? raw['accountId'] as String
-            : null,
-        workerName: raw['workerName'] is String
-            ? raw['workerName'] as String
-            : null,
-        accountSubdomain: raw['accountSubdomain'] is String
-            ? raw['accountSubdomain'] as String
-            : null,
-      ),
-    };
-    if (target == null) return null;
-    if (raw['siteUrl'] != target.siteUrl) return null;
-    if (raw['targetId'] != target.targetId) return null;
-    return target;
   }
 
   static List<String>? _stringList(Object? raw) {

@@ -2,6 +2,8 @@
 library;
 
 import 'package:pitaka/features/network/domain/entities/network_library.dart';
+import 'package:pitaka/features/publish/domain/publish_state_adoption.dart';
+import 'package:pitaka/features/publish/domain/publish_state_backup.dart';
 import 'package:pitaka/features/vault/domain/loan_integrity.dart';
 
 /// Counts + integrity findings from an applied restore.
@@ -32,6 +34,9 @@ class RestoreSummary {
     this.periodicalsDropped = 0,
     this.itemKindsInvalid = false,
     this.periodicalsInvalid = false,
+    this.restoredPublishState,
+    this.publishStateInvalid = false,
+    this.publishStateOutcome,
   });
 
   /// Number of library books written.
@@ -150,6 +155,21 @@ class RestoreSummary {
   /// but the entry could not be read.
   final bool periodicalsInvalid;
 
+  /// The validated website publishing record from `publish_state.json`
+  /// (ADR 0014 amendment, plan CV6) — null when the archive carried none or
+  /// it could not be read (see [publishStateInvalid]). Parsed by the
+  /// restorer; ADOPTED (or not) by the restore controller after the
+  /// catalogue switch, like the identity (see [publishStateOutcome]).
+  final PublishStateBackup? restoredPublishState;
+
+  /// True when the archive declared `publish_state.json`
+  /// (`hasPublishState`) but the entry could not be read.
+  final bool publishStateInvalid;
+
+  /// What the controller's adoption did with [restoredPublishState]; null
+  /// until it ran (and whenever there was nothing to adopt).
+  final PublishStateRestoreOutcome? publishStateOutcome;
+
   /// Returns a copy with the post-restore adoption outcomes filled in (the
   /// restorer parses but never applies identity/network — that is the
   /// controller's job, after the catalogue switch).
@@ -157,6 +177,7 @@ class RestoreSummary {
     required bool identityAdopted,
     required bool networkApplied,
     required int networkRestored,
+    PublishStateRestoreOutcome? publishStateOutcome,
   }) {
     return RestoreSummary(
       booksRestored: booksRestored,
@@ -183,6 +204,9 @@ class RestoreSummary {
       periodicalsDropped: periodicalsDropped,
       itemKindsInvalid: itemKindsInvalid,
       periodicalsInvalid: periodicalsInvalid,
+      restoredPublishState: restoredPublishState,
+      publishStateInvalid: publishStateInvalid,
+      publishStateOutcome: publishStateOutcome,
     );
   }
 

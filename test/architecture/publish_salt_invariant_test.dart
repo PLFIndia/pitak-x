@@ -6,15 +6,16 @@ import 'package:flutter_test/flutter_test.dart';
 /// while the cover salt and the internal ids stay the same, so any flow that
 /// replaces the salt must clear `catalogueKeyed` in both publish records.
 ///
-/// Why a source scan (beginner note): today the salt is never replaced — it
-/// is generated once, on first use, when none exists, and then only read
-/// (`SecureStorageCoverSaltStore`; Android backup is off and secure storage
-/// throws instead of silently resetting). So "every salt replacement clears
-/// the flag" holds because there is no replacement. This test keeps it that
-/// way: the moment new code writes or deletes the salt — for example the
-/// backup restore of plan S11 (CV6/CV7) — it fails, and whoever changes it
-/// must make that flow clear `catalogueKeyed` and then update this test.
-/// Same technique as the plan's cover-file invariant (CV1).
+/// Why a source scan (beginner note): the salt is generated once, on first
+/// use, and since plan S11 it is replaced by exactly ONE flow — a restore
+/// adopting a backup's publishing record on a phone that has not published
+/// yet (`RestoredPublishStateAdopter`, plan CV7). This test pins that: only
+/// the secure-storage store writes the salt (first use and `replace`), only
+/// the adopter holds the replaceable port, the adopter saves both records
+/// with `catalogueKeyed` cleared, and it runs inside the keys guard so the
+/// availability lane forgets keys made with the old salt. A new writer of
+/// the salt fails here until it is reviewed. Same technique as the plan's
+/// cover-file invariant (CV1).
 void main() {
   const saltStorePath =
       'lib/features/publish/infrastructure/secure_storage_cover_salt_store.dart';
@@ -51,26 +52,36 @@ void main() {
     );
   });
 
-  test('the salt store writes only on first use and never deletes', () {
+  test('the salt store writes on first use and in replace only, never '
+      'deletes', () {
     final source = File(saltStorePath).readAsStringSync();
 
     expect(
       '.write('.allMatches(source).length,
-      1,
-      reason: 'exactly one write: the first-use generation',
+      2,
+      reason: 'exactly two writes: first-use generation and replace (S11)',
     );
     expect(source, isNot(contains('.delete(')));
     expect(source, isNot(contains('.deleteAll(')));
-    // The one write sits after the "a salt already exists" early return, so
-    // an existing salt is never overwritten.
+    // The first-use write sits after the "a salt already exists" early
+    // return, so salt() never overwrites an existing salt.
     final existingReturn = source.indexOf('return base64Decode(existing)');
-    final write = source.indexOf('.write(');
+    final firstWrite = source.indexOf('.write(');
     expect(existingReturn, greaterThan(0));
-    expect(write, greaterThan(existingReturn));
+    expect(firstWrite, greaterThan(existingReturn));
+    // The second write is replace()'s, after its length check.
+    final replace = source.indexOf('Future<Either<Failure, Unit>> replace(');
+    final lengthCheck = source.indexOf('salt.length != _saltBytes', replace);
+    final secondWrite = source.indexOf('.write(', firstWrite + 1);
+    expect(replace, greaterThan(firstWrite));
+    expect(lengthCheck, greaterThan(replace));
+    expect(secondWrite, greaterThan(lengthCheck));
   });
 
   test('no other production class implements the salt store port', () {
-    final implementer = RegExp(r'implements\s+PublishCoverSaltStore\b');
+    final implementer = RegExp(
+      r'implements\s+(Replaceable)?PublishCoverSaltStore\b',
+    );
     final implementations = [
       for (final file in libFiles())
         if (implementer.hasMatch(file.readAsStringSync())) path(file),
@@ -80,8 +91,74 @@ void main() {
       // never reachable from the shipping entry point
       // (shipping_entry_point_test.dart).
       'lib/dev/cloudflare_memory_scenario.dart',
+      // The narrower ReplaceablePublishCoverSaltStore port (S11) extends the
+      // read port here; it is an interface, not a second store.
+      'lib/features/publish/domain/publish_cover_ids.dart',
       saltStorePath,
     ]);
+  });
+
+  group('plan S11: the one salt replacement clears catalogueKeyed', () {
+    const adopterPath =
+        'lib/features/publish/application/site/'
+        'restored_publish_state_adopter.dart';
+
+    test('only the adopter holds the replaceable salt port', () {
+      final users = [
+        for (final file in libFiles())
+          if (file.readAsStringSync().contains(
+            'ReplaceablePublishCoverSaltStore',
+          ))
+            path(file),
+      ]..sort();
+      expect(users, [
+        adopterPath,
+        'lib/features/publish/domain/publish_cover_ids.dart',
+        saltStorePath,
+      ]);
+    });
+
+    test('the adopter saves both records with catalogueKeyed cleared', () {
+      final source = File(adopterPath).readAsStringSync();
+      expect(
+        source,
+        contains('_gitHubRecord.save(gitHub.withoutCatalogueKeys())'),
+      );
+      expect(
+        source,
+        contains('_cloudflareRecord.save(cloudflare.withoutCatalogueKeys())'),
+      );
+      // The only other record saves are the undo, which writes back this
+      // phone's own (empty) records.
+      expect('_gitHubRecord.save('.allMatches(source).length, 2);
+      expect('_cloudflareRecord.save('.allMatches(source).length, 2);
+      expect(source, contains('_gitHubRecord.save(phone.gitHubRecord)'));
+      expect(
+        source,
+        contains('_cloudflareRecord.save(phone.cloudflareRecord)'),
+      );
+    });
+
+    test('the adopter replaces the salt only inside the keys guard', () {
+      final source = File(adopterPath).readAsStringSync();
+      final guard = source.indexOf(
+        '_keysChangeGuard(() => _adoptInsideQueue(archived))',
+      );
+      final inside = source.indexOf(
+        'Future<PublishStateRestoreOutcome> '
+        '_adoptInsideQueue(',
+      );
+      final replace = source.indexOf('_salt.replace(archived.coverSalt)');
+      expect(guard, greaterThan(0));
+      expect(inside, greaterThan(guard));
+      expect(replace, greaterThan(inside));
+
+      final di = File(
+        'lib/core/di/src/publish_state_providers.dart',
+      ).readAsStringSync();
+      expect(di, contains('catalogueKeysResetProvider'));
+      expect(di, contains('keysChangeGuard: keys.beforeIdsChange'));
+    });
   });
 
   group('plan J9: flows that change what ids name clear catalogueKeyed', () {

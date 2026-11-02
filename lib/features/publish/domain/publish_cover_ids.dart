@@ -14,6 +14,8 @@ library;
 import 'dart:convert';
 
 import 'package:crypto/crypto.dart';
+import 'package:fpdart/fpdart.dart';
+import 'package:pitaka/core/error/failure.dart';
 
 /// Storage seam for the publish-cover salt. Production uses secure storage;
 /// tests inject a fake with a known salt.
@@ -21,6 +23,27 @@ import 'package:crypto/crypto.dart';
 abstract interface class PublishCoverSaltStore {
   /// Returns the persisted salt, generating + storing it on first call.
   Future<List<int>> salt();
+}
+
+/// The salt store that may also REPLACE the salt (plan CV7, S11).
+///
+/// A separate, narrower port on purpose (beginner note): every publish only
+/// needs to READ the salt, so only the one flow that may change it — adopting
+/// a backup's publishing record on a phone that has not published yet
+/// (`RestoredPublishStateAdopter`) — gets this type. Replacing the salt
+/// renames every cover and changes every public item key, so that flow must
+/// also clear `catalogueKeyed` in both records (ADR 0019 Decision 3);
+/// `test/architecture/publish_salt_invariant_test.dart` pins both facts.
+// ignore: one_member_abstracts
+abstract interface class ReplaceablePublishCoverSaltStore
+    implements PublishCoverSaltStore {
+  /// The length every salt has (16 random bytes).
+  static const int saltLength = 16;
+
+  /// Stores [salt] in place of the current one. A salt of any other length
+  /// than [saltLength] is refused (`ValidationFailure`) and nothing is
+  /// written; a platform failure is a `StorageFailure`.
+  Future<Either<Failure, Unit>> replace(List<int> salt);
 }
 
 /// Computes deterministic, id-hiding cover paths.

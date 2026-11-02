@@ -17,6 +17,7 @@ import 'package:pitaka/features/library/infrastructure/drift_item_details.dart';
 import 'package:pitaka/features/network/domain/entities/network_library.dart';
 import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
 import 'package:pitaka/features/periodicals/infrastructure/periodical_mapper.dart';
+import 'package:pitaka/features/publish/domain/publish_state_backup_codec.dart';
 import 'package:pitaka/features/vault/domain/entities/borrower.dart';
 import 'package:pitaka/features/vault/domain/entities/vault_data.dart';
 import 'package:pitaka/features/vault/domain/repositories/vault_repository.dart';
@@ -25,6 +26,7 @@ import 'package:sqlite3/common.dart';
 import 'package:sqlite3/sqlite3.dart';
 
 import '../library/replacement_test_guard.dart';
+import '../publish/support/publish_state_fixtures.dart';
 import '../vault/vault_repository_write_stub.dart';
 import 'generation_fixture.dart';
 
@@ -156,6 +158,8 @@ void main() {
     bool hasNetwork = false,
     bool hasItemKinds = false,
     bool hasPeriodicals = false,
+    bool hasCovers = false,
+    bool hasPublishState = false,
   }) => jsonEncode({
     'schemaVersion': schemaVersion,
     'exportedAt': 123,
@@ -163,7 +167,8 @@ void main() {
     'hasWishlist': true,
     'hasBorrowers': hasBackupBlob,
     'hasBackupBlob': hasBackupBlob,
-    'hasCovers': false,
+    'hasCovers': hasCovers,
+    if (hasPublishState) 'hasPublishState': true,
     if (hasIdentity) 'hasIdentity': true,
     if (hasNetwork) 'hasNetwork': true,
     if (hasItemKinds) 'hasItemKinds': true,
@@ -649,6 +654,98 @@ void main() {
         (_) => fail('expected validation failure'),
       );
       // Fail closed BEFORE any device write.
+      expect(await db.select(db.books).get(), isEmpty);
+    });
+  });
+
+  group('plan CV6 — publish_state.json (parsed, never applied here)', () {
+    String entry() => PublishStateBackupCodec.encode(
+      archivedState(
+        gitHub: gitHubRecord(
+          covers: const {
+            '1': 'covers/carried.jpg',
+            '2': 'covers/not-in-archive.jpg',
+            '3': 'https://covers.openlibrary.org/b/id/1-L.jpg',
+          },
+        ),
+      ),
+    );
+
+    Uint8List zipWith({
+      required bool hasPublishState,
+      bool hasCovers = true,
+      String? publishState,
+    }) => archive({
+      'manifest.json': utf8.encode(
+        manifest(hasPublishState: hasPublishState, hasCovers: hasCovers),
+      ),
+      'books.db': buildBooksDb(),
+      'wishlist.db': buildWishlistDb(),
+      if (hasCovers) 'cover_carried.jpg': [1, 2, 3],
+      'publish_state.json': utf8.encode(publishState ?? entry()),
+    });
+
+    test('a valid entry reaches the summary; only carried local covers keep '
+        'their source (ADR 0020 Decision 7)', () async {
+      final r = restorer(_FakeVault(right(VaultData.empty)));
+      final summary = (await r.restore(
+        archiveBytes: zipWith(hasPublishState: true),
+      )).getOrElse((f) => fail('unexpected: $f'));
+      final state = summary.restoredPublishState!;
+      expect(state.coverSalt, archiveSalt);
+      expect(state.gitHubRecord.coverUrlByBookId, {
+        '1': 'covers/carried.jpg',
+        '3': 'https://covers.openlibrary.org/b/id/1-L.jpg',
+      });
+      expect(summary.publishStateInvalid, isFalse);
+      expect(summary.publishStateOutcome, isNull, reason: 'not applied yet');
+    });
+
+    test('an archive without covers keeps no local source at all', () async {
+      final r = restorer(_FakeVault(right(VaultData.empty)));
+      final summary = (await r.restore(
+        archiveBytes: zipWith(hasPublishState: true, hasCovers: false),
+      )).getOrElse((f) => fail('unexpected: $f'));
+      expect(summary.restoredPublishState!.gitHubRecord.coverUrlByBookId, {
+        '3': 'https://covers.openlibrary.org/b/id/1-L.jpg',
+      });
+    });
+
+    test(
+      'a declared but unreadable entry is flagged; the restore stands',
+      () async {
+        final r = restorer(_FakeVault(right(VaultData.empty)));
+        final summary = (await r.restore(
+          archiveBytes: zipWith(
+            hasPublishState: true,
+            publishState: '{"schemaVersion": 1, "coverSalt": "AAAA"}',
+          ),
+        )).getOrElse((f) => fail('unexpected: $f'));
+        expect(summary.restoredPublishState, isNull);
+        expect(summary.publishStateInvalid, isTrue);
+        expect(summary.booksRestored, greaterThan(0));
+      },
+    );
+
+    test('an entry the manifest does not announce is not even read', () async {
+      final r = restorer(_FakeVault(right(VaultData.empty)));
+      final summary = (await r.restore(
+        archiveBytes: zipWith(hasPublishState: false),
+      )).getOrElse((f) => fail('unexpected: $f'));
+      expect(summary.restoredPublishState, isNull);
+      expect(summary.publishStateInvalid, isFalse);
+    });
+
+    test('inspectArchive names the record without restoring', () async {
+      final r = restorer(_FakeVault(right(VaultData.empty)));
+      final inspected = (await r.inspectArchive(
+        zipWith(hasPublishState: true),
+      )).getOrElse((f) => fail('unexpected: $f'));
+      expect(inspected.manifest.hasPublishState, isTrue);
+      expect(
+        inspected.publishState!.activeSite!.siteUrl,
+        'https://degt3rt.github.io/my-library/',
+      );
       expect(await db.select(db.books).get(), isEmpty);
     });
   });

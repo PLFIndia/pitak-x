@@ -175,6 +175,39 @@ final class PublishHostStateRepository implements PublishHostStateRecorder {
     return _store.save(PublishHostState(activeHost: host));
   }
 
+  /// Takes over a restored backup's [activeHost] and [verifiedTarget] (plan
+  /// CV7, S11), in one write.
+  ///
+  /// Only over a journal that proves no site of its own, has no pending
+  /// move, and has no other active host — the journal half of
+  /// `PublishStateAdoptionRule`, checked again here, at the one class that
+  /// writes the journal, so no caller can use this to overwrite a phone's
+  /// own verified address. An unreadable journal is never overwritten.
+  Future<Either<Failure, Unit>> adoptFromBackup({
+    required PublishHost activeHost,
+    PublishTarget? verifiedTarget,
+  }) async {
+    final loaded = _store.load();
+    if (loaded case Left(value: final failure)) return Left(failure);
+    final current = loaded.toNullable();
+    if (current != null &&
+        (current.pendingMove != null ||
+            current.verifiedTarget != null ||
+            (current.activeHost != null && current.activeHost != activeHost))) {
+      return left(
+        const ValidationFailure('This phone already has its own publishing.'),
+      );
+    }
+    final next = PublishHostState(
+      activeHost: activeHost,
+      verifiedTarget: verifiedTarget,
+    );
+    if (!next.isConsistent) {
+      return left(const ValidationFailure('Invalid publish host state'));
+    }
+    return _store.save(next);
+  }
+
   Either<Failure, PublishHostState?> _loadWithLegacyDefault() {
     final loaded = _store.load();
     if (loaded case Left(value: final failure)) return Left(failure);

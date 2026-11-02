@@ -57,6 +57,8 @@ import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/backup/domain/backup_archive_builder.dart';
 import 'package:pitaka/features/backup/domain/backup_manifest.dart';
 import 'package:pitaka/features/backup/infrastructure/backup_entry_bounds.dart';
+import 'package:pitaka/features/backup/infrastructure/backup_extras_reader.dart'
+    show publishStateEntryName;
 import 'package:pitaka/features/backup/infrastructure/item_details_archive_codec.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/value_objects/item_details.dart';
@@ -78,6 +80,8 @@ const String _coverEntryPrefix = 'cover_';
 // plain JSON, announced by the hasIdentity/hasNetwork manifest flags.
 const String _identityEntry = 'identity.json';
 const String _networkEntry = 'network.json';
+// ADR 0014 amendment (plan CV6): `publish_state.json`, announced by
+// hasPublishState. Its name lives in `backup_extras_reader.dart`.
 // ADR 0014 W2: the item-kind entries. Their names live in
 // `item_details_archive_codec.dart`, shared with the restore reader.
 
@@ -113,6 +117,7 @@ typedef _BackupJob = ({
   String coversDir,
   String? identityJson,
   String? networkJson,
+  String? publishStateJson,
 });
 
 /// Builds a `.pitabak` archive as bytes.
@@ -151,6 +156,7 @@ class BackupArchiveWriter implements BackupArchiveBuilder {
     required int exportedAt,
     required String? identityJson,
     required String? networkJson,
+    required String? publishStateJson,
   }) {
     final hasVault = vaultStore.isInitialized();
     // Typed by `_buildInWorker`'s parameter (`_BackupJob`): plain data only.
@@ -166,6 +172,7 @@ class BackupArchiveWriter implements BackupArchiveBuilder {
       coversDir: coversDir,
       identityJson: identityJson,
       networkJson: networkJson,
+      publishStateJson: publishStateJson,
     );
     return Isolate.run(
       () => _buildInWorker(job),
@@ -249,6 +256,7 @@ class BackupArchiveWriter implements BackupArchiveBuilder {
         hasNetwork: job.networkJson != null,
         hasItemKinds: itemKindsJson != null,
         hasPeriodicals: periodicalsJson != null,
+        hasPublishState: job.publishStateJson != null,
       );
 
       // Incremental encoding: each addFile deflates ONE entry, appends it to
@@ -292,6 +300,11 @@ class BackupArchiveWriter implements BackupArchiveBuilder {
       }
       if (periodicalsJson case final periodicalsJson?) {
         encoder.addFile(_entry(periodicalsEntryName, _utf8(periodicalsJson)));
+      }
+      // ADR 0014 amendment: public site identities + the cover salt, plain
+      // like the entries above; never a token (the caller's codec has none).
+      if (job.publishStateJson case final publishStateJson?) {
+        encoder.addFile(_entry(publishStateEntryName, _utf8(publishStateJson)));
       }
       encoder.endEncode();
 

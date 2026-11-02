@@ -11,11 +11,16 @@ library;
 
 import 'package:pitaka/features/backup/domain/backup_identity.dart';
 import 'package:pitaka/features/backup/domain/backup_manifest.dart';
+import 'package:pitaka/features/publish/domain/publish_state_backup.dart';
 
 /// Bounded, read-only look inside a `.pitabak` archive.
 final class ArchiveInspection {
   /// Creates an inspection result.
-  const ArchiveInspection({required this.manifest, this.identity});
+  const ArchiveInspection({
+    required this.manifest,
+    this.identity,
+    this.publishState,
+  });
 
   /// The parsed manifest (what the archive declares).
   final BackupManifest manifest;
@@ -24,4 +29,9 @@ final class ArchiveInspection {
   /// USABLE one — null when the entry is absent OR invalid (the page then
   /// falls back to a name-less sentence keyed off `manifest.hasIdentity`).
   final BackupIdentity? identity;
+
+  /// The validated website publishing record (plan CV6) when the archive
+  /// carries a USABLE one, so the page can name its site — null when absent
+  /// OR unreadable (the page then keys off `manifest.hasPublishState`).
+  final PublishStateBackup? publishState;
 }

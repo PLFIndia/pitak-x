@@ -12,11 +12,18 @@ import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:fpdart/fpdart.dart';
+import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/core/security/hardened_secure_storage.dart';
 import 'package:pitaka/features/publish/domain/publish_cover_ids.dart';
 
 /// Secure-storage cover salt with lazy first-use generation.
-final class SecureStorageCoverSaltStore implements PublishCoverSaltStore {
+///
+/// Since plan S11 the salt can also be REPLACED, by exactly one flow: a
+/// restore adopting a backup's publishing record on a phone that has not
+/// published yet ([replace]; ADR 0014 amendment, plan CV7).
+final class SecureStorageCoverSaltStore
+    implements ReplaceablePublishCoverSaltStore {
   /// Creates the store. [storage]/[random] are injectable for tests.
   SecureStorageCoverSaltStore({FlutterSecureStorage? storage, Random? random})
     // M3 (deliberate): UNLIKE the token / biometric secret, the salt stays
@@ -36,7 +43,7 @@ final class SecureStorageCoverSaltStore implements PublishCoverSaltStore {
   final Random _random;
 
   static const String _key = 'publish_cover_salt_v1';
-  static const int _saltBytes = 16;
+  static const int _saltBytes = ReplaceablePublishCoverSaltStore.saltLength;
 
   @override
   Future<List<int>> salt() async {
@@ -50,5 +57,25 @@ final class SecureStorageCoverSaltStore implements PublishCoverSaltStore {
     }
     await _storage.write(key: _key, value: base64Encode(fresh));
     return fresh;
+  }
+
+  /// Overwrites the salt with [salt] (one secure-storage write).
+  ///
+  /// The length is checked FIRST, so a wrong-length salt never reaches the
+  /// store: every later cover path and item key is derived from it.
+  @override
+  Future<Either<Failure, Unit>> replace(List<int> salt) async {
+    if (salt.length != _saltBytes ||
+        salt.any((byte) => byte < 0 || byte > 255)) {
+      return left(const ValidationFailure('Invalid publishing key'));
+    }
+    try {
+      await _storage.write(key: _key, value: base64Encode(salt));
+      return right(unit);
+    } on Exception {
+      // The platform error text may carry device detail; a fixed sentence is
+      // all the caller needs (it rolls back and reports "not applied").
+      return left(const StorageFailure('Could not save the publishing key.'));
+    }
   }
 }

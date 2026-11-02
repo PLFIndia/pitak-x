@@ -94,7 +94,8 @@ void main() {
       // §3.5: 5 steps, 3 change/take-down bullets, 3 "Good to know".
       GuideId.events: [0, 5, 3, 3],
       GuideId.map: [0, 6, 3, 3],
-      GuideId.backup: [0, 5, 3, 2, 3, 1, 1, 1, 2],
+      // S11 (plan CV6): "what is inside" gained the publishing-record line.
+      GuideId.backup: [0, 5, 4, 2, 3, 1, 1, 1, 2],
       GuideId.vault: [0, 3, 3, 3, 3],
       GuideId.network: [0, 1, 2, 5, 0],
     };

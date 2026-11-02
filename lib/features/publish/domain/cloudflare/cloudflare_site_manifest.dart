@@ -314,13 +314,16 @@ final class CloudflareSiteManifest implements PreviousPublication {
 
   /// The same record, but forgetting which LOCAL cover file each published
   /// cover came from (ADR 0020 Decision 4, before a restore's generation
-  /// switch); see `PublishManifest.withoutLocalCoverSources`.
-  CloudflareSiteManifest withoutLocalCoverSources() => _copy(
+  /// switch), except the backup-carried [exceptLeaves] (Decision 7); see
+  /// `PublishManifest.withoutLocalCoverSources`.
+  CloudflareSiteManifest withoutLocalCoverSources({
+    Set<String> exceptLeaves = const {},
+  }) => _copy(
     state: state,
-    coverUrlByBookId: {
-      for (final entry in coverUrlByBookId.entries)
-        if (!CoverPaths.isLocal(entry.value)) entry.key: entry.value,
-    },
+    coverUrlByBookId: coverSourcesKeptAfterNewCovers(
+      coverUrlByBookId,
+      keptLeaves: exceptLeaves,
+    ),
   );
 
   /// The same record after the site became a moved page.

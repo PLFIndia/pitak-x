@@ -17,6 +17,28 @@
 /// the builders never see host-specific fields.
 library;
 
+import 'package:pitaka/features/import_export/domain/cover_paths.dart';
+
+/// The ONE rule for which recorded cover sources survive a change of the
+/// covers folder (ADR 0020 Decisions 4 and 7).
+///
+/// Remote sources always survive: a URL names the same picture on any phone.
+/// A LOCAL source names a file in this phone's covers folder, and a restore
+/// replaces that folder, so it survives only in the `covers/<leaf>` form and
+/// only when [keptLeaves] names its file — the restore of plan S11 passes the
+/// covers the backup itself carried, next to the record it carried. A legacy
+/// `file://` source is an absolute path on some phone and never survives.
+Map<String, String> coverSourcesKeptAfterNewCovers(
+  Map<String, String> sources, {
+  Set<String> keptLeaves = const {},
+}) => {
+  for (final entry in sources.entries)
+    if (!CoverPaths.isLocal(entry.value) ||
+        (entry.value.trim().startsWith(CoverPaths.prefix) &&
+            keptLeaves.contains(CoverPaths.leafOf(entry.value))))
+      entry.key: entry.value,
+};
+
 /// Read-only view of the last successful publication on one target.
 abstract interface class PreviousPublication {
   /// The content sha (host-neutral: `GitBlobSha` text) recorded for [path],

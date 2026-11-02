@@ -17,6 +17,7 @@ final class CreateBackupResult {
     required this.bytes,
     required this.includesIdentity,
     required this.includesNetwork,
+    this.missingPublishState = false,
   });
 
   /// The `.pitabak` archive bytes.
@@ -27,4 +28,10 @@ final class CreateBackupResult {
 
   /// Whether `network.json` (the saved-libraries list) made it in.
   final bool includesNetwork;
+
+  /// True when this phone HAS a website publishing record but the backup
+  /// does not carry it (it could not be read, or did not fit the entry's
+  /// bounds). False both when it is inside and when there is none to carry
+  /// (a library without a website) — only the first case needs a note.
+  final bool missingPublishState;
 }

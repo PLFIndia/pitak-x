@@ -92,6 +92,7 @@ void main() {
     required int exportedAt,
     required String? identityJson,
     required String? networkJson,
+    String? publishStateJson,
   }) async {
     final result = await writer.build(
       books: books,
@@ -101,6 +102,7 @@ void main() {
       exportedAt: exportedAt,
       identityJson: identityJson,
       networkJson: networkJson,
+      publishStateJson: publishStateJson,
     );
     return result.getOrElse((f) => fail('build refused a fitting archive: $f'));
   }
@@ -162,6 +164,51 @@ void main() {
       '{"schemaVersion": 1, "libraries": []}',
     );
   });
+
+  test(
+    'publish_state.json is written and flagged only when given (CV6)',
+    () async {
+      final none = unzip(
+        await buildOk(
+          books: const [],
+          wishlist: const [],
+          periodicals: const [],
+          workDir: '${tmp.path}/work_none',
+          exportedAt: 1,
+          identityJson: null,
+          networkJson: null,
+        ),
+      );
+      expect(entry(none, 'publish_state.json'), isNull);
+      expect(
+        BackupManifest.tryParse(
+          utf8.decode(entry(none, 'manifest.json')!),
+        )!.hasPublishState,
+        isFalse,
+      );
+
+      const json = '{"schemaVersion":1,"coverSalt":"AAAAAAAAAAAAAAAAAAAAAA=="}';
+      final some = unzip(
+        await buildOk(
+          books: const [],
+          wishlist: const [],
+          periodicals: const [],
+          workDir: '${tmp.path}/work_some',
+          exportedAt: 1,
+          identityJson: null,
+          networkJson: null,
+          publishStateJson: json,
+        ),
+      );
+      expect(utf8.decode(entry(some, 'publish_state.json')!), json);
+      expect(
+        BackupManifest.tryParse(
+          utf8.decode(entry(some, 'manifest.json')!),
+        )!.hasPublishState,
+        isTrue,
+      );
+    },
+  );
 
   // ADR 0014 W2: the kind entries ride next to the Room-shaped DBs.
   group('W2 item kinds + periodicals entries', () {
@@ -423,6 +470,7 @@ void main() {
           exportedAt: 1,
           identityJson: null,
           networkJson: null,
+          publishStateJson: null,
         )
         .then((r) => r.getOrElse((f) => fail('unexpected left: $f')));
     final archive = unzip(bytes);
@@ -484,6 +532,7 @@ void main() {
         exportedAt: 1,
         identityJson: null,
         networkJson: null,
+        publishStateJson: null,
       );
       final firedAt = await fired.future;
       final bytes = (await work).getOrElse((f) => fail('unexpected left: $f'));
@@ -514,6 +563,7 @@ void main() {
               exportedAt: 1,
               identityJson: null,
               networkJson: null,
+              publishStateJson: null,
             )
             .then((r) => r.getOrElse((f) => fail('unexpected left: $f')));
         final archive = unzip(bytes);
@@ -558,6 +608,7 @@ void main() {
             exportedAt: 1,
             identityJson: null,
             networkJson: null,
+            publishStateJson: null,
           ),
           throwsA(isA<FileSystemException>()),
         );
@@ -591,6 +642,7 @@ void main() {
         exportedAt: 1,
         identityJson: null,
         networkJson: null,
+        publishStateJson: null,
       );
       final failure = result.getLeft().toNullable();
       expect(failure, isA<BackupTooLargeFailure>());
@@ -623,6 +675,7 @@ void main() {
         exportedAt: 1,
         identityJson: null,
         networkJson: null,
+        publishStateJson: null,
       );
       final failure = result.getLeft().toNullable();
       expect(failure, isA<BackupTooLargeFailure>());

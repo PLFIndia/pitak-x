@@ -13,6 +13,7 @@ import 'package:pitaka/features/publish/domain/site/publish_host.dart';
 import 'package:pitaka/features/publish/domain/site/publish_host_state.dart';
 import 'package:pitaka/features/publish/domain/site/published_site_verifier.dart';
 
+import '../support/cloudflare_fakes.dart';
 import '../support/move_fakes.dart';
 
 class _Store implements PublishHostStateStore {
@@ -338,6 +339,84 @@ void main() {
       ).currentState();
       expect(current, same(store.stored));
       expect(verifier.calls, isEmpty);
+    });
+  });
+
+  group('adoptFromBackup (plan CV7, S11)', () {
+    test(
+      'an absent or empty journal takes the backup host and address',
+      () async {
+        for (final initial in [null, PublishHostState.empty]) {
+          final store = _Store(initial);
+          final result = await repository(store: store).adoptFromBackup(
+            activeHost: PublishHost.github,
+            verifiedTarget: github,
+          );
+          expect(result.isRight(), isTrue);
+          expect(store.stored!.activeHost, PublishHost.github);
+          expect(store.stored!.verifiedTarget!.targetId, github.targetId);
+        }
+      },
+    );
+
+    test('the same chosen host without an address is accepted', () async {
+      final store = _Store(
+        const PublishHostState(activeHost: PublishHost.github),
+      );
+      final result = await repository(
+        store: store,
+      ).adoptFromBackup(activeHost: PublishHost.github, verifiedTarget: github);
+      expect(result.isRight(), isTrue);
+    });
+
+    test(
+      'a verified address, a pending move or another host is refused',
+      () async {
+        final refused = <PublishHostState>[
+          PublishHostState.empty.afterVerifiedPublish(github),
+          const PublishHostState(activeHost: PublishHost.cloudflare),
+          PublishHostState(
+            activeHost: movePending().oldTarget.host,
+            verifiedTarget: movePending().oldTarget,
+            pendingMove: movePending(),
+          ),
+        ];
+        for (final initial in refused) {
+          final store = _Store(initial);
+          final result = await repository(
+            store: store,
+          ).adoptFromBackup(activeHost: PublishHost.github);
+          expect(result.isLeft(), isTrue, reason: '$initial');
+          expect(store.saves, 0);
+        }
+      },
+    );
+
+    test('an address of another host is refused (consistency)', () async {
+      final store = _Store();
+      final result = await repository(store: store).adoptFromBackup(
+        activeHost: PublishHost.cloudflare,
+        verifiedTarget: github,
+      );
+      expect(result.isLeft(), isTrue);
+      expect(store.saves, 0);
+    });
+
+    test('an unreadable journal is never overwritten', () async {
+      final store = FakePublishHostStateStore()..unreadable = true;
+      final result = await repository(
+        store: store,
+      ).adoptFromBackup(activeHost: PublishHost.github);
+      expect(result.isLeft(), isTrue);
+      expect(store.saves, 0);
+    });
+
+    test('a failed save is reported', () async {
+      final store = _Store()..fails = true;
+      final result = await repository(
+        store: store,
+      ).adoptFromBackup(activeHost: PublishHost.github);
+      expect(result.isLeft(), isTrue);
     });
   });
 }

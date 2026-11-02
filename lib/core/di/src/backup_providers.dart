@@ -12,6 +12,7 @@ import 'package:pitaka/core/di/src/database_providers.dart';
 import 'package:pitaka/core/di/src/library_providers.dart';
 import 'package:pitaka/core/di/src/network_providers.dart';
 import 'package:pitaka/core/di/src/platform_providers.dart';
+import 'package:pitaka/core/di/src/publish_state_providers.dart';
 import 'package:pitaka/core/di/src/vault_providers.dart';
 import 'package:pitaka/core/storage/active_data_generation.dart';
 import 'package:pitaka/features/backup/application/create_backup_use_case.dart';
@@ -26,8 +27,9 @@ part 'backup_providers.g.dart';
 /// Creates a `.pitabak` backup of the whole local catalog (#28B): Room-format
 /// books/wishlist written from Drift, the persistent vault copied verbatim, and
 /// covers bundled — plus the library identity and the saved-libraries list
-/// (docs/ARCHITECTURE.md §3 network, both gathered best-effort). Returns the archive
-/// bytes for the UI to save.
+/// (docs/ARCHITECTURE.md §3 network) and the website publishing record (plan
+/// CV6), all gathered best-effort. Returns the archive bytes for the UI to
+/// save.
 @riverpod
 Future<CreateBackupUseCase> createBackupUseCase(
   CreateBackupUseCaseRef ref,
@@ -50,6 +52,7 @@ Future<CreateBackupUseCase> createBackupUseCase(
     // single serialised settings writer — N07), never the raw repository.
     namespace: ref.read(settingsControllerProvider.notifier),
     network: await ref.watch(networkRepositoryProvider.future),
+    publishState: await ref.watch(publishStateBackupSourceProvider.future),
   );
 }
 

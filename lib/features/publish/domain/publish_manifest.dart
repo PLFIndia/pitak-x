@@ -399,7 +399,13 @@ final class PublishManifest implements PreviousPublication {
   /// a file name this record names, so the next publish must read those
   /// covers again instead of trusting the name. It uploads only the ones
   /// whose bytes really differ.
-  PublishManifest withoutLocalCoverSources() => PublishManifest(
+  ///
+  /// [exceptLeaves] keeps `covers/<leaf>` sources whose file is named there:
+  /// a record adopted from a backup keeps the covers that backup carried
+  /// with it (ADR 0020 Decision 7, plan S11; `coverSourcesKeptAfterNewCovers`).
+  PublishManifest withoutLocalCoverSources({
+    Set<String> exceptLeaves = const {},
+  }) => PublishManifest(
     schema: schema,
     repo: repo,
     branch: branch,
@@ -407,10 +413,10 @@ final class PublishManifest implements PreviousPublication {
     ownershipConfirmed: ownershipConfirmed,
     state: state,
     fileShas: fileShas,
-    coverUrlByBookId: {
-      for (final entry in coverUrlByBookId.entries)
-        if (!_isLocal(entry.value)) entry.key: entry.value,
-    },
+    coverUrlByBookId: coverSourcesKeptAfterNewCovers(
+      coverUrlByBookId,
+      keptLeaves: exceptLeaves,
+    ),
     proofPath: proofPath,
     catalogueKeyed: catalogueKeyed,
     coverRendition: coverRendition,

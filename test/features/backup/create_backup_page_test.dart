@@ -22,14 +22,19 @@ import '../../support/a11y.dart';
 /// Use-case fake: returns a fixed result. The collaborator fields are never
 /// touched — `noSuchMethod` throws if that ever changes.
 class _FakeCreateBackup implements CreateBackupUseCase {
-  _FakeCreateBackup(Either<Failure, Uint8List> result)
-    : _result = result.map(
-        (bytes) => CreateBackupResult(
-          bytes: bytes,
-          includesIdentity: true,
-          includesNetwork: true,
-        ),
-      );
+  _FakeCreateBackup(
+    Either<Failure, Uint8List> result, {
+    bool includesIdentity = true,
+    bool includesNetwork = true,
+    bool missingPublishState = false,
+  }) : _result = result.map(
+         (bytes) => CreateBackupResult(
+           bytes: bytes,
+           includesIdentity: includesIdentity,
+           includesNetwork: includesNetwork,
+           missingPublishState: missingPublishState,
+         ),
+       );
 
   final Either<Failure, CreateBackupResult> _result;
 
@@ -83,6 +88,65 @@ void main() {
     await tester.tap(find.widgetWithText(FilledButton, 'Create backup'));
     await tester.pumpAndSettle();
     expect(find.text('Backup saved.'), findsOneWidget);
+  });
+
+  testWidgets('plan CV6: the intro says the publishing record is inside', (
+    tester,
+  ) async {
+    await tester.pumpWidget(page());
+    expect(
+      find.textContaining('its publishing record is included too'),
+      findsOneWidget,
+    );
+    expect(
+      find.textContaining('your GitHub or Cloudflare sign-in'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('publishing setup'), findsNothing);
+  });
+
+  testWidgets('plan CV6: a record that could not be carried is named', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      page(
+        useCase: _FakeCreateBackup(
+          right(Uint8List.fromList([1])),
+          missingPublishState: true,
+        ),
+      ),
+    );
+    await tester.tap(find.widgetWithText(FilledButton, 'Create backup'));
+    await tester.pumpAndSettle();
+    expect(
+      find.text(
+        'Note: this backup does not carry your website publishing record — '
+        'it could not be read. Everything else is inside.',
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('three missing parts read naturally', (tester) async {
+    await tester.pumpWidget(
+      page(
+        useCase: _FakeCreateBackup(
+          right(Uint8List.fromList([1])),
+          includesIdentity: false,
+          includesNetwork: false,
+          missingPublishState: true,
+        ),
+      ),
+    );
+    await tester.tap(find.widgetWithText(FilledButton, 'Create backup'));
+    await tester.pumpAndSettle();
+    expect(
+      find.textContaining(
+        'does not carry your library identity, your saved-libraries list and '
+        'your website publishing record',
+      ),
+      findsOneWidget,
+    );
   });
 
   testWidgets('share unavailable shows its message', (tester) async {

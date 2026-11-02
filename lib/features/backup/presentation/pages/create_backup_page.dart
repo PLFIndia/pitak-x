@@ -27,15 +27,27 @@ class _CreateBackupPageState extends ConsumerState<CreateBackupPage> {
   bool _done = false;
 
   /// §7 S6 honesty flags: set when the saved backup could NOT carry the
-  /// library identity / saved-libraries list (gathered best-effort).
+  /// library identity / saved-libraries list / website publishing record
+  /// (gathered best-effort; plan CV6 for the last one).
   bool _missingIdentity = false;
   bool _missingNetwork = false;
+  bool _missingPublishState = false;
 
-  /// The plain-words list of what the last saved backup does NOT carry.
-  String get _missingDescription => [
-    if (_missingIdentity) 'your library identity',
-    if (_missingNetwork) 'your saved-libraries list',
-  ].join(' and ');
+  bool get _missingAnything =>
+      _missingIdentity || _missingNetwork || _missingPublishState;
+
+  /// The plain-words list of what the last saved backup does NOT carry
+  /// ("a", "a and b", "a, b and c").
+  String get _missingDescription {
+    final missing = [
+      if (_missingIdentity) 'your library identity',
+      if (_missingNetwork) 'your saved-libraries list',
+      if (_missingPublishState) 'your website publishing record',
+    ];
+    if (missing.length < 2) return missing.join();
+    return '${missing.sublist(0, missing.length - 1).join(', ')} and '
+        '${missing.last}';
+  }
 
   Future<void> _createAndSave() async {
     setState(() {
@@ -44,6 +56,7 @@ class _CreateBackupPageState extends ConsumerState<CreateBackupPage> {
       _done = false;
       _missingIdentity = false;
       _missingNetwork = false;
+      _missingPublishState = false;
     });
 
     // N11: the use-case provider build, the archive build and the share
@@ -91,6 +104,7 @@ class _CreateBackupPageState extends ConsumerState<CreateBackupPage> {
               // plainly what is NOT inside.
               _missingIdentity = !result.includesIdentity;
               _missingNetwork = !result.includesNetwork;
+              _missingPublishState = result.missingPublishState;
               if (outcome == ShareOutcome.unavailable) {
                 _error = 'Sharing is unavailable on this device.';
               }
@@ -133,7 +147,10 @@ class _CreateBackupPageState extends ConsumerState<CreateBackupPage> {
             'the borrowers vault, it is included (still encrypted) so '
             'borrowers and loans can be restored too. Your library identity '
             '(name + ID) and your saved-libraries list are included as well, '
-            'so a restored phone stays recognisable to your hubs.',
+            'so a restored phone stays recognisable to your hubs. If you '
+            'publish a website, its publishing record is included too (which '
+            'site, and which files are already online — no passwords or '
+            'tokens), so a restored phone does not upload every cover again.',
             style: Theme.of(context).textTheme.bodyMedium,
           ),
           const SizedBox(height: 12),
@@ -141,10 +158,11 @@ class _CreateBackupPageState extends ConsumerState<CreateBackupPage> {
           // back, so a user moving to a new phone is not surprised.
           Text(
             'Not included: your events page and posters, library logo, '
-            'contact details, publishing setup, and app settings — those '
-            'need to be set up again after a restore. The library identity '
-            'and saved-libraries list travel as plain, unencrypted text '
-            'inside the file — keep the backup private.',
+            'contact details, your GitHub or Cloudflare sign-in, and app '
+            'settings — those need to be set up again after a restore. The '
+            'library identity, saved-libraries list and publishing record '
+            'travel as plain, unencrypted text inside the file — keep the '
+            'backup private.',
             style: Theme.of(context).textTheme.bodySmall,
           ),
           const SizedBox(height: 24),
@@ -162,7 +180,7 @@ class _CreateBackupPageState extends ConsumerState<CreateBackupPage> {
           if (_done) ...[
             const SizedBox(height: 16),
             Text('Backup saved.', style: TextStyle(color: scheme.primary)),
-            if (_missingIdentity || _missingNetwork) ...[
+            if (_missingAnything) ...[
               const SizedBox(height: 4),
               Text(
                 'Note: this backup does not carry $_missingDescription — it '

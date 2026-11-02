@@ -67,6 +67,7 @@ void main() {
             exportedAt: 1,
             identityJson: null,
             networkJson: null,
+            publishStateJson: null,
           )
           .then((r) => r.getOrElse((f) => fail('unexpected left: $f')));
 

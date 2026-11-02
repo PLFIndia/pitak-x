@@ -21,6 +21,8 @@ import 'package:pitaka/features/backup/domain/restore_summary.dart';
 import 'package:pitaka/features/import_export/domain/cover_paths.dart';
 import 'package:pitaka/features/library/application/library_controller.dart';
 import 'package:pitaka/features/network/application/network_controller.dart';
+import 'package:pitaka/features/publish/application/site/publish_site_status_controller.dart';
+import 'package:pitaka/features/publish/domain/publish_state_adoption.dart';
 import 'package:pitaka/features/settings/application/settings_controller.dart';
 import 'package:pitaka/features/vault/application/vault_session_controller.dart';
 import 'package:pitaka/features/wishlist/application/wishlist_controller.dart';
@@ -98,8 +100,9 @@ class RestoreController extends _$RestoreController {
         final Either<Failure, RestoreSummary> effective;
         if (result case Right(value: final summary)) {
           // §5.10: the catalogue switch succeeded — NOW adopt the archive's
-          // identity and network list (additive; failures are reported on the
-          // summary, never rolled back into the restore).
+          // identity, network list and website publishing record (additive;
+          // failures are reported on the summary, never rolled back into the
+          // restore).
           effective = right(await _applyIdentityAndNetwork(summary));
         } else {
           effective = result;
@@ -131,6 +134,16 @@ class RestoreController extends _$RestoreController {
               // This invalidation, after the write, guarantees the next
               // build reads the restored list. A no-op when nothing watches.
               ..invalidate(networkControllerProvider);
+            // Plan CV7: an ADOPTED publishing record changes the active site
+            // and the share address the drawer shows. Only then: in debug
+            // builds an invalidation builds its target, and these two read
+            // the publishing setup.
+            if (summary.publishStateOutcome ==
+                PublishStateRestoreOutcome.adopted) {
+              ref
+                ..invalidate(publishSiteStatusProvider)
+                ..invalidate(publishedSiteUrlProvider);
+            }
             return AsyncData(summary);
           },
         );
@@ -151,9 +164,10 @@ class RestoreController extends _$RestoreController {
     }
   }
 
-  /// Applies the archive's library identity and saved-libraries list AFTER
-  /// the catalogue switch (docs/ARCHITECTURE.md §5.5), and returns the summary with
-  /// the adoption outcomes filled in.
+  /// Applies the archive's library identity, saved-libraries list and
+  /// website publishing record AFTER the catalogue switch
+  /// (docs/ARCHITECTURE.md §5.5), and returns the summary with the adoption
+  /// outcomes filled in.
   ///
   /// Both steps are ADDITIVE over a restore that already succeeded: a Left
   /// from either is folded into the summary (`identityAdopted: false` /
@@ -200,7 +214,28 @@ class RestoreController extends _$RestoreController {
       identityAdopted: identityAdopted,
       networkApplied: networkApplied,
       networkRestored: networkRestored,
+      publishStateOutcome: await _adoptPublishState(summary),
     );
+  }
+
+  /// Offers the archive's website publishing record to the publish feature
+  /// (plan CV7, ADR 0014 amendment). It decides inside the publish queue
+  /// whether this phone may take it over — only when the phone has not
+  /// published itself — and never undoes the restore. Null when the archive
+  /// carried no usable record.
+  Future<PublishStateRestoreOutcome?> _adoptPublishState(
+    RestoreSummary summary,
+  ) async {
+    final archived = summary.restoredPublishState;
+    if (archived == null) return null;
+    try {
+      final adopter = await ref.read(publishStateAdopterProvider.future);
+      return await adopter.adoptRestored(archived);
+    } on Object {
+      // The adopter itself never throws; resolving it might. Nothing was
+      // written then, so this phone's own state stands (fail closed).
+      return PublishStateRestoreOutcome.notApplied;
+    }
   }
 
   /// N04 (S9 dangling-state note): settings are NOT part of a backup, so a

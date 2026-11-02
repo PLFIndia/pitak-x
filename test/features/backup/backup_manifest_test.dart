@@ -50,6 +50,21 @@ void main() {
       expect(m.hasPeriodicals, isFalse);
     });
 
+    test('hasPublishState defaults false and round-trips (plan CV6)', () {
+      // A flag-less archive (every archive before S11) restores exactly as
+      // before: no publishing record is looked for.
+      final old = BackupManifest.tryParse(jsonEncode({'exportedAt': 1}));
+      expect(old!.hasPublishState, isFalse);
+      final parsed = BackupManifest.tryParse(
+        const BackupManifest(exportedAt: 1, hasPublishState: true).toJson(),
+      );
+      expect(parsed!.hasPublishState, isTrue);
+      expect(
+        jsonDecode(const BackupManifest(exportedAt: 1).toJson()),
+        containsPair('hasPublishState', false),
+      );
+    });
+
     test('hasItemKinds/hasPeriodicals round-trip through toJson', () {
       final parsed = BackupManifest.tryParse(
         const BackupManifest(

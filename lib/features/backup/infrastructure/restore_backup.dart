@@ -129,10 +129,10 @@ final class RestoreBackup {
   final LegacyDbOpener _open;
 
   /// Inspects [archiveBytes] WITHOUT restoring anything (N13): bounded
-  /// extract + manifest parse only, plus a peek at `identity.json` when the
-  /// manifest announces one (§5.10) so the UI can name the identity it would
-  /// adopt. Reads no database rows, unlocks nothing, and touches no device
-  /// state.
+  /// extract + manifest parse only, plus the additive entries the manifest
+  /// announces (§5.10) so the UI can name the identity and the website it
+  /// would adopt. Reads no database rows, unlocks nothing, and touches no
+  /// device state.
   Future<Either<Failure, ArchiveInspection>> inspectArchive(
     Uint8List archiveBytes,
   ) async {
@@ -142,12 +142,14 @@ final class RestoreBackup {
     } on BoundedExtractionException catch (e) {
       return left(BackupCorruptFailure(e.message));
     }
-    return parseBackupManifest(files).map(
-      (manifest) => ArchiveInspection(
+    return parseBackupManifest(files).map((manifest) {
+      final extras = readBackupExtras(files, manifest);
+      return ArchiveInspection(
         manifest: manifest,
-        identity: readBackupExtras(files, manifest).identity,
-      ),
-    );
+        identity: extras.identity,
+        publishState: extras.publishState,
+      );
+    });
   }
 
   /// Applies [archiveBytes], unlocking the vault with [passphrase] when the
@@ -373,6 +375,11 @@ final class RestoreBackup {
           itemKindsInvalid: manifest.hasItemKinds && extras.itemKinds == null,
           periodicalsInvalid:
               manifest.hasPeriodicals && extras.periodicals == null,
+          // Plan CV6/CV7: parsed here, adopted (or not) by the controller
+          // after this switch, inside the publish queue.
+          restoredPublishState: extras.publishState,
+          publishStateInvalid:
+              manifest.hasPublishState && extras.publishState == null,
         ),
       );
     } on _ReplacementRefused catch (e) {

@@ -33,6 +33,12 @@ abstract interface class BackupArchiveBuilder {
   /// "not included" (the manifest flag stays false); a caller that could not
   /// gather them must pass null rather than block the whole backup.
   ///
+  /// [publishStateJson] is the already-encoded `publish_state.json` content
+  /// (ADR 0014 amendment of 2026-11-02, plan CV6): the cover salt and the
+  /// website publishing record. Null means "not included" (the manifest flag
+  /// `hasPublishState` stays false) — the phone published nothing, or the
+  /// record could not be read; the caller decides, the builder only stores.
+  ///
   /// Returns [BackupTooLargeFailure] (S5, L5) INSTEAD of an archive whose
   /// `item_kinds.json` / `periodicals.json` would exceed the restore reader's
   /// 4 MiB / row bounds — the writer must never emit a file its own reader
@@ -50,5 +56,6 @@ abstract interface class BackupArchiveBuilder {
     required int exportedAt,
     required String? identityJson,
     required String? networkJson,
+    required String? publishStateJson,
   });
 }

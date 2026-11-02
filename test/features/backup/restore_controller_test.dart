@@ -19,7 +19,13 @@ import 'package:pitaka/features/network/application/network_refresh_controller.d
 import 'package:pitaka/features/network/domain/entities/network_library.dart';
 import 'package:pitaka/features/network/domain/repositories/network_repository.dart';
 import 'package:pitaka/features/periodicals/application/periodicals_controller.dart';
+import 'package:pitaka/features/publish/application/site/publish_site_status.dart';
+import 'package:pitaka/features/publish/application/site/publish_site_status_controller.dart';
 import 'package:pitaka/features/publish/domain/publish_manifest.dart';
+import 'package:pitaka/features/publish/domain/publish_state_adoption.dart';
+import 'package:pitaka/features/publish/domain/publish_state_backup.dart';
+import 'package:pitaka/features/publish/domain/publish_state_backup_codec.dart';
+import 'package:pitaka/features/publish/domain/publish_state_backup_ports.dart';
 import 'package:pitaka/features/settings/application/settings_controller.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
 import 'package:pitaka/features/settings/domain/settings_repository.dart';
@@ -33,6 +39,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../library/replacement_test_guard.dart';
 import '../periodicals/application/periodical_fakes.dart';
 import '../publish/support/availability_lane_fakes.dart';
+import '../publish/support/publish_state_fixtures.dart';
 import '../vault/vault_repository_write_stub.dart';
 import 'generation_fixture.dart';
 
@@ -133,6 +140,7 @@ void main() {
     NetworkRepository? network,
     FakePeriodicals? periodicals,
     MemoryKeysReset? keys,
+    List<Override> extra = const [],
   }) {
     // Plan J9: the generation switch runs through the publish feature's
     // keys reset; in memory here (no prefs, no publish records on disk).
@@ -151,6 +159,7 @@ void main() {
         // migration await) when the test needs a failing replaceAll.
         if (network != null)
           networkRepositoryProvider.overrideWith((ref) async => network),
+        ...extra,
       ],
     );
     addTearDown(() async {
@@ -373,6 +382,127 @@ void main() {
       expect(keys.gitHub.current.catalogueKeyed, isTrue);
       expect(keys.idsChanged, 0);
     });
+  });
+
+  group('plan CV7 — the publishing record is offered after the switch', () {
+    Uint8List archiveWith({String? publishState}) {
+      final manifest = utf8.encode(
+        jsonEncode({
+          'schemaVersion': 1,
+          'exportedAt': 123,
+          'hasBooks': false,
+          'hasWishlist': false,
+          'hasBorrowers': false,
+          'hasBackupBlob': false,
+          'hasCovers': false,
+          if (publishState != null) 'hasPublishState': true,
+        }),
+      );
+      final a = Archive()
+        ..addFile(ArchiveFile('manifest.json', manifest.length, manifest));
+      if (publishState != null) {
+        final bytes = utf8.encode(publishState);
+        a.addFile(ArchiveFile('publish_state.json', bytes.length, bytes));
+      }
+      return Uint8List.fromList(ZipEncoder().encode(a)!);
+    }
+
+    List<Override> publishOverrides(PublishStateAdopter adopter) => [
+      publishStateAdopterProvider.overrideWith((ref) async => adopter),
+      // An adopted record invalidates these two; in debug builds that BUILDS
+      // them, so they are pinned to plain values here.
+      publishedSiteUrlProvider.overrideWith((ref) async => null),
+      publishSiteStatusProvider.overrideWith(
+        (ref) async => const PublishSiteStatus(
+          activeHost: null,
+          target: null,
+          verifiedSiteUrl: null,
+          setupMessage: null,
+        ),
+      ),
+    ];
+
+    test('the archived record reaches the adopter; its outcome is on the '
+        'summary', () async {
+      final adopter = _RecordingAdopter(PublishStateRestoreOutcome.adopted);
+      final container = makeContainer(extra: publishOverrides(adopter))
+        ..listen(restoreControllerProvider, (_, _) {});
+
+      await container
+          .read(restoreControllerProvider.notifier)
+          .restore(
+            archiveBytes: archiveWith(
+              publishState: PublishStateBackupCodec.encode(archivedState()),
+            ),
+          );
+
+      final summary = container.read(restoreControllerProvider).value!;
+      expect(adopter.offered.single.coverSalt, archiveSalt);
+      expect(summary.publishStateOutcome, PublishStateRestoreOutcome.adopted);
+      expect(summary.publishStateInvalid, isFalse);
+    });
+
+    test('"kept" is reported as such', () async {
+      final adopter = _RecordingAdopter(
+        PublishStateRestoreOutcome.keptThisPhone,
+      );
+      final container = makeContainer(extra: publishOverrides(adopter))
+        ..listen(restoreControllerProvider, (_, _) {});
+      await container
+          .read(restoreControllerProvider.notifier)
+          .restore(
+            archiveBytes: archiveWith(
+              publishState: PublishStateBackupCodec.encode(archivedState()),
+            ),
+          );
+      expect(
+        container.read(restoreControllerProvider).value!.publishStateOutcome,
+        PublishStateRestoreOutcome.keptThisPhone,
+      );
+    });
+
+    test('an adopter that cannot be built is "not applied"; the restore '
+        'stands', () async {
+      final container = makeContainer(
+        extra: [
+          publishStateAdopterProvider.overrideWith(
+            (ref) async => throw StateError('no adopter'),
+          ),
+        ],
+      )..listen(restoreControllerProvider, (_, _) {});
+      await container
+          .read(restoreControllerProvider.notifier)
+          .restore(
+            archiveBytes: archiveWith(
+              publishState: PublishStateBackupCodec.encode(archivedState()),
+            ),
+          );
+      final state = container.read(restoreControllerProvider);
+      expect(state.hasValue, isTrue);
+      expect(
+        state.value!.publishStateOutcome,
+        PublishStateRestoreOutcome.notApplied,
+      );
+    });
+
+    for (final (name, publishState) in [
+      ('no record', null),
+      ('an unreadable record', '{}'),
+    ]) {
+      test('$name: the adopter is never asked', () async {
+        final adopter = _RecordingAdopter(PublishStateRestoreOutcome.adopted);
+        final container = makeContainer(extra: publishOverrides(adopter))
+          ..listen(restoreControllerProvider, (_, _) {});
+        await container
+            .read(restoreControllerProvider.notifier)
+            .restore(archiveBytes: archiveWith(publishState: publishState));
+        final state = container.read(restoreControllerProvider);
+        expect(state.hasValue, isTrue);
+        expect(state.value!.publishStateOutcome, isNull);
+        expect(state.value!.publishStateInvalid, publishState != null);
+        expect(adopter.offered, isEmpty);
+      });
+    }
   });
 
   group('N04 — dangling library-logo reference after restore (S9 note)', () {
@@ -833,4 +963,19 @@ class _FailingNetworkRepo implements NetworkRepository {
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+/// Records what the restore offered and answers a fixed outcome.
+final class _RecordingAdopter implements PublishStateAdopter {
+  _RecordingAdopter(this.outcome);
+  final PublishStateRestoreOutcome outcome;
+  final List<PublishStateBackup> offered = [];
+
+  @override
+  Future<PublishStateRestoreOutcome> adoptRestored(
+    PublishStateBackup archived,
+  ) async {
+    offered.add(archived);
+    return outcome;
+  }
 }
