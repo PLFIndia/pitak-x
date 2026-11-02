@@ -265,23 +265,37 @@ final class PublishManifest implements PreviousPublication {
   ///    one on the branch;
   ///  - false otherwise, including when no `books.json` is recorded at all.
   ///
-  /// The proof path is not set here yet: until plan S4 every commit is proven
-  /// through the per-section file, exactly as before.
+  /// [proofPath] names the file that proves THIS commit (ADR 0019
+  /// Decision 10): `booksJson` for a catalogue commit (a combined catalogue +
+  /// availability commit and a move included), `eventsJson` for events,
+  /// `availabilityJson` / `availabilityJsonAbsent` for the availability lane.
+  /// It is required so no commit can forget it and fall back to a fixed
+  /// per-section file, which is the gap of plan A.1 item 8.
+  ///
+  /// A proof that disagrees with [mergedShas] (it expects a file this commit
+  /// does not record, or an absence this commit does record) cannot prove
+  /// anything. The record then reads exactly like one decoded with a damaged
+  /// proof ([PublishManifest.fromJson]): no proof and no head, so the next
+  /// publish treats it as "unknown state" and its own read-back decides. Only
+  /// a caller bug can cause it, and this is its fail-closed form.
   PublishManifest afterCommit({
     required String commitSha,
     required Map<String, String> mergedShas,
     required Map<String, String> coverUrlByBookId,
+    required PublishProofPath proofPath,
     bool wroteKeyedCatalogue = false,
   }) {
     final books = mergedShas[_booksJsonPath];
     final booksUnchanged = books != null && books == fileShas[_booksJsonPath];
+    final provable = proofPath.agreesWith(mergedShas);
     return PublishManifest(
       repo: repo,
       branch: branch,
-      headSha: commitSha,
+      headSha: provable ? commitSha : null,
       ownershipConfirmed: true,
       fileShas: mergedShas,
       coverUrlByBookId: coverUrlByBookId,
+      proofPath: provable ? proofPath : null,
       catalogueKeyed:
           books != null &&
           (wroteKeyedCatalogue || (booksUnchanged && catalogueKeyed)),

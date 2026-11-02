@@ -30,6 +30,7 @@ library;
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/publish/application/github_publication_reconciler.dart';
+import 'package:pitaka/features/publish/application/github_unconfirmed_commit_check.dart';
 import 'package:pitaka/features/publish/application/publish_result.dart';
 import 'package:pitaka/features/publish/application/site/catalogue_section_builder.dart';
 import 'package:pitaka/features/publish/application/site/publish_host_state_repository.dart';
@@ -44,6 +45,7 @@ import 'package:pitaka/features/publish/domain/publish_credential_store.dart';
 import 'package:pitaka/features/publish/domain/publish_manifest.dart';
 import 'package:pitaka/features/publish/domain/publish_target.dart';
 import 'package:pitaka/features/publish/domain/site/publish_mode.dart';
+import 'package:pitaka/features/publish/domain/site/publish_proof_path.dart';
 import 'package:pitaka/features/publish/domain/site/publish_section.dart';
 import 'package:pitaka/features/publish/domain/site/published_site_verifier.dart';
 import 'package:pitaka/features/publish/domain/site/section_merge.dart';
@@ -76,6 +78,7 @@ final class PublishLibraryUseCase {
     required PublishReads reads,
     required PublishHostStateRecorder hostState,
     PublishedSiteVerifier? verifier,
+    PublishedSiteReadVerifier? reader,
     Future<void> Function(Duration)? sleep,
     int Function()? clock,
     PublishTimingSink? timingSink,
@@ -86,6 +89,12 @@ final class PublishLibraryUseCase {
        _reads = reads,
        _hostState = hostState,
        _verifier = verifier,
+       _unconfirmed = GitHubUnconfirmedCommitCheck(
+         reader: reader,
+         manifest: manifest,
+         hostState: hostState,
+         sleep: sleep ?? Future<void>.delayed,
+       ),
        _sleep = sleep ?? Future<void>.delayed,
        _clock = clock ?? (() => DateTime.now().millisecondsSinceEpoch),
        _timingSink = timingSink;
@@ -109,6 +118,10 @@ final class PublishLibraryUseCase {
 
   /// Null ⇒ read-back skipped (tests / no network port wired).
   final PublishedSiteVerifier? _verifier;
+
+  /// The pre-publish check of this phone's unconfirmed commit, read through
+  /// the proof that commit recorded (ADR 0019 Decision 10).
+  final GitHubUnconfirmedCommitCheck _unconfirmed;
   final Future<void> Function(Duration) _sleep;
   final int Function() _clock;
 
@@ -239,18 +252,16 @@ final class PublishLibraryUseCase {
     final expectedHead = publication.headSha;
 
     // F.4 step 2 (deviation 48): if this phone has an UNCONFIRMED commit at the
-    // head we are about to build on, verify it first. A contradiction stops the
-    // publish (a new commit would silently overwrite whatever changed the
-    // site); an unreachable site does not, because a bad connection is not
-    // evidence of a conflict.
-    final verification = await _verifyUnconfirmed(
+    // head we are about to build on, verify it first, through the proof THAT
+    // commit recorded (an events commit is proven by events.json, plan A.1
+    // item 8). A contradiction stops the publish (a new commit would silently
+    // overwrite whatever changed the site); an unreachable site does not,
+    // because a bad connection is not evidence of a conflict.
+    final verification = await _unconfirmed(
       local: localRecord,
-      reconciled: previous,
-      remoteHead: expectedHead,
+      publication: publication,
       target: target,
-      siteUrl: pagesUrl,
-      anchorPath: CatalogueSectionBuilder.booksJsonPath,
-      maxBytes: publishedCatalogueReadBackMaxBytes,
+      legacyProof: PublishProofPath.booksJson,
       revision: now,
     );
     timings.end(PublishTimingStage.reconcile, reconcileStartedAt);
@@ -352,6 +363,9 @@ final class PublishLibraryUseCase {
           // The books.json just committed carries this phone's item keys
           // (ADR 0019 Decision 7b), so the lane may later publish against it.
           wroteKeyedCatalogue: snapshot.writesKeyedCatalogue,
+          // Every catalogue commit changes books.json (`exportedAt`), so that
+          // file proves it, also when availability.json rode along.
+          proofPath: PublishProofPath.booksJson,
         );
         var localStateSaved = _manifest.save(committed).isRight();
 
@@ -411,42 +425,6 @@ final class PublishLibraryUseCase {
     ValidationFailure(:final message) => message,
     _ => 'Something went wrong. Nothing was published.',
   };
-
-  /// Verifies an unconfirmed publication before building on it (F.4 step 2).
-  ///
-  /// A `matched` result upgrades the record to `live` and lets the journal
-  /// claim the address (R33) — the same proof the post-publish read-back gives,
-  /// just later. Both writes are best-effort: the publish continues either way,
-  /// and a failed save leaves `deployed`, which is still the truth.
-  Future<PublishVerificationOutcome> _verifyUnconfirmed({
-    required PublishManifest local,
-    required PublishManifest reconciled,
-    required String remoteHead,
-    required GitHubPublishTarget target,
-    required String siteUrl,
-    required String anchorPath,
-    required int maxBytes,
-    required int revision,
-  }) async {
-    final verifier = _verifier;
-    if (verifier == null) return PublishVerificationOutcome.notApplicable;
-    final outcome =
-        await PublishVerificationCheck(verifier: verifier, sleep: _sleep).call(
-          localState: local.state,
-          localAnchor: local.headSha,
-          remoteAnchor: remoteHead,
-          expectedSha: reconciled.shaFor(anchorPath),
-          siteUrl: siteUrl,
-          anchorPath: anchorPath,
-          maxBytes: maxBytes,
-          revision: revision,
-        );
-    if (outcome == PublishVerificationOutcome.matched) {
-      _manifest.save(reconciled.asLive());
-      await _hostState.recordVerified(target);
-    }
-    return outcome;
-  }
 
   /// Bounded origin-bound read-back of one just-published file.
   Future<bool?> _readBack({

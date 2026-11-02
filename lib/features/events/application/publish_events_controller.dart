@@ -141,6 +141,9 @@ class PublishEventsController extends _$PublishEventsController {
     final buildEventsHtml = ref.read(eventsHtmlFactoryProvider);
     final buildEventsJson = ref.read(eventsJsonFactoryProvider);
     final verifier = ref.read(publishedSiteVerifierProvider);
+    // The structured reader checks an earlier unconfirmed commit through the
+    // proof it recorded, which may be an exact 404 (ADR 0019 Decision 10).
+    final reader = ref.read(publishedSiteReadVerifierProvider);
     final useCase = PublishEventsUseCase(
       api: api,
       target: target,
@@ -154,6 +157,7 @@ class PublishEventsController extends _$PublishEventsController {
         () => ref.read(publishHostStateRepositoryProvider.future),
       ),
       verifier: verifier,
+      reader: reader,
       // Debug-only timings (plan S0); null in release builds.
       timingSink: ref.read(publishTimingSinkProvider),
     );

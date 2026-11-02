@@ -216,6 +216,7 @@ void main() {
         commitSha: 'new-head',
         mergedShas: {'books.json': 'sha'},
         coverUrlByBookId: {'1': 'src'},
+        proofPath: PublishProofPath.booksJson,
       );
       expect(committed.headSha, 'new-head');
       expect(committed.state, PublishState.deployed);
@@ -409,22 +410,69 @@ void main() {
       );
     });
 
-    test('afterCommit sets no proof yet (S4 adds it)', () {
+    group('afterCommit (S4: every commit records its proof)', () {
       const local = PublishManifest(
         repo: 'me/lib',
         branch: 'main',
+        headSha: 'old-head',
         proofPath: PublishProofPath.eventsJson,
+        fileShas: {'books.json': 'b', 'events.json': 'e'},
       );
-      expect(
-        local
-            .afterCommit(
-              commitSha: 'c',
-              mergedShas: {'books.json': 'b'},
-              coverUrlByBookId: const {},
-            )
-            .proofPath,
-        isNull,
-      );
+
+      test('records the proof of THIS commit, replacing the old one', () {
+        final cases = {
+          PublishProofPath.booksJson: {'books.json': 'b2', 'events.json': 'e'},
+          PublishProofPath.eventsJson: {'books.json': 'b', 'events.json': 'e2'},
+          PublishProofPath.availabilityJson: {
+            'books.json': 'b',
+            'events.json': 'e',
+            'availability.json': 'a',
+          },
+          PublishProofPath.availabilityJsonAbsent: {
+            'books.json': 'b',
+            'events.json': 'e',
+          },
+        };
+        for (final MapEntry(key: proof, value: merged) in cases.entries) {
+          final committed = local.afterCommit(
+            commitSha: 'c',
+            mergedShas: merged,
+            coverUrlByBookId: const {},
+            proofPath: proof,
+          );
+          expect(committed.proofPath, proof, reason: proof.name);
+          expect(committed.headSha, 'c', reason: proof.name);
+          expect(committed.state, PublishState.deployed, reason: proof.name);
+          // It survives a save and a load unchanged.
+          final reloaded = PublishManifest.fromJson(committed.toJson());
+          expect(reloaded.proofPath, proof, reason: proof.name);
+          expect(reloaded.headSha, 'c', reason: proof.name);
+        }
+      });
+
+      test('a proof that contradicts the commit forgets head and proof', () {
+        // Only a caller bug can do this; the record then reads like a
+        // legacy one in unknown state, exactly as a damaged stored proof
+        // does, so no check can "prove" the commit through a wrong file.
+        final missingFile = local.afterCommit(
+          commitSha: 'c',
+          mergedShas: {'books.json': 'b'},
+          coverUrlByBookId: const {},
+          proofPath: PublishProofPath.eventsJson,
+        );
+        expect(missingFile.proofPath, isNull);
+        expect(missingFile.headSha, isNull);
+        expect(missingFile.fileShas, {'books.json': 'b'});
+
+        final stillRecorded = local.afterCommit(
+          commitSha: 'c',
+          mergedShas: {'books.json': 'b', 'availability.json': 'a'},
+          coverUrlByBookId: const {},
+          proofPath: PublishProofPath.availabilityJsonAbsent,
+        );
+        expect(stillRecorded.proofPath, isNull);
+        expect(stillRecorded.headSha, isNull);
+      });
     });
   });
 
@@ -519,6 +567,7 @@ void main() {
           mergedShas: {'books.json': 'new-books'},
           coverUrlByBookId: const {},
           wroteKeyedCatalogue: true,
+          proofPath: PublishProofPath.booksJson,
         );
         expect(committed.catalogueKeyed, isTrue);
       });
@@ -528,6 +577,21 @@ void main() {
           commitSha: 'c',
           mergedShas: {'books.json': 'keyed-books', 'events.json': 'e2'},
           coverUrlByBookId: const {},
+          proofPath: PublishProofPath.eventsJson,
+        );
+        expect(committed.catalogueKeyed, isTrue);
+      });
+
+      test('an availability commit keeps it (books.json untouched)', () {
+        final committed = keyed.afterCommit(
+          commitSha: 'c',
+          mergedShas: {
+            'books.json': 'keyed-books',
+            'events.json': 'e',
+            'availability.json': 'a',
+          },
+          coverUrlByBookId: const {},
+          proofPath: PublishProofPath.availabilityJson,
         );
         expect(committed.catalogueKeyed, isTrue);
       });
@@ -537,6 +601,7 @@ void main() {
           commitSha: 'c',
           mergedShas: {'books.json': 'unkeyed-books'},
           coverUrlByBookId: const {},
+          proofPath: PublishProofPath.booksJson,
         );
         expect(committed.catalogueKeyed, isFalse);
       });
@@ -547,6 +612,7 @@ void main() {
           mergedShas: {'events.json': 'e'},
           coverUrlByBookId: const {},
           wroteKeyedCatalogue: true,
+          proofPath: PublishProofPath.eventsJson,
         );
         expect(committed.catalogueKeyed, isFalse);
       });

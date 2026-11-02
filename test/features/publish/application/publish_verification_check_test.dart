@@ -2,159 +2,278 @@ import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/features/publish/application/site/publish_verification_check.dart';
-import 'package:pitaka/features/publish/application/site/published_file_read_back.dart';
+import 'package:pitaka/features/publish/domain/availability/availability_document.dart';
 import 'package:pitaka/features/publish/domain/git_blob_sha.dart';
+import 'package:pitaka/features/publish/domain/site/publish_proof_path.dart';
 import 'package:pitaka/features/publish/domain/site/publish_state.dart';
 import 'package:pitaka/features/publish/domain/site/published_site_verifier.dart';
 
 /// SPECIFICATION of the pre-publish verification (Cloudflare plan F.4 step 2,
-/// deviation 48 — the "Option B" rule).
+/// deviation 48 — the "Option B" rule — and ADR 0019 Decision 10).
 ///
 /// The point of these tests: "could not check" and "checked and it is wrong"
-/// are different facts. Only the second one may stop a publish.
-class _ScriptedVerifier implements PublishedSiteVerifier {
-  _ScriptedVerifier(this.answers);
+/// are different facts. Only the second one may stop a publish. Since S4 the
+/// check reads the proof the record names, and an availability removal is
+/// proven by an exact 404.
+class _ScriptedReader implements PublishedSiteReadVerifier {
+  _ScriptedReader(this.answers);
 
   /// One answer per call; the last one repeats.
-  final List<List<int>?> answers;
-  int calls = 0;
+  final List<PublishedSiteReadOutcome> answers;
+  final List<(String path, int maxBytes)> calls = [];
 
   @override
-  Future<List<int>?> read({
+  Future<PublishedSiteReadOutcome> readOutcome({
     required String siteUrl,
     required String path,
     required int maxBytes,
     String? cacheBuster,
   }) async {
-    final index = calls < answers.length ? calls : answers.length - 1;
-    calls++;
+    final index = calls.length < answers.length
+        ? calls.length
+        : answers.length - 1;
+    calls.add((path, maxBytes));
     return answers[index];
+  }
+}
+
+class _ThrowingReader implements PublishedSiteReadVerifier {
+  int calls = 0;
+
+  @override
+  Future<PublishedSiteReadOutcome> readOutcome({
+    required String siteUrl,
+    required String path,
+    required int maxBytes,
+    String? cacheBuster,
+  }) async {
+    calls++;
+    throw const FormatException('adapter bug');
   }
 }
 
 void main() {
   final published = utf8.encode('{"books":[]}');
   final publishedSha = GitBlobSha.of(published);
+  final body = PublishedSiteReadBody(published);
+  const absent = PublishedSiteReadAbsent();
+  const unreadable = PublishedSiteReadUnreadable();
 
-  PublishVerificationCheck check(PublishedSiteVerifier verifier) =>
+  PublishVerificationCheck check(PublishedSiteReadVerifier reader) =>
       PublishVerificationCheck(
-        verifier: verifier,
+        reader: reader,
         sleep: (_) async {},
         interval: Duration.zero,
       );
 
   Future<PublishVerificationOutcome> run(
-    PublishedSiteVerifier verifier, {
+    PublishedSiteReadVerifier reader, {
     PublishState? localState = PublishState.deployed,
     String? localAnchor = 'HEAD',
     String remoteAnchor = 'HEAD',
+    PublishProofPath proof = PublishProofPath.booksJson,
     String? expectedSha = 'sha-books',
-  }) => check(verifier).call(
+  }) => check(reader).call(
     localState: localState,
     localAnchor: localAnchor,
     remoteAnchor: remoteAnchor,
+    proof: proof,
     expectedSha: expectedSha,
     siteUrl: 'https://me.github.io/lib/',
-    anchorPath: 'books.json',
-    maxBytes: publishedCatalogueReadBackMaxBytes,
     revision: 1,
   );
 
   group('not applicable', () {
     test('a live record has nothing to verify', () async {
-      final verifier = _ScriptedVerifier([published]);
+      final reader = _ScriptedReader([body]);
 
       expect(
-        await run(verifier, localState: PublishState.live),
+        await run(reader, localState: PublishState.live),
         PublishVerificationOutcome.notApplicable,
       );
-      expect(verifier.calls, 0);
+      expect(reader.calls, isEmpty);
     });
 
     test('a retired record has nothing to verify', () async {
       expect(
-        await run(
-          _ScriptedVerifier([published]),
-          localState: PublishState.retired,
-        ),
+        await run(_ScriptedReader([body]), localState: PublishState.retired),
         PublishVerificationOutcome.notApplicable,
       );
     });
 
     test('no record at all has nothing to verify', () async {
       expect(
-        await run(_ScriptedVerifier([published]), localState: null),
+        await run(_ScriptedReader([body]), localState: null),
         PublishVerificationOutcome.notApplicable,
       );
     });
 
     test('a moved head means the unconfirmed write is superseded', () async {
-      final verifier = _ScriptedVerifier([published]);
+      final reader = _ScriptedReader([body]);
 
       expect(
-        await run(verifier, localAnchor: 'OLD', remoteAnchor: 'NEW'),
+        await run(reader, localAnchor: 'OLD', remoteAnchor: 'NEW'),
         PublishVerificationOutcome.notApplicable,
       );
-      expect(verifier.calls, 0);
+      expect(reader.calls, isEmpty);
     });
 
     test('a record with no anchor has nothing to verify', () async {
       expect(
-        await run(_ScriptedVerifier([published]), localAnchor: null),
+        await run(_ScriptedReader([body]), localAnchor: null),
         PublishVerificationOutcome.notApplicable,
       );
     });
 
-    test('no recorded sha means there is nothing to compare', () async {
-      expect(
-        await run(_ScriptedVerifier([published]), expectedSha: null),
-        PublishVerificationOutcome.notApplicable,
-      );
+    test('a file proof with no recorded sha has nothing to compare', () async {
+      for (final sha in [null, '']) {
+        final reader = _ScriptedReader([body]);
+        expect(
+          await run(reader, expectedSha: sha),
+          PublishVerificationOutcome.notApplicable,
+          reason: '$sha',
+        );
+        expect(reader.calls, isEmpty);
+      }
     });
   });
 
-  group('the three real answers', () {
+  group('a file proof: the three real answers', () {
     test('matching bytes are a match', () async {
-      final verifier = _ScriptedVerifier([published]);
+      final reader = _ScriptedReader([body]);
 
       expect(
-        await run(verifier, expectedSha: publishedSha),
+        await run(reader, expectedSha: publishedSha),
         PublishVerificationOutcome.matched,
       );
-      expect(verifier.calls, 1);
+      expect(reader.calls, hasLength(1));
     });
 
     test('different bytes are a contradiction, not a retry', () async {
-      final verifier = _ScriptedVerifier([
-        utf8.encode('{"books":[1]}'),
-        published, // would match, but the first answer already decided
+      final reader = _ScriptedReader([
+        PublishedSiteReadBody(utf8.encode('{"books":[1]}')),
+        body, // would match, but the first answer already decided
       ]);
 
       expect(
-        await run(verifier, expectedSha: publishedSha),
+        await run(reader, expectedSha: publishedSha),
         PublishVerificationOutcome.contradicted,
       );
-      expect(verifier.calls, 1);
+      expect(reader.calls, hasLength(1));
     });
 
     test('no answer at all is unreachable, never a silent success', () async {
-      final verifier = _ScriptedVerifier([null]);
+      final reader = _ScriptedReader([unreadable]);
 
       expect(
-        await run(verifier, expectedSha: publishedSha),
+        await run(reader, expectedSha: publishedSha),
         PublishVerificationOutcome.unreachable,
       );
-      expect(verifier.calls, 3);
+      expect(reader.calls, hasLength(PublishVerificationCheck.defaultAttempts));
+    });
+
+    test('a 404 where a file is expected is retried, not a contradiction '
+        '(the behaviour before 404s could be told apart)', () async {
+      final reader = _ScriptedReader([absent]);
+
+      expect(
+        await run(reader, expectedSha: publishedSha),
+        PublishVerificationOutcome.unreachable,
+      );
+      expect(reader.calls, hasLength(PublishVerificationCheck.defaultAttempts));
     });
 
     test('a later readable answer still counts', () async {
-      final verifier = _ScriptedVerifier([null, published]);
+      final reader = _ScriptedReader([unreadable, body]);
 
       expect(
-        await run(verifier, expectedSha: publishedSha),
+        await run(reader, expectedSha: publishedSha),
         PublishVerificationOutcome.matched,
       );
-      expect(verifier.calls, 2);
+      expect(reader.calls, hasLength(2));
+    });
+
+    test('an adapter that throws counts as unreadable', () async {
+      final reader = _ThrowingReader();
+
+      expect(
+        await run(reader, expectedSha: publishedSha),
+        PublishVerificationOutcome.unreachable,
+      );
+      expect(reader.calls, PublishVerificationCheck.defaultAttempts);
+    });
+  });
+
+  group('ADR 0019: the record names the proof', () {
+    test('each proof reads its own file with its own reader cap', () async {
+      final expected = {
+        PublishProofPath.booksJson: (
+          'books.json',
+          publishedCatalogueReadBackMaxBytes,
+        ),
+        PublishProofPath.eventsJson: (
+          'events.json',
+          publishedEventsReadBackMaxBytes,
+        ),
+        PublishProofPath.availabilityJson: (
+          'availability.json',
+          AvailabilityDocument.readerMaxBytes,
+        ),
+        PublishProofPath.availabilityJsonAbsent: (
+          'availability.json',
+          AvailabilityDocument.readerMaxBytes,
+        ),
+      };
+      for (final MapEntry(key: proof, value: read) in expected.entries) {
+        final reader = _ScriptedReader([unreadable]);
+        await run(reader, proof: proof);
+        expect(reader.calls.first, read, reason: proof.name);
+        expect(readBackMaxBytesFor(proof), read.$2, reason: proof.name);
+      }
+    });
+
+    test(
+      'a removal is proven by an exact 404, without a recorded sha',
+      () async {
+        final reader = _ScriptedReader([absent]);
+
+        expect(
+          await run(
+            reader,
+            proof: PublishProofPath.availabilityJsonAbsent,
+            expectedSha: null,
+          ),
+          PublishVerificationOutcome.matched,
+        );
+        expect(reader.calls, hasLength(1));
+      },
+    );
+
+    test('a removal whose file is still served is a contradiction', () async {
+      final reader = _ScriptedReader([body]);
+
+      expect(
+        await run(reader, proof: PublishProofPath.availabilityJsonAbsent),
+        PublishVerificationOutcome.contradicted,
+      );
+    });
+
+    test('a removal that cannot be read is unreachable, then a late 404 '
+        'still counts', () async {
+      expect(
+        await run(
+          _ScriptedReader([unreadable]),
+          proof: PublishProofPath.availabilityJsonAbsent,
+        ),
+        PublishVerificationOutcome.unreachable,
+      );
+      expect(
+        await run(
+          _ScriptedReader([unreadable, absent]),
+          proof: PublishProofPath.availabilityJsonAbsent,
+        ),
+        PublishVerificationOutcome.matched,
+      );
     });
   });
 }

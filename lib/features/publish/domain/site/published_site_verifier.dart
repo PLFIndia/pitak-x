@@ -17,6 +17,9 @@
 /// No exception text, URL or body ever crosses this port.
 library;
 
+import 'package:pitaka/features/publish/domain/availability/availability_document.dart';
+import 'package:pitaka/features/publish/domain/site/publish_proof_path.dart';
+
 /// Reads one public file from a just-published site.
 ///
 /// One member on purpose: it is an injected SEAM (a fake answers in widget
@@ -100,3 +103,19 @@ const int publishedCatalogueReadBackMaxBytes = 64 * 1024 * 1024;
 /// is far above any real file. It exists so a hostile or broken response can
 /// never be read without a bound — the same reason the catalogue has one.
 const int publishedEventsReadBackMaxBytes = 64 * 1024;
+
+/// Byte cap for reading back the file that proves a GitHub commit
+/// ([PublishProofPath], ADR 0019 Decision 10).
+///
+/// Each proof file is read with the cap its own readers enforce, so the
+/// pre-publish check and the deferred check can never disagree about how
+/// much of a file they read. For an expected absence the cap still matters:
+/// a body that does arrive must be read to tell "still there" apart from
+/// "unreadable", and a real `availability.json` fits under its reader cap.
+int readBackMaxBytesFor(PublishProofPath proof) => switch (proof) {
+  PublishProofPath.booksJson => publishedCatalogueReadBackMaxBytes,
+  PublishProofPath.eventsJson => publishedEventsReadBackMaxBytes,
+  PublishProofPath.availabilityJson ||
+  PublishProofPath.availabilityJsonAbsent =>
+    AvailabilityDocument.readerMaxBytes,
+};

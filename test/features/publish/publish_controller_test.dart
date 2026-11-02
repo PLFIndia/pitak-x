@@ -730,25 +730,10 @@ class _Harness {
           remoteReads++;
           return null;
         }),
-        publishedSiteVerifierProvider.overrideWithValue(
-          _Verifier((path) async {
-            liveReads++;
-            // Routes by PATH like the live site: library.json serves the
-            // last committed descriptor (null before the first publish),
-            // anything else is the read-back poll for books.json.
-            if (api.commits.isEmpty) return null;
-            final committed = api.commits.last;
-            if (path == 'library.json') {
-              for (final file in committed) {
-                if (file.path == 'library.json') return file.bytes;
-              }
-              return null;
-            }
-            return committed
-                .firstWhere((file) => file.path == 'books.json')
-                .bytes;
-          }),
-        ),
+        publishedSiteVerifierProvider.overrideWithValue(verifier),
+        // The pre-check of an unconfirmed commit reads through the structured
+        // port (ADR 0019 Decision 10); it is the same in-memory site.
+        publishedSiteReadVerifierProvider.overrideWithValue(verifier),
         // A clock that ticks a minute per read: two publishes never share a
         // timestamp, so an updatedAt-reuse test is deterministic.
         clockProvider.overrideWithValue(() => 1000 + (++_clockTicks * 60000)),
@@ -765,6 +750,22 @@ class _Harness {
   }
 
   int _clockTicks = 0;
+
+  /// The in-memory live site. Routes by PATH like the real one: library.json
+  /// serves the last committed descriptor (null before the first publish),
+  /// anything else is the read-back poll for books.json.
+  late final _Verifier verifier = _Verifier((path) async {
+    liveReads++;
+    if (api.commits.isEmpty) return null;
+    final committed = api.commits.last;
+    if (path == 'library.json') {
+      for (final file in committed) {
+        if (file.path == 'library.json') return file.bytes;
+      }
+      return null;
+    }
+    return committed.firstWhere((file) => file.path == 'books.json').bytes;
+  });
   final books = _Books();
   final periodicals = _Periodicals();
   final api = _Api();
@@ -887,8 +888,9 @@ class _Events implements EventsRepository {
       throw UnsupportedError('Unexpected event operation');
 }
 
-/// Read-back fake routed by the site-relative path.
-class _Verifier implements PublishedSiteVerifier {
+/// Read-back fake routed by the site-relative path. It answers both read
+/// ports like the production adapter; a null answer is "unreadable".
+class _Verifier implements PublishedSiteVerifier, PublishedSiteReadVerifier {
   _Verifier(this.answer);
   final Future<List<int>?> Function(String path) answer;
 
@@ -899,6 +901,19 @@ class _Verifier implements PublishedSiteVerifier {
     required int maxBytes,
     String? cacheBuster,
   }) => answer(path);
+
+  @override
+  Future<PublishedSiteReadOutcome> readOutcome({
+    required String siteUrl,
+    required String path,
+    required int maxBytes,
+    String? cacheBuster,
+  }) async {
+    final body = await answer(path);
+    return body == null
+        ? const PublishedSiteReadUnreadable()
+        : PublishedSiteReadBody(body);
+  }
 }
 
 class _Credentials implements PublishCredentialStore {

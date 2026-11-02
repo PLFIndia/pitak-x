@@ -32,6 +32,7 @@ library;
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/events/domain/entities/event_poster.dart';
 import 'package:pitaka/features/publish/application/github_publication_reconciler.dart';
+import 'package:pitaka/features/publish/application/github_unconfirmed_commit_check.dart';
 import 'package:pitaka/features/publish/application/publish_library_use_case.dart'
     show PublishManifestGateway;
 import 'package:pitaka/features/publish/application/site/events_section_builder.dart';
@@ -44,9 +45,9 @@ import 'package:pitaka/features/publish/domain/github_error_messages.dart';
 import 'package:pitaka/features/publish/domain/github_models.dart';
 import 'package:pitaka/features/publish/domain/publish_credential_store.dart';
 import 'package:pitaka/features/publish/domain/publish_events_ports.dart';
-import 'package:pitaka/features/publish/domain/publish_manifest.dart';
 import 'package:pitaka/features/publish/domain/publish_target.dart';
 import 'package:pitaka/features/publish/domain/site/publish_mode.dart';
+import 'package:pitaka/features/publish/domain/site/publish_proof_path.dart';
 import 'package:pitaka/features/publish/domain/site/publish_snapshot.dart';
 import 'package:pitaka/features/publish/domain/site/published_site_verifier.dart';
 import 'package:pitaka/features/publish/domain/site/section_merge.dart';
@@ -111,6 +112,7 @@ final class PublishEventsUseCase {
     required PublishPageSettings settings,
     required PublishHostStateRecorder hostState,
     PublishedSiteVerifier? verifier,
+    PublishedSiteReadVerifier? reader,
     Future<void> Function(Duration)? sleep,
     int Function()? clock,
     PublishTimingSink? timingSink,
@@ -126,6 +128,12 @@ final class PublishEventsUseCase {
        _settings = settings,
        _hostState = hostState,
        _verifier = verifier,
+       _unconfirmed = GitHubUnconfirmedCommitCheck(
+         reader: reader,
+         manifest: manifest,
+         hostState: hostState,
+         sleep: sleep ?? Future<void>.delayed,
+       ),
        _sleep = sleep ?? Future<void>.delayed,
        _clock = clock ?? (() => DateTime.now().millisecondsSinceEpoch),
        _timingSink = timingSink;
@@ -144,6 +152,10 @@ final class PublishEventsUseCase {
 
   /// Null ⇒ read-back skipped (tests / no network port wired).
   final PublishedSiteVerifier? _verifier;
+
+  /// The pre-publish check of this phone's unconfirmed commit, read through
+  /// the proof that commit recorded (ADR 0019 Decision 10).
+  final GitHubUnconfirmedCommitCheck _unconfirmed;
   final Future<void> Function(Duration) _sleep;
   final int Function() _clock;
 
@@ -226,13 +238,13 @@ final class PublishEventsUseCase {
     final manifest = publication.manifest;
 
     // F.4 step 2 (deviation 48): verify an unconfirmed commit at this head
-    // before building on it. Contradiction stops; unreachable does not.
-    final verification = await _verifyUnconfirmed(
+    // before building on it, through the proof that commit recorded (plan
+    // A.1 item 8). Contradiction stops; unreachable does not.
+    final verification = await _unconfirmed(
       local: localRecord,
-      reconciled: manifest,
-      remoteHead: publication.headSha,
+      publication: publication,
       target: target,
-      siteUrl: target.siteUrl,
+      legacyProof: PublishProofPath.eventsJson,
       revision: _clock(),
     );
     timings.end(PublishTimingStage.reconcile, reconcileStartedAt);
@@ -313,6 +325,9 @@ final class PublishEventsUseCase {
           commitSha: commitSha,
           mergedShas: merge.fileShas,
           coverUrlByBookId: manifest.coverUrlByBookId,
+          // events.json is always written (an empty publish writes an empty
+          // list), so it proves this commit (ADR 0019 Decision 10).
+          proofPath: PublishProofPath.eventsJson,
         );
         var localStateSaved = _manifest.save(committed).isRight();
 
@@ -372,39 +387,5 @@ final class PublishEventsUseCase {
         // inject arbitrary text into it (§5 "safe message only").
         return PublishEventsFailure(gitHubHttpErrorMessage(code));
     }
-  }
-
-  /// Verifies an unconfirmed publication before building on it (F.4 step 2).
-  ///
-  /// A `matched` result upgrades the record to `live` and lets the journal
-  /// claim the address (R33). Both writes are best-effort: the publish
-  /// continues either way, and a failed save leaves `deployed`, which is still
-  /// the truth.
-  Future<PublishVerificationOutcome> _verifyUnconfirmed({
-    required PublishManifest local,
-    required PublishManifest reconciled,
-    required String remoteHead,
-    required GitHubPublishTarget target,
-    required String siteUrl,
-    required int revision,
-  }) async {
-    final verifier = _verifier;
-    if (verifier == null) return PublishVerificationOutcome.notApplicable;
-    final outcome =
-        await PublishVerificationCheck(verifier: verifier, sleep: _sleep).call(
-          localState: local.state,
-          localAnchor: local.headSha,
-          remoteAnchor: remoteHead,
-          expectedSha: reconciled.shaFor(EventsSectionBuilder.eventsJsonPath),
-          siteUrl: siteUrl,
-          anchorPath: EventsSectionBuilder.eventsJsonPath,
-          maxBytes: publishedEventsReadBackMaxBytes,
-          revision: revision,
-        );
-    if (outcome == PublishVerificationOutcome.matched) {
-      _manifest.save(reconciled.asLive());
-      await _hostState.recordVerified(target);
-    }
-    return outcome;
   }
 }

@@ -17,6 +17,7 @@ import 'package:pitaka/features/publish/domain/publish_manifest.dart';
 import 'package:pitaka/features/publish/domain/publish_target.dart';
 import 'package:pitaka/features/publish/domain/site/pending_move.dart';
 import 'package:pitaka/features/publish/domain/site/publish_file.dart';
+import 'package:pitaka/features/publish/domain/site/publish_proof_path.dart';
 import 'package:pitaka/features/publish/domain/site/publish_state.dart';
 
 /// Runs F.4's one-commit complete move path against an explicit destination.
@@ -163,6 +164,9 @@ final class GitHubMoveDestination implements MoveDestinationPublisher {
           // A move writes the complete, keyed catalogue (ADR 0019
           // Decision 7b), so the lane may publish against the new site.
           wroteKeyedCatalogue: complete.snapshot.writesKeyedCatalogue,
+          // The move verifies every file itself; for any LATER check the
+          // catalogue's books.json proves this commit (ADR 0019 Decision 10).
+          proofPath: PublishProofPath.booksJson,
         );
         // L12: this record is the only proof the commit was ours, so a failed
         // save must reach the user rather than be discarded.

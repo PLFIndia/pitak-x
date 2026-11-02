@@ -32,6 +32,7 @@ import 'package:pitaka/features/publish/domain/publish_export.dart';
 import 'package:pitaka/features/publish/domain/publish_item_keys.dart';
 import 'package:pitaka/features/publish/domain/publish_manifest.dart';
 import 'package:pitaka/features/publish/domain/publish_target.dart';
+import 'package:pitaka/features/publish/domain/site/publish_proof_path.dart';
 import 'package:pitaka/features/publish/domain/site/publish_snapshot.dart';
 import 'package:pitaka/features/publish/domain/site/publish_state.dart';
 import 'package:pitaka/features/publish/domain/site/published_site_verifier.dart';
@@ -85,9 +86,16 @@ class _MemManifest implements PublishManifestGateway {
 
 /// Fake read-back: answers by (siteUrl, path) and records every call so the
 /// tests can assert the origin binding and the cache-buster.
-class _FakeVerifier implements PublishedSiteVerifier {
-  _FakeVerifier(this.answer);
+///
+/// It answers BOTH read ports, like the production adapter: the read-back
+/// uses the plain one, the pre-check of an unconfirmed commit the structured
+/// one (ADR 0019 Decision 10). A null answer is "unreadable"; a path in
+/// [absentPaths] answers an exact 404.
+class _FakeVerifier
+    implements PublishedSiteVerifier, PublishedSiteReadVerifier {
+  _FakeVerifier(this.answer, {this.absentPaths = const {}});
   final Future<List<int>?> Function(String siteUrl, String path) answer;
+  final Set<String> absentPaths;
   final List<(String, String, String?)> calls = [];
 
   @override
@@ -98,7 +106,30 @@ class _FakeVerifier implements PublishedSiteVerifier {
     String? cacheBuster,
   }) {
     calls.add((siteUrl, path, cacheBuster));
+    if (absentPaths.contains(path)) return Future.value();
     return answer(siteUrl, path);
+  }
+
+  @override
+  Future<PublishedSiteReadOutcome> readOutcome({
+    required String siteUrl,
+    required String path,
+    required int maxBytes,
+    String? cacheBuster,
+  }) async {
+    if (absentPaths.contains(path)) {
+      calls.add((siteUrl, path, cacheBuster));
+      return const PublishedSiteReadAbsent();
+    }
+    final body = await read(
+      siteUrl: siteUrl,
+      path: path,
+      maxBytes: maxBytes,
+      cacheBuster: cacheBuster,
+    );
+    return body == null
+        ? const PublishedSiteReadUnreadable()
+        : PublishedSiteReadBody(body);
   }
 }
 
@@ -394,7 +425,7 @@ void main() {
   PublishLibraryUseCase makeUseCase(
     GitHubGitDataApi api,
     PublishManifestGateway manifest, {
-    PublishedSiteVerifier? verifier,
+    _FakeVerifier? verifier,
     PublishHostStateRecorder? hostState,
     PublishCredentialReader? credentials,
     LocalCoverReader? readLocalCover,
@@ -459,6 +490,7 @@ void main() {
           ),
       hostState: hostState ?? _Recorder(),
       verifier: verifier,
+      reader: verifier,
       sleep: (_) async {}, // no real waiting in tests
       clock: () => 1000,
     );
@@ -1348,6 +1380,10 @@ void main() {
         var remoteCoverFetches = 0;
         var viewerBuilds = 0;
         var publishedFileFetches = 0;
+        final liveSite = _FakeVerifier((_, path) async {
+          publishedFileFetches++;
+          return null;
+        });
         final container = ProviderContainer(
           overrides: [
             catalogueItemRepositoryProvider.overrideWith(
@@ -1392,12 +1428,10 @@ void main() {
               remoteCoverFetches++;
               return null;
             }),
-            publishedSiteVerifierProvider.overrideWithValue(
-              _FakeVerifier((_, path) async {
-                publishedFileFetches++;
-                return null;
-              }),
-            ),
+            publishedSiteVerifierProvider.overrideWithValue(liveSite),
+            // The pre-check reads through the structured port (ADR 0019
+            // Decision 10); the same counted fake keeps this test offline.
+            publishedSiteReadVerifierProvider.overrideWithValue(liveSite),
             viewerHtmlFactoryProvider.overrideWithValue(({
               required libraryName,
               required contact,
@@ -1599,8 +1633,13 @@ void main() {
           PublishState.deployed,
           PublishState.live,
         ]);
-        // Both saves describe the commit the API returned.
+        // Both saves describe the commit the API returned, and name the file
+        // that proves it (ADR 0019 Decision 10).
         expect(manifest.saves.first.headSha, 'NEWCOMMIT');
+        expect(
+          manifest.saves.map((m) => m.proofPath),
+          everyElement(PublishProofPath.booksJson),
+        );
         expect(manifest.current.branch, 'main');
       },
     );
@@ -1688,6 +1727,102 @@ void main() {
           expect(recorder.recorded, isNotEmpty);
         },
       );
+
+      group('ADR 0019: the check reads the proof the record names', () {
+        final liveEvents = utf8.encode('{"schemaVersion":1,"posters":[]}');
+
+        // The state right after an UNCONFIRMED events commit: that commit
+        // never touched books.json, so books.json cannot prove it.
+        PublishManifest afterEventsCommit() => PublishManifest(
+          repo: 'me/lib',
+          branch: 'main',
+          headSha: 'HEAD',
+          fileShas: {
+            'index.html': 'abc',
+            'books.json': liveSha,
+            'events.json': GitBlobSha.of(liveEvents),
+          },
+          proofPath: PublishProofPath.eventsJson,
+        );
+
+        test('REGRESSION (plan A.1 item 8): an unchanged books.json no longer '
+            '"proves" an unconfirmed events commit', () async {
+          final api = _CapturingApi();
+          final manifest = _MemManifest(afterEventsCommit());
+          final verifier = _FakeVerifier(
+            (_, path) async => switch (path) {
+              // Before S4 the catalogue publish read only this, and it
+              // matched, so it marked a commit live that it never checked.
+              'books.json' => liveBooks,
+              'events.json' => utf8.encode('{"schemaVersion":1,"posters":[9]}'),
+              _ => null,
+            },
+          );
+          final result = await makeUseCase(
+            api,
+            manifest,
+            verifier: verifier,
+            books: [book()],
+          ).run();
+
+          expect(
+            (result as PublishFailure).reason,
+            gitHubSiteChangedSincePublishMessage,
+          );
+          expect(api.committed, isNull);
+          expect(manifest.saves, isEmpty);
+          expect(verifier.calls.map((call) => call.$2), ['events.json']);
+        });
+
+        test('the matching events proof upgrades the record first', () async {
+          final api = _CapturingApi();
+          final manifest = _MemManifest(afterEventsCommit());
+          final verifier = _FakeVerifier(
+            (_, path) async => path == 'events.json' ? liveEvents : null,
+          );
+          final result = await makeUseCase(
+            api,
+            manifest,
+            verifier: verifier,
+            books: [book()],
+          ).run();
+
+          expect(result, isA<PublishSuccess>());
+          expect(verifier.calls.first.$2, 'events.json');
+          expect(manifest.saves.first.state, PublishState.live);
+          expect(manifest.saves.first.proofPath, PublishProofPath.eventsJson);
+        });
+
+        test(
+          'an unconfirmed availability removal is proven by its 404',
+          () async {
+            final api = _CapturingApi();
+            final manifest = _MemManifest(
+              PublishManifest(
+                repo: 'me/lib',
+                branch: 'main',
+                headSha: 'HEAD',
+                fileShas: {'index.html': 'abc', 'books.json': liveSha},
+                proofPath: PublishProofPath.availabilityJsonAbsent,
+              ),
+            );
+            final verifier = _FakeVerifier(
+              (_, _) async => null,
+              absentPaths: {'availability.json'},
+            );
+            final result = await makeUseCase(
+              api,
+              manifest,
+              verifier: verifier,
+              books: [book()],
+            ).run();
+
+            expect(result, isA<PublishSuccess>());
+            expect(verifier.calls.first.$2, 'availability.json');
+            expect(manifest.saves.first.state, PublishState.live);
+          },
+        );
+      });
 
       test('a live record is not re-verified', () async {
         final api = _CapturingApi();
@@ -1805,9 +1940,9 @@ void main() {
       final record = manifest.current;
       expect(record.shaFor('availability.json'), GitBlobSha.of(availability));
       expect(record.catalogueKeyed, isTrue);
-      // The combined commit is proven through books.json, as before (S4
-      // records the proof path; until then it stays the per-section file).
-      expect(record.proofPath, isNull);
+      // The combined commit is proven through books.json (ADR 0019
+      // Decision 10): every catalogue commit changes it (`exportedAt`).
+      expect(record.proofPath, PublishProofPath.booksJson);
     });
 
     test(

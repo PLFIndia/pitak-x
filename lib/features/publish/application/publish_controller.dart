@@ -135,8 +135,11 @@ class PublishController extends _$PublishController implements PublishReads {
     // is built exactly once against the manifest that will also be merged.
     final builder = await ref.read(publishSnapshotBuilderProvider.future);
     // Bounded, origin-bound read-back (R16) — used to prove the live site
-    // serves exactly what was published.
+    // serves exactly what was published. The structured reader (same bounded
+    // adapter) checks an earlier unconfirmed commit, whose proof may be an
+    // exact 404 (ADR 0019 Decision 10).
     final verifier = ref.read(publishedSiteVerifierProvider);
+    final reader = ref.read(publishedSiteReadVerifierProvider);
 
     final useCase = PublishLibraryUseCase(
       api: api,
@@ -150,6 +153,7 @@ class PublishController extends _$PublishController implements PublishReads {
         () => ref.read(publishHostStateRepositoryProvider.future),
       ),
       verifier: verifier,
+      reader: reader,
       // Debug-only timings (plan S0); null in release builds.
       timingSink: ref.read(publishTimingSinkProvider),
     );

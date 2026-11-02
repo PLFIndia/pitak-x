@@ -17,6 +17,7 @@ import 'package:pitaka/features/publish/domain/publish_cover_ids.dart';
 import 'package:pitaka/features/publish/domain/publish_credential_store.dart';
 import 'package:pitaka/features/publish/domain/publish_item_keys.dart';
 import 'package:pitaka/features/publish/domain/publish_target.dart';
+import 'package:pitaka/features/publish/domain/site/publish_proof_path.dart';
 import 'package:pitaka/features/publish/domain/site/publish_state.dart';
 
 import '../support/cloudflare_s8_fakes.dart';
@@ -142,6 +143,8 @@ void main() {
     expect(destinationManifest.saves, 2);
     // The move wrote this phone's keyed catalogue (ADR 0019 Decision 7b).
     expect(destinationManifest.value.catalogueKeyed, isTrue);
+    // A later pre-check proves this commit through books.json (Decision 10).
+    expect(destinationManifest.value.proofPath, PublishProofPath.booksJson);
     // The lane is off in this build, so the new site gets no availability.
     expect(
       commit.files.map((file) => file.path),

@@ -16,6 +16,7 @@ import 'package:pitaka/features/publish/domain/github_models.dart';
 import 'package:pitaka/features/publish/domain/publish_credential_store.dart';
 import 'package:pitaka/features/publish/domain/publish_manifest.dart';
 import 'package:pitaka/features/publish/domain/publish_target.dart';
+import 'package:pitaka/features/publish/domain/site/publish_proof_path.dart';
 import 'package:pitaka/features/publish/domain/site/publish_snapshot.dart';
 import 'package:pitaka/features/publish/domain/site/publish_state.dart';
 import 'package:pitaka/features/publish/domain/site/published_site_verifier.dart';
@@ -35,7 +36,12 @@ class _Recorder implements PublishHostStateRecorder {
 }
 
 /// Answers read-back polls from a script; records the paths it was asked for.
-class _FakeVerifier implements PublishedSiteVerifier {
+///
+/// It answers BOTH read ports, like the production adapter: the read-back
+/// uses the plain one, the pre-check of an unconfirmed commit the structured
+/// one (ADR 0019 Decision 10). A null answer is "unreadable".
+class _FakeVerifier
+    implements PublishedSiteVerifier, PublishedSiteReadVerifier {
   _FakeVerifier(this.answer);
   final Future<List<int>?> Function(String siteUrl, String path) answer;
   final List<String> paths = [];
@@ -49,6 +55,24 @@ class _FakeVerifier implements PublishedSiteVerifier {
   }) {
     paths.add(path);
     return answer(siteUrl, path);
+  }
+
+  @override
+  Future<PublishedSiteReadOutcome> readOutcome({
+    required String siteUrl,
+    required String path,
+    required int maxBytes,
+    String? cacheBuster,
+  }) async {
+    final body = await read(
+      siteUrl: siteUrl,
+      path: path,
+      maxBytes: maxBytes,
+      cacheBuster: cacheBuster,
+    );
+    return body == null
+        ? const PublishedSiteReadUnreadable()
+        : PublishedSiteReadBody(body);
   }
 }
 
@@ -188,7 +212,7 @@ void main() {
     required PublishManifestGateway manifest,
     PublishCredentialReader? creds,
     PosterBytesReader? readPoster,
-    PublishedSiteVerifier? verifier,
+    _FakeVerifier? verifier,
     PublishHostStateRecorder? hostState,
     GitHubPublishTarget? target,
   }) {
@@ -213,6 +237,7 @@ void main() {
       settings: const PublishPageSettings(libraryName: 'Test Library'),
       hostState: hostState ?? _Recorder(),
       verifier: verifier,
+      reader: verifier,
       sleep: (_) async {}, // no real waiting in tests
       clock: () => 1000,
     );
@@ -282,6 +307,44 @@ void main() {
         gitHubSiteChangedSincePublishMessage,
       );
       expect(api.committed, isNull);
+    });
+
+    test('an unconfirmed CATALOGUE commit is checked through books.json, '
+        'not events.json (plan A.1 item 8)', () async {
+      final liveBooks = utf8.encode('{"books":[]}');
+      final api = _CapturingApi();
+      final verifier = _FakeVerifier(
+        (_, path) async => switch (path) {
+          'books.json' => utf8.encode('{"books":["changed"]}'),
+          // Would match, but this commit did not write events.json.
+          'events.json' => liveEvents,
+          _ => null,
+        },
+      );
+      final result = await make(
+        api: api,
+        manifest: _MemManifest(
+          PublishManifest(
+            repo: 'me/lib',
+            branch: 'main',
+            headSha: 'HEAD',
+            fileShas: {
+              'index.html': 'abc',
+              'books.json': GitBlobSha.of(liveBooks),
+              'events.json': liveSha,
+            },
+            proofPath: PublishProofPath.booksJson,
+          ),
+        ),
+        verifier: verifier,
+      ).call(twoPosters());
+
+      expect(
+        (result as PublishEventsFailure).reason,
+        gitHubSiteChangedSincePublishMessage,
+      );
+      expect(api.committed, isNull);
+      expect(verifier.paths, ['books.json']);
     });
 
     test('an unreachable site does not block the events publish', () async {
@@ -356,6 +419,8 @@ void main() {
 
     // Manifest is merged: the catalogue's index.html/books.json entries survive.
     expect(manifest.saved!.shaFor('index.html'), 'abc');
+    // events.json proves this commit (ADR 0019 Decision 10).
+    expect(manifest.saved!.proofPath, PublishProofPath.eventsJson);
     expect(manifest.saved!.shaFor('books.json'), 'def');
     expect(manifest.saved!.shaFor('events.html'), isNotNull);
     expect(manifest.saved!.shaFor('events.json'), isNotNull);
