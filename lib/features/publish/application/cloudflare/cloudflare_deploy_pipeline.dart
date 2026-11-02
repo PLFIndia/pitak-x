@@ -1,8 +1,16 @@
-/// Upload → deploy → read-back tail of an ordinary Cloudflare publish (F.3).
+/// Upload → deploy → read-back tail of a Cloudflare publish (F.3).
 ///
 /// Split out of the orchestrator (fix-plan Phase 0) so the publish use case
 /// keeps only orchestration. The app-wide operation queue is already held by
 /// the caller; this pipeline never waits for a dialog.
+///
+/// Two publishes share it: the ordinary catalogue/events publish and the
+/// availability lane (ADR 0019 Decision 11). Every gate below (Version URLs
+/// off, the session baseline, the final anchor check, the pending record
+/// before the PUT) runs for both, unchanged. The two differ only in what the
+/// caller passes: which files the read-back must see, and what happens when
+/// Cloudflare asks for bytes this phone does not have. The pipeline itself
+/// knows nothing about whole-site replacements, so it cannot start one.
 library;
 
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_bucket_uploader.dart';
@@ -12,17 +20,16 @@ import 'package:pitaka/features/publish/application/cloudflare/cloudflare_publis
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_publish_marker_probe.dart';
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_publish_outcomes.dart';
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_publish_preflight.dart';
-import 'package:pitaka/features/publish/application/cloudflare/cloudflare_replacement_preparation.dart';
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_session_baseline.dart';
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_verified_state_commit.dart';
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_version_url_gate.dart';
 import 'package:pitaka/features/publish/application/publish_result.dart';
-import 'package:pitaka/features/publish/application/site/publish_snapshot_builder.dart';
 import 'package:pitaka/features/publish/application/site/publish_timings.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_api.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_api_models.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_connection.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_error_messages.dart';
+import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_limits.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_site_manifest.dart';
 import 'package:pitaka/features/publish/domain/publish_target.dart';
 
@@ -36,8 +43,6 @@ final class CloudflareDeployPipeline {
     required CloudflarePublishMarkerProbe markerProbe,
     required CloudflarePublicationVerifier verifier,
     required CloudflareVerifiedStateCommit verifiedCommit,
-    required CloudflareReplacementPreparation replacement,
-    required PublishReads reads,
     required int Function() clock,
   }) : _deployApi = deployApi,
        _manifest = manifest,
@@ -45,8 +50,6 @@ final class CloudflareDeployPipeline {
        _markerProbe = markerProbe,
        _verifier = verifier,
        _verifiedCommit = verifiedCommit,
-       _replacement = replacement,
-       _reads = reads,
        _clock = clock;
 
   final CloudflareDeployApi _deployApi;
@@ -55,14 +58,22 @@ final class CloudflareDeployPipeline {
   final CloudflarePublishMarkerProbe _markerProbe;
   final CloudflarePublicationVerifier _verifier;
   final CloudflareVerifiedStateCommit _verifiedCommit;
-  final CloudflareReplacementPreparation _replacement;
-  final PublishReads _reads;
   final int Function() _clock;
 
   /// Uploads the prepared artifacts, deploys, and proves the result.
   ///
   /// [initial] is the preflight the operation was prepared against; it is
   /// compared with a fresh read immediately before the deploy.
+  ///
+  /// [readBack] says which files prove this deploy, and picks the matching
+  /// after-deploy budget. [resultUrl] is the address a success reports.
+  ///
+  /// [onLocalBytesMissing] decides what this operation reports when
+  /// Cloudflare asks for a hash this phone has no bytes for (nothing was
+  /// deployed then). The ordinary publish offers a reviewed whole-site
+  /// replacement; a replacement, which already carries every byte, reports
+  /// the failure; the availability lane must never replace a site, so it asks
+  /// the user to repair it (ADR 0019 Decision 11).
   ///
   /// [timings] is the CALLER's recorder (plan S0, instrumented builds only):
   /// the Cloudflare use case owns it, so one publish produces one log line
@@ -71,12 +82,12 @@ final class CloudflareDeployPipeline {
   Future<PublishResult> run({
     required CloudflareConnection connection,
     required CloudflarePublishTarget target,
-    required PublishRequestedSection section,
     required CloudflareSiteManifest local,
     required CloudflarePublishPreflight initial,
     required CloudflarePublicationArtifacts publication,
-    required PublishInputs inputs,
-    required bool replacing,
+    required CloudflareReadBackScope readBack,
+    required String resultUrl,
+    required Future<PublishResult> Function() onLocalBytesMissing,
     required bool availabilityOmitted,
     required CloudflarePublishOperationProgress progress,
     PublishTimingRecorder? timings,
@@ -146,20 +157,8 @@ final class CloudflareDeployPipeline {
     switch (upload) {
       case CloudflareBucketsUploaded():
         uploaded = upload;
-      case CloudflareBucketHashMissing() when !replacing:
-        return _replacement.prepareResult(
-          reads: _reads,
-          target: target,
-          requestedSection: section,
-          inputs: inputs,
-          remoteAnchor: initial.anchor,
-          reason: PublishReplacementReason.localBytesMissing,
-        );
       case CloudflareBucketHashMissing():
-        return PublishFailure(
-          '${CloudflareErrorMessages.missingRequestedHash} '
-          '${progress.assetBytesNote}',
-        );
+        return onLocalBytesMissing();
       case CloudflareUploadNotConfirmed():
         return PublishFailure(
           CloudflarePublishOutcomes.uploadNotConfirmed(progress),
@@ -285,6 +284,14 @@ final class CloudflareDeployPipeline {
       markerBytes: publication.markerBytes,
       deletedPaths: publication.deletedPaths,
       revision: _clock(),
+      scope: readBack,
+      budget: switch (readBack) {
+        CloudflareReadBackScope.ordinary =>
+          CloudflareReadBackBudget.afterDeploy,
+        // AV13: the first round reads at once (two tiny files).
+        CloudflareReadBackScope.availabilityOnly =>
+          CloudflareReadBackBudget.afterAvailabilityDeploy,
+      },
       onRounds: (timings?.enabled ?? false)
           ? (rounds) => readBackRounds = rounds
           : null,
@@ -305,7 +312,7 @@ final class CloudflareDeployPipeline {
       localStateSaved = committed.isRight();
     }
     return PublishSuccess(
-      pagesUrl: CloudflarePublishOutcomes.resultUrl(target, section),
+      pagesUrl: resultUrl,
       uploadedPaths: List.unmodifiable(uploadedPaths.toSet()),
       availabilityOmitted: availabilityOmitted,
       pagesLive: verified == CloudflarePublicationVerification.verified

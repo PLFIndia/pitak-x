@@ -495,6 +495,9 @@ final class FakeCloudflareApi implements CloudflareApi {
     await _awaitGate('deploy');
     deployedCompletionTokens.add(completionToken.use((value) => value));
     deployRecovery = recovery;
+    // Plan S5: this hook was documented but never called, so the L4 tests
+    // never actually served a landed deploy whose response was lost.
+    onDeployAttempt?.call();
     final error = deployError;
     if (error != null) throw error;
     onDeploy?.call();

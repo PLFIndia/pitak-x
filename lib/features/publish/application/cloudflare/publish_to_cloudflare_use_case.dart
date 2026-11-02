@@ -18,6 +18,7 @@ import 'package:pitaka/features/publish/application/cloudflare/cloudflare_publis
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_publish_marker_probe.dart';
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_publish_outcomes.dart';
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_publish_preflight.dart';
+import 'package:pitaka/features/publish/application/cloudflare/cloudflare_publish_start.dart';
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_replacement_preparation.dart';
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_verified_state_commit.dart';
 import 'package:pitaka/features/publish/application/publish_result.dart';
@@ -175,63 +176,36 @@ final class PublishToCloudflareUseCase {
     timings.end(PublishTimingStage.reads, readsStartedAt);
     var inputs = readInputs.toNullable()!;
 
-    final loaded = await _credentials.read();
-    final credentialFailure = loaded.swap().toNullable();
-    if (credentialFailure != null) {
-      return CloudflarePublishOutcomes.failure(credentialFailure);
+    // The connection for exactly this target, the record, the preflight and
+    // the L4 promotion: the one shared start of every Cloudflare publish.
+    final starter = CloudflarePublishStarter(
+      credentials: _credentials,
+      manifest: _manifest,
+      preflight: _preflight,
+      clock: _clock,
+    );
+    final connected = await starter.connectionFor(target);
+    if (connected case Left(value: final failure)) {
+      return CloudflarePublishOutcomes.failure(failure);
     }
-    final connection = loaded.toNullable();
-    if (connection == null) {
-      return const PublishFailure(CloudflareErrorMessages.connectionRequired);
-    }
-    final currentTarget = connection.status.target;
-    if (currentTarget == null ||
-        currentTarget.targetId != target.targetId ||
-        currentTarget.siteUrl != target.siteUrl) {
-      return const PublishFailure(CloudflareErrorMessages.targetMismatch);
-    }
-
-    final stored = _manifest.load();
-    final previousTarget = stored.target;
-    // One rule for "what does my record claim?": a record that does not
-    // describe this exact target claims nothing at all (handoff §13). Treating
-    // it as an error stranded the user until they cleared app data (H1).
-    var local = stored.forTarget(target);
+    final connection = connected.toNullable()!;
 
     // Plan S0: everything that establishes the remote baseline — preflight,
     // pending-record promotion, the existing-publication check and the
     // replacement decision. This is the unmarked gap the first Cloudflare
     // measurement exposed (~10 s of a 24 s publish).
     final reconcileStartedAt = timings.begin();
-    final preflight = await _preflight.call(
-      token: connection.useToken((token) => token),
+    final started = await starter.establish(
+      connection: connection,
       target: target,
-      local: local,
-      cacheBuster: 'preflight-${_clock()}',
     );
-    final preflightFailure = preflight.swap().toNullable();
-    if (preflightFailure != null) {
-      return CloudflarePublishOutcomes.failure(preflightFailure);
+    if (started case Left(value: final failure)) {
+      return CloudflarePublishOutcomes.failure(failure);
     }
-    var initial = preflight.toNullable()!;
-
-    // L4: an attempt whose marker is EXACTLY present has landed. Promote the
-    // pending record before anything reads the state, so this phone recognises
-    // its own deploy (and can verify/repair it) instead of offering a
-    // whole-site replacement for a site that is already correct. A record for
-    // another target, or one whose id the marker does not carry, changes
-    // nothing.
-    final attempted = _manifest.loadPending().forTarget(target);
-    if (attempted.target != null && initial.provesDeploymentOf(attempted)) {
-      final promoted = _manifest.save(attempted);
-      if (promoted case Left(value: final failure)) {
-        return CloudflarePublishOutcomes.failure(failure);
-      }
-      // Idempotent: a leftover record is promoted only by the same exact match.
-      _manifest.clearPending();
-      local = attempted;
-      initial = initial.withLocal(attempted);
-    }
+    final start = started.toNullable()!;
+    final previousTarget = start.previousTarget;
+    final initial = start.initial;
+    var local = start.local;
 
     // Confirmation is bound to the remote facts the user reviewed, not to a
     // freshness category (N1/M10). An equal anchor authorises the replacement
@@ -386,18 +360,27 @@ final class PublishToCloudflareUseCase {
       markerProbe: _markerProbe,
       verifier: _verifier,
       verifiedCommit: _verifiedCommit,
-      replacement: replacement,
-      reads: _reads,
       clock: _clock,
     ).run(
       connection: connection,
       target: target,
-      section: section,
       local: local,
       initial: initial,
       publication: publication,
-      inputs: inputs,
-      replacing: replacing,
+      readBack: CloudflareReadBackScope.ordinary,
+      resultUrl: CloudflarePublishOutcomes.resultUrl(target, section),
+      // A missing hash in an ordinary deploy offers the reviewed replacement
+      // (N1/N15); a replacement already carries every byte it has.
+      onLocalBytesMissing: replacing
+          ? () async => CloudflarePublishOutcomes.missingRequestedHash(progress)
+          : () => replacement.prepareResult(
+              reads: _reads,
+              target: target,
+              requestedSection: section,
+              inputs: inputs,
+              remoteAnchor: initial.anchor,
+              reason: PublishReplacementReason.localBytesMissing,
+            ),
       availabilityOmitted: snapshot.availabilityOmitted,
       progress: progress,
       timings: timings,

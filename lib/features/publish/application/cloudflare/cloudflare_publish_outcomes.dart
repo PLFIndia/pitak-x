@@ -61,8 +61,9 @@ abstract final class CloudflarePublishOutcomes {
   ///
   /// Callers catch `Exception` only: a genuine `Error` still propagates, and
   /// the diagnostic is debug-only (`appLog`) and carries no message, token,
-  /// URL or response body.
-  static PublishResult thrown(
+  /// URL or response body. A thrown error is always a failure, so the type
+  /// says so (the availability lane reads its reason).
+  static PublishFailure thrown(
     Object error,
     StackTrace stackTrace,
     CloudflarePublishOperationProgress progress,
@@ -138,6 +139,16 @@ abstract final class CloudflarePublishOutcomes {
         ? CloudflareErrorMessages.uploadNotConfirmed
         : '${CloudflareErrorMessages.uploadNotConfirmed} $note';
   }
+
+  /// Cloudflare asked for a hash this phone has no bytes for, during a
+  /// whole-site replacement. A replacement already carries every byte it
+  /// has, so there is nothing better to offer: nothing was deployed.
+  static PublishFailure missingRequestedHash(
+    CloudflarePublishOperationProgress progress,
+  ) => PublishFailure(
+    '${CloudflareErrorMessages.missingRequestedHash} '
+    '${progress.assetBytesNote}',
+  );
 
   /// Debug-only diagnostic for an UNEXPECTED failure (fix-plan L7).
   ///
