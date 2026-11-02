@@ -19,12 +19,14 @@ S7 — Readers — **complete** (§S7), started on the product owner's go-ahead
 product owner decided J10 at its start (key-set id in both files).
 S8 — Switch on — **code and docs complete** (§S8), started on the product
 owner's go-ahead ("go ahead for next session", 2026-11-02, the same words
-again). **Two S8 items need the product owner and are still open:** the G.4
-device evidence on both hosts, and the Linux golden regeneration (it needs
-this branch pushed). §6 is the checklist for both.
+again). **Still open:** the G.4 device evidence on both hosts (needs the
+product owner and the phone), and the Linux golden regeneration, which the
+product owner **deferred until all fixes are done** (2026-11-02: "golden
+images we do after we are done with all fixes"); the branch stays unpushed
+until then. §6 is the checklist for both.
 **S9 (Phase 2) has NOT started. Do not start it until the product owner
-explicitly says so, and not before §6 is done** (Phase 1 is the release
-candidate, plan G.5).
+explicitly says so** (the product owner also decides whether the G.4 rows
+run before S9 or later; plan G.5 needs them before Phase 1 is released).
 
 > Read this file first in any new session. §S8 is the newest state, then
 > §S7, §S6, §S5, §S4, §S3, §S2 and §0 (S1). §1–§5 are the S0 record (plan
@@ -1074,10 +1076,13 @@ throwaway repo.
 
 S8's code and docs are done (§S8). Phase 1 becomes the release candidate
 (plan G.5) only after the two items below. Neither can be done by an agent
-alone: the first needs the phone and the hosts, the second needs this
-branch on GitHub.
+alone: the first needs this branch on GitHub, the second the phone and the
+hosts.
 
-**1. Goldens (repository rule: only the Linux workflow regenerates them).**
+**1. Goldens — deferred by the product owner until all fixes are done
+(2026-11-02).** Do not push the branch or run the workflow before then; the
+10 macOS golden failures are expected meanwhile (repository rule: only the
+Linux workflow regenerates them). When the time comes:
 `published_catalogue_populated_light/dark` changed in S7; S8 changes
 `publish_connection` (the Availability card now renders, pinned to "Connect a
 publishing host first."). The other 7 macOS failures are the usual renderer
