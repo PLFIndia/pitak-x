@@ -12,6 +12,7 @@ import 'package:pitaka/features/events/domain/repositories/events_repository.dar
 import 'package:pitaka/features/publish/application/site/publish_site_status.dart';
 import 'package:pitaka/features/publish/application/site/publish_site_status_controller.dart';
 import 'package:pitaka/features/publish/domain/github_api.dart';
+import 'package:pitaka/features/publish/domain/github_commit_plan.dart';
 import 'package:pitaka/features/publish/domain/github_models.dart';
 import 'package:pitaka/features/publish/domain/publish_credential_store.dart';
 import 'package:pitaka/features/publish/presentation/pages/publish_page.dart';
@@ -165,7 +166,7 @@ class _FakeGitHubApi implements GitHubApi {
     required String repo,
     required String branch,
     required String token,
-    required List<DesiredFile> files,
+    required GitHubCommitPlan plan,
     required String commitMessage,
     required String expectedHead,
     List<String> deletePaths = const [],

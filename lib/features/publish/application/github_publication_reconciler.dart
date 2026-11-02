@@ -21,7 +21,11 @@ import 'package:pitaka/features/publish/domain/publish_target.dart';
 /// What one publish should plan against.
 final class ReconciledPublication {
   /// Creates the result.
-  const ReconciledPublication({required this.manifest, required this.headSha});
+  const ReconciledPublication({
+    required this.manifest,
+    required this.headSha,
+    required this.knownBlobShas,
+  });
 
   /// The record to build and merge against: app-owned shas exactly as the
   /// remote tree reports them, and no adopted foreign paths.
@@ -31,6 +35,12 @@ final class ReconciledPublication {
   /// back as `expectedHead`, so a change made meanwhile is detected instead of
   /// overwritten.
   final String headSha;
+
+  /// Every blob sha in the head tree, at ANY path, owned or not (ADR 0020
+  /// Decision 6). The commit's `GitHubCommitPlan` names these blobs instead
+  /// of sending their bytes again. Owning a path is a different question
+  /// (the [manifest]): reusing a blob deletes and claims nothing.
+  final Set<String> knownBlobShas;
 }
 
 /// Reads the branch head + tree and reconciles the local record against it.
@@ -77,6 +87,7 @@ final class GitHubPublicationReconciler {
           branch: branch,
         ),
         headSha: tree.headSha,
+        knownBlobShas: tree.blobShas,
       ),
     );
   }

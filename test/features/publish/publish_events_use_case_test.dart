@@ -12,6 +12,7 @@ import 'package:pitaka/features/publish/domain/availability/availability_request
 import 'package:pitaka/features/publish/domain/events_posters_html.dart';
 import 'package:pitaka/features/publish/domain/git_blob_sha.dart';
 import 'package:pitaka/features/publish/domain/github_api.dart';
+import 'package:pitaka/features/publish/domain/github_commit_plan.dart';
 import 'package:pitaka/features/publish/domain/github_error_messages.dart';
 import 'package:pitaka/features/publish/domain/github_models.dart';
 import 'package:pitaka/features/publish/domain/publish_cover_rendition.dart';
@@ -173,11 +174,12 @@ class _CapturingApi implements GitHubGitDataApi {
     required String repo,
     required String branch,
     required String token,
-    required List<DesiredFile> files,
+    required GitHubCommitPlan plan,
     required String commitMessage,
     required String expectedHead,
     List<String> deletePaths = const [],
   }) async {
+    final files = plan.files;
     committed = files;
     committedBranch = branch;
     committedExpectedHead = expectedHead;
@@ -495,6 +497,22 @@ void main() {
     final jsonFile = api.committed!.firstWhere((f) => f.path == 'events.json');
     expect(aFile.upload, isFalse);
     expect(jsonFile.upload, isFalse);
+  });
+
+  test('a poster whose bytes the branch holds at another path is named by '
+      'its sha, not sent (CV5, ADR 0020 Decision 6)', () async {
+    final api = _CapturingApi();
+    final useCase = make(api: api, manifest: _MemManifest(published()));
+    final held = GitBlobSha.of(ascii.encode('img:posters/a.jpg'));
+    api.treeFiles = {...api.treeFiles, 'old/a.jpg': held};
+
+    expect(await useCase.call(twoPosters()), isA<PublishEventsSuccess>());
+
+    final byPath = {for (final f in api.committed!) f.path: f};
+    expect(byPath['posters/a.jpg']!.gitSha, held);
+    expect(byPath['posters/a.jpg']!.upload, isFalse);
+    expect(byPath['posters/b.jpg']!.upload, isTrue);
+    expect(api.deleted, isNot(contains('old/a.jpg')));
   });
 
   // M14 regressions: obsolete posters must be deleted from the branch in

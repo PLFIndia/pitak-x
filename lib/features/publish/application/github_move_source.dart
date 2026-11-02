@@ -11,6 +11,7 @@ import 'package:pitaka/features/publish/application/site/move_site_result.dart';
 import 'package:pitaka/features/publish/application/site/moved_site_verifier.dart';
 import 'package:pitaka/features/publish/domain/github_api.dart';
 import 'package:pitaka/features/publish/domain/github_branch_name.dart';
+import 'package:pitaka/features/publish/domain/github_commit_plan.dart';
 import 'package:pitaka/features/publish/domain/github_models.dart';
 import 'package:pitaka/features/publish/domain/publish_credential_store.dart';
 import 'package:pitaka/features/publish/domain/publish_target.dart';
@@ -117,15 +118,12 @@ final class GitHubMoveSource implements MoveSourceOperations {
           repo: target.repo,
           branch: remote.branch,
           token: remote.token,
-          files: [
-            for (final file in plan.files)
-              DesiredFile(
-                path: file.path,
-                bytes: file.bytes,
-                gitSha: file.gitSha,
-                upload: true,
-              ),
-          ],
+          // The one commit rule (ADR 0020 Decision 6): the moved page is
+          // sent unless the branch already holds those exact bytes.
+          plan: GitHubCommitPlan(
+            files: plan.files,
+            knownBlobShas: remote.tree.blobShas,
+          ),
           commitMessage: 'Pitak library moved ${_clock()}',
           deletePaths: plan.deletePaths,
           expectedHead: pending.sourceAnchor.value,

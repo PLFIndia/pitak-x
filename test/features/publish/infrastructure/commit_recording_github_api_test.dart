@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/features/publish/domain/github_api.dart';
+import 'package:pitaka/features/publish/domain/github_commit_plan.dart';
 import 'package:pitaka/features/publish/domain/github_models.dart';
 import 'package:pitaka/features/publish/infrastructure/commit_recording_github_api.dart';
 
@@ -25,7 +26,7 @@ void main() {
     repo: 'lib',
     branch: 'main',
     token: 't',
-    files: const [],
+    plan: GitHubCommitPlan(files: const [], knownBlobShas: const {}),
     commitMessage: 'm',
     expectedHead: 'HEAD',
     deletePaths: const ['availability.json'],
@@ -93,7 +94,7 @@ final class _ScriptedApi implements GitHubApi {
     required String repo,
     required String branch,
     required String token,
-    required List<DesiredFile> files,
+    required GitHubCommitPlan plan,
     required String commitMessage,
     required String expectedHead,
     List<String> deletePaths = const [],

@@ -7,6 +7,7 @@ import 'package:pitaka/features/publish/application/github_move_source.dart';
 import 'package:pitaka/features/publish/application/site/move_site_operations.dart';
 import 'package:pitaka/features/publish/application/site/moved_site_verifier.dart';
 import 'package:pitaka/features/publish/domain/github_api.dart';
+import 'package:pitaka/features/publish/domain/github_commit_plan.dart';
 import 'package:pitaka/features/publish/domain/github_models.dart';
 import 'package:pitaka/features/publish/domain/publish_credential_store.dart';
 import 'package:pitaka/features/publish/domain/publish_manifest.dart';
@@ -117,6 +118,10 @@ void main() {
     expect(commit.expectedHead, moveGitHubHead);
     expect(commit.branch, 'main');
     expect(commit.files.map((file) => file.path), ['index.html', '404.html']);
+    // Both pages are the same moved page: its bytes are sent once and the
+    // second entry names that blob (CV5, ADR 0020 Decision 6).
+    expect(commit.files.map((file) => file.upload), [true, false]);
+    expect(commit.files.map((file) => file.gitSha).toSet(), hasLength(1));
     expect(commit.deletes, ['books.json', 'library.json']);
     expect(commit.token, _token);
 
@@ -125,6 +130,29 @@ void main() {
     expect(saved.headSha, 'retired-head');
     expect(saved.fileShas.keys, ['index.html', '404.html']);
     expect(saved.ownershipConfirmed, isTrue);
+  });
+
+  test('retire names a moved page the branch already holds instead of '
+      'sending it again (CV5)', () async {
+    final pending = _pending();
+    reader
+      ..body('', pending.retirement.indexHtml)
+      ..absent('books.json');
+    final movedSha = MovePlanForTest.files(pending).first.gitSha;
+    gitData.tree = GitHubTreeSnapshot(
+      repo: 'me/library',
+      branch: 'main',
+      headSha: moveGitHubHead,
+      files: {..._tree().files, 'backup/moved.html': movedSha},
+      truncated: false,
+    );
+
+    final result = await source.retire(pending);
+
+    expect(result.isRight(), isTrue);
+    final commit = gitData.commits.single;
+    expect(commit.files.map((file) => file.upload), [false, false]);
+    expect(commit.deletes, ['books.json', 'library.json']);
   });
 
   test('retire reuses already-retired bytes without a second commit', () async {
@@ -334,11 +362,12 @@ final class _FakeGitData implements GitHubGitDataApi {
     required String repo,
     required String branch,
     required String token,
-    required List<DesiredFile> files,
+    required GitHubCommitPlan plan,
     required String commitMessage,
     required String expectedHead,
     List<String> deletePaths = const [],
   }) async {
+    final files = plan.files;
     commits.add((
       files: files,
       deletes: deletePaths,

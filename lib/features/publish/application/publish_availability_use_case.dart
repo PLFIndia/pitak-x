@@ -50,8 +50,8 @@ import 'package:pitaka/features/publish/application/site/publish_timings.dart';
 import 'package:pitaka/features/publish/application/site/publish_verification_check.dart';
 import 'package:pitaka/features/publish/domain/availability/availability_update.dart';
 import 'package:pitaka/features/publish/domain/github_api.dart';
+import 'package:pitaka/features/publish/domain/github_commit_plan.dart';
 import 'package:pitaka/features/publish/domain/github_error_messages.dart';
-import 'package:pitaka/features/publish/domain/github_models.dart';
 import 'package:pitaka/features/publish/domain/publish_credential_store.dart';
 import 'package:pitaka/features/publish/domain/publish_target.dart';
 import 'package:pitaka/features/publish/domain/site/publish_proof_path.dart';
@@ -208,6 +208,12 @@ final class PublishAvailabilityUseCase {
       AvailabilityDelete() => PublishProofPath.availabilityJsonAbsent,
     };
 
+    // CV5 (ADR 0020 Decision 6): the one rule for what a commit sends.
+    final plan = GitHubCommitPlan(
+      files: merge.files,
+      knownBlobShas: publication.knownBlobShas,
+    );
+
     final commitStartedAt = timings.begin();
     final PublishCommitResult result;
     try {
@@ -216,15 +222,7 @@ final class PublishAvailabilityUseCase {
         repo: target.repo,
         branch: branch,
         token: token,
-        files: [
-          for (final f in merge.files)
-            DesiredFile(
-              path: f.path,
-              bytes: f.bytes,
-              gitSha: f.gitSha,
-              upload: f.upload,
-            ),
-        ],
+        plan: plan,
         deletePaths: merge.deletePaths,
         commitMessage: 'Pitak availability update $now',
         expectedHead: publication.headSha,
@@ -236,11 +234,7 @@ final class PublishAvailabilityUseCase {
     timings.end(
       PublishTimingStage.commit,
       commitStartedAt,
-      bytes: timings.enabled
-          ? merge.files
-                .where((f) => f.upload)
-                .fold<int>(0, (sum, f) => sum + f.bytes.length)
-          : null,
+      bytes: timings.enabled ? plan.uploadBytes : null,
     );
 
     switch (result) {

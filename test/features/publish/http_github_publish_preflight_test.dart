@@ -6,7 +6,8 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:pitaka/features/publish/domain/git_blob_sha.dart';
 import 'package:pitaka/features/publish/domain/github_api.dart';
-import 'package:pitaka/features/publish/domain/github_models.dart';
+import 'package:pitaka/features/publish/domain/github_commit_plan.dart';
+import 'package:pitaka/features/publish/domain/site/publish_file.dart';
 import 'package:pitaka/features/publish/infrastructure/http_github_api.dart';
 
 const _head = '1111111111111111111111111111111111111111';
@@ -84,10 +85,10 @@ void main() {
     });
   }
 
-  for (final files in <List<DesiredFile>>[
+  for (final files in <List<PublishFile>>[
     [],
     [
-      DesiredFile(
+      PublishFile(
         path: 'books.json',
         bytes: const [],
         gitSha: GitBlobSha.of([1]),
@@ -238,22 +239,25 @@ final class _PublishFixture {
     apiBase: Uri.parse('https://api.github.test'),
   );
 
-  Future<PublishCommitResult> publish({List<DesiredFile>? files}) {
+  Future<PublishCommitResult> publish({List<PublishFile>? files}) {
     return api.commitFiles(
       owner: 'me',
       repo: 'lib',
       branch: 'main',
       token: 'test-token',
-      files:
-          files ??
-          [
-            DesiredFile(
-              path: 'books.json',
-              bytes: const [1],
-              gitSha: GitBlobSha.of([1]),
-              upload: true,
-            ),
-          ],
+      plan: GitHubCommitPlan(
+        files:
+            files ??
+            [
+              PublishFile(
+                path: 'books.json',
+                bytes: const [1],
+                gitSha: GitBlobSha.of([1]),
+                upload: true,
+              ),
+            ],
+        knownBlobShas: const {},
+      ),
       commitMessage: 'test publish',
       expectedHead: _head,
     );

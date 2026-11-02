@@ -43,8 +43,8 @@ import 'package:pitaka/features/publish/application/site/publish_verification_ch
 import 'package:pitaka/features/publish/application/site/published_file_read_back.dart';
 import 'package:pitaka/features/publish/domain/availability/availability_request.dart';
 import 'package:pitaka/features/publish/domain/github_api.dart';
+import 'package:pitaka/features/publish/domain/github_commit_plan.dart';
 import 'package:pitaka/features/publish/domain/github_error_messages.dart';
-import 'package:pitaka/features/publish/domain/github_models.dart';
 import 'package:pitaka/features/publish/domain/publish_credential_store.dart';
 import 'package:pitaka/features/publish/domain/publish_events_ports.dart';
 import 'package:pitaka/features/publish/domain/publish_target.dart';
@@ -300,12 +300,15 @@ final class PublishEventsUseCase {
       sections: [section, ?availability],
     );
 
+    // CV5 (ADR 0020 Decision 6): a poster the branch already holds, at any
+    // path, is named by its sha instead of being sent again.
+    final plan = GitHubCommitPlan(
+      files: merge.files,
+      knownBlobShas: publication.knownBlobShas,
+    );
+
     final now = _clock();
-    final uploadBytes = timings.enabled
-        ? merge.files
-              .where((f) => f.upload)
-              .fold<int>(0, (sum, f) => sum + f.bytes.length)
-        : null;
+    final uploadBytes = timings.enabled ? plan.uploadBytes : null;
     final commitStartedAt = timings.begin();
     final PublishCommitResult result;
     try {
@@ -314,15 +317,7 @@ final class PublishEventsUseCase {
         repo: repo,
         branch: branch,
         token: token,
-        files: [
-          for (final f in merge.files)
-            DesiredFile(
-              path: f.path,
-              bytes: f.bytes,
-              gitSha: f.gitSha,
-              upload: f.upload,
-            ),
-        ],
+        plan: plan,
         deletePaths: merge.deletePaths,
         commitMessage: 'Pitak events publish $now',
         expectedHead: publication.headSha,

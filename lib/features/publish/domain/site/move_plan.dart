@@ -60,7 +60,9 @@ bool _isLowSurrogate(int unit) => unit >= 0xdc00 && unit <= 0xdfff;
 final class MovePlan {
   const MovePlan._({required this.files, required this.deletePaths});
 
-  /// Moved `index.html` and `404.html`, always uploaded as fresh bytes.
+  /// Moved `index.html` and `404.html`, always marked for upload. On GitHub
+  /// the commit plan still sends each distinct content once, and not at all
+  /// when the branch already holds it (ADR 0020 Decision 6).
   final List<PublishFile> files;
 
   /// Every other exact app-owned path from the validated source manifest.

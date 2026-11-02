@@ -20,7 +20,8 @@
 ///  5. Commit the changed file set + exact owned deletions, passing the head
 ///     read in step 2 as `expectedHead` (a change made meanwhile is reported,
 ///     never overwritten), persist the record, then read the live site back
-///     (bounded) and record the result.
+///     (bounded) and record the result. The commit's `GitHubCommitPlan` sends
+///     only bytes the branch does not already hold (CV5).
 ///
 /// Cover images are downscaled by the injected local-cover reader
 /// (`ImageDownscaler`, 400×600 q80 — the single image choke point), so a
@@ -39,8 +40,8 @@ import 'package:pitaka/features/publish/application/site/publish_timings.dart';
 import 'package:pitaka/features/publish/application/site/publish_verification_check.dart';
 import 'package:pitaka/features/publish/application/site/published_file_read_back.dart';
 import 'package:pitaka/features/publish/domain/github_api.dart';
+import 'package:pitaka/features/publish/domain/github_commit_plan.dart';
 import 'package:pitaka/features/publish/domain/github_error_messages.dart';
-import 'package:pitaka/features/publish/domain/github_models.dart';
 import 'package:pitaka/features/publish/domain/publish_credential_store.dart';
 import 'package:pitaka/features/publish/domain/publish_manifest.dart';
 import 'package:pitaka/features/publish/domain/publish_target.dart';
@@ -304,20 +305,19 @@ final class PublishLibraryUseCase {
       previous: previous,
       sections: snapshot.sections,
     );
-
-    phase(
-      merge.files.any((f) => f.upload)
-          ? PublishPhase.uploading
-          : PublishPhase.committing,
+    // CV5 (ADR 0020 Decision 6): a file whose bytes the branch already holds,
+    // at any path, is named by its sha instead of being sent again.
+    final plan = GitHubCommitPlan(
+      files: merge.files,
+      knownBlobShas: publication.knownBlobShas,
     );
 
-    // Bytes this commit will really upload: a file reused from the record
-    // contributes nothing (plan S0 records the number, it never changes it).
-    final uploadBytes = timings.enabled
-        ? merge.files
-              .where((f) => f.upload)
-              .fold<int>(0, (sum, f) => sum + f.bytes.length)
-        : null;
+    phase(plan.hasUploads ? PublishPhase.uploading : PublishPhase.committing);
+
+    // Bytes this commit will really upload: a file reused from the record or
+    // already on the branch contributes nothing (plan S0 records the number,
+    // it never changes it).
+    final uploadBytes = timings.enabled ? plan.uploadBytes : null;
     final commitStartedAt = timings.begin();
     final PublishCommitResult result;
     try {
@@ -326,15 +326,7 @@ final class PublishLibraryUseCase {
         repo: repo,
         branch: branch,
         token: token,
-        files: [
-          for (final f in merge.files)
-            DesiredFile(
-              path: f.path,
-              bytes: f.bytes,
-              gitSha: f.gitSha,
-              upload: f.upload,
-            ),
-        ],
+        plan: plan,
         commitMessage: 'Pitaka publish $now',
         deletePaths: merge.deletePaths,
         expectedHead: expectedHead,

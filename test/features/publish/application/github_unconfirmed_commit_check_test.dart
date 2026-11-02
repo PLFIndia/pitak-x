@@ -44,7 +44,11 @@ void main() {
         ).call(
           local: local,
           // The reconciled record of an unchanged branch is the same record.
-          publication: ReconciledPublication(manifest: local, headSha: 'HEAD'),
+          publication: ReconciledPublication(
+            manifest: local,
+            headSha: 'HEAD',
+            knownBlobShas: const {},
+          ),
           target: target,
           legacyProof: legacyProof,
           revision: 1,

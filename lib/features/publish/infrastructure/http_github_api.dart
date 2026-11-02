@@ -3,7 +3,8 @@
 /// Ports the Kotlin GitHub stack (`GitHubAuthApi`, `GitHubContentsApi`,
 /// `GitHubGitDataApi`, `GitTreePublisher`) into one cohesive client over
 /// `http`. The Git Data flow is the atomic-incremental commit:
-///   ref → blobs(changed only) → tree(base_tree + changed) → commit → move ref.
+///   ref → blobs(only those GitHub does not hold) → tree(base_tree + changed)
+///   → commit → move ref.
 /// The branch ref moves exactly once at the end, so a failed publish leaves the
 /// live page on its previous commit.
 ///
@@ -17,6 +18,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:pitaka/features/publish/domain/github_api.dart';
 import 'package:pitaka/features/publish/domain/github_branch_name.dart';
+import 'package:pitaka/features/publish/domain/github_commit_plan.dart';
 import 'package:pitaka/features/publish/domain/github_models.dart';
 import 'package:pitaka/features/publish/infrastructure/github_http_support.dart';
 import 'package:pitaka/features/publish/infrastructure/http_github_tree.dart';
@@ -375,7 +377,7 @@ final class HttpGitHubApi implements GitHubApi {
     required String repo,
     required String branch,
     required String token,
-    required List<DesiredFile> files,
+    required GitHubCommitPlan plan,
     required String commitMessage,
     required String expectedHead,
     List<String> deletePaths = const [],
@@ -413,8 +415,9 @@ final class HttpGitHubApi implements GitHubApi {
     }
     final baseTreeSha = gitHubObjectSha(headCommitResp.body, 'tree');
 
-    // 2. Upload changed blobs (serially — simple + safe; counts are small).
-    for (final f in files.where((f) => f.upload)) {
+    // 2. Upload the blobs the plan says GitHub does not hold yet (serially).
+    // Everything else is named by sha in the tree below (ADR 0020 Decision 6).
+    for (final f in plan.uploads) {
       final blobResp = await _post(
         _apiBase.replace(path: '/repos/$owner/$repo/git/blobs'),
         headers: headers,
@@ -433,7 +436,7 @@ final class HttpGitHubApi implements GitHubApi {
     // create-tree contract), so obsolete app-owned files leave the branch in
     // the SAME atomic commit that updates the rest.
     final treeEntries = [
-      for (final f in files)
+      for (final f in plan.files)
         {'path': f.path, 'mode': _modeFile, 'type': 'blob', 'sha': f.gitSha},
       for (final path in deletePaths)
         {'path': path, 'mode': _modeFile, 'type': 'blob', 'sha': null},
@@ -496,9 +499,7 @@ final class HttpGitHubApi implements GitHubApi {
       );
     }
 
-    return PublishCommitSuccess(newCommitSha, [
-      for (final f in files.where((f) => f.upload)) f.path,
-    ]);
+    return PublishCommitSuccess(newCommitSha, plan.uploadedPaths);
   }
 
   // --- helpers -------------------------------------------------------------

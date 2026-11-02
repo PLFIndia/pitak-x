@@ -151,6 +151,11 @@ final class GitHubTreeSnapshot {
 
   /// True when GitHub truncated the listing; [files] is then incomplete.
   final bool truncated;
+
+  /// Every blob sha this tree references, at any path: blobs GitHub already
+  /// holds in the repository, so a commit can name them without sending
+  /// their bytes again (ADR 0020 Decision 6, `GitHubCommitPlan`).
+  Set<String> get blobShas => files.values.toSet();
 }
 
 /// One file we want present in the repo after a publish (Git Data tree entry).

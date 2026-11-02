@@ -189,6 +189,22 @@ void main() {
       );
     });
 
+    test('bytes the branch already holds at another path are named, not sent '
+        '(CV5, ADR 0020 Decision 6)', () async {
+      final h = harness(
+        tree: {
+          ...keyedLive().fileShas,
+          'backup/availability.json': laneSha(twoOutBytes),
+        },
+      );
+
+      expect(await write(h.useCase), isA<AvailabilityGoingLive>());
+      final file = h.api.commits.single.files.single;
+      expect(file.path, 'availability.json');
+      expect(file.gitSha, laneSha(twoOutBytes));
+      expect(file.upload, isFalse);
+    });
+
     test('an empty set is published as a real answer', () async {
       final h = harness();
       final none = snapshot(const []);

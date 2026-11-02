@@ -11,7 +11,9 @@ import 'package:pitaka/features/publish/application/site/events_section_builder.
 import 'package:pitaka/features/publish/application/site/move_site_result.dart';
 import 'package:pitaka/features/publish/application/site/publish_snapshot_builder.dart';
 import 'package:pitaka/features/publish/domain/availability/availability_request.dart';
+import 'package:pitaka/features/publish/domain/git_blob_sha.dart';
 import 'package:pitaka/features/publish/domain/github_api.dart';
+import 'package:pitaka/features/publish/domain/github_commit_plan.dart';
 import 'package:pitaka/features/publish/domain/github_models.dart';
 import 'package:pitaka/features/publish/domain/publish_cover_ids.dart';
 import 'package:pitaka/features/publish/domain/publish_credential_store.dart';
@@ -179,6 +181,44 @@ void main() {
     expect(paths, contains('availability.json'));
     expect(destinationManifest.value.shaFor('availability.json'), isNotNull);
     expect(destinationManifest.value.catalogueKeyed, isTrue);
+  });
+
+  test('a move to a repository that already holds some of the bytes sends '
+      'only the rest, deletes nothing foreign and claims nothing foreign '
+      '(CV5, ADR 0020 Decision 6)', () async {
+    final viewer = GitBlobSha.of(utf8.encode('<html>viewer</html>'));
+    api.tree = GitHubTreeSnapshot(
+      repo: 'me/library',
+      branch: 'main',
+      headSha: _head,
+      files: {'README.md': 'readme-sha', 'old-site/index.html': viewer},
+      truncated: false,
+    );
+    final prepared = await destination.prepare(
+      oldTarget: moveCloudflareTarget,
+      newTarget: moveGitHubTarget,
+      sourceAnchor: moveAnchor(moveCloudflareTarget),
+    );
+    api.onCommit = (files) {
+      for (final file in files) {
+        reader.body(file.path, file.bytes);
+      }
+    };
+
+    final result = await destination.publish(
+      confirmation: prepared.toNullable()!,
+      beforeWrite: () async => true,
+    );
+
+    expect(result, isA<MoveDestinationPublished>());
+    final commit = api.commits.single;
+    final byPath = {for (final f in commit.files) f.path: f};
+    expect(byPath['index.html']!.gitSha, viewer);
+    expect(byPath['index.html']!.upload, isFalse, reason: 'already held');
+    expect(byPath['books.json']!.upload, isTrue);
+    expect(commit.deletes, isEmpty);
+    expect(destinationManifest.value.shaFor('old-site/index.html'), isNull);
+    expect(destinationManifest.value.shaFor('index.html'), viewer);
   });
 
   test('a digest mismatch re-prompts before any destination write', () async {
@@ -383,11 +423,12 @@ final class _FakeDestinationApi implements GitHubGitDataApi {
     required String repo,
     required String branch,
     required String token,
-    required List<DesiredFile> files,
+    required GitHubCommitPlan plan,
     required String commitMessage,
     required String expectedHead,
     List<String> deletePaths = const [],
   }) async {
+    final files = plan.files;
     commits.add((
       files: files,
       deletes: deletePaths,

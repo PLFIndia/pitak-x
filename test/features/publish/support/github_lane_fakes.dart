@@ -12,6 +12,7 @@ import 'package:pitaka/features/publish/application/publish_library_use_case.dar
 import 'package:pitaka/features/publish/application/site/publish_host_state_repository.dart';
 import 'package:pitaka/features/publish/domain/git_blob_sha.dart';
 import 'package:pitaka/features/publish/domain/github_api.dart';
+import 'package:pitaka/features/publish/domain/github_commit_plan.dart';
 import 'package:pitaka/features/publish/domain/github_models.dart';
 import 'package:pitaka/features/publish/domain/publish_credential_store.dart';
 import 'package:pitaka/features/publish/domain/publish_manifest.dart';
@@ -186,11 +187,12 @@ final class LaneGitHub implements GitHubGitDataApi {
     required String repo,
     required String branch,
     required String token,
-    required List<DesiredFile> files,
+    required GitHubCommitPlan plan,
     required String commitMessage,
     required String expectedHead,
     List<String> deletePaths = const [],
   }) async {
+    final files = plan.files;
     commits.add((files: files, deleted: deletePaths, head: expectedHead));
     if (throwOnCommit) throw const GitHubApiException('boom');
     final forced = forcedResult;

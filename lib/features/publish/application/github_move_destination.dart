@@ -12,7 +12,7 @@ import 'package:pitaka/features/publish/application/site/move_site_result.dart';
 import 'package:pitaka/features/publish/application/site/move_snapshot_preparation.dart';
 import 'package:pitaka/features/publish/application/site/publish_snapshot_builder.dart';
 import 'package:pitaka/features/publish/domain/github_api.dart';
-import 'package:pitaka/features/publish/domain/github_models.dart';
+import 'package:pitaka/features/publish/domain/github_commit_plan.dart';
 import 'package:pitaka/features/publish/domain/publish_manifest.dart';
 import 'package:pitaka/features/publish/domain/publish_target.dart';
 import 'package:pitaka/features/publish/domain/site/pending_move.dart';
@@ -134,15 +134,15 @@ final class GitHubMoveDestination implements MoveDestinationPublisher {
         repo: target.repo,
         branch: remote.branch,
         token: remote.token,
-        files: [
-          for (final file in files)
-            DesiredFile(
-              path: file.path,
-              bytes: file.bytes,
-              gitSha: file.gitSha,
-              upload: true,
-            ),
-        ],
+        // The complete snapshot was built against an empty record, so every
+        // file carries its bytes and is marked for upload; CV5 still names
+        // any blob the destination branch already holds (a site moved back,
+        // a reused repository) instead of sending it again (ADR 0020
+        // Decision 6).
+        plan: GitHubCommitPlan(
+          files: files,
+          knownBlobShas: remote.tree.blobShas,
+        ),
         commitMessage: 'Pitak move ${_clock()}',
         deletePaths: deleted,
         expectedHead: remote.tree.headSha,

@@ -24,6 +24,7 @@ import 'package:pitaka/features/publish/application/site/published_file_read_bac
 import 'package:pitaka/features/publish/domain/availability/availability_request.dart';
 import 'package:pitaka/features/publish/domain/git_blob_sha.dart';
 import 'package:pitaka/features/publish/domain/github_api.dart';
+import 'package:pitaka/features/publish/domain/github_commit_plan.dart';
 import 'package:pitaka/features/publish/domain/github_error_messages.dart';
 import 'package:pitaka/features/publish/domain/github_models.dart';
 import 'package:pitaka/features/publish/domain/publish_cover_ids.dart';
@@ -228,11 +229,12 @@ class _CapturingApi implements GitHubGitDataApi {
     required String repo,
     required String branch,
     required String token,
-    required List<DesiredFile> files,
+    required GitHubCommitPlan plan,
     required String commitMessage,
     required String expectedHead,
     List<String> deletePaths = const [],
   }) async {
+    final files = plan.files;
     committed = files;
     committedBranch = branch;
     committedExpectedHead = expectedHead;
@@ -2142,6 +2144,113 @@ void main() {
         GitBlobSha.of(utf8.encode('JPEG:covers/three.jpg')),
       );
       expect(store.current.coverRendition, PublishCoverRendition.current);
+    });
+  });
+
+  group('S10 — GitHub never receives bytes it already holds (CV5, '
+      'ADR 0020 Decision 6)', () {
+    final salt = ascii.encode('salt-1234567890');
+    String coverPath(int id) =>
+        'covers/${PublishCoverIds.shortHashHex(salt, id)}.jpg';
+    Future<List<int>?> jpeg(String src) async => utf8.encode('JPEG:$src');
+
+    test('a cover whose bytes the branch holds at ANOTHER path is named by '
+        'its sha, not sent; a new one is sent; nothing foreign is deleted '
+        'or claimed', () async {
+      final api = _CapturingApi();
+      final store = _MemManifest();
+      final useCase = makeUseCase(
+        api,
+        store,
+        readLocalCover: jpeg,
+        books: [
+          book(cover: 'covers/one.jpg'),
+          book(id: 3, cover: 'covers/three.jpg'),
+        ],
+      );
+      // A file this phone never wrote (an older site layout, a human's copy)
+      // already holds the exact bytes of item 1's cover.
+      final known = GitBlobSha.of(utf8.encode('JPEG:covers/one.jpg'));
+      api.treeFiles = {'README.md': 'readme-sha', 'old/cover.jpg': known};
+      final phases = <PublishPhase>[];
+
+      final result = await useCase.call(
+        target: gitHubTarget('me/lib'),
+        onPhase: phases.add,
+      );
+
+      expect(result, isA<PublishSuccess>());
+      final byPath = {for (final f in api.committed!) f.path: f};
+      expect(byPath[coverPath(1)]!.gitSha, known);
+      expect(byPath[coverPath(1)]!.upload, isFalse, reason: 'already held');
+      expect(byPath[coverPath(3)]!.upload, isTrue, reason: 'new bytes');
+      expect(byPath['books.json']!.upload, isTrue);
+      expect(api.deleted, isEmpty, reason: 'deletions stay owned paths only');
+      expect(store.current.fileShas[coverPath(1)], known);
+      expect(store.current.fileShas.containsKey('old/cover.jpg'), isFalse);
+      expect(phases, contains(PublishPhase.uploading));
+    });
+
+    test('two items with the same picture send its bytes once', () async {
+      final api = _CapturingApi();
+      final useCase = makeUseCase(
+        api,
+        _MemManifest(),
+        readLocalCover: (_) async => utf8.encode('JPEG:same'),
+        books: [
+          book(cover: 'covers/a.jpg'),
+          book(id: 3, cover: 'covers/b.jpg'),
+        ],
+      );
+
+      expect(await useCase.run(), isA<PublishSuccess>());
+
+      final covers = api.committed!
+          .where((f) => f.path.startsWith('covers/'))
+          .toList();
+      expect(covers.map((f) => f.path), [coverPath(1), coverPath(3)]);
+      expect(covers.map((f) => f.gitSha).toSet(), hasLength(1));
+      expect(covers.where((f) => f.upload), hasLength(1));
+    });
+
+    test('a phone that lost its record re-sends nothing the branch already '
+        'holds, and reports "committing", never "uploading"', () async {
+      final api = _CapturingApi();
+      final books = [
+        book(cover: 'covers/one.jpg'),
+        book(id: 3, cover: 'covers/three.jpg'),
+      ];
+      expect(
+        await makeUseCase(
+          api,
+          _MemManifest(),
+          readLocalCover: jpeg,
+          books: books,
+        ).run(),
+        isA<PublishSuccess>(),
+      );
+      final online = {...api.treeFiles};
+      expect(online, hasLength(greaterThanOrEqualTo(4)));
+
+      // A new record (the old one was lost): it claims nothing, so every
+      // built file counts as changed, yet the branch holds every byte.
+      final useCase = makeUseCase(
+        api,
+        _MemManifest(),
+        readLocalCover: jpeg,
+        books: books,
+      );
+      api.treeFiles = online;
+      final phases = <PublishPhase>[];
+      expect(
+        await useCase.call(target: gitHubTarget('me/lib'), onPhase: phases.add),
+        isA<PublishSuccess>(),
+      );
+
+      expect(api.committed!.map((f) => f.path).toSet(), online.keys.toSet());
+      expect(api.committed!.where((f) => f.upload), isEmpty);
+      expect(phases, contains(PublishPhase.committing));
+      expect(phases, isNot(contains(PublishPhase.uploading)));
     });
   });
 }

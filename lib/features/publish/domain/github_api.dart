@@ -19,6 +19,7 @@
 /// transport errors so callers branch deliberately.
 library;
 
+import 'package:pitaka/features/publish/domain/github_commit_plan.dart';
 import 'package:pitaka/features/publish/domain/github_models.dart';
 
 /// A device-code grant: what the user must enter and where.
@@ -135,7 +136,8 @@ final class PublishCommitSuccess extends PublishCommitResult {
   /// New head commit sha.
   final String commitSha;
 
-  /// Paths whose bytes were uploaded (vs reused).
+  /// Paths whose bytes were really sent; an entry that named a blob GitHub
+  /// already held is not listed (ADR 0020 Decision 6).
   final List<String> uploadedPaths;
 }
 
@@ -287,9 +289,13 @@ abstract interface class GitHubGitDataApi {
     required String token,
   });
 
-  /// Pushes [files] to [owner]/[repo]@[branch] as a SINGLE atomic commit
-  /// (blobs → tree(base) → commit → move ref). Only `upload`-flagged files
-  /// have their bytes sent; the rest are reused by sha.
+  /// Pushes [plan]'s files to [owner]/[repo]@[branch] as a SINGLE atomic
+  /// commit (blobs → tree(base) → commit → move ref). Only the entries the
+  /// plan marks for upload have their bytes sent; every other entry names a
+  /// blob GitHub already holds, by its sha (ADR 0020 Decision 6). Taking a
+  /// [GitHubCommitPlan] rather than a raw list means no caller can bypass the
+  /// one reuse rule. [PublishCommitSuccess.uploadedPaths] lists exactly the
+  /// sent entries.
   ///
   /// [expectedHead] is the head commit this phone read before building the
   /// publish (R6). If the branch no longer points at it, nothing is written
@@ -311,7 +317,7 @@ abstract interface class GitHubGitDataApi {
     required String repo,
     required String branch,
     required String token,
-    required List<DesiredFile> files,
+    required GitHubCommitPlan plan,
     required String commitMessage,
     required String expectedHead,
     List<String> deletePaths,

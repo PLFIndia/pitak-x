@@ -5,7 +5,8 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:pitaka/features/publish/domain/git_blob_sha.dart';
 import 'package:pitaka/features/publish/domain/github_api.dart';
-import 'package:pitaka/features/publish/domain/github_models.dart';
+import 'package:pitaka/features/publish/domain/github_commit_plan.dart';
+import 'package:pitaka/features/publish/domain/site/publish_file.dart';
 import 'package:pitaka/features/publish/infrastructure/http_github_api.dart';
 
 const _headSha = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
@@ -249,14 +250,17 @@ void main() {
         repo: 'lib',
         branch: 'main',
         token: 'TKN',
-        files: [
-          DesiredFile(
-            path: 'books.json',
-            bytes: bytes,
-            gitSha: sha,
-            upload: true,
-          ),
-        ],
+        plan: GitHubCommitPlan(
+          files: [
+            PublishFile(
+              path: 'books.json',
+              bytes: bytes,
+              gitSha: sha,
+              upload: true,
+            ),
+          ],
+          knownBlobShas: const {},
+        ),
         commitMessage: 'Pitaka publish',
         expectedHead: _headSha,
       );
@@ -266,6 +270,89 @@ void main() {
       expect(result.uploadedPaths, ['books.json']);
       // The ref move (PATCH) happened last.
       expect(calls.last, 'PATCH /repos/me/lib/git/refs/heads/main');
+    });
+
+    // CV5 (ADR 0020 Decision 6): only the plan's uploads become blob
+    // requests; every other entry is named by sha in the same tree.
+    test('posts exactly the bytes the plan sends; a known blob is only named '
+        'in the tree', () async {
+      final known = utf8.encode('cover already on the branch');
+      final fresh = utf8.encode('{"books":[1]}');
+      final postedBlobs = <String>[];
+      List<Map<String, dynamic>>? sentTree;
+
+      final svc = api(
+        MockClient((req) async {
+          final p = req.url.path;
+          if (p.endsWith('/git/ref/heads/main')) {
+            return http.Response(
+              jsonEncode({
+                'object': {'sha': _headSha},
+              }),
+              200,
+            );
+          }
+          if (p.endsWith('/git/commits/$_headSha')) {
+            return http.Response(
+              jsonEncode({
+                'tree': {'sha': _baseTreeSha},
+              }),
+              200,
+            );
+          }
+          if (p.endsWith('/git/blobs')) {
+            final body = jsonDecode(req.body) as Map<String, dynamic>;
+            postedBlobs.add(
+              utf8.decode(base64Decode(body['content'] as String)),
+            );
+            return http.Response(jsonEncode({'sha': 'x'}), 201);
+          }
+          if (p.endsWith('/git/trees')) {
+            final body = jsonDecode(req.body) as Map<String, dynamic>;
+            sentTree = (body['tree'] as List).cast<Map<String, dynamic>>();
+            return http.Response(jsonEncode({'sha': 'NEWTREE'}), 201);
+          }
+          if (p.endsWith('/git/commits')) {
+            return http.Response(jsonEncode({'sha': 'NEWCOMMIT'}), 201);
+          }
+          if (p.endsWith('/git/refs/heads/main')) {
+            return http.Response(jsonEncode({'ref': 'refs/heads/main'}), 200);
+          }
+          return http.Response('unexpected ${req.url.path}', 500);
+        }),
+      );
+
+      final result = await svc.commitFiles(
+        owner: 'me',
+        repo: 'lib',
+        branch: 'main',
+        token: 'TKN',
+        plan: GitHubCommitPlan(
+          files: [
+            PublishFile(
+              path: 'covers/renamed.jpg',
+              bytes: known,
+              gitSha: GitBlobSha.of(known),
+              upload: true,
+            ),
+            PublishFile(
+              path: 'books.json',
+              bytes: fresh,
+              gitSha: GitBlobSha.of(fresh),
+              upload: true,
+            ),
+          ],
+          knownBlobShas: {GitBlobSha.of(known)},
+        ),
+        commitMessage: 'Pitaka publish',
+        expectedHead: _headSha,
+      );
+
+      expect(postedBlobs, ['{"books":[1]}']);
+      expect((result as PublishCommitSuccess).uploadedPaths, ['books.json']);
+      final byPath = {for (final e in sentTree!) e['path'] as String: e};
+      expect(byPath['covers/renamed.jpg']!['sha'], GitBlobSha.of(known));
+      expect(byPath['books.json']!['sha'], GitBlobSha.of(fresh));
     });
 
     // M14: obsolete app-owned paths ride in the SAME atomic commit as tree
@@ -319,14 +406,17 @@ void main() {
           repo: 'lib',
           branch: 'main',
           token: 'TKN',
-          files: [
-            DesiredFile(
-              path: 'events.html',
-              bytes: bytes,
-              gitSha: sha,
-              upload: true,
-            ),
-          ],
+          plan: GitHubCommitPlan(
+            files: [
+              PublishFile(
+                path: 'events.html',
+                bytes: bytes,
+                gitSha: sha,
+                upload: true,
+              ),
+            ],
+            knownBlobShas: const {},
+          ),
           commitMessage: 'Pitaka events publish',
           deletePaths: const ['posters/old.jpg'],
           expectedHead: _headSha,
@@ -354,7 +444,7 @@ void main() {
         repo: 'lib',
         branch: 'main',
         token: 'TKN',
-        files: const [],
+        plan: GitHubCommitPlan(files: const [], knownBlobShas: const {}),
         commitMessage: 'publish',
         expectedHead: _headSha,
       );
@@ -392,14 +482,17 @@ void main() {
         repo: 'lib',
         branch: 'main',
         token: 'TKN',
-        files: [
-          const DesiredFile(
-            path: 'x',
-            bytes: [1],
-            gitSha: 'deadbeef',
-            upload: true,
-          ),
-        ],
+        plan: GitHubCommitPlan(
+          files: const [
+            PublishFile(
+              path: 'x',
+              bytes: [1],
+              gitSha: 'deadbeef',
+              upload: true,
+            ),
+          ],
+          knownBlobShas: const {},
+        ),
         commitMessage: 'm',
         expectedHead: _headSha,
       );
@@ -427,9 +520,17 @@ void main() {
         repo: 'lib',
         branch: 'main',
         token: 'TKN',
-        files: const [
-          DesiredFile(path: 'x', bytes: [1], gitSha: 'deadbeef', upload: true),
-        ],
+        plan: GitHubCommitPlan(
+          files: const [
+            PublishFile(
+              path: 'x',
+              bytes: [1],
+              gitSha: 'deadbeef',
+              upload: true,
+            ),
+          ],
+          knownBlobShas: const {},
+        ),
         commitMessage: 'm',
         expectedHead: 'cccccccccccccccccccccccccccccccccccccccc',
       );

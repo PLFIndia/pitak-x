@@ -17,6 +17,7 @@
 library;
 
 import 'package:pitaka/features/publish/domain/github_api.dart';
+import 'package:pitaka/features/publish/domain/github_commit_plan.dart';
 import 'package:pitaka/features/publish/domain/github_models.dart';
 
 /// Forwards every call to [GitHubApi] and reports each accepted commit.
@@ -41,7 +42,7 @@ final class CommitRecordingGitHubApi implements GitHubApi {
     required String repo,
     required String branch,
     required String token,
-    required List<DesiredFile> files,
+    required GitHubCommitPlan plan,
     required String commitMessage,
     required String expectedHead,
     List<String> deletePaths = const [],
@@ -51,7 +52,7 @@ final class CommitRecordingGitHubApi implements GitHubApi {
       repo: repo,
       branch: branch,
       token: token,
-      files: files,
+      plan: plan,
       commitMessage: commitMessage,
       expectedHead: expectedHead,
       deletePaths: deletePaths,

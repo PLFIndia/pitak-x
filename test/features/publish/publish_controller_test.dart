@@ -27,6 +27,7 @@ import 'package:pitaka/features/publish/application/site/publish_snapshot_builde
 import 'package:pitaka/features/publish/application/site/published_file_read_back.dart';
 import 'package:pitaka/features/publish/domain/availability/availability_request.dart';
 import 'package:pitaka/features/publish/domain/github_api.dart';
+import 'package:pitaka/features/publish/domain/github_commit_plan.dart';
 import 'package:pitaka/features/publish/domain/github_models.dart';
 import 'package:pitaka/features/publish/domain/publish_cover_ids.dart';
 import 'package:pitaka/features/publish/domain/publish_credential_store.dart';
@@ -1133,11 +1134,12 @@ class _Api implements GitHubApi {
     required String repo,
     required String branch,
     required String token,
-    required List<DesiredFile> files,
+    required GitHubCommitPlan plan,
     required String commitMessage,
     required String expectedHead,
     List<String> deletePaths = const [],
   }) async {
+    final files = plan.files;
     // R6: never overwrite a head this publish was not built from.
     if (expectedHead != head) return const PublishCommitStale();
     commits.add(files);

@@ -72,6 +72,37 @@ void main() {
     expect(api.readBranch, 'main');
   });
 
+  test('knows every blob the branch holds, also at paths it does not own '
+      '(CV5), while the record still claims none of them', () async {
+    final api = _Api(
+      snapshot: snapshot(
+        files: {
+          'books.json': 'sha-books',
+          'README.md': 'sha-readme',
+          'old/cover.jpg': 'sha-old-cover',
+        },
+      ),
+    );
+    final result = await GitHubPublicationReconciler(api).call(
+      target: target,
+      branch: 'main',
+      token: 'TKN',
+      local: const PublishManifest(
+        repo: 'me/lib',
+        branch: 'main',
+        fileShas: {'books.json': 'sha-books'},
+      ),
+    );
+
+    final publication = result.toNullable()!;
+    expect(publication.knownBlobShas, {
+      'sha-books',
+      'sha-readme',
+      'sha-old-cover',
+    });
+    expect(publication.manifest.ownedPaths, ['books.json']);
+  });
+
   test('an unreadable tree is a typed failure with a fixed message', () async {
     final result = await GitHubPublicationReconciler(_Api(throwOnTree: true))
         .call(
