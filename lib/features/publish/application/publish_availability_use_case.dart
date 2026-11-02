@@ -55,7 +55,6 @@ import 'package:pitaka/features/publish/domain/github_models.dart';
 import 'package:pitaka/features/publish/domain/publish_credential_store.dart';
 import 'package:pitaka/features/publish/domain/publish_target.dart';
 import 'package:pitaka/features/publish/domain/site/publish_proof_path.dart';
-import 'package:pitaka/features/publish/domain/site/publish_section.dart';
 import 'package:pitaka/features/publish/domain/site/published_site_verifier.dart';
 import 'package:pitaka/features/publish/domain/site/section_merge.dart';
 
@@ -194,7 +193,7 @@ final class PublishAvailabilityUseCase {
         previous: reconciled,
       ),
     };
-    if (section == null || !_changesSite(section)) {
+    if (section == null || !section.changesSite) {
       // A commit that changes nothing would still cost a Pages build and one
       // of the ~10 builds per hour (AV6), so none is made.
       return const AvailabilityAlreadyPublished();
@@ -275,11 +274,6 @@ final class PublishAvailabilityUseCase {
         );
     }
   }
-
-  /// True when [section] would change the site: a file to upload or a path
-  /// to delete. An unchanged file is carried by its sha and uploads nothing.
-  static bool _changesSite(PublishSection section) =>
-      section.deletePaths.isNotEmpty || section.files.any((f) => f.upload);
 
   /// Maps a reconcile failure to its fixed, user-facing message.
   static String _messageFor(Failure failure) => switch (failure) {

@@ -109,4 +109,14 @@ final class PublishSection {
 
   /// True when any file needs its bytes uploaded.
   bool get hasUploads => files.any((f) => f.upload);
+
+  /// True when publishing this section would change the site: a file to
+  /// upload or a path to delete. An unchanged file is carried by its sha and
+  /// uploads nothing, so a section without either is already published.
+  ///
+  /// The availability publishes on both hosts use this to send nothing for
+  /// an unchanged set (ADR 0019): on GitHub an empty commit would still cost
+  /// a Pages build, on Cloudflare a deploy would still cost about 20 API
+  /// calls and a new version.
+  bool get changesSite => hasUploads || deletePaths.isNotEmpty;
 }

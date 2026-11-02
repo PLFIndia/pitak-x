@@ -169,6 +169,22 @@ final class PublishSnapshot {
     this.availability,
   });
 
+  /// The snapshot of an availability-only publish (ADR 0019): the lane's
+  /// `availability.json`, or its deletion, and nothing else.
+  ///
+  /// It carries no catalogue and no events, so both counts are zero and
+  /// nothing is omitted. It is always incremental: every other file of the
+  /// site is carried by its recorded hash, and the lane never builds a
+  /// complete site (it never replaces one, ADR 0019 Decision 11). Readers of
+  /// the counts (the replacement review) never see this snapshot.
+  const PublishSnapshot.availabilityOnly(PublishSection this.availability)
+    : mode = PublishMode.incremental,
+      catalogueItemCount = 0,
+      posterCount = 0,
+      availabilityOmitted = false,
+      catalogue = null,
+      events = null;
+
   /// Whether this must be complete (a move/replacement) or may reuse
   /// published files.
   final PublishMode mode;

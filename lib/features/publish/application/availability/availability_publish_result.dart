@@ -3,19 +3,24 @@
 ///
 /// The lane (plan S6) turns these into its status row, so each one answers a
 /// question the lane must act on:
-///  - [AvailabilityGoingLive]: the host accepted the update; save the set as
-///    published and, on GitHub, start the deferred check;
+///  - [AvailabilityLive]: the host accepted the update and the live site was
+///    read back serving it; save the set as published, nothing is left to
+///    prove (Cloudflare);
+///  - [AvailabilityGoingLive]: the host accepted the update, not yet proven
+///    live; save the set as published and, on GitHub, start the deferred
+///    check;
 ///  - [AvailabilityAlreadyPublished]: nothing needed sending; the set is
 ///    already on the site;
 ///  - [AvailabilityNotReady]: this site cannot take availability yet (gate
 ///    7b); wait for a catalogue publish instead of retrying;
-///  - [AvailabilityPending]: nothing was changed; keep the set and retry
-///    later (AV11: the next change, app resume, the button, or the backoff).
+///  - [AvailabilityPending]: nothing was changed, or the change is not known
+///    to be live; keep the set and retry later (AV11: the next change, app
+///    resume, the button, or the backoff).
 ///
-/// Host-neutral on purpose: the GitHub path (plan S4) produces all four, and
-/// the Cloudflare path (plan S5) adds its own verified outcome here instead of
-/// inventing a second result family. The reasons are fixed, safe sentences
-/// (AGENTS.md §5): never response text, URLs or exception messages.
+/// Host-neutral on purpose: the GitHub path (plan S4) produces the last four,
+/// and the Cloudflare path (plan S5) produces all five; there is no second
+/// result family. The reasons are fixed, safe sentences (AGENTS.md §5):
+/// never response text, URLs or exception messages.
 library;
 
 import 'package:pitaka/features/publish/application/site/deferred_publish_verification.dart';
@@ -25,8 +30,29 @@ sealed class AvailabilityPublishResult {
   const AvailabilityPublishResult();
 }
 
+/// The host accepted the update AND the live site was read back serving it:
+/// on Cloudflare, the fresh marker plus `availability.json` (or its exact 404
+/// after a removal; ADR 0019 Decision 11). Nothing is left to prove.
+final class AvailabilityLive extends AvailabilityPublishResult {
+  /// Creates the outcome.
+  const AvailabilityLive({
+    required this.acceptedAt,
+    this.localStateSaved = true,
+  });
+
+  /// When the update was made, in epoch milliseconds (the deploy's marker
+  /// time). Cloudflare has no hourly budget (AV6), so this is informational.
+  final int acceptedAt;
+
+  /// False when the site was proven live but this phone could not save all
+  /// of that proof (R9). The site IS updated; the next publish re-proves it.
+  final bool localStateSaved;
+}
+
 /// The host accepted the update; the proof that readers see it is still to
-/// come (GitHub: the commit landed, and Pages has not been seen serving it).
+/// come (GitHub: the commit landed, and Pages has not been seen serving it;
+/// Cloudflare: the version was deployed, and its read-back ran out of budget
+/// before it saw the new files).
 final class AvailabilityGoingLive extends AvailabilityPublishResult {
   /// Creates the outcome.
   const AvailabilityGoingLive({
@@ -40,9 +66,11 @@ final class AvailabilityGoingLive extends AvailabilityPublishResult {
   /// (ADR 0019 Decision 8).
   final int acceptedAt;
 
-  /// What the deferred check must prove, or null when there is nothing it
-  /// could upgrade (this phone could not save its record of the commit; the
-  /// next publish's pre-check then decides).
+  /// What the deferred check must prove, or null when there is nothing for
+  /// one to do: this phone could not save its record of the commit, or the
+  /// host has no deferred check (Cloudflare). The next publish's pre-check
+  /// then decides (on Cloudflare, its existing-publication check reads the
+  /// `deployed` record back).
   final DeferredVerificationRequest? verification;
 
   /// False when the update landed but this phone could not save its record of
@@ -69,8 +97,12 @@ final class AvailabilityNotReady extends AvailabilityPublishResult {
 }
 
 /// Nothing was changed on the site (offline, stale head, credentials, Pages
-/// not serving, a contradiction). The lane keeps the set and retries later
-/// (AV11); it never retries in a loop and never replaces a site.
+/// not serving, a contradiction, a site that needs repair), or a change is
+/// not known to be live (a Cloudflare deploy whose outcome or Version-URL
+/// privacy could not be confirmed; the reason says so). The lane keeps the
+/// set and retries later (AV11); it never retries in a loop and never
+/// replaces a site. A retry first re-proves an earlier deploy, so a set that
+/// did land then reads as [AvailabilityAlreadyPublished].
 final class AvailabilityPending extends AvailabilityPublishResult {
   /// Creates the outcome with a fixed, safe [reason].
   const AvailabilityPending(this.reason);
@@ -91,4 +123,12 @@ abstract final class AvailabilityPublishMessages {
   /// a manual publish, the lane retries by itself, so the sentence says so.
   static const String siteMovedOn =
       'Another change reached your site first; Pitak will retry.';
+
+  /// The live site is not the one this phone's record describes, or a deploy
+  /// would need bytes this phone no longer has (Cloudflare: a foreign,
+  /// unknown or retired marker, a missing Worker, a contradicted record,
+  /// missing bytes). Only a whole-site replacement can fix that, and that
+  /// needs the user's review (ADR 0017 S8), so the lane never starts one
+  /// (ADR 0019 Decision 11): it points the user to the screen that offers it.
+  static const String repairSite = 'Open Publish to web to repair the site.';
 }

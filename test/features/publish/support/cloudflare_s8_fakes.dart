@@ -16,6 +16,7 @@ import 'package:pitaka/features/publish/application/cloudflare/cloudflare_publis
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_publish_preflight.dart';
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_replacement_preparation.dart';
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_verified_state_commit.dart';
+import 'package:pitaka/features/publish/application/cloudflare/publish_availability_to_cloudflare_use_case.dart';
 import 'package:pitaka/features/publish/application/cloudflare/publish_to_cloudflare_use_case.dart';
 import 'package:pitaka/features/publish/application/publish_cover_decider.dart';
 import 'package:pitaka/features/publish/application/publish_library_use_case.dart'
@@ -184,6 +185,10 @@ final class RecordingArtifactStore implements CloudflareArtifactStore {
   final FilePublishArtifactStore _delegate;
   final Map<String, List<int>> bytesByPath = {};
 
+  /// When true, [dispose] still cleans up but reports a typed failure, like a
+  /// spool folder the platform refused to delete.
+  bool failDispose = false;
+
   @override
   int get spooledRawBytes => _delegate.spooledRawBytes;
 
@@ -200,7 +205,13 @@ final class RecordingArtifactStore implements CloudflareArtifactStore {
   }
 
   @override
-  Future<Either<Failure, Unit>> dispose() => _delegate.dispose();
+  Future<Either<Failure, Unit>> dispose() async {
+    final cleaned = await _delegate.dispose();
+    if (failDispose) {
+      return left(const StorageFailure('synthetic spool cleanup failure'));
+    }
+    return cleaned;
+  }
 }
 
 final class FakeS8Reads implements PublishReads {
@@ -349,17 +360,28 @@ final class S8PublishHarness {
       reader: reader,
       codec: codec,
     );
+    final preflight = CloudflarePublishPreflightReader(
+      accountApi: api,
+      deployApi: api,
+      markerProbe: markerProbe,
+    );
+    final verifier = CloudflarePublicationVerifier(
+      reader: reader,
+      sleep: (delay) async => readBackWaits.add(delay),
+      clock: () => cloudflareTestNow,
+    );
+    final verifiedCommit = CloudflareVerifiedStateCommit(
+      manifest: manifestStore,
+      hostState: hostRepository,
+      credentials: credentials,
+    );
     useCase = PublishToCloudflareUseCase(
       deployApi: api,
       credentials: credentials,
       manifest: manifestStore,
       snapshotBuilder: builder,
       reads: reads,
-      preflight: CloudflarePublishPreflightReader(
-        accountApi: api,
-        deployApi: api,
-        markerProbe: markerProbe,
-      ),
+      preflight: preflight,
       markerProbe: markerProbe,
       replacement: CloudflareReplacementPreparation(
         snapshotBuilder: builder,
@@ -367,23 +389,38 @@ final class S8PublishHarness {
       ),
       artifactStores: () => artifactStore,
       markerCodec: codec,
-      verifier: CloudflarePublicationVerifier(
-        reader: reader,
-        sleep: (_) async {},
-        clock: () => cloudflareTestNow,
-      ),
-      verifiedCommit: CloudflareVerifiedStateCommit(
-        manifest: manifestStore,
-        hostState: hostRepository,
-        credentials: credentials,
-      ),
+      verifier: verifier,
+      verifiedCommit: verifiedCommit,
       clock: () => cloudflareTestNow,
-      publishId: () => cloudflareTestPublishId,
+      publishId: () => nextPublishId,
+      timingSink: _timingSink,
+    );
+    // The availability lane's Cloudflare publish (plan S5) over the SAME
+    // fakes, so a test can publish the catalogue and then the lane.
+    availabilityUseCase = PublishAvailabilityToCloudflareUseCase(
+      deployApi: api,
+      credentials: credentials,
+      manifest: manifestStore,
+      preflight: preflight,
+      markerProbe: markerProbe,
+      artifactStores: () => artifactStore,
+      markerCodec: codec,
+      verifier: verifier,
+      verifiedCommit: verifiedCommit,
+      clock: () => cloudflareTestNow,
+      publishId: () => nextPublishId,
       timingSink: _timingSink,
     );
   }
 
   final PublishTimingSink? _timingSink;
+
+  /// The publish id the next deploy writes into its marker. A test that
+  /// deploys twice sets a new one in between, as production ids are unique.
+  String nextPublishId = cloudflareTestPublishId;
+
+  /// Every wait the publication verifier made, in order (no real sleeping).
+  final List<Duration> readBackWaits = [];
 
   static const codec = CloudflarePublishMarkerCodec();
   final FakeCloudflareApi api = FakeCloudflareApi();
@@ -396,6 +433,7 @@ final class S8PublishHarness {
   bool autoServe = true;
   late final PublishHostStateRepository hostRepository;
   late final PublishToCloudflareUseCase useCase;
+  late final PublishAvailabilityToCloudflareUseCase availabilityUseCase;
 
   CloudflarePublishTarget get target => credentials.record!.status.target!;
 
