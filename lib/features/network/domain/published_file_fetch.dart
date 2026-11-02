@@ -1,8 +1,9 @@
 /// One conditional read of a saved library's published file (network domain,
 /// pure Dart; ADR 0018).
 ///
-/// The viewer reads two files from a saved library's site: `books.json` (the
-/// catalogue) and the optional `events.json`. Both now go through the same
+/// The viewer reads three files from a saved library's site: `books.json`
+/// (the catalogue) and the optional `events.json` and `availability.json`
+/// (ADR 0019). All of them go through the same
 /// "check first, fall back to the saved copy" algorithm
 /// (`PublishedFileLoader`), so both ports share these result types.
 ///
@@ -67,9 +68,11 @@ final class PublishedFileUnchanged<T> extends PublishedFileFetch<T> {
   const PublishedFileUnchanged();
 }
 
-/// The host answered `404`. For the OPTIONAL `events.json` this means "this
-/// library publishes no events"; the catalogue adapter never returns it (a
-/// missing `books.json` is a [PublishedFileFailed] with
+/// The file is missing. For the OPTIONAL `events.json` a `404` means "this
+/// library publishes no events"; for `availability.json` a `404` or a file
+/// its reader refuses means "use the inline tags" (ADR 0019 Decision 4:
+/// "treated as missing"). The catalogue adapter never returns it (a missing
+/// `books.json` is a [PublishedFileFailed] with
 /// [PublishedFileProblem.notServed]).
 final class PublishedFileMissing<T> extends PublishedFileFetch<T> {
   /// Creates the missing-file result.

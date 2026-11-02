@@ -25,6 +25,7 @@ final class PublishedCatalogueQueryState {
     this.kind = PublishedKindFilter.all,
     this.language,
     this.sort = PublishedSortOrder.publishedOrder,
+    this.availableNow = false,
   });
 
   /// The text currently in the search field (not yet necessarily applied).
@@ -42,19 +43,25 @@ final class PublishedCatalogueQueryState {
   /// Sort selection.
   final PublishedSortOrder sort;
 
+  /// The **Available now** filter.
+  final bool availableNow;
+
   /// The pure-engine query this state represents.
   PublishedCatalogueQuery get activeQuery => PublishedCatalogueQuery(
     search: activeSearch,
     kind: kind,
     language: language,
     sort: sort,
+    availableNow: availableNow,
   );
 
-  /// True when a search text or facet is active (for the "No matches" action).
+  /// True when a search text, facet or the Available-now filter is active
+  /// (for the "No matches" action).
   bool get hasActiveFilter =>
       search.trim().isNotEmpty ||
       kind != PublishedKindFilter.all ||
-      language != null;
+      language != null ||
+      availableNow;
 
   /// Returns a copy with the given fields replaced. [clearLanguage] exists
   /// because null ("all languages") is a real value, not "unchanged".
@@ -64,6 +71,7 @@ final class PublishedCatalogueQueryState {
     PublishedKindFilter? kind,
     String? language,
     PublishedSortOrder? sort,
+    bool? availableNow,
     bool clearLanguage = false,
   }) => PublishedCatalogueQueryState(
     search: search ?? this.search,
@@ -71,5 +79,6 @@ final class PublishedCatalogueQueryState {
     kind: kind ?? this.kind,
     language: clearLanguage ? null : (language ?? this.language),
     sort: sort ?? this.sort,
+    availableNow: availableNow ?? this.availableNow,
   );
 }

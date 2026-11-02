@@ -2,8 +2,9 @@
 /// pure Dart; ADR 0018).
 ///
 /// Declared here, implemented in infrastructure (`FilePublishedFileCache`,
-/// files under the OS cache directory). The viewer keeps the last `books.json`
-/// and `events.json` it read for each saved library so that:
+/// files under the OS cache directory). The viewer keeps the last `books.json`,
+/// `events.json` and `availability.json` it read for each saved library so
+/// that:
 ///  - an unchanged file is not downloaded again (the host answers
 ///    `304 Not Modified` to the saved copy's entity tag,
 ///    `SavedPublishedFileInfo.validator`);
@@ -31,6 +32,10 @@ enum PublishedFileKind {
 
   /// `events.json`.
   events,
+
+  /// `availability.json` (ADR 0018 amendment, ADR 0019): stored as
+  /// `availability.bin` next to the other two.
+  availability,
 }
 
 /// What is known about one saved copy WITHOUT reading its bytes. Reading

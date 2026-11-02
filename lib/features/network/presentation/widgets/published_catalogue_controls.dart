@@ -22,6 +22,7 @@ class PublishedCatalogueControls extends ConsumerStatefulWidget {
   const PublishedCatalogueControls({
     required this.siteUrl,
     required this.languages,
+    this.offerAvailableNow = false,
     super.key,
   });
 
@@ -30,6 +31,11 @@ class PublishedCatalogueControls extends ConsumerStatefulWidget {
 
   /// The language facet (distinct, already sorted by the engine).
   final List<String> languages;
+
+  /// True when at least one item shows a tag, so the **Available now**
+  /// filter can match something (ADR 0019 AV14). The chip also stays while
+  /// the filter is on, so it can always be turned off again.
+  final bool offerAvailableNow;
 
   @override
   ConsumerState<PublishedCatalogueControls> createState() =>
@@ -110,6 +116,13 @@ class _PublishedCatalogueControlsState
                 label: Text(_kindLabel(filter)),
                 selected: state.kind == filter,
                 onSelected: (_) => controller.setKind(filter),
+              ),
+            if (widget.offerAvailableNow || state.availableNow)
+              FilterChip(
+                label: const Text('Available now'),
+                selected: state.availableNow,
+                onSelected: (selected) =>
+                    controller.setAvailableNow(availableNow: selected),
               ),
           ],
         ),

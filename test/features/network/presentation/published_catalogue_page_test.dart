@@ -12,15 +12,18 @@ import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/network/application/published_catalogue_cover_controller.dart';
 import 'package:pitaka/features/network/application/published_catalogue_query_controller.dart';
 import 'package:pitaka/features/network/domain/entities/network_library.dart';
+import 'package:pitaka/features/network/domain/entities/published_availability_file.dart';
 import 'package:pitaka/features/network/domain/entities/published_catalogue.dart';
 import 'package:pitaka/features/network/domain/entities/published_content.dart';
 import 'package:pitaka/features/network/domain/entities/published_events.dart';
+import 'package:pitaka/features/network/domain/published_availability_fetcher.dart';
 import 'package:pitaka/features/network/domain/published_catalogue_query.dart';
 import 'package:pitaka/features/network/domain/published_cover_resolver.dart';
 import 'package:pitaka/features/network/domain/published_file_fetch.dart';
 import 'package:pitaka/features/network/domain/repositories/published_file_cache.dart';
 import 'package:pitaka/features/network/presentation/pages/published_catalogue_page.dart';
 import 'package:pitaka/features/network/presentation/widgets/open_published_site.dart';
+import 'package:pitaka/features/network/presentation/widgets/published_availability_summary.dart';
 import 'package:pitaka/features/network/presentation/widgets/published_catalogue_messages.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
 import 'package:pitaka/features/settings/domain/settings_repository.dart';
@@ -133,6 +136,10 @@ void main() {
     InMemoryPublishedFileCache? savedCopyStore,
     PublishedCatalogue? savedCatalogue,
     PublishedEvents? savedEvents,
+    // The availability.json port as the adapter returns it; the default is
+    // "no file" (404), which is what most sites have.
+    PublishedAvailabilityFetcher? availabilityFetcher,
+    PublishedAvailabilityFile? savedAvailability,
     _CoverPort? coverPort,
     bool coverConsent = true,
     bool coverSettingsFail = false,
@@ -178,6 +185,16 @@ void main() {
                         ? const PublishedFileMissing()
                         : fetchedValue(events),
                   ),
+        ),
+        publishedAvailabilityFetcherProvider(site).overrideWithValue(
+          availabilityFetcher ??
+              (url, {validator, abortTrigger}) async =>
+                  const PublishedFileMissing(),
+        ),
+        publishedAvailabilityDecoderProvider.overrideWithValue(
+          (bytes) async => savedAvailability == null
+              ? const Left(ValidationFailure('no saved availability'))
+              : Right(savedAvailability),
         ),
         publishedFileCacheProvider.overrideWithValue(savedCopies),
         // A saved copy decodes to the given test value; without one, any
@@ -289,8 +306,10 @@ void main() {
       expect(find.text('Other'), findsOneWidget);
       // The Other row never shows book-only author metadata.
       expect(find.text("Shi Nai'an"), findsOneWidget);
-      // Publish-time context, never a live claim.
-      expect(find.textContaining('snapshot from publish time'), findsOneWidget);
+      // Nothing is tagged here, so there is no availability summary at all
+      // (ADR 0019 AV14); the tagged cases have their own group below.
+      expect(find.textContaining('available'), findsNothing);
+      expect(find.textContaining('snapshot from publish time'), findsNothing);
     });
 
     testWidgets('a newer schema shows a persistent warning', (tester) async {
@@ -1437,6 +1456,220 @@ void main() {
           ),
         ),
       );
+      await tester.pumpAndSettle();
+      await expectMeetsA11yGuidelines(tester);
+    });
+  });
+
+  group('availability (ADR 0019 Decision 4)', () {
+    const keySet = '5e0c1d2b3a497f68';
+
+    PublishedCatalogueItem keyed(
+      int index,
+      String title,
+      String key, {
+      PublishedAvailability? inline,
+    }) => PublishedCatalogueItem(
+      sourceIndex: index,
+      title: title,
+      kind: PublishedItemKind.book,
+      key: key,
+      availability: inline,
+      availabilitySource: inline == null
+          ? null
+          : PublishedAvailabilitySource.catalogue,
+    );
+
+    final tagged = PublishedCatalogue(
+      declaredSchemaVersion: 1,
+      keySet: keySet,
+      items: [
+        keyed(
+          0,
+          'Lent book',
+          'aaaaaaaaaaaaaaa1',
+          inline: PublishedAvailability.available,
+        ),
+        keyed(
+          1,
+          'Shelf book',
+          'aaaaaaaaaaaaaaa2',
+          inline: PublishedAvailability.out,
+        ),
+        item(2, title: 'Board game', kind: PublishedItemKind.other),
+      ],
+      periodicals: const [],
+    );
+
+    // asOf is within a day of the test clock (1760000000000), so it shows.
+    final file = PublishedAvailabilityFile(
+      keySet: keySet,
+      outKeys: const {'aaaaaaaaaaaaaaa1'},
+      asOf: 1759999980000,
+    );
+
+    PublishedAvailabilityFetcher answering(
+      PublishedFileFetch<PublishedAvailabilityFile> Function() answer, {
+      List<String>? calls,
+    }) => (url, {validator, abortTrigger}) async {
+      calls?.add(url);
+      return answer();
+    };
+
+    testWidgets('a bound file decides the tags; the summary names the counts '
+        'and when the library updated them', (tester) async {
+      makeContainer(
+        _immediate(tagged),
+        availabilityFetcher: answering(() => fetchedValue(file)),
+      );
+      await pumpViewer(tester);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Not available'), findsOneWidget);
+      expect(find.text('Available'), findsOneWidget);
+      expect(find.text('All out'), findsNothing);
+      expect(
+        find.textContaining('1 of 2 available · updated '),
+        findsOneWidget,
+      );
+      expect(find.text(publishedAvailabilityFromFileText), findsOneWidget);
+      expect(find.text(publishedAvailabilityFailedText), findsNothing);
+    });
+
+    testWidgets('without the file the inline tags show, labelled as publish '
+        'time', (tester) async {
+      makeContainer(_immediate(tagged));
+      await pumpViewer(tester);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Available'), findsOneWidget);
+      expect(find.text('Not available'), findsOneWidget);
+      expect(find.text('1 of 2 available'), findsOneWidget);
+      expect(find.text(publishedAvailabilityFromCatalogueText), findsOneWidget);
+    });
+
+    testWidgets('a file of another key set is ignored (plan J10)', (
+      tester,
+    ) async {
+      final foreign = PublishedAvailabilityFile(
+        keySet: '0000000000000000',
+        outKeys: const {'aaaaaaaaaaaaaaa2'},
+        asOf: 1759999980000,
+      );
+      makeContainer(
+        _immediate(tagged),
+        availabilityFetcher: answering(() => fetchedValue(foreign)),
+      );
+      await pumpViewer(tester);
+      await tester.pumpAndSettle();
+
+      // The inline tags, exactly as without a file.
+      expect(find.text('1 of 2 available'), findsOneWidget);
+      expect(find.text(publishedAvailabilityFromCatalogueText), findsOneWidget);
+    });
+
+    testWidgets('Available now filters the rows without any request', (
+      tester,
+    ) async {
+      final calls = <String>[];
+      makeContainer(
+        _immediate(tagged),
+        availabilityFetcher: answering(() => fetchedValue(file), calls: calls),
+      );
+      await pumpViewer(tester);
+      await tester.pumpAndSettle();
+      expect(calls, hasLength(1));
+
+      await tester.tap(find.widgetWithText(FilterChip, 'Available now'));
+      await tester.pumpAndSettle();
+      expect(find.text('Shelf book'), findsOneWidget);
+      expect(find.text('Lent book'), findsNothing);
+      expect(find.text('Board game'), findsNothing);
+      expect(find.text('1 of 3 items'), findsOneWidget);
+      expect(calls, hasLength(1), reason: 'a filter is never IO');
+    });
+
+    testWidgets('a catalogue with no tags offers no Available now filter', (
+      tester,
+    ) async {
+      makeContainer(_immediate(catalogue));
+      await pumpViewer(tester);
+      await tester.pumpAndSettle();
+      expect(find.widgetWithText(FilterChip, 'Available now'), findsNothing);
+    });
+
+    testWidgets('a failed file never blocks the catalogue; a note says so', (
+      tester,
+    ) async {
+      makeContainer(
+        _immediate(tagged),
+        availabilityFetcher: answering(
+          () => failedFetch(const NetworkFailure()),
+        ),
+      );
+      await pumpViewer(tester);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Lent book'), findsOneWidget);
+      expect(find.text('1 of 2 available'), findsOneWidget);
+      expect(find.text(publishedAvailabilityFailedText), findsOneWidget);
+    });
+
+    testWidgets('a saved copy stands in, with its own note', (tester) async {
+      final store = InMemoryPublishedFileCache()
+        ..seed(site, PublishedFileKind.availability, [1], checkedAt: 900);
+      makeContainer(
+        _immediate(tagged),
+        savedCopyStore: store,
+        savedAvailability: file,
+        availabilityFetcher: answering(
+          () => failedFetch(const NetworkFailure()),
+        ),
+      );
+      await pumpViewer(tester);
+      await tester.pumpAndSettle();
+
+      expect(
+        find.textContaining('1 of 2 available · updated '),
+        findsOneWidget,
+      );
+      expect(find.text(publishedAvailabilitySavedCopyText), findsOneWidget);
+    });
+
+    testWidgets('the file is requested on the first frame, before the '
+        'catalogue arrives, and Reload asks for it again', (tester) async {
+      final calls = <String>[];
+      final pending = _PendingFetcher();
+      makeContainer(
+        pending.call,
+        availabilityFetcher: answering(
+          () => const PublishedFileMissing(),
+          calls: calls,
+        ),
+      );
+      await pumpViewer(tester);
+      await tester.pump();
+      await tester.pump();
+      expect(calls, ['${site}availability.json'], reason: 'in parallel');
+
+      pending.completeLatest(tagged);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Reload catalogue'));
+      await tester.pump();
+      await tester.pump();
+      expect(calls, hasLength(2));
+      pending.completeLatest(tagged);
+      await tester.pumpAndSettle();
+    });
+
+    testWidgets('the tagged viewer meets the accessibility guidelines', (
+      tester,
+    ) async {
+      makeContainer(
+        _immediate(tagged),
+        availabilityFetcher: answering(() => fetchedValue(file)),
+      );
+      await pumpViewer(tester);
       await tester.pumpAndSettle();
       await expectMeetsA11yGuidelines(tester);
     });

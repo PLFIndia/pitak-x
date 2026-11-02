@@ -26,6 +26,7 @@ import 'package:pitaka/core/di/src/platform_providers.dart';
 import 'package:pitaka/core/network/timeout_http_client.dart';
 import 'package:pitaka/core/platform/app_log.dart';
 import 'package:pitaka/features/network/domain/descriptor_fetcher.dart';
+import 'package:pitaka/features/network/domain/published_availability_fetcher.dart';
 import 'package:pitaka/features/network/domain/published_catalogue_fetcher.dart';
 import 'package:pitaka/features/network/domain/published_catalogue_query_runner.dart';
 import 'package:pitaka/features/network/domain/published_cover_fetcher.dart';
@@ -34,18 +35,21 @@ import 'package:pitaka/features/network/domain/repositories/network_repository.d
 import 'package:pitaka/features/network/domain/repositories/published_file_cache.dart';
 import 'package:pitaka/features/network/domain/usecases/add_member_use_case.dart';
 import 'package:pitaka/features/network/domain/usecases/confirm_membership_use_case.dart';
+import 'package:pitaka/features/network/domain/usecases/load_published_availability_use_case.dart';
 import 'package:pitaka/features/network/domain/usecases/load_published_catalogue_use_case.dart';
 import 'package:pitaka/features/network/domain/usecases/load_published_events_use_case.dart';
 import 'package:pitaka/features/network/domain/usecases/migrate_legacy_bookmarks_use_case.dart';
 import 'package:pitaka/features/network/domain/usecases/reconcile_library_move_use_case.dart';
 import 'package:pitaka/features/network/domain/usecases/refresh_network_use_case.dart';
 import 'package:pitaka/features/network/infrastructure/bounded_descriptor_fetcher.dart';
+import 'package:pitaka/features/network/infrastructure/bounded_published_availability_fetcher.dart';
 import 'package:pitaka/features/network/infrastructure/bounded_published_catalogue_fetcher.dart';
 import 'package:pitaka/features/network/infrastructure/bounded_published_cover_fetcher.dart';
 import 'package:pitaka/features/network/infrastructure/bounded_published_events_fetcher.dart';
 import 'package:pitaka/features/network/infrastructure/drift_network_repository.dart';
 import 'package:pitaka/features/network/infrastructure/file_published_file_cache.dart';
 import 'package:pitaka/features/network/infrastructure/legacy_bookmarks_reader.dart';
+import 'package:pitaka/features/network/infrastructure/published_availability_codec.dart';
 import 'package:pitaka/features/network/infrastructure/published_catalogue_query_runner.dart';
 import 'package:pitaka/features/network/infrastructure/published_events_codec.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
@@ -350,6 +354,43 @@ LoadPublishedEventsUseCase loadPublishedEventsUseCase(
 ) => LoadPublishedEventsUseCase(
   fetch: ref.watch(publishedEventsFetcherProvider(siteUrl)),
   decode: ref.watch(publishedEventsDecoderProvider),
+  cache: ref.watch(publishedFileCacheProvider),
+  clock: ref.watch(clockProvider),
+);
+
+/// The bounded optional `availability.json` fetcher for this saved site
+/// (ADR 0019, ADR 0015 amendment). It shares the viewer client, so route
+/// disposal also closes its socket.
+@riverpod
+PublishedAvailabilityFetcher publishedAvailabilityFetcher(
+  PublishedAvailabilityFetcherRef ref,
+  String siteUrl,
+) {
+  final fetcher = BoundedPublishedAvailabilityFetcher(
+    client: ref.watch(publishedViewerHttpClientProvider(siteUrl)),
+    siteUrl: siteUrl,
+  );
+  return fetcher.fetch;
+}
+
+/// Re-reads a SAVED availability copy with the same bounded codec a
+/// download uses (ADR 0018 amendment). The file is capped at 1 MiB and its
+/// rules are a single pass over a flat list, so it is decoded inline.
+@riverpod
+PublishedAvailabilityDecoder publishedAvailabilityDecoder(
+  PublishedAvailabilityDecoderRef ref,
+) =>
+    (bytes) async => const PublishedAvailabilityCodec().decode(bytes);
+
+/// Loads one saved library's optional availability file, checking the host
+/// first and falling back to the saved copy (ADR 0018 amendment).
+@riverpod
+LoadPublishedAvailabilityUseCase loadPublishedAvailabilityUseCase(
+  LoadPublishedAvailabilityUseCaseRef ref,
+  String siteUrl,
+) => LoadPublishedAvailabilityUseCase(
+  fetch: ref.watch(publishedAvailabilityFetcherProvider(siteUrl)),
+  decode: ref.watch(publishedAvailabilityDecoderProvider),
   cache: ref.watch(publishedFileCacheProvider),
   clock: ref.watch(clockProvider),
 );

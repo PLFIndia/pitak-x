@@ -8,8 +8,9 @@
 ///  - a magazine issue is "Issue", a bound volume (a date range) is
 ///    "Bound volume";
 ///  - "Other" is labelled as such and never shows availability;
-///  - availability is the coarse publish-time snapshot — the words never
-///    promise a live loan.
+///  - availability is a coarse tag, *Available* or *Not available* (ADR 0019;
+///    "All out" retired) — the words never promise a live loan, and the page
+///    says when the tag was last updated.
 library;
 
 import 'package:flutter/material.dart';
@@ -54,7 +55,7 @@ class PublishedItemBadges extends StatelessWidget {
         _Badge(
           label: availability == PublishedAvailability.available
               ? 'Available'
-              : 'All out',
+              : 'Not available',
           emphasised: true,
         ),
       );

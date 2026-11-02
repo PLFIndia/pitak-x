@@ -1,0 +1,69 @@
+{
+  "schemaVersion": 1,
+  "exportedAt": 1761980000000,
+  "keySet": "5E0C1D2B3A497F68",
+  "books": [
+    {
+      "title": "Keyed, inline available, listed out",
+      "kind": "book",
+      "key": "aaaaaaaaaaaaaaa1",
+      "availability": "available"
+    },
+    {
+      "title": "Keyed, inline out, not listed",
+      "kind": "book",
+      "key": "aaaaaaaaaaaaaaa2",
+      "availability": "out"
+    },
+    {
+      "title": "Keyed, no inline tag, not listed",
+      "kind": "book",
+      "key": "aaaaaaaaaaaaaaa3"
+    },
+    {
+      "title": "No key, inline out",
+      "kind": "book",
+      "availability": "out"
+    },
+    {
+      "title": "Malformed key, inline available",
+      "kind": "book",
+      "key": "NOT-A-KEY",
+      "availability": "available"
+    },
+    {
+      "title": "Keyed issue, listed out",
+      "kind": "magazine-issue",
+      "key": "aaaaaaaaaaaaaaa6",
+      "issue": {
+        "periodicalUid": "no-such-series",
+        "issueNumber": 4
+      }
+    },
+    {
+      "title": "Other item, listed out by a hostile writer",
+      "kind": "other",
+      "key": "aaaaaaaaaaaaaaa7",
+      "availability": "out"
+    },
+    {
+      "title": "Unknown kind, listed out",
+      "kind": "audiobook",
+      "key": "aaaaaaaaaaaaaaa8",
+      "availability": "out"
+    },
+    {
+      "title": "No key, no inline tag",
+      "kind": "book"
+    },
+    {
+      "title": "Upper-case key, no inline tag",
+      "key": "AAAAAAAAAAAAAAA0"
+    },
+    {
+      "title": "Legacy row without kind, keyed, listed out",
+      "key": "aaaaaaaaaaaaaaab",
+      "availability": "available"
+    }
+  ]
+}

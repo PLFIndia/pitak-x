@@ -7,7 +7,7 @@ part of 'published_catalogue_query_controller.dart';
 // **************************************************************************
 
 String _$publishedCatalogueViewHash() =>
-    r'e84458d9cf8f169fd259af25eb353771b41a9d6f';
+    r'2817d299d60ec35d2428748dbf017ff9a8a91814';
 
 /// Copied from Dart SDK
 class _SystemHash {
@@ -30,8 +30,9 @@ class _SystemHash {
   }
 }
 
-/// The display view: the pure engine applied to the loaded catalogue and the
-/// debounced query intent.
+/// The display view: the pure engine applied to the loaded catalogue (its
+/// tags already decided by the availability rule) and the debounced query
+/// intent.
 ///
 /// The engine runs through the injected `PublishedCatalogueQueryRunner` port,
 /// never on the UI isolate in production. Riverpod attributes each result to
@@ -42,8 +43,9 @@ class _SystemHash {
 @ProviderFor(publishedCatalogueView)
 const publishedCatalogueViewProvider = PublishedCatalogueViewFamily();
 
-/// The display view: the pure engine applied to the loaded catalogue and the
-/// debounced query intent.
+/// The display view: the pure engine applied to the loaded catalogue (its
+/// tags already decided by the availability rule) and the debounced query
+/// intent.
 ///
 /// The engine runs through the injected `PublishedCatalogueQueryRunner` port,
 /// never on the UI isolate in production. Riverpod attributes each result to
@@ -53,8 +55,9 @@ const publishedCatalogueViewProvider = PublishedCatalogueViewFamily();
 /// Copied from [publishedCatalogueView].
 class PublishedCatalogueViewFamily
     extends Family<AsyncValue<PublishedCatalogueView>> {
-  /// The display view: the pure engine applied to the loaded catalogue and the
-  /// debounced query intent.
+  /// The display view: the pure engine applied to the loaded catalogue (its
+  /// tags already decided by the availability rule) and the debounced query
+  /// intent.
   ///
   /// The engine runs through the injected `PublishedCatalogueQueryRunner` port,
   /// never on the UI isolate in production. Riverpod attributes each result to
@@ -64,8 +67,9 @@ class PublishedCatalogueViewFamily
   /// Copied from [publishedCatalogueView].
   const PublishedCatalogueViewFamily();
 
-  /// The display view: the pure engine applied to the loaded catalogue and the
-  /// debounced query intent.
+  /// The display view: the pure engine applied to the loaded catalogue (its
+  /// tags already decided by the availability rule) and the debounced query
+  /// intent.
   ///
   /// The engine runs through the injected `PublishedCatalogueQueryRunner` port,
   /// never on the UI isolate in production. Riverpod attributes each result to
@@ -99,8 +103,9 @@ class PublishedCatalogueViewFamily
   String? get name => r'publishedCatalogueViewProvider';
 }
 
-/// The display view: the pure engine applied to the loaded catalogue and the
-/// debounced query intent.
+/// The display view: the pure engine applied to the loaded catalogue (its
+/// tags already decided by the availability rule) and the debounced query
+/// intent.
 ///
 /// The engine runs through the injected `PublishedCatalogueQueryRunner` port,
 /// never on the UI isolate in production. Riverpod attributes each result to
@@ -110,8 +115,9 @@ class PublishedCatalogueViewFamily
 /// Copied from [publishedCatalogueView].
 class PublishedCatalogueViewProvider
     extends AutoDisposeFutureProvider<PublishedCatalogueView> {
-  /// The display view: the pure engine applied to the loaded catalogue and the
-  /// debounced query intent.
+  /// The display view: the pure engine applied to the loaded catalogue (its
+  /// tags already decided by the availability rule) and the debounced query
+  /// intent.
   ///
   /// The engine runs through the injected `PublishedCatalogueQueryRunner` port,
   /// never on the UI isolate in production. Riverpod attributes each result to
@@ -354,7 +360,7 @@ class _PublishedCatalogueLanguagesProviderElement
 }
 
 String _$publishedCatalogueQueryControllerHash() =>
-    r'1fd4f144154e306d1e1499d9fba5dd4c2f0be83b';
+    r'071e109e452db68ca0305e8f32b64fbd6bf65b51';
 
 abstract class _$PublishedCatalogueQueryController
     extends BuildlessAutoDisposeNotifier<PublishedCatalogueQueryState> {

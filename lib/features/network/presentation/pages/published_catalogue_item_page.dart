@@ -75,12 +75,10 @@ class PublishedCatalogueItemPage extends StatelessWidget {
               label: 'Age group',
               value: publishedAgeGroupLabel(item.ageGroup!),
             ),
-          if (item.availability != null)
+          if (item.availability case final availability?)
             _DetailField(
               label: 'Availability',
-              value: item.availability == PublishedAvailability.available
-                  ? 'Available at publish time'
-                  : 'All copies out at publish time',
+              value: _availabilityText(availability, item.availabilitySource),
             ),
           if (issue != null) ...[
             const Divider(height: 28),
@@ -110,12 +108,28 @@ class PublishedCatalogueItemPage extends StatelessWidget {
           const SizedBox(height: 20),
           Text(
             'This is a read-only view of a published catalogue. Availability '
-            'is the snapshot from publish time, not a live loan check.',
+            'is not a live loan check: it shows what the library last '
+            'published.',
             style: theme.textTheme.bodySmall,
           ),
         ],
       ),
     );
+  }
+
+  /// The availability words for one item (ADR 0019 Decision 4). A tag from
+  /// the catalogue itself is only true at publish time, so it says so; a tag
+  /// from the library's availability file is its latest update.
+  static String _availabilityText(
+    PublishedAvailability availability,
+    PublishedAvailabilitySource? source,
+  ) {
+    final words = availability == PublishedAvailability.available
+        ? 'Available'
+        : 'Not available';
+    return source == PublishedAvailabilitySource.availabilityFile
+        ? words
+        : '$words at publish time';
   }
 
   /// A normalized calendar day as a plain date, or an em dash when the stored

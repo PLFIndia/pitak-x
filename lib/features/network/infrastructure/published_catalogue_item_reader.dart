@@ -19,6 +19,7 @@ import 'package:pitaka/features/library/domain/catalogue_rules.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/periodical_identity.dart';
 import 'package:pitaka/features/library/domain/value_objects/calendar_date.dart';
+import 'package:pitaka/features/network/domain/entities/published_availability_file.dart';
 import 'package:pitaka/features/network/domain/entities/published_catalogue.dart';
 import 'package:pitaka/features/periodicals/domain/value_objects/periodical_frequency.dart';
 import 'package:pitaka/features/publish/domain/cover_url_allow_list.dart';
@@ -104,6 +105,7 @@ abstract final class PublishedItemReader {
       );
     }
 
+    final availability = _readAvailability(raw['availability'], tally);
     return PublishedCatalogueItem(
       sourceIndex: sourceIndex,
       title: title,
@@ -117,7 +119,11 @@ abstract final class PublishedItemReader {
       language: language,
       coverUrl: coverUrl,
       ageGroup: ageGroup,
-      availability: _readAvailability(raw['availability'], tally),
+      availability: availability,
+      availabilitySource: availability == null
+          ? null
+          : PublishedAvailabilitySource.catalogue,
+      key: _readKey(raw['key'], tally),
       issue: kind == PublishedItemKind.magazineIssue
           ? _readIssue(raw['issue'], tally)
           : null,
@@ -228,6 +234,18 @@ abstract final class PublishedItemReader {
   static PublishedAvailability? _invalidAvailability(PublishedReadTally tally) {
     tally.invalidOptionalFields++;
     return null;
+  }
+
+  /// The item's public key (ADR 0019 Decision 3), or null. A present but
+  /// malformed key is dropped and counted like every other bad optional
+  /// field; that item then uses its inline tag (ADR 0015 amendment).
+  static String? _readKey(Object? raw, PublishedReadTally tally) {
+    if (raw == null) return null;
+    if (!PublishedAvailabilityFile.isKey(raw)) {
+      tally.invalidOptionalFields++;
+      return null;
+    }
+    return raw as String;
   }
 
   static AgeGroup? _readAgeGroup(Object? raw, PublishedReadTally tally) {

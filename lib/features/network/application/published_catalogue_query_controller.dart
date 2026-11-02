@@ -14,6 +14,7 @@ library;
 import 'dart:async';
 
 import 'package:pitaka/core/di/providers.dart';
+import 'package:pitaka/features/network/application/published_availability_controller.dart';
 import 'package:pitaka/features/network/application/published_catalogue_controller.dart';
 import 'package:pitaka/features/network/application/published_catalogue_query_state.dart';
 import 'package:pitaka/features/network/domain/published_catalogue_query.dart';
@@ -105,8 +106,14 @@ class PublishedCatalogueQueryController
     state = state.copyWith(sort: sort);
   }
 
-  /// Clears the search and both facets; keeps the sort. Used by the
-  /// "No matches" action, which must NOT refetch anything.
+  /// Turns the **Available now** filter on or off (ADR 0019 AV14).
+  void setAvailableNow({required bool availableNow}) {
+    if (state.availableNow == availableNow) return;
+    state = state.copyWith(availableNow: availableNow);
+  }
+
+  /// Clears the search, both facets and the Available-now filter; keeps the
+  /// sort. Used by the "No matches" action, which must NOT refetch anything.
   void clearFilters() {
     _debounce?.cancel();
     _debounce = null;
@@ -114,8 +121,9 @@ class PublishedCatalogueQueryController
   }
 }
 
-/// The display view: the pure engine applied to the loaded catalogue and the
-/// debounced query intent.
+/// The display view: the pure engine applied to the loaded catalogue (its
+/// tags already decided by the availability rule) and the debounced query
+/// intent.
 ///
 /// The engine runs through the injected `PublishedCatalogueQueryRunner` port,
 /// never on the UI isolate in production. Riverpod attributes each result to
@@ -126,17 +134,22 @@ Future<PublishedCatalogueView> publishedCatalogueView(
   PublishedCatalogueViewRef ref,
   String siteUrl,
 ) async {
-  // Only the catalogue matters here; whether it is a saved copy is the
-  // page's banner, not a reason to re-run the query engine.
-  final catalogue = (await ref.watch(
-    publishedCatalogueControllerProvider(siteUrl).future,
-  )).value;
+  // Only the tagged catalogue matters here; whether it is a saved copy is
+  // the page's banner, not a reason to re-run the query engine. `selectAsync`
+  // re-runs the engine only when the catalogue object changes: when the
+  // availability file arrives and changes no tag (absent, or not bound),
+  // the merge hands back the SAME object, so no pass is wasted.
+  final catalogue = await ref.watch(
+    publishedCatalogueWithAvailabilityProvider(
+      siteUrl,
+    ).selectAsync((merged) => merged.catalogue),
+  );
   // A RECORD select: structural equality keeps a filtering/sorting pass from
   // re-running on every keystroke (only the debounced active term is here).
   final intent = ref.watch(
-    publishedCatalogueQueryControllerProvider(
-      siteUrl,
-    ).select((s) => (s.activeSearch, s.kind, s.language, s.sort)),
+    publishedCatalogueQueryControllerProvider(siteUrl).select(
+      (s) => (s.activeSearch, s.kind, s.language, s.sort, s.availableNow),
+    ),
   );
   final runner = ref.watch(publishedCatalogueQueryRunnerProvider);
   return runner(
@@ -146,6 +159,7 @@ Future<PublishedCatalogueView> publishedCatalogueView(
       kind: intent.$2,
       language: intent.$3,
       sort: intent.$4,
+      availableNow: intent.$5,
     ),
   );
 }

@@ -80,6 +80,39 @@ void main() {
     }
   });
 
+  testWidgets("a tag from the availability file is the library's latest "
+      'update, not a publish-time snapshot (ADR 0019)', (tester) async {
+    const item = PublishedCatalogueItem(
+      sourceIndex: 0,
+      title: 'Lent book',
+      kind: PublishedItemKind.book,
+      key: 'aaaaaaaaaaaaaaa1',
+      availability: PublishedAvailability.out,
+      availabilitySource: PublishedAvailabilitySource.availabilityFile,
+    );
+    await pumpItem(tester, item);
+
+    // The badge and the detail field both say it; "All out" is retired.
+    expect(find.text('Not available'), findsNWidgets(2));
+    expect(find.textContaining('at publish time'), findsNothing);
+    expect(find.textContaining('All out'), findsNothing);
+  });
+
+  testWidgets('an inline "out" tag says it is from publish time', (
+    tester,
+  ) async {
+    const item = PublishedCatalogueItem(
+      sourceIndex: 0,
+      title: 'Lent at publish',
+      kind: PublishedItemKind.book,
+      availability: PublishedAvailability.out,
+      availabilitySource: PublishedAvailabilitySource.catalogue,
+    );
+    await pumpItem(tester, item);
+    expect(find.text('Not available at publish time'), findsOneWidget);
+    expect(find.text('Not available'), findsOneWidget, reason: 'the badge');
+  });
+
   testWidgets('an Other row has no book-only fields and no availability', (
     tester,
   ) async {

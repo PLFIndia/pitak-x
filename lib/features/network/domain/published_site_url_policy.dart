@@ -36,6 +36,12 @@ abstract final class PublishedSiteUrlPolicy {
   /// this is a sibling file rather than part of the catalogue payload.
   static String? eventsUrl(String siteUrl) => _fileUrl(siteUrl, 'events.json');
 
+  /// The exact `availability.json` address for [siteUrl], or null under the
+  /// same canonical-site rule (ADR 0019, ADR 0015 amendment). Like events it
+  /// is a sibling file the library updates on its own.
+  static String? availabilityUrl(String siteUrl) =>
+      _fileUrl(siteUrl, 'availability.json');
+
   static String? _fileUrl(String siteUrl, String fileName) {
     if (!_isCanonicalSiteRoot(siteUrl)) return null;
     return Uri.parse(siteUrl).resolve(fileName).toString();

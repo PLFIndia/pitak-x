@@ -45,14 +45,23 @@ enum PublishedItemKind {
   unknown,
 }
 
-/// Coarse availability sentinel from publish time (never a live loan query,
-/// never a count).
+/// Coarse availability tag (never a live loan query, never a count).
 enum PublishedAvailability {
-  /// At least one copy was free when the catalogue was published.
+  /// At least one copy was free when the tag was computed.
   available,
 
-  /// All copies were lent out when the catalogue was published.
+  /// All copies were lent out when the tag was computed.
   out,
+}
+
+/// Where an item's [PublishedAvailability] tag came from (ADR 0019
+/// Decision 4), so the screen can say how old it is.
+enum PublishedAvailabilitySource {
+  /// The inline tag in `books.json`: true at catalogue publish time.
+  catalogue,
+
+  /// The library's separately updated `availability.json`.
+  availabilityFile,
 }
 
 /// The public issue identity of a published magazine issue or bound volume.
@@ -111,6 +120,8 @@ final class PublishedCatalogueItem {
     this.coverUrl,
     this.ageGroup,
     this.availability,
+    this.availabilitySource,
+    this.key,
     this.issue,
   });
 
@@ -151,14 +162,53 @@ final class PublishedCatalogueItem {
   /// Reader age band when present and recognised (any kind).
   final AgeGroup? ageGroup;
 
-  /// Coarse publish-time availability (books and issues only).
+  /// Coarse availability (books and issues only). As decoded, this is the
+  /// inline publish-time tag; after `PublishedAvailabilityMerge` it is the
+  /// tag the screen shows, and [availabilitySource] says where it came from.
   final PublishedAvailability? availability;
+
+  /// Where [availability] came from; null exactly when [availability] is.
+  final PublishedAvailabilitySource? availabilitySource;
+
+  /// The item's public join key into `availability.json` (16 lower-case hex,
+  /// ADR 0019 Decision 3), or null when absent or malformed. Books and
+  /// issues only: Other items never show a tag, so their key is not kept.
+  final String? key;
 
   /// Public issue identity (magazine issues only).
   final PublishedIssueDetails? issue;
 
   /// True when this row should carry no kind badge.
   bool get isUnknownKind => kind == PublishedItemKind.unknown;
+
+  /// This item with [availability] from [source] (both null for "no tag").
+  /// Every other field is kept exactly.
+  ///
+  /// A tag without a source is recorded as coming from the catalogue: that
+  /// is the cautious claim ("at publish time"), never one of freshness.
+  PublishedCatalogueItem withAvailability(
+    PublishedAvailability? availability,
+    PublishedAvailabilitySource? source,
+  ) => PublishedCatalogueItem(
+    sourceIndex: sourceIndex,
+    title: title,
+    kind: kind,
+    titleTransliteration: titleTransliteration,
+    author: author,
+    isbn: isbn,
+    publisher: publisher,
+    publishedYear: publishedYear,
+    genre: genre,
+    language: language,
+    coverUrl: coverUrl,
+    ageGroup: ageGroup,
+    availability: availability,
+    availabilitySource: availability == null
+        ? null
+        : source ?? PublishedAvailabilitySource.catalogue,
+    key: key,
+    issue: issue,
+  );
 }
 
 /// One public magazine series from the payload's additive `periodicals[]`.
@@ -284,6 +334,7 @@ final class PublishedCatalogue {
     required List<PublishedCatalogueItem> items,
     required List<PublishedPeriodical> periodicals,
     this.exportedAt,
+    this.keySet,
     this.warnings = const PublishedCatalogueWarnings(),
   }) : items = List<PublishedCatalogueItem>.unmodifiable(items),
        periodicals = List<PublishedPeriodical>.unmodifiable(periodicals);
@@ -294,6 +345,11 @@ final class PublishedCatalogue {
   /// Publish time as epoch millis, or null when absent/unusable. An INSTANT,
   /// unlike an issue's calendar day.
   final int? exportedAt;
+
+  /// The key set the items' keys belong to (16 lower-case hex; plan J10,
+  /// A.6 #68), or null when absent or malformed. `availability.json` applies
+  /// only when its own `keySet` equals this one.
+  final String? keySet;
 
   /// Readable item rows, in payload order.
   final List<PublishedCatalogueItem> items;
@@ -312,6 +368,18 @@ final class PublishedCatalogue {
   /// True when the payload had rows but the reader could display none.
   bool get hasNoReadableItems =>
       items.isEmpty && (warnings.droppedItems > 0 || warnings.itemsTruncated);
+
+  /// This catalogue with [items] instead of its own (same length and order;
+  /// used to apply availability tags). Everything else is kept exactly.
+  PublishedCatalogue withItems(List<PublishedCatalogueItem> items) =>
+      PublishedCatalogue(
+        declaredSchemaVersion: declaredSchemaVersion,
+        items: items,
+        periodicals: periodicals,
+        exportedAt: exportedAt,
+        keySet: keySet,
+        warnings: warnings,
+      );
 }
 
 /// The published age-group tokens this build recognises (ADR 0015 V9).

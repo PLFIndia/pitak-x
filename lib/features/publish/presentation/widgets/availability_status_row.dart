@@ -14,6 +14,7 @@ library;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pitaka/core/di/providers.dart';
+import 'package:pitaka/core/widgets/local_time_text.dart';
 import 'package:pitaka/features/publish/application/availability/availability_auto_publisher.dart';
 import 'package:pitaka/features/publish/application/availability/availability_lane_status.dart';
 import 'package:pitaka/features/publish/presentation/widgets/section_card.dart';
@@ -86,7 +87,8 @@ class AvailabilityStatusRow extends ConsumerWidget {
             availabilityStatusText(
               status,
               now: now,
-              time: (millis) => _formatTime(context, millis, now),
+              time: (millis) =>
+                  formatLocalMoment(context, millis, nowMillis: now),
             ),
           ),
           const SizedBox(height: 12),
@@ -102,17 +104,6 @@ class AvailabilityStatusRow extends ConsumerWidget {
         ],
       ),
     );
-  }
-
-  /// A locale-aware time; earlier days also get their date.
-  static String _formatTime(BuildContext context, int millis, int now) {
-    final localizations = MaterialLocalizations.of(context);
-    final at = DateTime.fromMillisecondsSinceEpoch(millis);
-    final today = DateTime.fromMillisecondsSinceEpoch(now);
-    final time = localizations.formatTimeOfDay(TimeOfDay.fromDateTime(at));
-    final sameDay =
-        at.year == today.year && at.month == today.month && at.day == today.day;
-    return sameDay ? time : '${localizations.formatShortMonthDay(at)}, $time';
   }
 }
 

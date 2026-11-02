@@ -62,6 +62,12 @@ void main() {
     container = ProviderContainer(
       overrides: [
         publishedCatalogueFetcherProvider(site).overrideWithValue(fetch.call),
+        // No availability.json: these tests are about the query, and no
+        // test may reach real HTTP.
+        publishedAvailabilityFetcherProvider(site).overrideWithValue(
+          (url, {validator, abortTrigger}) async =>
+              const PublishedFileMissing(),
+        ),
         publishedFileCacheProvider.overrideWithValue(
           InMemoryPublishedFileCache(),
         ),
@@ -94,6 +100,7 @@ void main() {
       expect(state.kind, PublishedKindFilter.all);
       expect(state.language, isNull);
       expect(state.sort, PublishedSortOrder.publishedOrder);
+      expect(state.availableNow, isFalse);
       expect(state.hasActiveFilter, isFalse);
     });
 
@@ -188,6 +195,26 @@ void main() {
       expect(state.language, isNull);
       expect(state.sort, PublishedSortOrder.ageGroup);
       expect(state.hasActiveFilter, isFalse);
+    });
+
+    test('Available now is a filter: it applies at once, without IO', () {
+      final callsBefore = fetch.calls.length;
+      final controller = queryController()..setAvailableNow(availableNow: true);
+      expect(queryState().availableNow, isTrue);
+      expect(queryState().activeQuery.availableNow, isTrue);
+      expect(queryState().hasActiveFilter, isTrue);
+      final before = queryState();
+      controller.setAvailableNow(availableNow: true);
+      expect(identical(queryState(), before), isTrue, reason: 'no change');
+      expect(fetch.calls, hasLength(callsBefore), reason: 'filters are not IO');
+    });
+
+    test('clearFilters also turns Available now off', () {
+      queryController()
+        ..setAvailableNow(availableNow: true)
+        ..clearFilters();
+      expect(queryState().availableNow, isFalse);
+      expect(queryState().hasActiveFilter, isFalse);
     });
 
     test('a catalogue reload keeps the query intent', () async {
@@ -375,6 +402,9 @@ void main() {
         fireImmediately: true,
       );
       await container.read(publishedCatalogueControllerProvider(site).future);
+      // One more turn: the availability merge sits between the catalogue
+      // and the engine (ADR 0019), so the pass starts right after it.
+      await Future<void>.delayed(Duration.zero);
       expect(runner.pending, hasLength(1), reason: 'first pass is running');
 
       // Change the intent while pass #1 is still pending.

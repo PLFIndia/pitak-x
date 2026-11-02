@@ -323,6 +323,52 @@ void main() {
       final decoded = await decode(utf8.encode(payload()));
       expect(decoded.toNullable()!.items.single.title, 'A Book');
     });
+
+    test('the availability use case reads availability.json through the '
+        'viewer client and saves it in its own slot (ADR 0019)', () async {
+      const availabilityUrl =
+          'https://kadugodi.github.io/pitak/availability.json';
+      const file =
+          '{"schemaVersion":1,"keySet":"5e0c1d2b3a497f68",'
+          '"asOf":1761984300000,"out":["aaaaaaaaaaaaaaa1"]}';
+      final cache = InMemoryPublishedFileCache();
+      final viewers = <_RecordingClient>[];
+      final container = ProviderContainer(
+        overrides: [
+          publishedViewerClientFactoryProvider.overrideWithValue(() {
+            final client = _RecordingClient(
+              MockClient((request) async {
+                expect(request.url.toString(), availabilityUrl);
+                return http.Response(file, 200);
+              }),
+            );
+            viewers.add(client);
+            return client;
+          }),
+          publishedFileCacheProvider.overrideWithValue(cache),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      final useCase = container.read(
+        loadPublishedAvailabilityUseCaseProvider(site),
+      );
+      final result = (await useCase(site)).toNullable()!;
+      expect(result.value.outKeys, {'aaaaaaaaaaaaaaa1'});
+      expect(
+        cache.bytesOf(site, PublishedFileKind.availability),
+        utf8.encode(file),
+      );
+      expect(viewers.single.requests.single.url.toString(), availabilityUrl);
+
+      // The saved-copy decoder applies the same codec as a download.
+      final decode = container.read(publishedAvailabilityDecoderProvider);
+      expect(
+        (await decode(utf8.encode(file))).toNullable()!.keySet,
+        '5e0c1d2b3a497f68',
+      );
+      expect((await decode(utf8.encode('{}'))).isLeft(), isTrue);
+    });
   });
 }
 

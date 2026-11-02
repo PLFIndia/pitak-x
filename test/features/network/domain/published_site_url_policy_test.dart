@@ -65,6 +65,93 @@ void main() {
     });
   });
 
+  /// `availability.json` (ADR 0019, ADR 0015 amendment) is a sibling file
+  /// like `events.json`: same canonical-root rule as [catalogueUrl], only
+  /// the file name differs.
+  group('availabilityUrl', () {
+    const workers = 'https://pitak.kadugodi.workers.dev/';
+
+    test('resolves the sibling availability.json on every host kind', () {
+      expect(
+        PublishedSiteUrlPolicy.availabilityUrl(github),
+        'https://kadugodi.github.io/pitak/availability.json',
+      );
+      expect(
+        PublishedSiteUrlPolicy.availabilityUrl(cloudflare),
+        'https://kadugodi-library.pages.dev/availability.json',
+      );
+      expect(
+        PublishedSiteUrlPolicy.availabilityUrl(subProject),
+        'https://kadugodi.github.io/pitak/kannada/availability.json',
+      );
+      // A Cloudflare Workers site is always a root (Cloudflare plan R15).
+      expect(
+        PublishedSiteUrlPolicy.availabilityUrl(workers),
+        'https://pitak.kadugodi.workers.dev/availability.json',
+      );
+    });
+
+    test('lands next to books.json and events.json, in the same folder', () {
+      for (final siteUrl in [github, cloudflare, subProject, workers]) {
+        final books = PublishedSiteUrlPolicy.catalogueUrl(siteUrl)!;
+        final events = PublishedSiteUrlPolicy.eventsUrl(siteUrl)!;
+        final availability = PublishedSiteUrlPolicy.availabilityUrl(siteUrl)!;
+        final folder = books.substring(0, books.length - 'books.json'.length);
+        expect(folder, siteUrl);
+        expect(events, '${folder}events.json');
+        expect(availability, '${folder}availability.json');
+        // …and the site's own policy allows requesting it.
+        expect(
+          PublishedSiteUrlPolicy.sanitizeForSite(siteUrl, availability),
+          availability,
+        );
+      }
+    });
+
+    test('requires an already-canonical site root (same as eventsUrl)', () {
+      for (final bad in <String>[
+        'https://kadugodi.github.io/pitak', // no trailing slash
+        'HTTPS://kadugodi.github.io/pitak/', // not normalize()'s spelling
+        'https://Kadugodi.github.io/pitak/',
+        'https://kadugodi.github.io/pitak/index.html',
+        'https://kadugodi.github.io/pitak/?utm=1',
+        'https://kadugodi.github.io/pitak/#top',
+        'http://kadugodi.github.io/pitak/',
+        'https://kadugodi.example.com/pitak/',
+        'https://user@kadugodi.github.io/pitak/',
+        'https://kadugodi.github.io:8443/pitak/',
+        'https://kadugodi.github.io/pitak/../other/',
+        // Canonical for normalize(), but a doubled slash is not a usable
+        // directory for this policy.
+        'https://kadugodi.github.io/pitak//kannada/',
+        'https://pitak.kadugodi.workers.dev/sub/', // Workers: root only
+        'not a url',
+        '',
+      ]) {
+        expect(
+          PublishedSiteUrlPolicy.availabilityUrl(bad),
+          isNull,
+          reason: 'availabilityUrl must fail closed for "$bad"',
+        );
+        expect(
+          PublishedSiteUrlPolicy.eventsUrl(bad),
+          isNull,
+          reason: 'eventsUrl must fail closed for "$bad"',
+        );
+      }
+    });
+
+    test('a canonical non-ASCII project path resolves', () {
+      final site = Uri(
+        scheme: 'https',
+        host: 'kadugodi.github.io',
+        path: '/ಚಂದ/',
+      ).toString();
+      final resolved = PublishedSiteUrlPolicy.availabilityUrl(site);
+      expect(resolved, '${site}availability.json');
+    });
+  });
+
   group('sanitizeForSite', () {
     void allowed(String candidate) {
       expect(

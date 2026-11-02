@@ -277,6 +277,162 @@ void main() {
     });
   });
 
+  /// The third saved file (ADR 0018 amendment, ADR 0019): it must behave
+  /// exactly like the other two — its own file, verified reads, removable on
+  /// its own, swept with its library.
+  group('availability copies', () {
+    const availability = PublishedFileKind.availability;
+
+    Map<String, Object?> indexJson() =>
+        jsonDecode(File(p.join(root.path, 'index.json')).readAsStringSync())
+            as Map<String, Object?>;
+
+    test(
+      'are saved as <key>/availability.bin, apart from the others',
+      () async {
+        final cache = store();
+        final body = Uint8List.fromList(utf8.encode('{"schemaVersion":1}'));
+        await cache.save(siteA, catalogue, bytes: bytes(5), checkedAt: 1);
+        await cache.save(
+          siteA,
+          availability,
+          bytes: body,
+          checkedAt: 7,
+          validator: '"av-1"',
+        );
+        final file = File(
+          p.join(
+            root.path,
+            FilePublishedFileCache.keyFor(siteA),
+            'availability.bin',
+          ),
+        );
+        expect(file.existsSync(), isTrue);
+        expect(file.readAsBytesSync(), body);
+        expect(dataFile(siteA, availability).path, file.path);
+
+        final info = (await cache.info(siteA, availability))!;
+        expect(info.validator, '"av-1"');
+        expect(info.checkedAt, 7);
+        expect(info.contentHash, sha256.convert(body).toString());
+        expect(await readBack(cache, siteA, availability), body);
+        // Each kind keeps its own bytes.
+        expect(await readBack(cache, siteA, catalogue), bytes(5));
+        expect(await cache.info(siteA, events), isNull);
+      },
+    );
+
+    test('survive an index reload: the kind name round-trips', () async {
+      await store().save(
+        siteA,
+        availability,
+        bytes: bytes(3),
+        checkedAt: 9,
+        validator: '"av-2"',
+      );
+      // The index names the slot "availability" (PublishedFileKind.name).
+      final libraries = indexJson()['libraries']! as Map<String, Object?>;
+      final library =
+          libraries[FilePublishedFileCache.keyFor(siteA)]!
+              as Map<String, Object?>;
+      final files = library['files']! as Map<String, Object?>;
+      expect(files.keys, ['availability']);
+
+      // A brand-new store reads it back from disk alone.
+      final reloaded = store();
+      final info = (await reloaded.info(siteA, availability))!;
+      expect(info.checkedAt, 9);
+      expect(info.validator, '"av-2"');
+      expect(await readBack(reloaded, siteA, availability), bytes(3));
+    });
+
+    test('are verified on read like the others', () async {
+      final cache = store();
+      await cache.save(siteA, catalogue, bytes: bytes(5), checkedAt: 1);
+      await cache.save(siteA, availability, bytes: bytes(4), checkedAt: 1);
+      final info = (await cache.info(siteA, availability))!;
+      // Same length, different bytes: only the SHA-256 can tell.
+      dataFile(siteA, availability).writeAsBytesSync(bytes(4, 9));
+      expect(
+        await cache.readBytes(
+          siteA,
+          availability,
+          contentHash: info.contentHash,
+        ),
+        isNull,
+      );
+      expect(await cache.info(siteA, availability), isNull);
+      expect(dataFile(siteA, availability).existsSync(), isFalse);
+      // The damaged copy took nothing else with it.
+      expect(await readBack(cache, siteA, catalogue), bytes(5));
+    });
+
+    test('a truncated copy is reported absent by info()', () async {
+      final cache = store();
+      await cache.save(siteA, availability, bytes: bytes(4), checkedAt: 1);
+      dataFile(siteA, availability).writeAsBytesSync(bytes(2));
+      expect(await cache.info(siteA, availability), isNull);
+    });
+
+    test('remove(availability) leaves the catalogue copy alone', () async {
+      final cache = store();
+      await cache.save(siteA, catalogue, bytes: bytes(5), checkedAt: 1);
+      await cache.save(siteA, availability, bytes: bytes(2), checkedAt: 1);
+      final removed = await cache.remove(siteA, availability);
+      expect(removed.isRight(), isTrue);
+      expect(await cache.info(siteA, availability), isNull);
+      expect(dataFile(siteA, availability).existsSync(), isFalse);
+      expect(await readBack(cache, siteA, catalogue), bytes(5));
+      expect(dataFile(siteA, catalogue).existsSync(), isTrue);
+      // Removing a copy that is not there is harmless.
+      expect((await cache.remove(siteA, availability)).isRight(), isTrue);
+      expect(await readBack(cache, siteA, catalogue), bytes(5));
+    });
+
+    test('the last kind left takes the folder with it', () async {
+      final cache = store();
+      await cache.save(siteA, availability, bytes: bytes(2), checkedAt: 1);
+      await cache.remove(siteA, availability);
+      expect(
+        Directory(
+          p.join(root.path, FilePublishedFileCache.keyFor(siteA)),
+        ).existsSync(),
+        isFalse,
+      );
+    });
+
+    test('retainOnly sweeps it with its library', () async {
+      final cache = store();
+      await cache.save(siteA, availability, bytes: bytes(2), checkedAt: 1);
+      await cache.save(siteB, catalogue, bytes: bytes(5), checkedAt: 1);
+      await cache.save(siteB, availability, bytes: bytes(2), checkedAt: 1);
+      await cache.retainOnly({siteA});
+      expect(await readBack(cache, siteA, availability), bytes(2));
+      expect(await cache.info(siteB, availability), isNull);
+      expect(await cache.info(siteB, catalogue), isNull);
+      expect(dataFile(siteB, availability).existsSync(), isFalse);
+      expect(
+        Directory(
+          p.join(root.path, FilePublishedFileCache.keyFor(siteB)),
+        ).existsSync(),
+        isFalse,
+      );
+    });
+
+    test('counts toward the cap and leaves with its library', () async {
+      final cache = store(maxTotalBytes: 100);
+      await cache.save(siteA, catalogue, bytes: bytes(20), checkedAt: 1);
+      await cache.save(siteA, events, bytes: bytes(20), checkedAt: 1);
+      await cache.save(siteA, availability, bytes: bytes(20), checkedAt: 1);
+      // 60 + 50 > 100: the older library goes, all three files together.
+      await cache.save(siteB, catalogue, bytes: bytes(50), checkedAt: 2);
+      expect(await cache.info(siteA, catalogue), isNull);
+      expect(await cache.info(siteA, events), isNull);
+      expect(await cache.info(siteA, availability), isNull);
+      expect(await cache.info(siteB, catalogue), isNotNull);
+    });
+  });
+
   group('size cap: least recently OPENED libraries go first', () {
     test(
       'saving over the cap evicts the oldest-opened other library',

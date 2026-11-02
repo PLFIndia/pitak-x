@@ -55,6 +55,7 @@ final class PublishedCatalogueQuery {
     this.kind = PublishedKindFilter.all,
     this.language,
     this.sort = PublishedSortOrder.publishedOrder,
+    this.availableNow = false,
   });
 
   /// Raw search text (matched case-insensitively against the five public
@@ -71,6 +72,11 @@ final class PublishedCatalogueQuery {
   /// Sort order.
   final PublishedSortOrder sort;
 
+  /// The **Available now** filter (ADR 0019 AV14): when true, only items
+  /// whose shown tag is Available remain. Items with no tag are hidden too,
+  /// because nothing says they are on the shelf.
+  final bool availableNow;
+
   /// Returns a copy with the given fields replaced. `language` needs an
   /// explicit [clearLanguage] flag because "all languages" is a real value
   /// (null), not "unchanged".
@@ -79,12 +85,14 @@ final class PublishedCatalogueQuery {
     PublishedKindFilter? kind,
     String? language,
     PublishedSortOrder? sort,
+    bool? availableNow,
     bool clearLanguage = false,
   }) => PublishedCatalogueQuery(
     search: search ?? this.search,
     kind: kind ?? this.kind,
     language: clearLanguage ? null : (language ?? this.language),
     sort: sort ?? this.sort,
+    availableNow: availableNow ?? this.availableNow,
   );
 }
 
@@ -151,6 +159,10 @@ abstract final class PublishedQueryEngine {
     final filtered = <PublishedCatalogueItem>[];
     for (final item in catalogue.items) {
       if (!_matchesKind(item, query.kind)) continue;
+      if (query.availableNow &&
+          item.availability != PublishedAvailability.available) {
+        continue;
+      }
       if (language != null && language.isNotEmpty) {
         if (!_matchesLanguage(item, language)) continue;
       }

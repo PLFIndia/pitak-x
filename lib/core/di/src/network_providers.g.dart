@@ -1147,6 +1147,338 @@ class _LoadPublishedEventsUseCaseProviderElement
   String get siteUrl => (origin as LoadPublishedEventsUseCaseProvider).siteUrl;
 }
 
+String _$publishedAvailabilityFetcherHash() =>
+    r'e9e13cad87c882552988114ac464a7e963ee754f';
+
+/// The bounded optional `availability.json` fetcher for this saved site
+/// (ADR 0019, ADR 0015 amendment). It shares the viewer client, so route
+/// disposal also closes its socket.
+///
+/// Copied from [publishedAvailabilityFetcher].
+@ProviderFor(publishedAvailabilityFetcher)
+const publishedAvailabilityFetcherProvider =
+    PublishedAvailabilityFetcherFamily();
+
+/// The bounded optional `availability.json` fetcher for this saved site
+/// (ADR 0019, ADR 0015 amendment). It shares the viewer client, so route
+/// disposal also closes its socket.
+///
+/// Copied from [publishedAvailabilityFetcher].
+class PublishedAvailabilityFetcherFamily
+    extends Family<PublishedAvailabilityFetcher> {
+  /// The bounded optional `availability.json` fetcher for this saved site
+  /// (ADR 0019, ADR 0015 amendment). It shares the viewer client, so route
+  /// disposal also closes its socket.
+  ///
+  /// Copied from [publishedAvailabilityFetcher].
+  const PublishedAvailabilityFetcherFamily();
+
+  /// The bounded optional `availability.json` fetcher for this saved site
+  /// (ADR 0019, ADR 0015 amendment). It shares the viewer client, so route
+  /// disposal also closes its socket.
+  ///
+  /// Copied from [publishedAvailabilityFetcher].
+  PublishedAvailabilityFetcherProvider call(String siteUrl) {
+    return PublishedAvailabilityFetcherProvider(siteUrl);
+  }
+
+  @override
+  PublishedAvailabilityFetcherProvider getProviderOverride(
+    covariant PublishedAvailabilityFetcherProvider provider,
+  ) {
+    return call(provider.siteUrl);
+  }
+
+  static const Iterable<ProviderOrFamily>? _dependencies = null;
+
+  @override
+  Iterable<ProviderOrFamily>? get dependencies => _dependencies;
+
+  static const Iterable<ProviderOrFamily>? _allTransitiveDependencies = null;
+
+  @override
+  Iterable<ProviderOrFamily>? get allTransitiveDependencies =>
+      _allTransitiveDependencies;
+
+  @override
+  String? get name => r'publishedAvailabilityFetcherProvider';
+}
+
+/// The bounded optional `availability.json` fetcher for this saved site
+/// (ADR 0019, ADR 0015 amendment). It shares the viewer client, so route
+/// disposal also closes its socket.
+///
+/// Copied from [publishedAvailabilityFetcher].
+class PublishedAvailabilityFetcherProvider
+    extends AutoDisposeProvider<PublishedAvailabilityFetcher> {
+  /// The bounded optional `availability.json` fetcher for this saved site
+  /// (ADR 0019, ADR 0015 amendment). It shares the viewer client, so route
+  /// disposal also closes its socket.
+  ///
+  /// Copied from [publishedAvailabilityFetcher].
+  PublishedAvailabilityFetcherProvider(String siteUrl)
+    : this._internal(
+        (ref) => publishedAvailabilityFetcher(
+          ref as PublishedAvailabilityFetcherRef,
+          siteUrl,
+        ),
+        from: publishedAvailabilityFetcherProvider,
+        name: r'publishedAvailabilityFetcherProvider',
+        debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+            ? null
+            : _$publishedAvailabilityFetcherHash,
+        dependencies: PublishedAvailabilityFetcherFamily._dependencies,
+        allTransitiveDependencies:
+            PublishedAvailabilityFetcherFamily._allTransitiveDependencies,
+        siteUrl: siteUrl,
+      );
+
+  PublishedAvailabilityFetcherProvider._internal(
+    super._createNotifier, {
+    required super.name,
+    required super.dependencies,
+    required super.allTransitiveDependencies,
+    required super.debugGetCreateSourceHash,
+    required super.from,
+    required this.siteUrl,
+  }) : super.internal();
+
+  final String siteUrl;
+
+  @override
+  Override overrideWith(
+    PublishedAvailabilityFetcher Function(
+      PublishedAvailabilityFetcherRef provider,
+    )
+    create,
+  ) {
+    return ProviderOverride(
+      origin: this,
+      override: PublishedAvailabilityFetcherProvider._internal(
+        (ref) => create(ref as PublishedAvailabilityFetcherRef),
+        from: from,
+        name: null,
+        dependencies: null,
+        allTransitiveDependencies: null,
+        debugGetCreateSourceHash: null,
+        siteUrl: siteUrl,
+      ),
+    );
+  }
+
+  @override
+  AutoDisposeProviderElement<PublishedAvailabilityFetcher> createElement() {
+    return _PublishedAvailabilityFetcherProviderElement(this);
+  }
+
+  @override
+  bool operator ==(Object other) {
+    return other is PublishedAvailabilityFetcherProvider &&
+        other.siteUrl == siteUrl;
+  }
+
+  @override
+  int get hashCode {
+    var hash = _SystemHash.combine(0, runtimeType.hashCode);
+    hash = _SystemHash.combine(hash, siteUrl.hashCode);
+
+    return _SystemHash.finish(hash);
+  }
+}
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+mixin PublishedAvailabilityFetcherRef
+    on AutoDisposeProviderRef<PublishedAvailabilityFetcher> {
+  /// The parameter `siteUrl` of this provider.
+  String get siteUrl;
+}
+
+class _PublishedAvailabilityFetcherProviderElement
+    extends AutoDisposeProviderElement<PublishedAvailabilityFetcher>
+    with PublishedAvailabilityFetcherRef {
+  _PublishedAvailabilityFetcherProviderElement(super.provider);
+
+  @override
+  String get siteUrl =>
+      (origin as PublishedAvailabilityFetcherProvider).siteUrl;
+}
+
+String _$publishedAvailabilityDecoderHash() =>
+    r'dbbaf2b9896a75493d7606ac26270600bbf9e78e';
+
+/// Re-reads a SAVED availability copy with the same bounded codec a
+/// download uses (ADR 0018 amendment). The file is capped at 1 MiB and its
+/// rules are a single pass over a flat list, so it is decoded inline.
+///
+/// Copied from [publishedAvailabilityDecoder].
+@ProviderFor(publishedAvailabilityDecoder)
+final publishedAvailabilityDecoderProvider =
+    AutoDisposeProvider<PublishedAvailabilityDecoder>.internal(
+      publishedAvailabilityDecoder,
+      name: r'publishedAvailabilityDecoderProvider',
+      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+          ? null
+          : _$publishedAvailabilityDecoderHash,
+      dependencies: null,
+      allTransitiveDependencies: null,
+    );
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef PublishedAvailabilityDecoderRef =
+    AutoDisposeProviderRef<PublishedAvailabilityDecoder>;
+String _$loadPublishedAvailabilityUseCaseHash() =>
+    r'c52ab82ae11e3bbfe7c4e95eddc8f77f2caf9cb0';
+
+/// Loads one saved library's optional availability file, checking the host
+/// first and falling back to the saved copy (ADR 0018 amendment).
+///
+/// Copied from [loadPublishedAvailabilityUseCase].
+@ProviderFor(loadPublishedAvailabilityUseCase)
+const loadPublishedAvailabilityUseCaseProvider =
+    LoadPublishedAvailabilityUseCaseFamily();
+
+/// Loads one saved library's optional availability file, checking the host
+/// first and falling back to the saved copy (ADR 0018 amendment).
+///
+/// Copied from [loadPublishedAvailabilityUseCase].
+class LoadPublishedAvailabilityUseCaseFamily
+    extends Family<LoadPublishedAvailabilityUseCase> {
+  /// Loads one saved library's optional availability file, checking the host
+  /// first and falling back to the saved copy (ADR 0018 amendment).
+  ///
+  /// Copied from [loadPublishedAvailabilityUseCase].
+  const LoadPublishedAvailabilityUseCaseFamily();
+
+  /// Loads one saved library's optional availability file, checking the host
+  /// first and falling back to the saved copy (ADR 0018 amendment).
+  ///
+  /// Copied from [loadPublishedAvailabilityUseCase].
+  LoadPublishedAvailabilityUseCaseProvider call(String siteUrl) {
+    return LoadPublishedAvailabilityUseCaseProvider(siteUrl);
+  }
+
+  @override
+  LoadPublishedAvailabilityUseCaseProvider getProviderOverride(
+    covariant LoadPublishedAvailabilityUseCaseProvider provider,
+  ) {
+    return call(provider.siteUrl);
+  }
+
+  static const Iterable<ProviderOrFamily>? _dependencies = null;
+
+  @override
+  Iterable<ProviderOrFamily>? get dependencies => _dependencies;
+
+  static const Iterable<ProviderOrFamily>? _allTransitiveDependencies = null;
+
+  @override
+  Iterable<ProviderOrFamily>? get allTransitiveDependencies =>
+      _allTransitiveDependencies;
+
+  @override
+  String? get name => r'loadPublishedAvailabilityUseCaseProvider';
+}
+
+/// Loads one saved library's optional availability file, checking the host
+/// first and falling back to the saved copy (ADR 0018 amendment).
+///
+/// Copied from [loadPublishedAvailabilityUseCase].
+class LoadPublishedAvailabilityUseCaseProvider
+    extends AutoDisposeProvider<LoadPublishedAvailabilityUseCase> {
+  /// Loads one saved library's optional availability file, checking the host
+  /// first and falling back to the saved copy (ADR 0018 amendment).
+  ///
+  /// Copied from [loadPublishedAvailabilityUseCase].
+  LoadPublishedAvailabilityUseCaseProvider(String siteUrl)
+    : this._internal(
+        (ref) => loadPublishedAvailabilityUseCase(
+          ref as LoadPublishedAvailabilityUseCaseRef,
+          siteUrl,
+        ),
+        from: loadPublishedAvailabilityUseCaseProvider,
+        name: r'loadPublishedAvailabilityUseCaseProvider',
+        debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+            ? null
+            : _$loadPublishedAvailabilityUseCaseHash,
+        dependencies: LoadPublishedAvailabilityUseCaseFamily._dependencies,
+        allTransitiveDependencies:
+            LoadPublishedAvailabilityUseCaseFamily._allTransitiveDependencies,
+        siteUrl: siteUrl,
+      );
+
+  LoadPublishedAvailabilityUseCaseProvider._internal(
+    super._createNotifier, {
+    required super.name,
+    required super.dependencies,
+    required super.allTransitiveDependencies,
+    required super.debugGetCreateSourceHash,
+    required super.from,
+    required this.siteUrl,
+  }) : super.internal();
+
+  final String siteUrl;
+
+  @override
+  Override overrideWith(
+    LoadPublishedAvailabilityUseCase Function(
+      LoadPublishedAvailabilityUseCaseRef provider,
+    )
+    create,
+  ) {
+    return ProviderOverride(
+      origin: this,
+      override: LoadPublishedAvailabilityUseCaseProvider._internal(
+        (ref) => create(ref as LoadPublishedAvailabilityUseCaseRef),
+        from: from,
+        name: null,
+        dependencies: null,
+        allTransitiveDependencies: null,
+        debugGetCreateSourceHash: null,
+        siteUrl: siteUrl,
+      ),
+    );
+  }
+
+  @override
+  AutoDisposeProviderElement<LoadPublishedAvailabilityUseCase> createElement() {
+    return _LoadPublishedAvailabilityUseCaseProviderElement(this);
+  }
+
+  @override
+  bool operator ==(Object other) {
+    return other is LoadPublishedAvailabilityUseCaseProvider &&
+        other.siteUrl == siteUrl;
+  }
+
+  @override
+  int get hashCode {
+    var hash = _SystemHash.combine(0, runtimeType.hashCode);
+    hash = _SystemHash.combine(hash, siteUrl.hashCode);
+
+    return _SystemHash.finish(hash);
+  }
+}
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+mixin LoadPublishedAvailabilityUseCaseRef
+    on AutoDisposeProviderRef<LoadPublishedAvailabilityUseCase> {
+  /// The parameter `siteUrl` of this provider.
+  String get siteUrl;
+}
+
+class _LoadPublishedAvailabilityUseCaseProviderElement
+    extends AutoDisposeProviderElement<LoadPublishedAvailabilityUseCase>
+    with LoadPublishedAvailabilityUseCaseRef {
+  _LoadPublishedAvailabilityUseCaseProviderElement(super.provider);
+
+  @override
+  String get siteUrl =>
+      (origin as LoadPublishedAvailabilityUseCaseProvider).siteUrl;
+}
+
 String _$publishedCatalogueQueryRunnerHash() =>
     r'c3a0f032cea35c691b7ae8dc6ede053db3f88d5c';
 

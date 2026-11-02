@@ -148,6 +148,10 @@ void main() {
         language: 'English',
         ageGroup: AgeGroup.above10,
         coverUrl: 'covers/golden-book.jpg',
+        // Inline tags (S7): the golden shows the Available / Not available
+        // badges and the availability summary.
+        availability: PublishedAvailability.available,
+        availabilitySource: PublishedAvailabilitySource.catalogue,
       ),
       PublishedCatalogueItem(
         sourceIndex: 1,
@@ -159,6 +163,8 @@ void main() {
           volume: 249,
           issueNumber: 10,
         ),
+        availability: PublishedAvailability.out,
+        availabilitySource: PublishedAvailabilitySource.catalogue,
       ),
       PublishedCatalogueItem(
         sourceIndex: 2,
@@ -197,6 +203,10 @@ void main() {
               PublishedQueryEngine.apply(catalogue, query),
         ),
         publishedEventsFetcherProvider(publishedSite).overrideWithValue(
+          (url, {validator, abortTrigger}) async =>
+              const PublishedFileMissing(),
+        ),
+        publishedAvailabilityFetcherProvider(publishedSite).overrideWithValue(
           (url, {validator, abortTrigger}) async =>
               const PublishedFileMissing(),
         ),

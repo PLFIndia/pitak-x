@@ -7,6 +7,11 @@
 /// rapid close/reopen is a new mount with fresh data and a default query
 /// intent — never a resurrected stale session (V12).
 ///
+/// The optional `availability.json` loads in parallel with `books.json` from
+/// the first frame (ADR 0019, ADR 0015 amendment). It never holds the
+/// catalogue back: until it arrives, or when it fails, items show the
+/// catalogue's own tags.
+///
 /// When the library cannot be checked, the page shows the device's saved copy
 /// under a banner that says how old it is and why (ADR 0018); it never passes
 /// a saved copy off as current.
@@ -19,6 +24,7 @@ library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:pitaka/features/network/application/published_availability_controller.dart';
 import 'package:pitaka/features/network/application/published_catalogue_controller.dart';
 import 'package:pitaka/features/network/application/published_catalogue_cover_controller.dart';
 import 'package:pitaka/features/network/application/published_catalogue_query_controller.dart';
@@ -28,6 +34,7 @@ import 'package:pitaka/features/network/domain/entities/published_catalogue.dart
 import 'package:pitaka/features/network/domain/entities/published_content.dart';
 import 'package:pitaka/features/network/domain/published_catalogue_query.dart';
 import 'package:pitaka/features/network/presentation/widgets/open_published_site.dart';
+import 'package:pitaka/features/network/presentation/widgets/published_availability_summary.dart';
 import 'package:pitaka/features/network/presentation/widgets/published_catalogue_controls.dart';
 import 'package:pitaka/features/network/presentation/widgets/published_catalogue_list.dart';
 import 'package:pitaka/features/network/presentation/widgets/published_catalogue_messages.dart';
@@ -78,7 +85,9 @@ class _PublishedCataloguePageState
       ..invalidate(publishedCatalogueLanguagesProvider(_siteUrl))
       ..invalidate(publishedCatalogueViewProvider(_siteUrl))
       ..invalidate(publishedCatalogueCoverControllerProvider(_siteUrl))
-      ..invalidate(publishedEventsControllerProvider(_siteUrl));
+      ..invalidate(publishedEventsControllerProvider(_siteUrl))
+      ..invalidate(publishedAvailabilityControllerProvider(_siteUrl))
+      ..invalidate(publishedCatalogueWithAvailabilityProvider(_siteUrl));
     // After the invalidation, so the subscription follows the NEW cover
     // session. Presentation owns the global cache cleanup because the
     // application layer must never import Flutter's painting APIs.
@@ -116,6 +125,11 @@ class _PublishedCataloguePageState
     // the same deliberate action. Each controller still owns its own revision
     // and duplicate-request guard.
     ref.read(publishedEventsControllerProvider(_siteUrl).notifier).refresh();
+    // So does the availability file: a deliberate reload must also bring the
+    // newest tags (ADR 0019). Its own controller guards duplicates.
+    ref
+        .read(publishedAvailabilityControllerProvider(_siteUrl).notifier)
+        .refresh();
     // The new generation starts empty; the rows stay visible with placeholders
     // and are PAUSED (below) until this load publishes the new payload, so no
     // cover of the old payload is requested while the GET is in flight.
@@ -136,6 +150,13 @@ class _PublishedCataloguePageState
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(publishedCatalogueControllerProvider(_siteUrl));
+    // Listening (not watching) starts the availability load on the FIRST
+    // frame, in parallel with the catalogue, without rebuilding the page when
+    // it lands: the summary and the tagged list watch what they need.
+    ref.listen(
+      publishedAvailabilityControllerProvider(_siteUrl),
+      (previous, next) {},
+    );
     final title = widget.row.name.isEmpty
         ? widget.row.siteUrl
         : widget.row.name;
@@ -236,6 +257,11 @@ class _PublishedCataloguePageState
     final view = viewAsync.valueOrNull;
     final loadingView = viewAsync.isLoading && view == null && !queryFailed;
     final isConflict = widget.row.fetchStatus == FetchStatus.identityConflict;
+    final hasTags = ref.watch(
+      publishedCatalogueWithAvailabilityProvider(
+        _siteUrl,
+      ).select((s) => s.valueOrNull?.hasTags ?? false),
+    );
     // Watching here starts the optional events load alongside the catalogue
     // header and also lets the image-consent prompt account for poster-only
     // sites. The section itself watches the full state for rendering/retry.
@@ -287,11 +313,7 @@ class _PublishedCataloguePageState
                 coverRequestsPaused: coverRequestsPaused,
               ),
               const SizedBox(height: 4),
-              Text(
-                'Availability is the snapshot from publish time, not a live '
-                'loan check.',
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
+              PublishedAvailabilitySummary(siteUrl: _siteUrl),
               if (catalogue.warnings.hasPartialRead) ...[
                 const SizedBox(height: 8),
                 Text(
@@ -310,6 +332,7 @@ class _PublishedCataloguePageState
               PublishedCatalogueControls(
                 siteUrl: _siteUrl,
                 languages: languages,
+                offerAvailableNow: hasTags,
               ),
               const SizedBox(height: 8),
               if (view != null && !queryFailed)

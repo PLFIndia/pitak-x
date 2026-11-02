@@ -1025,6 +1025,238 @@ void main() {
     });
   });
 
+  /// The availability fast lane's catalogue half (ADR 0019 Decision 3 +
+  /// the S7 clarification, ADR 0015 amendment): every book/issue may carry a
+  /// public `key`, and the catalogue names its `keySet`. Both use the ONE
+  /// key shape (16 lower-case hex).
+  group('item keys and keySet', () {
+    const keySet = '5e0c1d2b3a497f68';
+    const key = 'aaaaaaaaaaaaaaa1';
+
+    List<int> availabilityFixture(String name) =>
+        File('test/fixtures/published_availability/$name').readAsBytesSync();
+
+    /// Malformed key values: none may be kept, each must be counted.
+    const malformedKeys = <Object>[
+      'AAAAAAAAAAAAAAA1', // upper case
+      'aaaaaaaaaaaaaaA1', // one upper-case letter
+      'aaaaaaaaaaaaaaa', // 15 characters
+      'aaaaaaaaaaaaaaa10', // 17 characters
+      ' aaaaaaaaaaaaaaa1', // no trimming
+      '',
+      'NOT-A-KEY',
+      1234567890123456,
+      1.5,
+      true,
+      <Object?>['aaaaaaaaaaaaaaa1'],
+    ];
+
+    test('books (with or without a kind) and issues keep a valid key', () {
+      final decoded = decodeOk(
+        catalogue(
+          books: [
+            bookRow({'key': key}),
+            bookRow({'kind': 'book', 'key': 'bbbbbbbbbbbbbbb2'}),
+            bookRow({
+              'kind': 'magazine-issue',
+              'key': 'ccccccccccccccc3',
+              'issue': {'periodicalUid': 'p', 'issueNumber': 1},
+            }),
+          ],
+        ),
+      );
+      expect(decoded.items.map((i) => i.key), [
+        key,
+        'bbbbbbbbbbbbbbb2',
+        'ccccccccccccccc3',
+      ]);
+      expect(decoded.warnings.invalidOptionalFields, 0);
+      expect(decoded.warnings.hasPartialRead, isFalse);
+    });
+
+    test('an absent or null key is silent', () {
+      final decoded = decodeOk(
+        catalogue(
+          books: [
+            bookRow(),
+            bookRow({'key': null}),
+          ],
+        ),
+      );
+      expect(decoded.items.map((i) => i.key), [null, null]);
+      expect(decoded.warnings.invalidOptionalFields, 0);
+    });
+
+    test('a malformed key is dropped and counted; the row survives', () {
+      for (final kind in ['book', 'magazine-issue']) {
+        for (final bad in malformedKeys) {
+          final decoded = decodeOk(
+            catalogue(
+              books: [
+                bookRow({'kind': kind, 'key': bad, 'availability': 'out'}),
+              ],
+            ),
+          );
+          final item = decoded.items.single;
+          expect(item.key, isNull, reason: '$kind key $bad');
+          expect(item.title, 'A Book');
+          // The item keeps its inline tag (ADR 0015 amendment).
+          expect(item.availability, PublishedAvailability.out);
+          expect(
+            decoded.warnings.invalidOptionalFields,
+            1,
+            reason: '$kind key $bad',
+          );
+          expect(decoded.warnings.hasPartialRead, isTrue);
+        }
+      }
+    });
+
+    test('Other and unknown kinds never keep a key, and never count it', () {
+      for (final kind in ['other', 'future-kind']) {
+        for (final value in <Object>[key, ...malformedKeys]) {
+          final decoded = decodeOk(
+            catalogue(
+              books: [
+                bookRow({'kind': kind, 'key': value}),
+              ],
+            ),
+          );
+          expect(decoded.items.single.key, isNull, reason: '$kind $value');
+          expect(
+            decoded.warnings.invalidOptionalFields,
+            0,
+            reason: 'a sparse row does not read the key at all ($kind)',
+          );
+        }
+      }
+    });
+
+    test('an inline tag records the catalogue as its source', () {
+      final decoded = decodeOk(
+        catalogue(
+          books: [
+            bookRow({'availability': 'available'}),
+            bookRow({'availability': 'out', 'kind': 'magazine-issue'}),
+            bookRow(),
+            bookRow({'availability': 'lent'}),
+            bookRow({'availability': 'out', 'kind': 'other'}),
+          ],
+        ),
+      );
+      final items = decoded.items;
+      expect(items[0].availability, PublishedAvailability.available);
+      expect(
+        items[0].availabilitySource,
+        PublishedAvailabilitySource.catalogue,
+      );
+      expect(items[1].availability, PublishedAvailability.out);
+      expect(
+        items[1].availabilitySource,
+        PublishedAvailabilitySource.catalogue,
+      );
+      // No tag (absent, invalid, or an Other row): no source either.
+      for (final item in items.skip(2)) {
+        expect(item.availability, isNull, reason: item.title);
+        expect(item.availabilitySource, isNull, reason: item.title);
+      }
+    });
+
+    test('a valid top-level keySet is kept (also on a newer schema)', () {
+      Map<String, Object?> withKeySet(int version) => {
+        ...catalogue(schemaVersion: version, books: [bookRow()]),
+        'keySet': keySet,
+      };
+      expect(decodeOk(withKeySet(1)).keySet, keySet);
+      expect(decodeOk(withKeySet(2)).keySet, keySet);
+    });
+
+    test('an absent, malformed or wrong-typed keySet is null with NO '
+        'partial-read warning', () {
+      expect(decodeOk(catalogue(books: [bookRow()])).keySet, isNull);
+      for (final bad in <Object?>[
+        null,
+        keySet.toUpperCase(),
+        keySet.substring(1),
+        '${keySet}0',
+        ' $keySet',
+        '',
+        1234567890123456,
+        <Object?>[keySet],
+        <String, Object?>{'id': keySet},
+      ]) {
+        final decoded = decodeOk({
+          ...catalogue(books: [bookRow()]),
+          'keySet': bad,
+        });
+        expect(decoded.keySet, isNull, reason: 'keySet $bad');
+        expect(decoded.items, hasLength(1));
+        // Binding metadata, not an entry: "no availability.json applies",
+        // never "some entries couldn't be displayed".
+        expect(decoded.warnings.invalidOptionalFields, 0, reason: '$bad');
+        expect(decoded.warnings.hasPartialRead, isFalse, reason: '$bad');
+        expect(decoded.warnings.invalidExportedAt, isFalse);
+      }
+    });
+
+    const expectedKeys = <String?>[
+      'aaaaaaaaaaaaaaa1', // 0: book
+      'aaaaaaaaaaaaaaa2', // 1: book
+      'aaaaaaaaaaaaaaa3', // 2: book, no inline tag
+      null, // 3: no key
+      null, // 4: malformed key
+      'aaaaaaaaaaaaaaa6', // 5: magazine issue
+      null, // 6: Other (key never kept)
+      null, // 7: unknown kind (key never kept)
+      null, // 8: no key
+      null, // 9: upper-case key
+      'aaaaaaaaaaaaaaab', // 10: legacy row without a kind
+    ];
+
+    test('the shared catalogue.json fixture, row by row', () {
+      final decoded = codec
+          .decode(availabilityFixture('catalogue.json'))
+          .toNullable()!;
+      expect(decoded.keySet, keySet);
+      expect(decoded.items, hasLength(11));
+      expect(decoded.items.map((i) => i.key), expectedKeys);
+      // Rows 4 and 9 carry malformed keys: counted, nothing else is.
+      expect(decoded.warnings.invalidOptionalFields, 2);
+      expect(decoded.warnings.unknownKindItems, 1);
+      expect(decoded.warnings.droppedItems, 0);
+      expect(decoded.exportedAt, 1761980000000);
+
+      final sources = decoded.items.map((i) => i.availabilitySource).toList();
+      const catalogueTag = PublishedAvailabilitySource.catalogue;
+      expect(sources, [
+        catalogueTag, // 0
+        catalogueTag, // 1
+        null, // 2
+        catalogueTag, // 3
+        catalogueTag, // 4
+        null, // 5
+        null, // 6: Other drops its inline tag
+        null, // 7: unknown kind drops its inline tag
+        null, // 8
+        null, // 9
+        catalogueTag, // 10
+      ]);
+    });
+
+    test('the no-keySet and bad-keySet fixtures keep the item keys', () {
+      for (final name in [
+        'catalogue_no_key_set.json',
+        'catalogue_bad_key_set.json',
+      ]) {
+        final decoded = codec.decode(availabilityFixture(name)).toNullable()!;
+        expect(decoded.keySet, isNull, reason: name);
+        expect(decoded.items.map((i) => i.key), expectedKeys, reason: name);
+        // Only the two malformed ITEM keys count; the keySet adds nothing.
+        expect(decoded.warnings.invalidOptionalFields, 2, reason: name);
+      }
+    });
+  });
+
   group('bounds', () {
     test('the row cap truncates visibly (injected small cap)', () {
       final decoded = decodeOk(

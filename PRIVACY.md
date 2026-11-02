@@ -192,12 +192,14 @@ passive exception (item 8, Google Play builds only):
    time you open the screen — that move happens entirely on your device.
 5. **Opening a saved library's published catalogue.** Tapping a library in
    Library Bookmarks or Library network opens its catalogue and events inside
-   Pitak: requests for `books.json` and optional `events.json` happen only
-   when you tap, and only to that library's own site directory (a redirect
+   Pitak: requests for `books.json` and the optional `events.json` and
+   `availability.json` (which items are lent out, as Available / Not
+   available) happen only when you tap, and only to that library's own site
+   directory (a redirect
    to another host or library is refused), with the fixed User-Agent and
    "no-cache" hint. The site sees your device's IP address for each request.
-   Pitak keeps one **saved copy** of each library's `books.json` and
-   `events.json` in the app's cache folder (never in backups — neither the
+   Pitak keeps one **saved copy** of each library's `books.json`,
+   `events.json` and `availability.json` in the app's cache folder (never in backups — neither the
    phone's nor Pitak's `.pitabak`). Every time you open the library, Pitak
    first asks the site whether the file changed, sending the short fingerprint
    (the "ETag") the site gave with the saved copy; an unchanged file is not

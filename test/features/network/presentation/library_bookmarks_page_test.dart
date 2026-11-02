@@ -53,6 +53,10 @@ void main() {
               (url, {validator, abortTrigger}) async =>
                   const PublishedFileMissing(),
             ),
+            publishedAvailabilityFetcherProvider(entry.key).overrideWithValue(
+              (url, {validator, abortTrigger}) async =>
+                  const PublishedFileMissing(),
+            ),
           ],
           // Saved copies in memory: a widget test has no path_provider.
           publishedFileCacheProvider.overrideWithValue(

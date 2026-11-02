@@ -32,6 +32,7 @@ import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/core/text/json_nesting_depth.dart';
 import 'package:pitaka/features/library/domain/catalogue_rules.dart';
+import 'package:pitaka/features/network/domain/entities/published_availability_file.dart';
 import 'package:pitaka/features/network/domain/entities/published_catalogue.dart';
 import 'package:pitaka/features/network/infrastructure/published_catalogue_item_reader.dart';
 
@@ -163,10 +164,20 @@ final class PublishedCatalogueCodec {
       }
     }
 
+    // `keySet` names the key set the item keys belong to (plan J10, A.6
+    // #68). Like `exportedAt` it is display/binding metadata, not an entry:
+    // a malformed value only means "no availability.json applies here", so
+    // it is dropped without the partial-read warning.
+    final rawKeySet = parsed['keySet'];
+    final keySet = PublishedAvailabilityFile.isKey(rawKeySet)
+        ? rawKeySet as String
+        : null;
+
     return Right(
       PublishedCatalogue(
         declaredSchemaVersion: version,
         exportedAt: exportedAt,
+        keySet: keySet,
         items: items,
         periodicals: periodicals,
         warnings: tally.toWarnings(

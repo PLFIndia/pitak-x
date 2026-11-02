@@ -8,6 +8,7 @@
 ///   index.json                      ← PublishedFileCacheIndex
 ///   <sha256(site URL)>/catalogue.bin
 ///   <sha256(site URL)>/events.bin
+///   <sha256(site URL)>/availability.bin
 /// ```
 ///
 /// Why the cache directory (beginner note): it is the OS's place for data an

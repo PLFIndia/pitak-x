@@ -1,8 +1,9 @@
 /// "Check first, then fall back to the saved copy" for one published file
 /// (network domain, pure Dart; ADR 0018).
 ///
-/// Both viewer files (`books.json`, `events.json`) use this ONE algorithm, so
-/// the freshness rules cannot drift apart between them:
+/// Every viewer file (`books.json`, `events.json`, `availability.json`) uses
+/// this ONE algorithm, so the freshness rules cannot drift apart between
+/// them:
 ///
 ///  1. Ask the library's host, sending the saved copy's entity tag (if any).
 ///  2. `200` → the file changed (or nothing was saved): decode it, save the
@@ -11,8 +12,9 @@
 ///     (a file on the device is never trusted), record the confirmation, show
 ///     it as current. A damaged or unreadable saved copy is deleted and the
 ///     file is downloaded once more without a tag.
-///  4. `404` (only the optional events file reports it) → the library removed
-///     the file: delete the saved copy, show nothing.
+///  4. "Missing" (only the optional files report it: a `404`, and for
+///     `availability.json` also a file its reader refuses, ADR 0019
+///     Decision 4) → delete the saved copy, show nothing.
 ///  5. Any failure → show the saved copy WITH a note saying how old it is and
 ///     why it is not fresh; with no usable saved copy, return the failure.
 ///
@@ -55,8 +57,9 @@ final class PublishedFileLoader<T extends Object> {
 
   /// Loads [url], the [kind] file of the library saved at [siteUrl].
   ///
-  /// `Right(null)` means the host reported the file missing (`404`), which
-  /// only the optional events file does. [abortTrigger] cancels the request;
+  /// `Right(null)` means the file is missing (`404`, or an availability file
+  /// its reader refused), which only the optional files report.
+  /// [abortTrigger] cancels the request;
   /// once it fires, no saved copy is decoded for the abandoned load.
   Future<Either<Failure, PublishedContent<T>?>> call({
     required String siteUrl,

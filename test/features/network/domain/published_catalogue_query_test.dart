@@ -253,6 +253,53 @@ void main() {
     });
   });
 
+  group('Available now (ADR 0019 AV14)', () {
+    PublishedCatalogueItem tagged(int index, PublishedAvailability? tag) =>
+        PublishedCatalogueItem(
+          sourceIndex: index,
+          title: 'Item $index',
+          kind: PublishedItemKind.book,
+          language: index.isEven ? 'English' : 'Hindi',
+          availability: tag,
+        );
+
+    final catalogue = catalogueOf([
+      tagged(0, PublishedAvailability.available),
+      tagged(1, PublishedAvailability.out),
+      tagged(2, null),
+      tagged(3, PublishedAvailability.available),
+    ]);
+
+    test('is off by default and keeps every item', () {
+      expect(const PublishedCatalogueQuery().availableNow, isFalse);
+      expect(run(catalogue).shownItems, 4);
+    });
+
+    test('keeps only items shown as Available; untagged ones are hidden', () {
+      final view = run(
+        catalogue,
+        const PublishedCatalogueQuery(availableNow: true),
+      );
+      expect([for (final entry in itemsOf(view)) entry.sourceIndex], [0, 3]);
+      expect(view.totalItems, 4, reason: 'the total is the whole catalogue');
+    });
+
+    test('combines with the other filters', () {
+      // Odd items are Hindi: 1 is out, 3 is Available.
+      final view = run(
+        catalogue,
+        const PublishedCatalogueQuery(availableNow: true, language: 'Hindi'),
+      );
+      expect([for (final entry in itemsOf(view)) entry.sourceIndex], [3]);
+    });
+
+    test('copyWith keeps or replaces it', () {
+      const query = PublishedCatalogueQuery(availableNow: true);
+      expect(query.copyWith(search: 'x').availableNow, isTrue);
+      expect(query.copyWith(availableNow: false).availableNow, isFalse);
+    });
+  });
+
   group('sort', () {
     test('published order is the default and uses sourceIndex', () {
       final view = run(
