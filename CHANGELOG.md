@@ -165,8 +165,32 @@ heading as part of the `chore(release):` commit.
 - `PRIVACY.md` (effective 2026-11-02): availability updates automatically;
   the viewer requests and saves `availability.json`; backups carry the
   website publishing record (no credentials).
+- **A GitHub catalogue or events publish returns at commit time** (plan SP1,
+  S12; ADR 0017 amendment of 2026-11-02). The use cases save the commit
+  `deployed` and return a `DeferredVerificationRequest`
+  (`PublishSuccess.verification`); no public read follows the commit inside
+  the publish queue, so the button and the queue are free ~40 s sooner. The
+  keepAlive `PublishGoingLive` runs the lane's `DeferredPublishVerification`
+  after the queue is released; on proof it marks the record `live`, records
+  the verified address and refreshes `publishedSiteUrlProvider` and
+  `publishSiteStatusProvider`. The card's line follows it: "Published — going
+  live (usually within a minute)." → "Published! Your site is live."; the
+  Events screen shows one "going live" message with the address. The guide's
+  first-publish step and its mockup mirror say so. `PublishPhase.pagesBuilding`
+  is gone; the catalogue and events timing lines no longer have `readBack`.
+- GitHub records gain the additive `committedAt` (when GitHub accepted the
+  recorded commit; required by `afterCommit`, kept by reconcile only for the
+  same head, checked as a whole non-negative number in `publish_state.json`).
+  The pre-publish check treats other bytes inside the 10-minute Pages build
+  window after it as `stillBuilding` (carry on, do not mark live), so a
+  publish started while Pages still builds the previous commit — the lane's
+  included — no longer stops with "Your site is showing something different…".
+  `PublishManifest`'s three derived records now share one private copy.
 
 ### Fixed
+- A damaged local `publish_manifest.json` whose `ownershipConfirmed` was not
+  a bool threw a `TypeError` the store did not catch; it now reads as "not
+  confirmed" (plan J16).
 - A GitHub catalogue publish after an unconfirmed **events** commit could
   mark that commit live from an unchanged `books.json` (plan A.1 item 8).
 - Web viewer: the "This file was created by a newer Pitak" notice was

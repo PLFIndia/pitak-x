@@ -48,10 +48,13 @@ fetches from saved and discovered libraries (Refresh only);
 tile.openstreetmap.org (map, remembered opt-in, only while the map is open).
 Publishing also performs a bounded public read-back at the site it just wrote:
 the read-back uses the unauthenticated, origin-bound verifier (§5.6), follows
-no redirect and may add one `?rb=` cache-buster. The catalogue path checks
-`books.json` (up to 12 polls); a Cloudflare publish additionally checks the
-`pitak-publish.json` marker, `library.json` (or its real 404), `events.json`
-and current poster references. Play builds
+no redirect and may add one `?rb=` cache-buster. A GitHub commit is proven
+after the publish has returned, outside the publish queue, by reading the one
+file its record names (`books.json` for a catalogue commit, `events.json` for
+an events commit; first read 30 s after the commit, then every 10 s up to
+150 s; plan SP1, §5.8); a Cloudflare publish checks the
+`pitak-publish.json` marker, `books.json`, `library.json` (or its real 404),
+`events.json` and current poster references before it returns. Play builds
 check for an update once per launch and start Play's flexible-update flow;
 after the user accepts Play's dialog, the Store downloads in the background.
 The F-Droid flavor has no Play Core/update library and cannot run that check.
@@ -635,6 +638,27 @@ target passed to the current operation — that is what lets a move publish the
   write but read-back has not completed; `live` means required read-back
   succeeded for that record's target; `retired` means the site is positively
   identifiable as retired (a moved page, or the retired Worker set below).
+- **A GitHub publish returns at commit time** (plan SP1, ADR 0017 amendment
+  of 2026-11-02). The catalogue and events publishes save the commit
+  `deployed` (with its proof path and `committedAt`, the time GitHub answered)
+  and return a `DeferredVerificationRequest`; the Publish button is free at
+  once and the card says "Published — going live (usually within a minute)."
+  After the publish queue is released the controller hands the request to
+  `PublishGoingLive` (keepAlive), which runs the shared
+  `DeferredPublishVerification` (the availability lane's check, ADR 0019
+  Decision 10): poll until the proof file serves the recorded sha, then,
+  inside the queue and only while the record still describes that commit,
+  save it `live` and record the verified address. The card's line follows
+  the outcome ("Published! Your site is live."), and the share address and
+  the card's **Your site** are read afresh. Running out of budget leaves
+  `deployed`, settled by the next publish's pre-check. Because the next
+  publish can now start while Pages still builds the last commit, the
+  pre-check treats other bytes inside the build window
+  (`ReadBackBudget.gitHubBuildWindow`, 10 minutes from `committedAt`) as
+  `stillBuilding` — carry on, do not mark live — instead of "the site
+  changed"; the head still being this phone's own commit is what makes that
+  safe. Outside the window, with no recorded time, or with a time in the
+  future, the stricter rule stands. A move keeps its in-queue verification.
 - **`hashScheme` gates hashes, not paths.** A different Cloudflare asset-hash
   scheme means "re-hash the bytes", never "forget which files we wrote".
 - **The Cloudflare marker is the freshness anchor.** Every deploy writes

@@ -16,7 +16,9 @@
   keep-address rule; amended 2026-10-31: replacement consent follows Worker
   content, and the case-variant listing is removed; amended 2026-11-01 by
   [ADR 0019](0019-availability-fast-lane.md): the availability section, its
-  read-back set, per-record proof paths and GitHub's deferred check)
+  read-back set, per-record proof paths and GitHub's deferred check; amended
+  2026-11-02 by publish-optimisation plan SP1: GitHub catalogue and events
+  publishes return at commit time)
 - **Amends:** ADR 0007 (a third persisted `String` token plus ephemeral
   upload/completion JWTs) and ADR 0010 (no pinning for a second publishing
   API). ADR 0012 gains the `workers.dev` reader URL by the same work.
@@ -172,12 +174,61 @@ file. Every rule above still applies to it. What changes:
   "contradicted"). It then upgrades the record to `live` only if the record is
   unchanged, and records the verified share address as before. Running out of
   budget leaves the record `deployed`; nothing is ever reported live without
-  proof (S11). Phase 3 (SP1) will reuse this for catalogue and events
-  publishes through a further amendment.
+  proof (S11). Catalogue and events publishes reuse it since plan SP1 (see
+  the amendment of 2026-11-02 below).
 - **One publisher per site matters more.** The lane is on by default, so a
   second phone connected to the same site would publish without a tap. The
   marker and ADR 0019's gate 7b fail closed, but the single-writer limitation
   in the Consequences below is unchanged and still applies.
+
+## Amendment 2026-11-02 — GitHub returns at commit time (plan SP1)
+
+Publish-optimisation plan SP1 (session S12). A GitHub catalogue publish
+spent 36–42 s of a 43–57 s run waiting for GitHub Pages inside the publish
+queue (plan Appendix A), so the button spun and every other publish waited.
+The S11 truthful-outcomes rule above is kept word for word: nothing is
+called live without proof, and the share address is still written only
+after proof. What changes:
+
+- **The publish ends with the commit.** `PublishLibraryUseCase` and
+  `PublishEventsUseCase` save the commit `deployed` (its proof path, plus the
+  new `committedAt`: when GitHub answered, read after the commit returned)
+  and return `PublishSuccess(pagesLive: null, verification: request)`. No
+  public read follows the commit inside the queue.
+- **The deferred check proves it afterwards.** The controllers hand the
+  request to `PublishGoingLive` (a keepAlive notifier; it must outlive the
+  Publish screen) only after the publish queue is released. It runs the
+  availability lane's `DeferredPublishVerification` unchanged: poll the
+  proof file (first read 30 s after the commit, every 10 s, last at 150 s);
+  on the expected sha, inside the queue and only while the record still
+  describes that commit, save it `live` and record the verified target. Out
+  of budget, superseded by a newer commit, or cancelled: the record stays
+  `deployed` and the next publish's pre-check settles it. A failure to start
+  the check fails closed as "not proven".
+- **The outcome copy (product owner, 2026-11-02).** The Publish card says
+  "Published — going live (usually within a minute)." and its line updates
+  itself: "Published! Your site is live." when proven; the unchanged
+  "Published! The commit is pushed — the site can take a minute to update."
+  when not proven; the unsaved-record sentence when the proof could not be
+  saved. On a first publish **Your site** (Share/QR) appears when the check
+  proves it. The Events screen shows one message: "Published — your events
+  page is going live (usually within a minute): <address>". Cloudflare's
+  outcomes, its in-publish read-back and its Retry verification are
+  unchanged (SP2/SP3 are separate work).
+- **The pre-check knows a build may still be running.** The next publish
+  can now start while Pages still builds the previous commit. Its pre-check
+  (deviation 48) used to call any other bytes "the site changed" and stop.
+  Inside the build window (`ReadBackBudget.gitHubBuildWindow`, 10 minutes,
+  GitHub's documented build time, counted from the record's `committedAt`)
+  other bytes — or a removed file still served — are now `stillBuilding`:
+  the publish carries on and does not mark the earlier commit live. Safe
+  because the check runs only when the branch head is still this phone's
+  own commit, so no other writer's work can be overwritten. Outside the
+  window, without a recorded time (records from older builds) or with a time
+  in the future, the stricter rule stands. The same rule serves the
+  availability lane's commits.
+- **Moves are unchanged.** A move destination still verifies itself inside
+  the queue (the active pointer switches only after proof, Decision 5).
 
 ## Consequences
 

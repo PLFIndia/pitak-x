@@ -7,8 +7,9 @@
   pacing, session S10b; see its J8 amendment).
 - **Date:** 2026-11-02
 - **Amends:** nothing directly. ADR 0014 gained its amendment with Fix 2
-  (W5, 2026-11-02, S11, Decision 7); ADR 0017 gains one with the
-  non-blocking GitHub outcome (S12, Decision 8). Builds on ADR 0017 Decision 4 (complete snapshots) and
+  (W5, 2026-11-02, S11, Decision 7); ADR 0017 gained one with the
+  non-blocking GitHub outcome (2026-11-02, S12, Decision 8). Builds on
+  ADR 0017 Decision 4 (complete snapshots) and
   ADR 0019 (the availability lane, the J9 reset).
 - **Plan:** `publishOptimisation_PLAN.md` — product decisions P4/P5 (A.3),
   engineering decisions CV1–CV7 and SP1–SP6 (A.4), Part D (Phase 2), Part E
@@ -252,7 +253,12 @@ need to do.
 8. **GitHub returns after the commit (SP1, S12; ADR 0017 amendment).** The
    catalogue and events publishes use the ADR 0019 deferred check instead of
    waiting for Pages inside the queue: *Published — going live*. The share
-   address is still recorded only after proof.
+   address is still recorded only after proof. *As built in S12:* the
+   keepAlive `PublishGoingLive` runs the check after the queue is released
+   and the card's line follows its outcome (product owner); every GitHub
+   record keeps `committedAt`, and the pre-check treats other bytes inside
+   the 10-minute Pages build window as "still building" instead of "the
+   site changed" (ADR 0017 amendment of 2026-11-02).
 9. **Cloudflare read-back and preflight (SP2, SP3, S13).** Read-back starts
    its first round immediately and reads at most 4 files at once; the
    preflight runs its independent reads concurrently. Budgets, outcomes and

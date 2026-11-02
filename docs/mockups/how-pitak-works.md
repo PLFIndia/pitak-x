@@ -268,8 +268,9 @@ show. On a quiet day both feel the same.
 4. Tap **Set up a repository**, give it a short name like `my-library`, tap
    **Create** — that folder is where your page lives.
 5. Tap **Publish catalogue now**.
-6. Your web address appears under **Your site**. Tap **Copy link** or
-   **Share**. The first time, the page can take a minute or two to go live.
+6. The card says **Published — going live**. When the page is live, your web
+   address appears under **Your site** (the first time this can take a minute
+   or two). Tap **Copy link** or **Share**.
 
 **Or use Cloudflare Workers**
 
@@ -684,6 +685,7 @@ have no books of its own.
 | Sign-in is a code + github.com/login/device, works from another device | `github_connection_dialogs.dart` ("Authorize in your browser", tip text) |
 | "Set up a repository" creates a public repo and enables Pages itself | `publish_page.dart` target-repo section; `setup_github_repo.dart` |
 | Site "can take a minute to update" | `github_connection_controller.dart` success message |
+| GitHub publish: the card says **Published — going live**, then "Your site is live." once GitHub serves it, and **Your site** appears then (2026-11-02) | `publish_status_copy.dart` (`gitHubGoingLiveMessage`); `PublishGoingLive`; ADR 0017 amendment of 2026-11-02 |
 | Only changed files are uploaded | `PublishLibraryUseCase` sha-skip via manifest |
 | Available / Not available updates by itself after a loan or return (on by default, switch in Settings → Data); borrowers never (2026-11-02) | `AvailabilityAutoPublisher` started from `main.dart`; `PublishingSettingsGroup`; ADR 0019 |
 | GitHub: about a minute per update, at most about 10 an hour, up to about 7 minutes in a busy hour; Cloudflare usually under a minute (2026-11-02) | `AvailabilityPacing.gitHubSpacing` / `gitHubBudget` (pinned by `guide_catalog_test.dart`); ADR 0019 Decision 13a; plan G.4 measures the Cloudflare wording |

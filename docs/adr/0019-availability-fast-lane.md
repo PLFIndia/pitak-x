@@ -322,6 +322,13 @@ rebuilding the catalogue.** That automatic publisher is called the **lane**.
       check is best-effort and is cancelled on dispose.
     - A stale head becomes *pending* ("Another change reached your site first;
       Pitak will retry"). The next attempt starts from a fresh reconcile.
+    - *Clarified 2026-11-02 (plan SP1, ADR 0017 amendment of that date):* the
+      catalogue and events publishes now use the same deferred check, and
+      every GitHub record keeps `committedAt`. The pre-publish check treats
+      other bytes inside the 10-minute Pages build window after that time as
+      "still building" (carry on, do not mark live), so a lane commit no
+      longer stops on a catalogue commit Pages is still building, and the
+      other way round.
 
 11. **Cloudflare path (AV13).** An availability-only deploy goes through the
     existing assembler. Every other file is referenced by its recorded hash, so

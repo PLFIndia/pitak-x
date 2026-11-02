@@ -1,4 +1,4 @@
-# Publish optimisation — handoff (S11 complete, 2026-11-02)
+# Publish optimisation — handoff (S12 complete, 2026-11-02)
 
 **Branch:** `publishOptimisation` (from `03313a3`, release 1.9.0+32).
 **Plan:** `publishOptimisation_PLAN.md` (product decisions A.3, engineering decisions A.4, deviations A.6, measurements Appendix A).
@@ -55,16 +55,20 @@ backup's publishing record only on a phone that has not published itself**
 (plan A.6 #109). J5 is closed (A.6 #110). **Still open for Phase 2:** the
 device evidence "a restore on a second phone uploads no covers" (§S11 has
 the steps; A.6 #118).
-**S12 (Phase 3: SP1, GitHub returns after the commit; ADR 0017 amendment)
-has NOT started. Do not start it until the product owner explicitly says
-so.** Open decisions for the product owner: J11 (§S9), J12–J14 (§G4), J15
-(§S10b), the copy of the rate-limit messages (§S10b) and the copy of the
-backup/restore lines (§S11). New engineering observation J16 (§S11).
+S12 — SP1 (GitHub returns at commit time) — **complete** (§S12), started on
+the product owner's go-ahead ("go ahead for the next item", 2026-11-02,
+confirmed as S12 in the session's first question, with the copy choices).
+J16 was fixed in its own commit (plan A.6 #126).
+**S13 (Phase 3: SP2 + SP3, Cloudflare read-back and preflight) has NOT
+started. Do not start it until the product owner explicitly says so.** Open
+decisions for the product owner: J11 (§S9), J12–J14 (§G4), J15 (§S10b), the
+copy of the rate-limit messages (§S10b), the copy of the backup/restore lines
+(§S11) and the guide line of §S12. New engineering observation J17 (§S12).
 
-> Read this file first in any new session. §S11 is the newest state, then
-> §S10b, §S10, §G4 (device evidence), §S9, §S8, §S7, §S6, §S5, §S4, §S3, §S2
-> and §0 (S1). §1–§5 are the S0 record (plan Appendix A cites the verbatim
-> lines in §3), kept unchanged.
+> Read this file first in any new session. §S12 is the newest state, then
+> §S11, §S10b, §S10, §G4 (device evidence), §S9, §S8, §S7, §S6, §S5, §S4,
+> §S3, §S2 and §0 (S1). §1–§5 are the S0 record (plan Appendix A cites the
+> verbatim lines in §3), kept unchanged.
 
 > **Standing product decision P8 — public by design (product owner,
 > 2026-11-01).** Pitak is for **public libraries** whose catalogues exist for
@@ -74,6 +78,127 @@ backup/restore lines (§S11). New engineering observation J16 (§S11).
 > settled and needs no new review: borrower names and loan details (P1, in the
 > vault) and credentials and tokens (security, `AGENTS.md` §6). `PRIVACY.md`
 > only has to state accurately what is uploaded (a store requirement).
+
+---
+
+## S12 — SP1: a GitHub publish returns at commit time
+
+**Started:** 2026-11-02, product owner's go-ahead "go ahead for the next
+item". One question round before building; the product owner chose
+**"Yes, S12 / SP1"**, the **live-updating line** for the Publish card and
+**one message** on the Events screen (plan A.6 #119). No phone was attached
+(`adb devices` empty), so the open Phase 2 restore evidence (§S11) could not
+be run either.
+
+**Commits:** `ff50538` (J16 fix), `412b623` (SP1 code + tests), then the docs
+commit (ADR 0017 amendment, ADR 0019 Decision 10 and ADR 0020 Decision 8
+notes, ADR index, ARCHITECTURE §1/§5.8, CHANGELOG, the guide mockup, plan,
+this handoff).
+
+**What changed for users (once released):**
+- **Publish catalogue now** on GitHub answers as soon as GitHub accepts the
+  commit (S0: 4–9 s of own work + 3–7 s commit, instead of 43–57 s). The
+  card says "Published — going live (usually within a minute)." and the
+  button is free at once. About 40 s later the line changes by itself to
+  "Published! Your site is live." and, on a first publish, **Your site**
+  (Copy link / Share) appears. If GitHub does not serve it within 2.5 min:
+  "Published! The commit is pushed — the site can take a minute to update."
+- **Events → Publish** on GitHub shows one message: "Published — your events
+  page is going live (usually within a minute): <address>".
+- Publishing again (or the availability lane publishing) while Pages still
+  builds the last commit now works; before, it could stop with "Your site is
+  showing something different from what this phone last published…".
+- Cloudflare is unchanged (its read-back still runs inside the publish; SP2
+  and SP3 are S13). Moves are unchanged (the destination verifies itself).
+
+**The rules (as built; plan A.6 #119–#126):**
+
+| Part | Where | Rule |
+|---|---|---|
+| Return at commit | `PublishLibraryUseCase`, `PublishEventsUseCase` | Save `deployed` (proof path + `committedAt` = clock AFTER the commit returned), return `PublishSuccess.verification` = `DeferredVerificationRequest.forRecord(saved record)`; null when the save failed. No public read after the commit. |
+| Hand-over | `PublishController`, `PublishEventsController` | `ref.read(publishGoingLiveProvider.notifier).proveLater(result)` right after `enqueue` returned (queue released), before `state = AsyncData(result)`. |
+| The check | `PublishGoingLive` (`application/site/publish_going_live_controller.dart`, keepAlive) | One shared `DeferredPublishVerification` (created on first use; a creation failure is `notProven` and is retried next time; cancelled on dispose). Registers the check synchronously (`PublishGoingLiveState`, by request identity, newest 8). On `live`: invalidate `publishedSiteUrlProvider` and `publishSiteStatusProvider`. |
+| Copy | `publish_status_copy.dart` (`gitHubGoingLiveMessage`, `gitHubLiveMessage`, `gitHubNotSeenLiveMessage`), `publish_card.dart` | Running → going live; `live` → live; `notSaved` → the unsaved-record sentence; `notProven`/`superseded`/`cancelled` → "can take a minute". No request → never "live". |
+| Build window | `PublishVerificationCheck`, `ReadBackBudget.gitHubBuildWindow` (10 min) | Other bytes (or a removed file still served) with `0 <= now − committedAt < 10 min` → `stillBuilding` (callers carry on, nothing marked live). No time, a future time or the window passed → the old rule (`contradicted`). Only reached when the branch head equals the recorded commit. |
+| Record | `PublishManifest.committedAt` | Required by `afterCommit` (all four commit callers: catalogue, events, availability, move); kept by reconcile only for the same head; cleared by `asRetired` and with an unprovable proof; lenient local read (non-negative int); `publish_state.json` refuses any other value (A.6 #122). |
+
+**Copy for the product owner to read:** the card and events lines above
+(chosen at the start), and the guide's first-GitHub-publish step 6 (A.6
+#125): "The card says **Published — going live**. When the page is live,
+your web address appears under **Your site** (the first time this can take
+a minute or two). Tap **Copy link** or **Share**." The mockup §3 and its
+facts table mirror it.
+
+**New engineering observation — plan J17 (pre-existing):** after the build
+window, a GitHub site whose branch head is still this phone's commit but
+whose Pages serves other bytes (a failed build) keeps stopping every publish
+with "Your site is showing something different…"; publishing again cannot
+help. S12 removed the common case (a build still running). Not fixed (out of
+scope); a small engineering fix plus a message the product owner may want to
+read.
+
+**Security notes (skill checklist):** no credential is involved; the tracker
+holds only public request data and logs error types only. `committedAt` from
+a backup is validated (whole, ≥ 0; one bad field = entry unreadable); a
+crafted time can at most let a restored phone carry on during a build on its
+own head. Nothing reports "live" or records the share address without a read
+that matched the recorded sha (R33). The deferred check makes at most 13
+bounded, origin-bound reads per commit and stops once a newer commit
+supersedes it.
+
+**Device evidence (for S15 or the next device session):** on the timing
+build, a GitHub catalogue publish's `publish timings catalogue:` line has no
+`readBack` and its `total` is the button time; the card turns into "Your site
+is live." about 40 s later; publishing events right after a catalogue publish
+succeeds.
+
+**Files changed (code):** new `application/site/publish_going_live_controller.dart`
+(+ `.g`), `application/site/deferred_verification_request.dart` (moved out of
+`deferred_publish_verification.dart`, re-exported); `publish_library_use_case.dart`,
+`publish_events_use_case.dart`, `publish_availability_use_case.dart`,
+`github_move_destination.dart`, `github_unconfirmed_commit_check.dart`,
+`site/publish_verification_check.dart`, `site/read_back_budget.dart`,
+`site/published_file_read_back.dart` (doc), `publish_result.dart`,
+`publish_status_copy.dart`, `publish_controller.dart` (+ `.g`),
+`events/application/publish_events_controller.dart` (+ `.g`),
+`presentation/widgets/publish_card.dart`, `domain/publish_manifest.dart`
+(497 lines), `domain/publish_state_backup_codec.dart`, guide
+`publishing_guides.dart`.
+**Tests:** new `application/publish_going_live_controller_test.dart` (8:
+proven → live + address + refresh, out of budget, superseded, dispose, a
+creation failure retried, `proveLater`, state identity and bound), support
+`going_live_fakes.dart` (`RecordingPublishGoingLive`); new cases in the
+verification-check (6, the window), unconfirmed-check (2), catalogue (5:
+return at commit, no request without a save, publish again while building,
+the window passed, the user-site request), events (2), availability (1),
+move (1), manifest (5 + J16), file store (J16), codec (1), copy (5), card (1)
+and controller (1 + assertions) suites. The controller harness overrides
+`publishGoingLiveProvider` (a widget test fails on a pending 30 s timer).
+
+**Gates at the end of S12 (2026-11-02, macOS, Flutter 3.44.2 via
+`.fvm/flutter_sdk`):**
+- build_runner: new `publish_going_live_controller.g.dart`; source hashes
+  changed in `publish_controller.g.dart` and `publish_events_controller.g.dart`;
+  committed with the source (the pre-commit hook confirmed it is current).
+- `flutter analyze lib test integration_test`: no issues.
+- `dart format --set-exit-if-changed lib test integration_test`: 0 changed.
+- `flutter test --coverage`: **5,676 passed** (S11 ended at 5,646); the 10
+  failures are the same 10 macOS goldens in `test/golden/key_screens_test.dart`
+  (by name). S12 changes no golden screen (the publish golden shows no
+  result).
+- Line coverage: `publish_going_live_controller.dart`,
+  `deferred_verification_request.dart`, `deferred_publish_verification.dart`,
+  `publish_verification_check.dart`, `github_unconfirmed_commit_check.dart`,
+  `publish_status_copy.dart`, `publish_result.dart`, `publish_manifest.dart`,
+  `publish_state_backup_codec.dart` 100 %; `publish_availability_use_case.dart`
+  98.5 %, `publish_library_use_case.dart` 97.4 %, `publish_controller.dart`
+  96.0 %, `publish_events_use_case.dart` 94.7 %, `github_move_destination.dart`
+  90.2 %, `publish_card.dart` 89.7 %, `publish_events_controller.dart` 76.2 %.
+  Every missed line predates S12 (transport catches, older failure branches,
+  the Cloudflare paths of the events controller).
+- File sizes ≤ 500 (largest touched: `publish_manifest.dart` 497,
+  `publish_controller.dart` 424, `publish_library_use_case.dart` 408).
+- No new dependency; `pubspec.lock` and Rust untouched. CSP unchanged.
 
 ---
 
@@ -1746,7 +1871,7 @@ throwaway repo.
 
 ---
 
-## 6. Next: goldens (deferred); S11 only on go-ahead
+## 6. Next: goldens (deferred); S13 only on go-ahead
 
 S8's code and docs are done (§S8) and the G.4 device evidence is recorded
 (§G4, item 2 below). Phase 1 becomes the release candidate (plan G.5) once
@@ -1814,12 +1939,19 @@ read, 9 reused on an unchanged republish). **ADR 0020 is accepted.**
   (§S10b: no progress count during a long paced upload).
 - Delete the archived throwaway repos `PLFIndia/pitak-cv5-proof` (§S10) and
   `PLFIndia/pitak-j8-blob-reuse` (§S10b); the gh token cannot.
+- the backup/restore copy (§S11) and the guide line of §S12;
+- plan J17 (§S12, an engineering fix whose message the product owner may
+  want to read).
 
-**Then: S11 (Phase 2, Fix 2 — backup publish state, CV6/CV7, ADR 0014
-amendment) — only on the product owner's go-ahead.** Plan Part D.3 / Part F
-"S11", and §S9 "For S11" (Decision 4 vs adopting the archive's records), and §S10b "For S11"
-(the upload journal stays out of the backup). It first verifies plan J5
-(the original Kotlin app tolerates the new backup entry).
+**S11 is done (§S11)**; its device evidence (a restore on a second phone
+uploads no covers) is still open and needs phones. **S12 is done (§S12).**
+
+**Then: S13 (Phase 3: SP2 Cloudflare read-back, SP3 Cloudflare preflight;
+plan E.2/E.3) — only on the product owner's go-ahead.** Notes for it: SP2's
+first-round change belongs in `CloudflareReadBackBudget.afterDeploy` (the
+availability budget already reads immediately, plan A.6 #53); the verifier's
+"last observation decides" rule and the request counts must stay unchanged,
+pinned by tests against the sequential implementation (E.2/E.3).
 
 Run the gates with the pinned SDK: `export PATH="$PWD/.fvm/flutter_sdk/bin:$PATH"`
 (the `flutter` on PATH is 3.41.1; the pubspec needs 3.44.2). Every gate in
