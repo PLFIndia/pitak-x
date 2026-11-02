@@ -1,4 +1,4 @@
-# Publish optimisation — handoff (S6 complete, 2026-11-02)
+# Publish optimisation — handoff (S7 complete, 2026-11-02)
 
 **Branch:** `publishOptimisation` (from `03313a3`, release 1.9.0+32).
 **Plan:** `publishOptimisation_PLAN.md` (product decisions A.3, engineering decisions A.4, deviations A.6, measurements Appendix A).
@@ -14,12 +14,15 @@ S5 — Cloudflare path — **complete** (§S5), started on the product owner's
 go-ahead ("go ahead for next session", 2026-11-02, the same words again).
 S6 — Lane and UI — **complete** (§S6), started on the product owner's
 go-ahead ("go ahead for next session", 2026-11-02, the same words again).
-**S7 (readers) has NOT started. Do not start it until the product owner
+S7 — Readers — **complete** (§S7), started on the product owner's go-ahead
+("go ahead for next session", 2026-11-02, the same words again); the
+product owner decided J10 at its start (key-set id in both files).
+**S8 (switch on) has NOT started. Do not start it until the product owner
 explicitly says so** (§6 is the prepared checklist).
 
-> Read this file first in any new session. §S6 is the newest state, then §S5,
-> §S4, §S3, §S2 and §0 (S1). §1–§5 are the S0 record (plan Appendix A cites
-> the verbatim lines in §3), kept unchanged.
+> Read this file first in any new session. §S7 is the newest state, then
+> §S6, §S5, §S4, §S3, §S2 and §0 (S1). §1–§5 are the S0 record (plan
+> Appendix A cites the verbatim lines in §3), kept unchanged.
 
 > **Standing product decision P8 — public by design (product owner,
 > 2026-11-01).** Pitak is for **public libraries** whose catalogues exist for
@@ -29,6 +32,101 @@ explicitly says so** (§6 is the prepared checklist).
 > settled and needs no new review: borrower names and loan details (P1, in the
 > vault) and credentials and tokens (security, `AGENTS.md` §6). `PRIVACY.md`
 > only has to state accurately what is uploaded (a store requirement).
+
+---
+
+## S7 — Readers (code; visible in both viewers)
+
+**Commits:** `4b09920` (writer: key-set id, J10), `1bf8de9` (native viewer),
+`17559ed` (web viewer v8 + parity tests), then the docs commit.
+
+**J10 decided by the product owner at the start of S7 (2026-11-02):** "Stamp
+both files with a key-set id". `books.json` gains a top-level `keySet` and
+`availability.json` a `keySet` field (both `shortHashHexForKey(salt,
+'key-set')`, 16 lower-case hex). Readers use the file only when the two are
+valid and equal; otherwise it is treated as missing. Plan A.6 #68, Part J,
+C.1 note; ADR 0019 Decision 4 clarification; ARCHITECTURE §5.7.
+
+**What changed for users (readers are live; they are NOT behind the lane's
+build switch):**
+- **Native viewer** (a saved library opened in Pitak): labels read
+  *Available / Not available* ("All out" retired); a summary line
+  "N of M available" appears when items carry tags, with "· updated <time>"
+  only when a bound `availability.json` decided them; the old fixed sentence
+  "Availability is the snapshot from publish time…" now shows only when
+  there are tags (and the from-file variant when the file decided them);
+  an **Available now** chip appears when something is tagged; the detail
+  page says "… at publish time" only for a tag from `books.json`. Every open
+  now also requests `availability.json` (a 404 on every site until S8), in
+  parallel, and keeps a saved copy of it; `PRIVACY.md` item 5 says so.
+- **Web viewer v8** reaches a site with its next catalogue publish. It
+  requests `availability.json` at load and every 60 s while visible (a 404
+  until S8; GitHub Pages and Cloudflare assets serve it without cost).
+- **`books.json`** gains `keySet` at the next catalogue publish (additive,
+  schema 1; older readers ignore it).
+
+**Decisions (plan A.6, all engineering choices except #68):**
+
+| A.6 | Decision |
+|---|---|
+| #68 | J10: the key-set id in both files (product owner). `PublishItemKeys.keysFor` returns a `PublishKeySet` (id + keys from ONE salt read; `tryCreate` refuses malformed or shared keys, so the catalogue builder only checks completeness). `AvailabilitySnapshot` carries `keySet` (in the lane store's pending set too, no version bump: no released build stored one; content hash domain v2). |
+| #69 | "Treated as missing" is literal: the native fetcher maps every content refusal (codec refusal, body over 1 MiB) to `PublishedFileMissing` → the saved copy is deleted, inline tags. Only transport failures fall back to a saved copy with its note. |
+| #70 | Plausible `asOf` = whole ms, ≥ 2020-01-01T00:00Z, ≤ now + 24 h; otherwise no time is shown (the tags still apply). |
+| #71 | Whole numbers in either JSON spelling (`1`, `1.0`) within ±(2^53−1), because `JSON.parse` cannot tell them apart. A range check, not `abs()` (−2^63 overflow found by the test agent). |
+| #72 | `PublishedAvailabilityMerge` (domain) → `PublishedCatalogueWithAvailability` (tagged catalogue, `PublishedAvailabilitySource`, counts, time). `PublishedAvailabilityController` mirrors the events controller; the page `listen`s from frame one (parallel); "loading"/"failed" = no file; the view `selectAsync`s the catalogue, so a file that changes nothing costs no engine pass. |
+| #73 | Available now keeps items SHOWN as Available (untagged hidden); both readers offer it only while something is tagged or while it is on. |
+| #74 | Wording and the shared `formatLocalMoment` (`core/widgets/local_time_text.dart`, extracted from the status row). |
+| #75 | Web v8 choices: catalogue first, re-render when the file changes; an unchanged re-check updates only the summary; newest answer wins; a body failing mid-read = network error (keep the last file); `kind: ""` = unknown. Fixed the pre-existing overwritten "newer Pitak" notice. |
+| #76 | A malformed item `key` counts as a dropped optional field; a malformed `keySet` is dropped silently. Known pre-existing difference: native drops non-object/no-title rows, web keeps them (summary counts can differ on such hostile payloads; fixtures have none). |
+
+**Files (new):** network domain `entities/published_availability_file.dart`,
+`published_availability_fetcher.dart`, `published_availability_merge.dart`,
+`usecases/load_published_availability_use_case.dart`; infrastructure
+`published_availability_codec.dart`, `bounded_published_availability_fetcher.dart`;
+application `published_availability_controller.dart`; presentation
+`widgets/published_availability_summary.dart`; core `widgets/local_time_text.dart`.
+Changed: the catalogue models/codec/item reader (`key`, `keySet`, source),
+query + state + controller (`availableNow`), the page, controls, badges and
+detail page, `network_providers.dart`, the cache kind and URL policy, the
+loader/fetch docs; writer files listed under A.6 #68; `assets/publish/index.html`.
+
+**Tests:** shared fixtures `test/fixtures/published_availability/` (3
+catalogues × 16 availability files + 404); `published_availability_contract_test.dart`
+(writer → native, and web ↔ native parity over every combination plus
+generated hostile files) with `published_availability_parity_harness.js`;
+`viewer_availability_test.dart` + `viewer_availability_harness.js` (21 web
+behaviour checks; the test agent proved they bite against 20 broken viewer
+copies); native: codec (44), fetcher (28), use case (11), file model (15),
+entities (10), merge, availability controller (10), query engine and
+controller (Available now), page group "availability" (9, incl. a11y),
+detail page, cache, URL policy, catalogue codec, DI wiring; writer: key-set
+id pinned, binding asserted in the snapshot builder, the lane's saved set,
+the lane store decode.
+
+**Gates at the end of S7 (2026-11-02, macOS, Flutter 3.44.2 via
+`.fvm/flutter_sdk`):**
+- build_runner: committed with the source (new `published_availability_controller.g.dart`;
+  `network_providers.g.dart` and `published_catalogue_query_controller.g.dart`
+  changed). The pre-commit hook confirmed generated code is current.
+- `flutter analyze lib test integration_test`: no issues.
+- `dart format --set-exit-if-changed lib test integration_test`: 0 changed.
+- `flutter test --coverage`: **5,315 passed** (S6 ended at 5,076); the 10
+  failures are the same 10 macOS goldens in `test/golden/key_screens_test.dart`,
+  checked by name against the S6 list.
+- **Goldens to regenerate on Linux (`update_goldens` workflow, repository
+  rule):** `published_catalogue_populated_light` and `…_dark` now differ on
+  every renderer (the golden items carry inline tags, so the badges, the
+  summary and the sentence render). Run the workflow and commit its PNGs
+  before release.
+- Line coverage: every new network file 100 % (the availability
+  controller, merge, codec, fetcher, use case, file model, summary, formatter,
+  `published_catalogue.dart`, `published_catalogue_codec.dart`, the query
+  controller and state, `publish_item_keys.dart`, the snapshot, document,
+  lane state and export 100 %; page 98.1 %, item reader 98.2 %, query
+  98.4 % (missed lines predate S7).
+- File sizes ≤ 500 (largest touched: `availability_lane.dart` 467,
+  `catalogue_section_builder.dart` 456, `published_catalogue_page.dart` 442).
+- No new dependency; `pubspec.lock` and Rust untouched. CSP unchanged.
 
 ---
 
@@ -863,55 +961,48 @@ throwaway repo.
 
 ---
 
-## 6. Next: S7 (readers) — on hold until the product owner says go
+## 6. Next: S8 (switch on) — on hold until the product owner says go
 
-S6 (lane and UI) is done; §S6 records how its checklist landed (the old S6
-checklist is superseded by plan A.6 #58–#67). S7 needs only the S2 contract
-and starts only on the product owner's go-ahead.
+S7 (readers) is done; §S7 records how its checklist landed (the old S7
+checklist is superseded by plan A.6 #68–#76). S8 depends on S6 and S7 and
+starts only on the product owner's go-ahead. It is the release candidate of
+Phase 1 (plan G.5).
 
-**S7 — Readers (plan C.7; tests per the C.11 "Readers" row).**
+**S8 — Switch on (plan Part F "S8"; C.9; Part H; G.4).**
 
-- **Decide J10 first** (plan Part J; §S6). The natural fix is a key-set id
-  in both `books.json` and `availability.json` so a reader ignores a file
-  computed against another salt. It changes the public contract (C.1, ADR
-  0019 Decision 2/4), so ask the product owner, then record an A.6 row and
-  an ADR 0019 clarification before writing code.
-- Native viewer (`lib/features/network`): `PublishedFileKind.availability`
-  (third saved file, ADR 0018 amendment), `PublishedSiteUrlPolicy
-  .availabilityUrl`, `PublishedAvailabilityCodec` (AV15 caps: ≤ 1 MiB,
-  ≤ 100,000 keys, `^[0-9a-f]{16}$`, the shared depth guard, duplicates and
-  unknown fields ignored, `schemaVersion` > 1 → ignored) returning
-  `PublishedAvailabilityFile` (A.6 #22), the item reader reads `key`, ONE
-  per-item merge rule in domain (ADR 0019 Decision 4; Other never tagged),
-  parallel load where an availability failure keeps the catalogue, labels
-  **Not available**, the **Available now** filter, the summary line
-  ("312 of 340 available · updated 2:05 pm", `asOf` through
-  `CatalogueRules.dateFromMillisOrNull`, shown only when plausible).
-- Web viewer `assets/publish/index.html` → viewerVersion 8: fetch
-  `availability.json` in parallel (`cache: "no-cache"`), re-check every 60 s
-  while visible (no query-string cache-buster), "All out" → **Not
-  available**, no tag for Other (J7), the filter and summary, defensive
-  parse mirroring AV15. CSP unchanged.
-- Shared fixtures for web/native parity (ADR 0015 decision 5;
-  `published_catalogue_parity_harness.js`). Goldens are regenerated only by
-  the Linux workflow.
-
-**For S8 (carried; do not lose these):**
-
-- Flip `availabilityLaneActivatedProvider` to `true` (one line) in the same
-  change as the guide copy (C.9, AV16) and the `PRIVACY.md` sentence.
+- Flip `availabilityLaneActivatedProvider` to `true` (one line,
+  `core/di/src/availability_providers.dart`) in the SAME change as the guide
+  copy (C.9, AV16) and the `PRIVACY.md` sentence that availability now
+  updates by itself (P8: a statement of fact; item 5 already names the file
+  the viewer reads).
 - Start the lane in `main.dart`: keep `availabilityAutoPublisherProvider`
   alive with `ref.listen` in `PitakaApp` (like `screenCaptureProtected`), and
   place `AvailabilityLifecycleRelay` next to `AppLockObserver`.
 - Final words for every draft sentence: `AvailabilityLaneMessages`,
   `AvailabilityPublishMessages`, the status-row texts and the notice
-  (`availability_status_row.dart`), the Settings switch copy.
+  (`availability_status_row.dart`), the Settings switch copy, and the S7
+  viewer texts (`published_availability_summary.dart`: from-file /
+  from-catalogue sentences and the two notes; web v8 summary wording).
+- Guide copy and its tests (C.9): the counts in `guide_catalog_test.dart`,
+  the "up to about ${gitHubSpacing.inMinutes + 1} minutes" pin, the mirror
+  in `docs/mockups/how-pitak-works.md` §3.3.
 - Decide A.6 #67 (AV18 for a move while the vault is locked).
-- Remember: from S8 on, an unreadable lane store or a restore leaves the lane
-  "not ready" until the next catalogue publish (by design, J9).
-- The G.4 device evidence on both hosts; measure lend → live (Appendix A
-  "Lend → visible" rows) with the `publishTimings` build (operations
-  `availability` and `cloudflareAvailability`).
+- Docs (Part H): ARCHITECTURE availability section and lane (§5/§6; S3 and
+  S7 already updated §5.7), README feature line and host choice, CHANGELOG
+  and fastlane notes, RELEASING G.4 evidence steps.
+- **Goldens:** run the Linux `update_goldens` workflow (S7 changed
+  `published_catalogue_populated_light/dark`; S8's own UI changes — the
+  Settings switch and the status row once activated — change
+  `publish_connection` and possibly more) and commit its PNGs.
+- G.4 device evidence on both hosts, rows 1–10 (row 10, the native viewer
+  with and without `availability.json`, is now testable); measure lend →
+  live with the `publishTimings` build (operations `availability` and
+  `cloudflareAvailability`; Appendix A "Lend → visible" rows). Build with
+  `flutter clean` first and check the packaged `libapp.so` (A.6 #13).
+- Remember: from S8 on, an unreadable lane store or a restore leaves the
+  lane "not ready" until the next catalogue publish (J9, by design); a new
+  phone (new salt) also waits for one catalogue publish, and readers then
+  ignore any old `availability.json` until it is overwritten (J10).
 - Run the gates with the pinned SDK: `export PATH="$PWD/.fvm/flutter_sdk/bin:$PATH"`
   (the `flutter` on PATH is 3.41.1; the pubspec needs 3.44.2).
 

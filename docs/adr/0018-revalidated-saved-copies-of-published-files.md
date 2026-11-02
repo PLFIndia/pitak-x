@@ -111,7 +111,11 @@ exactly like the other two:
   (decision 1), entity-tag rules (decision 2), conditional fetch (decision 3)
   and SHA-256 guard (decision 4).
 - **`404` behaves as for events:** the saved copy is deleted and the viewer
-  uses the inline tags from `books.json`.
+  uses the inline tags from `books.json`. *Clarified in S7 (ADR 0019
+  Decision 4):* so does a file the reader refuses (too large, malformed, a
+  newer format): ADR 0019 says such a file is "treated as missing", so an
+  older saved copy is not shown in its place. Only a transport failure
+  falls back to the saved copy with its note (decision 1).
 - **Byte cap:** 1 MiB per file (ADR 0019 Decision 4), inside the unchanged
   200 MiB total (decision 7). A larger body is refused and never saved.
 - **Freshness is unchanged** (decision 6): the native viewer revalidates on

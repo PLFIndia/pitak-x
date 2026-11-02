@@ -143,6 +143,29 @@ rebuilding the catalogue.** That automatic publisher is called the **lane**.
    older readers read named fields only), and no released build had written
    either file's new field, so nothing needs migrating.
 
+   *Clarification (S7 readers, plan A.6 #69–#76):*
+   - **"Treated as missing" is literal.** A file either reader refuses (over
+     1 MiB, invalid UTF-8, nesting deeper than 16, not an object, a missing,
+     non-whole or newer `schemaVersion`, a malformed `keySet`, or one bad
+     entry in `out`) behaves exactly like a 404: the inline tags are used. The
+     native viewer therefore drops its saved copy of a refused file instead
+     of showing an older one; only a transport failure falls back to the
+     saved copy, with its note (ADR 0018).
+   - **Plausible `asOf`:** a whole number of milliseconds, not before
+     2020-01-01T00:00Z (no Pitak existed earlier) and at most 24 hours ahead
+     of the reader's clock. Otherwise the tags are still used, but no
+     "updated" time is shown.
+   - **Whole numbers** are accepted in either JSON spelling (`1` or `1.0`),
+     because the web viewer's `JSON.parse` cannot tell them apart.
+   - **Only books and magazine issues are tagged** in both readers; Other and
+     unknown kinds never are, and a missing `kind` means book.
+   - **Available now** keeps only items shown as Available (untagged items
+     are hidden too); both readers offer it only while some item shows a tag
+     (or while it is on). The summary counts the whole catalogue.
+   - **The catalogue never waits for the file.** Both readers start the two
+     requests together; until the file arrives, or when it fails, items show
+     their inline tags.
+
    - **Labels:** *Available / Not available* everywhere. "All out" retires in
      both readers. The words never promise a live loan: the summary line says
      when the tag was last updated ("312 of 340 available · updated 2:05 pm"),
@@ -449,6 +472,7 @@ cover.
     a restore and an overwrite merge clear `catalogueKeyed` first
     (`publish_salt_invariant_test.dart`); a publish without a fresh set
     deletes an unvouched file.
-  - **S7:** reader caps; the per-item rule; parallel loading; web/native parity
-    on shared fixtures.
+  - **S7:** reader caps; the per-item rule and the key-set binding; parallel
+    loading; web/native parity on shared fixtures and generated hostile files
+    (`published_availability_contract_test.dart`).
   - **S8:** plan G.4 device evidence on both hosts, and the final copy.
