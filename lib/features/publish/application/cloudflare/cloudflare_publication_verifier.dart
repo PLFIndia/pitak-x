@@ -4,7 +4,9 @@
 /// `books.json`, the root `index.html`, `library.json` or its real 404, the
 /// events files when recorded, at most two posters, and the exact
 /// removed-poster 404s — plus, since ADR 0019 (Decision 11),
-/// `availability.json` when recorded or its exact 404 after a removal.
+/// `availability.json` when recorded or its exact 404 after a removal. An
+/// availability-only deploy reads a narrower scope: the fresh marker and that
+/// one file ([CloudflareReadBackScope.availabilityOnly]).
 /// Covers are deliberately not read back: the upload protocol already
 /// guaranteed every hash before the completion token, and a version is atomic
 /// (fix-plan M2).
@@ -21,6 +23,25 @@ import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_site_manife
 import 'package:pitaka/features/publish/domain/git_blob_sha.dart';
 import 'package:pitaka/features/publish/domain/publish_target.dart';
 import 'package:pitaka/features/publish/domain/site/published_site_verifier.dart';
+
+/// WHICH files a read-back must see.
+///
+/// Why two scopes (beginner note): a Worker version is atomic and its marker
+/// carries an id that is new for every deploy (ADR 0017 Decision 6). So once
+/// the fresh marker is served, the whole version is the one just deployed,
+/// and only the files the deploy CHANGED still need reading. An ordinary
+/// publish changes the catalogue or events, so it reads the documented set;
+/// the availability lane changes one file, so it reads the marker and that
+/// file (ADR 0019 Decision 11, plan AV13).
+enum CloudflareReadBackScope {
+  /// The documented set of an ordinary or combined deploy (ADR 0017 S8, plus
+  /// `availability.json` when recorded or removed).
+  ordinary,
+
+  /// An availability-only deploy: the fresh marker plus `availability.json`,
+  /// or its exact 404 after a removal.
+  availabilityOnly,
+}
 
 /// Required read-back outcome for a deployment or deploy-free retry.
 enum CloudflarePublicationVerification {
@@ -66,12 +87,17 @@ final class CloudflarePublicationVerifier {
   ///
   /// [budget] decides how long the check may take: a deployment made moments
   /// ago may wait for a fresh edge, an earlier record may not.
+  ///
+  /// [scope] decides which files are read. Only a deployment made moments ago
+  /// by the availability lane may narrow it; every earlier record is checked
+  /// against the ordinary set, which is the superset.
   Future<CloudflarePublicationVerification> verify({
     required CloudflarePublishTarget target,
     required CloudflareSiteManifest manifest,
     required int revision,
     List<int> markerBytes = const [],
     List<String> deletedPaths = const [],
+    CloudflareReadBackScope scope = CloudflareReadBackScope.ordinary,
     CloudflareReadBackBudget budget = CloudflareReadBackBudget.afterDeploy,
     void Function(int rounds)? onRounds,
   }) async {
@@ -79,6 +105,7 @@ final class CloudflarePublicationVerifier {
       manifest: manifest,
       markerBytes: markerBytes,
       deletedPaths: deletedPaths,
+      scope: scope,
     );
     if (pending == null) {
       // No documented core means nothing can be proven, not that something
@@ -93,8 +120,12 @@ final class CloudflarePublicationVerifier {
     var attempt = 0;
     while (pending.isNotEmpty && attempt < budget.rounds) {
       if (_now() - started >= deadline) break;
+      // AV13: an availability-only deploy reads once straight away; every
+      // other round (and every round of the other budgets) waits first.
+      if (attempt > 0 || !budget.immediateFirstRound) {
+        await _sleep(budget.interval);
+      }
       attempt++;
-      await _sleep(budget.interval);
       final paths = pending.keys.toList()..sort();
       for (final path in paths) {
         if (_now() - started >= deadline) break;
@@ -125,23 +156,65 @@ final class CloudflarePublicationVerifier {
         : CloudflarePublicationVerification.contradicted;
   }
 
-  /// The documented read-back set, or null when the record is not usable.
-  Map<String, _Expectation>? _expectations({
+  /// The read-back set for [scope], or null when the record is not usable.
+  static Map<String, _Expectation>? _expectations({
     required CloudflareSiteManifest manifest,
     required List<int> markerBytes,
     required List<String> deletedPaths,
+    required CloudflareReadBackScope scope,
   }) {
     final markerEntry = manifest.entryFor(CloudflareLimits.markerPath);
+    if (markerEntry == null) return null;
+    final marker = _Expectation.content(markerEntry, exactBytes: markerBytes);
+    final availability = _availabilityExpectation(manifest, deletedPaths);
+    switch (scope) {
+      case CloudflareReadBackScope.availabilityOnly:
+        // ADR 0019 Decision 11: the fresh marker pins the whole atomic
+        // version, so the one file this deploy changed completes the proof.
+        // A deploy that neither wrote nor removed the file has nothing this
+        // scope could prove, so it proves nothing (never "verified").
+        if (availability == null) return null;
+        return {
+          CloudflareLimits.markerPath: marker,
+          AvailabilityDocument.path: availability,
+        };
+      case CloudflareReadBackScope.ordinary:
+        return _ordinaryExpectations(
+          manifest: manifest,
+          marker: marker,
+          availability: availability,
+          deletedPaths: deletedPaths,
+        );
+    }
+  }
+
+  /// ADR 0019 Decision 11: `availability.json` is expected with its recorded
+  /// bytes when the deploy carries it, or as an exact 404 when this deploy
+  /// removed it; null when the site never had it (nothing to read).
+  static _Expectation? _availabilityExpectation(
+    CloudflareSiteManifest manifest,
+    List<String> deletedPaths,
+  ) {
+    final entry = manifest.entryFor(AvailabilityDocument.path);
+    if (entry != null) return _Expectation.content(entry);
+    if (deletedPaths.contains(AvailabilityDocument.path)) {
+      return const _Expectation.absent();
+    }
+    return null;
+  }
+
+  /// The documented ADR 0017 S8 set, or null without the catalogue core.
+  static Map<String, _Expectation>? _ordinaryExpectations({
+    required CloudflareSiteManifest manifest,
+    required _Expectation marker,
+    required _Expectation? availability,
+    required List<String> deletedPaths,
+  }) {
     final booksEntry = manifest.entryFor('books.json');
     final indexEntry = manifest.entryFor('index.html');
-    if (markerEntry == null || booksEntry == null || indexEntry == null) {
-      return null;
-    }
+    if (booksEntry == null || indexEntry == null) return null;
     final pending = <String, _Expectation>{
-      CloudflareLimits.markerPath: _Expectation.content(
-        markerEntry,
-        exactBytes: markerBytes,
-      ),
+      CloudflareLimits.markerPath: marker,
       'books.json': _Expectation.content(booksEntry),
       'index.html': _Expectation.content(indexEntry),
     };
@@ -172,15 +245,9 @@ final class CloudflarePublicationVerifier {
       }
     }
 
-    // ADR 0019 Decision 11: `availability.json` joins the set — its recorded
-    // bytes when the deploy carries it, or its exact 404 when this deploy
-    // removed it. The file is tiny, so it costs one small read.
-    final availability = manifest.entryFor(AvailabilityDocument.path);
-    if (availability != null) {
-      pending[AvailabilityDocument.path] = _Expectation.content(availability);
-    } else if (deletedPaths.contains(AvailabilityDocument.path)) {
-      pending[AvailabilityDocument.path] = const _Expectation.absent();
-    }
+    // ADR 0019 Decision 11: `availability.json` joins the set when recorded
+    // or removed. The file is tiny, so it costs one small read.
+    if (availability != null) pending[AvailabilityDocument.path] = availability;
     return pending;
   }
 

@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_publication_verifier.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_limits.dart';
+import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_site_manifest.dart';
 import 'package:pitaka/features/publish/domain/site/publish_file.dart';
 import 'package:pitaka/features/publish/domain/site/published_site_verifier.dart';
 
@@ -255,6 +256,183 @@ void main() {
     });
   });
 
+  group('the availability-only scope (ADR 0019 Decision 11, plan AV13)', () {
+    final availability = s8File(
+      'availability.json',
+      utf8.encode('{"schemaVersion":1,"asOf":0,"out":[]}'),
+    );
+    final written = s8Manifest(
+      target: target,
+      publishId: cloudflareTestPublishId,
+      additional: {...additional, 'availability.json': availability},
+    );
+    final markerBytes = files['pitak-publish.json']!.bytes;
+
+    test(
+      'a write reads exactly the fresh marker and availability.json',
+      () async {
+        reader.body('availability.json', availability.bytes);
+
+        final result = await verifier().verify(
+          target: target,
+          manifest: written,
+          revision: 1,
+          markerBytes: markerBytes,
+          scope: CloudflareReadBackScope.availabilityOnly,
+          budget: oneRound,
+        );
+
+        expect(result, CloudflarePublicationVerification.verified);
+        expect(reader.calls.map((c) => c.$2).toSet(), {
+          'pitak-publish.json',
+          'availability.json',
+        });
+        expect(reader.calls.map((c) => c.$1), everyElement(target.siteUrl));
+      },
+    );
+
+    test('a removal is proven by the marker and the exact 404', () async {
+      reader.absent('availability.json');
+
+      final result = await verifier().verify(
+        target: target,
+        manifest: manifest,
+        revision: 1,
+        markerBytes: markerBytes,
+        deletedPaths: const ['availability.json'],
+        scope: CloudflareReadBackScope.availabilityOnly,
+        budget: oneRound,
+      );
+
+      expect(result, CloudflarePublicationVerification.verified);
+      expect(reader.calls.map((c) => c.$2).toSet(), {
+        'pitak-publish.json',
+        'availability.json',
+      });
+    });
+
+    test('a still-served file after a removal is contradicted', () async {
+      reader.body('availability.json', availability.bytes);
+
+      final result = await verifier().verify(
+        target: target,
+        manifest: manifest,
+        revision: 1,
+        markerBytes: markerBytes,
+        deletedPaths: const ['availability.json'],
+        scope: CloudflareReadBackScope.availabilityOnly,
+        budget: oneRound,
+      );
+
+      expect(result, CloudflarePublicationVerification.contradicted);
+    });
+
+    test('an older marker is never this deploy: it is not verified', () async {
+      reader
+        ..body('availability.json', availability.bytes)
+        ..body('pitak-publish.json', s8Marker('b' * 32));
+
+      final result = await verifier().verify(
+        target: target,
+        manifest: written,
+        revision: 1,
+        markerBytes: markerBytes,
+        scope: CloudflareReadBackScope.availabilityOnly,
+        budget: oneRound,
+      );
+
+      expect(result, isNot(CloudflarePublicationVerification.verified));
+    });
+
+    test('a deploy that neither wrote nor removed the file proves nothing, '
+        'and reads nothing', () async {
+      final result = await verifier().verify(
+        target: target,
+        manifest: manifest,
+        revision: 1,
+        markerBytes: markerBytes,
+        scope: CloudflareReadBackScope.availabilityOnly,
+        budget: oneRound,
+      );
+
+      expect(result, CloudflarePublicationVerification.unreachable);
+      expect(reader.calls, isEmpty);
+    });
+
+    test('a record without a marker proves nothing', () async {
+      final noMarker = CloudflareSiteManifest(
+        target: target,
+        publishId: cloudflareTestPublishId,
+        files: {'availability.json': s8Entry(availability)},
+      );
+
+      final result = await verifier().verify(
+        target: target,
+        manifest: noMarker,
+        revision: 1,
+        scope: CloudflareReadBackScope.availabilityOnly,
+        budget: oneRound,
+      );
+
+      expect(result, CloudflarePublicationVerification.unreachable);
+      expect(reader.calls, isEmpty);
+    });
+  });
+
+  group('immediateFirstRound (plan AV13)', () {
+    test(
+      'the first round reads before any wait; later rounds still wait',
+      () async {
+        final events = <String>[];
+        // A path that never matches keeps every round going.
+        reader.body('books.json', utf8.encode('stale'));
+        final logging = _LoggingReader(reader, events);
+
+        final result =
+            await CloudflarePublicationVerifier(
+              reader: logging,
+              sleep: (delay) async => events.add('sleep ${delay.inSeconds}'),
+            ).verify(
+              target: target,
+              manifest: manifest,
+              revision: 1,
+              budget: const CloudflareReadBackBudget(
+                rounds: 3,
+                interval: Duration(seconds: 5),
+                deadline: Duration(minutes: 1),
+                immediateFirstRound: true,
+              ),
+            );
+
+        expect(result, CloudflarePublicationVerification.contradicted);
+        expect(events.first, startsWith('read '));
+        // Three rounds, two waits: only the first one is immediate.
+        expect(events.where((e) => e.startsWith('sleep ')), [
+          'sleep 5',
+          'sleep 5',
+        ]);
+      },
+    );
+
+    test('without it, the first round waits first (unchanged)', () async {
+      final events = <String>[];
+      final logging = _LoggingReader(reader, events);
+
+      await CloudflarePublicationVerifier(
+        reader: logging,
+        sleep: (delay) async => events.add('sleep ${delay.inSeconds}'),
+      ).verify(
+        target: target,
+        manifest: manifest,
+        revision: 1,
+        markerBytes: files['pitak-publish.json']!.bytes,
+        // The default budget: CloudflareReadBackBudget.afterDeploy.
+      );
+
+      expect(events.first, 'sleep 5');
+    });
+  });
+
   test(
     'a later propagation round can still finish the grouped verification',
     () async {
@@ -334,6 +512,30 @@ final class _CountingReader implements PublishedSiteReadVerifier {
     String? cacheBuster,
   }) {
     reads++;
+    return _inner.readOutcome(
+      siteUrl: siteUrl,
+      path: path,
+      maxBytes: maxBytes,
+      cacheBuster: cacheBuster,
+    );
+  }
+}
+
+/// Records each read (by path) into [events], interleaved with the sleeps.
+final class _LoggingReader implements PublishedSiteReadVerifier {
+  _LoggingReader(this._inner, this.events);
+
+  final PublishedSiteReadVerifier _inner;
+  final List<String> events;
+
+  @override
+  Future<PublishedSiteReadOutcome> readOutcome({
+    required String siteUrl,
+    required String path,
+    required int maxBytes,
+    String? cacheBuster,
+  }) {
+    events.add('read $path');
     return _inner.readOutcome(
       siteUrl: siteUrl,
       path: path,
