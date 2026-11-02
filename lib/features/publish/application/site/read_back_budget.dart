@@ -30,6 +30,26 @@ abstract final class ReadBackBudget {
   /// Progress copy for a wait that can legitimately last minutes.
   static const String gitHubPagesWaitNote = 'This can take a few minutes.';
 
+  /// The deferred check of a GitHub commit (ADR 0019 Decision 10) reads for
+  /// the first time this long after the commit. S0 measured Pages builds of
+  /// 36–42 s, so an earlier read would almost always see the old bytes.
+  static const Duration deferredFirstDelay = Duration(seconds: 30);
+
+  /// Pause between the deferred check's later reads.
+  static const Duration deferredInterval = Duration(seconds: 10);
+
+  /// The deferred check stops reading at this point after the commit. It is
+  /// best-effort: a commit it cannot prove stays `deployed`, and the next
+  /// publish's pre-check settles it (never a contradiction).
+  static const Duration deferredTotal = Duration(seconds: 150);
+
+  /// Reads the deferred check makes: one at [deferredFirstDelay], then one
+  /// every [deferredInterval] up to and including [deferredTotal] (13).
+  static int get deferredAttempts =>
+      1 +
+      (deferredTotal - deferredFirstDelay).inMilliseconds ~/
+          deferredInterval.inMilliseconds;
+
   /// Total wall-clock budget of [gitHubPagesAttempts] × [gitHubPagesInterval].
   static Duration get gitHubPagesTotal =>
       gitHubPagesInterval * gitHubPagesAttempts;

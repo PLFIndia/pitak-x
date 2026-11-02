@@ -100,8 +100,8 @@ final class PublishTimings {
     required this.totalMillis,
   }) : marks = List.unmodifiable(marks);
 
-  /// Which publish this was: `catalogue`, `events` or `cloudflare-deploy`.
-  /// A CONSTANT name, never a path or address.
+  /// Which publish this was: `catalogue`, `events`, `availability` or
+  /// `cloudflare`. A CONSTANT name, never a path or address.
   final String operation;
 
   /// The marks, in the order the stages finished.
@@ -183,7 +183,7 @@ final class PublishTimingRecorder {
   final List<PublishTimingMark> _marks = [];
 
   /// Which publish this recorder belongs to (`catalogue`, `events`,
-  /// `cloudflare`). A CONSTANT name, never a path or address.
+  /// `availability`, `cloudflare`). A CONSTANT name, never a path or address.
   final String operation;
 
   /// True when a sink is wired (debug builds). False means every call below is
