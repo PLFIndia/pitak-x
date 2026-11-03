@@ -70,20 +70,24 @@ question, together with the SP5 measurement on two throwaway `PLFIndia`
 repositories). SP5 was measured and **`.nojekyll` is adopted** (§S14).
 **Two throwaway repositories wait for the product owner to delete them by
 hand:** `PLFIndia/pitak-sp5-small` and `PLFIndia/pitak-sp5-large` (archived).
-S15 — final measurements — **STARTED 2026-11-03, device run part 1 done
-(§S15)**, on the product owner's go-ahead ("Start now: all 17 tests, A–D").
-Blocks A (GitHub), B (restore, Phase 2 acceptance: **PASS**) and C
-(Cloudflare) are done. **Block D (the 1,000-item fixture) has NOT run**: the
-product owner stopped the session at 18:01 IST while its seeder was building
-("we will continue later in a new session"). **Still to do in S15:** block D,
-the Appendix A "after" columns (the numbers are in §S15; the plan is not
-updated yet), the release docs. The Linux golden regeneration stays deferred
-until all fixes are done. Open decisions for the product owner: J11 (§S9),
-J12–J14 (§G4; J12 has a new visible effect, §S15), J15 (§S10b), the copy of
-the rate-limit messages (§S10b), the copy of the backup/restore lines (§S11),
-the guide line of §S12, the PRIVACY wording of J18 (§S14), the missed
-Cloudflare lane p90 rule (§S15) and the new observations J19–J23 (§S15).
-Open engineering observation J17 (§S12).
+S15 — final measurements — **device runs done (§S15)**, on the product
+owner's go-ahead ("Start now: all 17 tests, A–D"; block D: "go ahead with
+D", 23:28 IST). Blocks A (GitHub), B (restore, Phase 2 acceptance: **PASS**)
+and C (Cloudflare) ran in part 1 (stopped by the product owner at 18:01 IST);
+**block D (the 1,000-item fixture) ran in part 2, 23:29–23:58 IST: PASS**
+(D2 0 covers read / 1,000 reused, 1 min 30 s vs S0 5 min 25 s; D3 1 read).
+**New finding J24 (§S15 part 2):** 73 s of D2's 90 s is still the cover
+stage although no cover is read — the cover salt is read from secure storage
+once per cover. **Still to do in S15:** the Appendix A "after" columns (the
+numbers are in §S15; the plan is not updated yet), the release docs. The
+Linux golden regeneration stays deferred until all fixes are done. Open
+decisions for the product owner: J11 (§S9), J12–J14 (§G4; J12 has a new
+visible effect, §S15), J15 (§S10b), the copy of the rate-limit messages
+(§S10b), the copy of the backup/restore lines (§S11), the guide line of
+§S12, the PRIVACY wording of J18 (§S14), the missed Cloudflare lane p90 rule
+(§S15), the new observations J19–J23 (§S15) and whether J24 becomes a fix
+session before the release (§S15 part 2). Open engineering observation J17
+(§S12).
 
 **Outside the plan (2026-11-03, before S15's device run, product owner's
 request):** commit `7708439` makes the Android launcher icon adaptive
@@ -101,7 +105,8 @@ graphics are uploaded by hand: Play still showed the August 2026 icon; the
 product owner uploaded `icon.png` and `featureGraphic.png` in Play Console on
 2026-11-03 (in Google's review at 15:10 IST).
 
-> Read this file first in any new session. §S15 is the newest state, then
+> Read this file first in any new session. §S15 part 2 (block D) is the
+> newest state, then §S15 (part 1), then
 > §S14, §S13, §S12, §S11, §S10b, §S10, §G4 (device evidence), §S9, §S8, §S7, §S6, §S5, §S4,
 > §S3, §S2 and §0 (S1). §1–§5 are the S0 record (plan Appendix A cites the
 > verbatim lines in §3), kept unchanged.
@@ -114,6 +119,106 @@ product owner uploaded `icon.png` and `featureGraphic.png` in Play Console on
 > settled and needs no new review: borrower names and loan details (P1, in the
 > vault) and credentials and tokens (security, `AGENTS.md` §6). `PRIVACY.md`
 > only has to state accurately what is uploaded (a store requirement).
+
+---
+
+## S15 part 2 — block D, the 1,000-item fixture (2026-11-03, 23:29–23:58 IST)
+
+**Started:** 23:28 IST on the product owner's go-ahead ("go ahead with D").
+The product owner did every tap; the agent built, installed and read the
+phone's log (`adb logcat -d -s flutter`, log buffer raised to 16 MiB for the
+run and set back to 256 KiB after it).
+
+**Build and fixture:**
+- `flutter clean`, then the seeder: `flutter test
+  integration_test/publish_fixture_seed_test.dart --flavor play -d 678c5642
+  --no-uninstall --dart-define=fixtureItems=1000` (debug build of HEAD
+  `e948e90` = the `7708439` code). The USB link dropped 5 s into the test
+  (`flutter test` reported "did not complete", rc 79), **but the app kept
+  seeding on the phone**: 1,000 cover files (130 MB) by 23:33:27, about 11
+  covers a second; the library showed "Publish fixture 0999 … 0000". No
+  re-run was needed. (A dropped link does not stop an on-device integration
+  test; it only loses the result report.)
+- Then `flutter build apk --profile --flavor play
+  --dart-define=publishTimings=true` (first `playProfile` build since the
+  clean, 23:32–23:34): `libapp.so` (arm64) holds `publish timings` 1× and
+  `treeReads=` 1×, SHA-256 `d97d3d1c…`; APK SHA-256 `24675f40…`.
+  `adb install -r` at 23:35:07; data kept (`firstInstallTime` 23:31:31).
+- `svc power stayon usb` is killed on this phone (rc 137) and `settings put
+  global stay_on_while_plugged_in` needs WRITE_SECURE_SETTINGS, so neither
+  works; the screen timeout was already 30 min, which was enough.
+- The product owner unlocked the vault (`smokePassphrase`) and connected
+  Cloudflare (`pitak-worker`, the same Worker the F-Droid app published to in
+  C1–C4), so D1 was a reviewed whole-site replacement, as expected.
+
+### Results
+
+| Test | Result | Numbers (S0 in brackets, plan Appendix A rows 12–15) |
+|---|---|---|
+| D1 first publish (reviewed replacement) | **PASS** | Tap 23:39:26 → review shown 23:44:43 (total 316.5 s [308.3 s]) → confirmed 8 s later → done 23:50:26 (total 335.0 s [395.9 s]). **End to end 11 min 0 s [≈ 11 min 47 s].** Preparation unmarked and unchanged, twice: 304.5 s before the review [304.4 s] and 309.3 s after confirming [308.8 s] (**J11 as expected**). The gain is upload 9.8 s [74.8 s] and readBack 1.1 s in 1 round [7.0 s, SP2]. The upload was only 253,518 B [135,007,872 B] because Cloudflare already held every cover's bytes from S0's seeding: the seeder's covers are deterministic (`Random(index)`) and so are the renditions — **not a code gain**. Reconcile 11.4 s / 12.3 s [3.3 s] (the foreign site's checks; variable, J23). The site then served 1,000 items (`books.json` 253,104 B, `exportedAt` 23:45:04). |
+| D1 follow-up | info | The lane deployed its pending set right after (`cloudflareAvailability` 13.7 s, `out=[]`): the J12 pattern on Cloudflare (a new phone's lane waits for the first catalogue publish). No visible effect on Cloudflare (the catalogue had already read itself back); one extra deploy. |
+| D2 unchanged republish | **PASS** | **total 90.1 s [324.9 s, −72 %]**, **`coversRead=0,coversReused=1000`** [1,000 read]: the Phase 2 target (A.2: 0) is met at 1,000 items. But `coverDecisions` is still **72.6 s** [285.8 s] with no cover read: **J24** below. Reads 0.6 s, reconcile 2.0 s [3.5 s], upload 5.5 s (253,283 B: `books.json` carries the item keys since S3, 185 KB in S0), deploy 1.5 s, readBack 0.9 s in 1 round [7.3 s]; unmarked gates ≈ 6.7 s [≈ 7–8.5 s]. |
+| D3 add 1 book + cover | **PASS** | **total 112.9 s [327.5 s, −66 %]**, **`coversRead=1,coversReused=1000`** [1,001 read]: the Phase 2 target (A.2: 1) is met. A new camera photo, book "dictionary": `covers/95a62c66acc38673.jpg` served 200, 22,009 B, `image/jpeg`; upload 275,503 B (this time the cover really went up; S0's add-1 did not, see S0 row 15). `coverDecisions` 72.1 s (J24), reconcile 5.0 s, deploy 1.4 s, **readBack 20.6 s in 2 rounds** (round 1 at once did not see the new version, J22; the rounds were slow); unmarked gates ≈ 7.5 s. 1,001 items served (`exportedAt` 23:55:44). |
+
+### Verbatim lines (`adb logcat -s flutter`, IST; pid 8936 = Play profile timing build)
+
+```
+23:44:42.785 publish timings cloudflare: total=316528ms reads=645ms reconcile=11381ms
+23:50:26.093 publish timings cloudflare: total=334960ms reads=617ms reconcile=12324ms upload=9809ms(bytes=253518) deploy=1791ms readBack=1109ms(rounds=1)
+23:50:40.303 publish timings cloudflareAvailability: total=13746ms reconcile=1893ms upload=3118ms(bytes=179) deploy=1678ms readBack=472ms(rounds=1)
+23:52:45.799 publish timings cloudflare: total=90050ms reads=612ms reconcile=2034ms coverDecisions=72595ms(coversRead=0,coversReused=1000) build=72819ms upload=5466ms(bytes=253283) deploy=1509ms readBack=930ms(rounds=1)
+23:57:31.656 publish timings cloudflare: total=112932ms reads=665ms reconcile=5039ms coverDecisions=72104ms(coversRead=1,coversReused=1000) build=72319ms upload=5332ms(bytes=275503) deploy=1431ms readBack=20632ms(rounds=2)
+```
+
+### New observation J24 — reusing a cover still costs ≈ 72 ms (proposed plan J24; not yet in the plan)
+
+**What:** D2 read no cover, yet its cover stage took 72.6 s, about **72.6 ms
+per reused cover**; D3: 72.1 s for 1,001 decisions. The test library shows
+the same rate: A1 556 ms for 9 reused covers, A4 573 ms for 10 (≈ 57–62 ms
+each). It is 81 % of D2's 90 s.
+
+**Cause (from the code; not yet proven by a measurement):** the reuse
+branch of `PublishCoverDecider._decide` (`publish_cover_decider.dart`) reads
+no file, and its record lookups are map lookups. The only other per-cover
+work is `await publishPath()` → `PublishCoverIds.pathFor`
+(`domain/publish_cover_ids.dart:62–65`), which calls `saltStore.salt()` for
+**every** cover; `SecureStorageCoverSaltStore.salt()` reads
+`flutter_secure_storage` (9.2.4) each time, with no cache — one platform
+channel call plus a Keystore decryption per cover. A.6 #31 already made
+`PublishItemKeys.keysFor` read the salt once per publish for the same reason;
+the cover path was not changed.
+
+**Proposed fix (engineering; product owner decides whether it becomes a
+session before the release):** read the salt once per publish run and derive
+every cover path from it (the `keysFor` pattern). Expected: D2 ≈ 18 s instead
+of 90 s, D3 ≈ 40 s (its 20 s read-back included), about 0.5 s off every
+test-library publish, and ≈ 72 s off each of the two preparations of a
+1,000-cover move or replacement (J11). Prove it with a test that counts salt
+reads (one per run) and the D2 re-run on this fixture (the Play app keeps
+it). Security: the salt is already held in memory per call today (and its
+doc comment rates it "not high-value"); holding it for one run changes
+nothing; it must still never be logged.
+
+### Device, site and account state at the end (23:58 IST)
+
+- `dev.khoj.pitaka` (Play): **installed**, the profile timing build of
+  `e948e90` (debug-signed), **1,001 items** (the fixture + "dictionary"),
+  vault passphrase `smokePassphrase`, **Cloudflare connected to
+  `pitak-worker` (its API token is stored in this app)**. Kept on purpose so
+  that J24's fix can be re-measured with D2 alone (no 11-min D1 again).
+  Uninstall it (`adb uninstall dev.khoj.pitaka`) when it is no longer needed;
+  that also removes the token copy.
+- **The Worker now serves the fixture site** (1,001 items, `availability.json`
+  `out=[]`). The F-Droid app's Cloudflare record is therefore stale: its next
+  Cloudflare publish will offer a reviewed whole-site replacement (expected,
+  safe; same as after S0).
+- `dev.khoj.pitaka.fdroid`: unchanged (the `7708439` timing build; install an
+  ordinary build before daily use).
+- Phone settings: log buffer back to 256 KiB; stay-awake untouched (still
+  off); screen timeout untouched (30 min).
+- Raw logs outside the repo, lost on reboot: `/tmp/s15d/` (seeder and build
+  logs, `logcat_final.txt`, the fetched `books.json`). Every number is above.
+- No background job is left running on the Mac or the phone.
 
 ---
 
@@ -169,7 +274,7 @@ GitHub rows of Appendix A on a normal network before filling them in**
 | C2 unchanged republish | CF | **PASS, smaller gain** | total 19.9 s (S0 25.0, G.4 26.3): reconcile 1.9 s (S0 3.3), unmarked gates ≈ 5.6 s (S0 ≈ 8.5: SP3), but `readBack` 6.4 s with **2 rounds** (round 1 at once did not see the new version yet). |
 | C3 add 1 book + cover | CF | **PASS** | total 19.1 s (S0 add-1 25.7 s): `readBack` 0.9 s in 1 round (S0 6.8 s), reconcile 2.0 s, `coversRead=1,coversReused=10`; 11 items. |
 | C4 lane, 8 lends/returns | CF | **p90 rule MISSED** | Totals (debounce done → read back) 49.3, 32.0, 33.7, 17.2, 25.0, 16.2, 14.1, 12.5 s: median 21.1 s, **p90 38.4 s** (linear; rule ≤ 20 s; G.4 26.0 s). Lend → visible 61, 43, 44, 36, 41, 37, 32, 32 s (median 39 s). Changes 6–8 (12.5–16.2 s) beat G.4's typical 15–16 s (SP3's 1–2 s). Changes 1–3 lost 15–26 s in the **unmarked** gates (normal ≈ 6–8 s); phone → Cloudflare stayed fast where probed (J23). Change 5: the edge served the new file, then the **previous version** for ≈ 3 s, then the new one (J22). |
-| D1–D3 1,000-item fixture | CF | **NOT RUN** | Stopped while the seeder built. Nothing was installed. |
+| D1–D3 1,000-item fixture | CF | **NOT RUN in part 1; PASS in part 2** | Stopped while the seeder built; nothing was installed. Run later the same day: see §S15 part 2. |
 
 **Phase status after part 1:** Phase 2 acceptance "a restore on a second
 phone uploads no covers" is **met** (B3; A.6 #118 can close). Phase 3: the
@@ -271,8 +376,8 @@ total − 20 s.
 
 ### To continue S15 (new session)
 
-1. **Block D (1,000-item fixture, Cloudflare)** — on the product owner's
-   word. Keep the screen on (`adb shell svc power stayon usb`). Seed (debug
+1. **DONE in part 2 (§S15 part 2).** Block D (1,000-item fixture,
+   Cloudflare) — on the product owner's word. Keep the screen on (`adb shell svc power stayon usb`). Seed (debug
    build; idempotent, re-run tops up if the USB drops):
    `flutter test integration_test/publish_fixture_seed_test.dart --flavor play -d 678c5642 --no-uninstall --dart-define=fixtureItems=1000`.
    Then `flutter build apk --profile --flavor play --dart-define=publishTimings=true`,
