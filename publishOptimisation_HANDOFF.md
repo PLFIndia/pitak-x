@@ -1,4 +1,4 @@
-# Publish optimisation — handoff (S13 complete, 2026-11-02)
+# Publish optimisation — handoff (S14 complete, 2026-11-03)
 
 **Branch:** `publishOptimisation` (from `03313a3`, release 1.9.0+32).
 **Plan:** `publishOptimisation_PLAN.md` (product decisions A.3, engineering decisions A.4, deviations A.6, measurements Appendix A).
@@ -63,14 +63,22 @@ S13 — SP2 + SP3 (Cloudflare reads side by side) — **complete** (§S13),
 started on the product owner's go-ahead ("go ahead for the next item",
 2026-11-02, confirmed as S13 in the session's first question; no copy
 involved).
-**S14 (Phase 3: SP4 + the SP5 measurement) has NOT started. Do not start it
-until the product owner explicitly says so.** Open decisions for the product
-owner: J11 (§S9), J12–J14 (§G4), J15 (§S10b), the copy of the rate-limit
-messages (§S10b), the copy of the backup/restore lines (§S11) and the guide
-line of §S12. Open engineering observation J17 (§S12).
+S14 — SP4 + SP5 (GitHub: no tree read at an unchanged head; `.nojekyll`) —
+**complete** (§S14), started on the product owner's go-ahead ("go ahead for
+the next item", 2026-11-03, confirmed as S14 in the session's first
+question, together with the SP5 measurement on two throwaway `PLFIndia`
+repositories). SP5 was measured and **`.nojekyll` is adopted** (§S14).
+**Two throwaway repositories wait for the product owner to delete them by
+hand:** `PLFIndia/pitak-sp5-small` and `PLFIndia/pitak-sp5-large` (archived).
+**S15 (final measurements, Appendix A "after" columns, release docs) has NOT
+started. Do not start it until the product owner explicitly says so.** Open
+decisions for the product owner: J11 (§S9), J12–J14 (§G4), J15 (§S10b), the
+copy of the rate-limit messages (§S10b), the copy of the backup/restore lines
+(§S11), the guide line of §S12 and the PRIVACY wording of J18 (§S14). Open
+engineering observation J17 (§S12).
 
-> Read this file first in any new session. §S13 is the newest state, then
-> §S12, §S11, §S10b, §S10, §G4 (device evidence), §S9, §S8, §S7, §S6, §S5, §S4,
+> Read this file first in any new session. §S14 is the newest state, then
+> §S13, §S12, §S11, §S10b, §S10, §G4 (device evidence), §S9, §S8, §S7, §S6, §S5, §S4,
 > §S3, §S2 and §0 (S1). §1–§5 are the S0 record (plan Appendix A cites the
 > verbatim lines in §3), kept unchanged.
 
@@ -82,6 +90,195 @@ line of §S12. Open engineering observation J17 (§S12).
 > settled and needs no new review: borrower names and loan details (P1, in the
 > vault) and credentials and tokens (security, `AGENTS.md` §6). `PRIVACY.md`
 > only has to state accurately what is uploaded (a store requirement).
+
+---
+
+## S14 — SP4 + SP5: GitHub skips the tree read at an unchanged head; `.nojekyll`
+
+**Started:** 2026-11-03, product owner's go-ahead "go ahead for the next
+item". One question round before building; the product owner chose **"Yes,
+start S14 (Recommended)"** and, for SP5, **"Yes, on PLFIndia, two sizes
+(Recommended)"** (plan A.6 #133). No copy is involved: nothing on screen
+changes. No device step was possible (the session had no phone step), so the
+open device evidence (§S11 restore, §S12/§S13 timings) is still open.
+
+**Commits:** `753ea3a` (SP4 code + tests), `c7a9b1f` (SP5: `.nojekyll` code +
+tests, and one more SP4 adapter test), then the docs commit (ADR 0017 amendment, ADR 0020 Decision 10 and
+ADR 0014 W5 notes, ADR index, ARCHITECTURE §5.8, CHANGELOG, plan, this
+handoff).
+
+**What changed for users (once released):** GitHub publishes are faster;
+nothing they see or publish changes except one empty file.
+- **SP4.** A GitHub publish (catalogue, events, availability lane) no longer
+  downloads the site's whole file list when the branch is still at this
+  phone's own proven commit — the normal case for every publish after the
+  first one has gone live. It reads the head (one small request) instead of
+  three requests, the last of them the large recursive listing (S0's
+  `reconcile` mark, which also holds the Pages read: 1.8–6.5 s on GitHub;
+  the listing grows with the library).
+- **SP5.** Every GitHub Pages build of a Pitak site skips Jekyll: the
+  median build was 23 % shorter on a 10-cover site (43 → 33 s) and 17 % on
+  a 1,000-cover site (48 → 40 s); a commit was served 9–12 s sooner. That
+  shortens "going live" after every catalogue,
+  events and availability commit (S12's deferred check proves it sooner; the
+  lane's lend → visible, G.4 ≈ 63 s with a 38 s build, should drop
+  accordingly). Existing sites gain the empty `.nojekyll` with their next
+  catalogue publish (one tiny upload, once).
+
+**The rules (as built; plan A.6 #134–#141):**
+
+| Part | Where | Rule |
+|---|---|---|
+| Two reads | port `GitHubGitDataApi.branchHead` / `treeAt`; `GitHubTreeReader.readHead` / `readTree` | `headTree` is gone. `branchHead` = the ref (1 request). `treeAt(headSha)` = that commit + its recursive tree (2 requests; refuses a non-40-hex sha or an unsafe branch before any request). |
+| The shortcut | `GitHubPublicationReconciler` | Read the head; `local.reconciledAtUnchangedHead(repo, branch, head)`; non-null ⇒ plan from it, `knownBlobShas` = its shas, `treeRead: false`; null ⇒ `treeAt(head)`, truncation refused as before, `reconciledFrom(tree)`. |
+| Who may skip | `PublishManifest.reconciledAtUnchangedHead` | Only a `live` record, not `adoptedFromBackup`, at exactly that head, describing the same repo and branch. It feeds the record's files to `reconciledFrom` as the tree (ONE rule set; a 48-case test equals a full read). Everything else reads the tree: `deployed`, `retired`, another repo or branch, no head. |
+| Backups | `PublishManifest.adoptedFromBackup`, `RestoredPublishStateAdopter` | The adopter saves `gitHub.withoutCatalogueKeys().asAdoptedFromBackup()`. `_copyWith` copies keep it; `reconciledFrom`, `afterCommit`, `asRetired` clear it. JSON: written only when true; another type reads as true. |
+| Moves | `GitHubMoveReader` | Always `branchHead` + `treeAt` (a move needs the whole tree). |
+| Timings | `PublishTimingMark.treeReads` | The GitHub `reconcile` mark ends `(treeReads=0)` or `(treeReads=1)`. |
+| `.nojekyll` | `GitHubPagesNoJekyll` (domain), `SiteSection.catalogue`, `CatalogueInputs.gitHubPagesSite`, `CatalogueSectionBuilder.build(gitHubPagesSite:)` | Empty file after `index.html` in the catalogue section, only when `PublishSnapshotBuilder.read` got a `GitHubPublishTarget` (publishes and moves to GitHub). Catalogue-owned (records, move plans, the backup codec accept it; a retirement deletes it). Required argument. Never on Cloudflare. |
+
+**SP5 measurement (plan E.5; Appendix A "SP5" table).** Throwaway script
+outside the repo: `/tmp/sp5/sp5.py` (logs `/tmp/sp5/<name>/events.log`,
+`results.jsonl`, `summary.json`; byte check `/tmp/sp5/compare.py`; lost on
+reboot — every number is in plan Appendix A and below). Two
+public repositories created 07:43 IST on `PLFIndia`, Pages from `main:/`
+(branch build, the setup Pitak's GitHub host uses), each with a Pitak-shaped
+site from the real test site (`degt3rt/my-library`: viewer, `books.json`,
+`library.json`, events files, `availability.json`) and covers made from its
+real covers with unique bytes:
+- `pitak-sp5-small`: 10 covers, 17 files, 0.6 MB;
+- `pitak-sp5-large`: 1,000 covers, 1,007 files, 52.9 MB.
+
+A warm-up build, then 10 commits per repository, alternating without / with
+`.nojekyll` (ABAB, so drift hits both alike), at least 6 min apart (no build
+queued: Pages' soft limit is 10 builds an hour). Each commit changes
+`books.json` (`exportedAt`, like a republish) and adds or removes the file.
+Measured per build: the Actions run of "pages build and deployment"
+(started → finished) and push done → the new `books.json` first served to an
+anonymous client (polled every second).
+
+| Site | Measure | Without (5 builds) | Median | With (5 builds) | Median | Change |
+|---|---|---|---|---|---|---|
+| small | Actions run | 43, 46, 39, 51, 37 s | 43 s | 24, 33, 23, 65, 44 s | 33 s | **−23.3 %** |
+| small | push → served | 40.9, 40.9, 36.0, 42.4, 33.8 s | 40.9 s | 23.0, 28.9, 19.7, 48.6, 34.2 s | 28.9 s | −29.4 % |
+| large | Actions run | 48, 47, 51, 63, 42 s | 48 s | 38, 28, 43, 40, 57 s | 40 s | **−16.7 %** |
+| large | push → served | 49.1, 45.4, 45.4, 59.3, 39.7 s | 45.4 s | 36.3, 26.9, 42.2, 33.6, 55.1 s | 36.3 s | −20.1 % |
+
+Warm-ups (not counted): 40 s / 39.4 s (small), 79 s / 72.5 s (large). No
+build was queued. The two slow "with" runs (65 s small, 57 s large) were
+GitHub's deploy job (46 s, 29 s); their build jobs took 10 s and 9 s.
+
+Where the time goes (the run's jobs): without `.nojekyll` the build job pulls
+the Jekyll container (11–15 s) and runs Jekyll (≈ 2 s); with it both steps
+are skipped (build job median 19 → 7 s small, 25 → 9 s large). The deploy
+job varies between 8 and 46 s either way (GitHub's noise).
+**Every Pitak file was served byte for byte the same with and without
+Jekyll** (index.html, JSON files, covers; same content types); `/.nojekyll`
+itself is served as an empty 200, so a move to GitHub can verify it.
+**Decision: adopted** (gain above 15 % on both sizes and both measures).
+
+**Engineering notes for the product owner (no decision needed):**
+- *Restored phones.* Since S11 a `live` GitHub record can come from a
+  backup. S14 marks it, so the first publish on the new phone reads the whole
+  file list once (as every publish did before S14) instead of trusting
+  another phone's claim. Without the mark, a damaged or hand-made backup
+  record could make every GitHub publish fail until someone else committed.
+- *Very large repositories.* A publish that skips the tree never sees
+  GitHub's "listing cut short" flag; it does not need it, because it deletes
+  only the record's own paths. Reaching that case at all needs a repository
+  whose listing this phone's own last commit made too long.
+
+**Tests:** reconciler (new fake with separate head/tree reads: one head read
+and no tree read for a live record at its head; a moved head reads the tree
+at the NEW head; `deployed`, `retired`, other repo, other branch, no head and
+adopted records read the tree; an adopted record is this phone's own after
+the read; the head read failing reads no tree; a **48-case equivalence**
+with a full read, the head tree also holding a human's file); adapter
+(request shape: `branchHead` = the ref only, `treeAt` = commit + tree and no
+second ref read; malformed sha / unsafe branch refused before any request;
+transport text never leaks; refused commit or tree reads); manifest
+(flag JSON incl. damage, copies keep it, own writes clear it, the shortcut's
+rules); use cases (catalogue: no tree read on a live record and the new cover
+alone is sent; a moved head reads once; an adopted record reads; events and
+availability: no tree read; `treeReads=0/1` on the timing line); adopter
+(the saved record is marked and the shortcut refuses it); move source (a
+move reads the tree even at a live head); timings (`treeReads` in the line);
+`.nojekyll` (ownership incl. near-misses; the target decides; empty bytes,
+sha `e69de29…`, uploaded once then named; never for a Cloudflare target;
+the empty body verifies and its absence does not; the read-back address;
+the backup codec accepts the path). Fixtures that modelled "the same head
+with other files" (impossible: a commit fixes its files) now move the head
+(availability harness; truncation test). **Mutation checks:** trusting
+adopted records failed 4 tests; any state 8; no head comparison 10; no
+site comparison 3; never taking the shortcut 6; the adopter forgetting the
+mark 2; an empty known-blob set 1.
+
+**Security notes (skill checklist):** no credential, input boundary or
+write rule changed. The new `treeAt` refuses a malformed sha before it can
+reach a URL path. The shortcut trusts only records this phone wrote; a
+backup's record (hostile input since S11) is marked and checked against the
+real tree first, and damage reads as less trust. Deletions remain the
+record's own paths. `.nojekyll` is an empty public file (P8); no log line was
+added (the timing line carries a count only).
+
+**Device evidence (for S15):** on the timing build, a GitHub catalogue
+republish after the previous one went live shows `reconcile=…(treeReads=0)`
+and a shorter `reconcile` than S0's 1.8–6.5 s; a first publish after an
+update shows `treeReads=1` and adds `.nojekyll` to the commit once; the card
+turns into "Your site is live." sooner than S12's ≈ 40 s.
+
+**Throwaway repositories (product owner, please delete by hand):**
+`PLFIndia/pitak-sp5-small` and `PLFIndia/pitak-sp5-large`, archived at the
+end of the measurement (08:46 IST, after a last byte check). Each holds 11
+commits by `pitak-sp5`. The gh token cannot delete repositories.
+
+**Files changed (code):** `domain/github_api.dart` (port),
+`infrastructure/http_github_tree.dart`, `http_github_api.dart` (460),
+`commit_recording_github_api.dart`, `resumable_upload_github_api.dart`;
+`application/github_publication_reconciler.dart`, `github_move_reader.dart`,
+`publish_library_use_case.dart`, `publish_events_use_case.dart`,
+`publish_availability_use_case.dart` (timing mark, comments),
+`site/publish_timings.dart`, `site/restored_publish_state_adopter.dart`;
+`domain/publish_manifest.dart` (492) and new `domain/publish_manifest_json.dart`;
+SP5: new `domain/site/github_pages_no_jekyll.dart`, `domain/site/publish_section.dart`,
+`domain/site/publish_snapshot.dart`, `application/site/publish_snapshot_builder.dart`,
+`application/site/catalogue_section_builder.dart` (476),
+`lib/dev/cloudflare_memory_scenario.dart` (passes `false`).
+**Tests:** `github_publication_reconciler_test.dart` (rewritten fake + 12),
+`http_github_api_test.dart`, `publish_manifest_test.dart`,
+`publish_library_use_case_test.dart`, `publish_events_use_case_test.dart`,
+`publish_availability_use_case_test.dart`, `restored_publish_state_adopter_test.dart`,
+`publish_timings_test.dart`, `github_move_source_test.dart`,
+`publish_salt_invariant_test.dart`, `publish_snapshot_builder_test.dart`,
+`site_section_ownership_test.dart`, `move_verifiers_test.dart`,
+`bounded_published_site_verifier_test.dart`, `publish_state_backup_codec_test.dart`;
+every fake of the port and both decorator suites; `false` added at the direct
+catalogue-builder calls.
+
+**Gates at the end of S14 (2026-11-03, macOS, Flutter 3.44.2 via
+`.fvm/flutter_sdk`):**
+- build_runner: no generated file changed (no provider changed); the
+  pre-commit hook confirmed it on both code commits.
+- `flutter analyze lib test integration_test`: no issues.
+- `dart format --set-exit-if-changed lib test integration_test`: 0 changed.
+- `flutter test --coverage`: **5,726 passed** (S13 ended at 5,689). The 10
+  failures are the same 10 macOS goldens in `test/golden/key_screens_test.dart`:
+  a clean worktree of `d0c8449` (the S13 head) fails exactly the same 10,
+  checked by name. S14 changes no screen.
+- Line coverage: `publish_manifest.dart`, `publish_manifest_json.dart`,
+  `github_publication_reconciler.dart`, `http_github_tree.dart`,
+  `commit_recording_github_api.dart`, `resumable_upload_github_api.dart`,
+  `restored_publish_state_adopter.dart`, `publish_section.dart`,
+  `publish_snapshot.dart` 100 %; `publish_snapshot_builder.dart` 98.9 %,
+  `catalogue_section_builder.dart` 98.6 %, `publish_availability_use_case.dart`
+  98.5 %, `publish_timings.dart` 97.6 %, `publish_library_use_case.dart`
+  97.4 %, `publish_events_use_case.dart` 94.8 %, `http_github_api.dart`
+  94.5 %, `github_move_reader.dart` 92.0 %. Every missed line predates S14
+  (transport catches, older failure branches, the wall clock).
+  `github_pages_no_jekyll.dart` holds constants only.
+- File sizes ≤ 500 (largest touched: `publish_manifest.dart` 492,
+  `catalogue_section_builder.dart` 476, `http_github_api.dart` 460).
+- No new dependency; `pubspec.lock` and Rust untouched. CSP unchanged.
 
 ---
 

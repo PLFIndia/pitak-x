@@ -198,6 +198,28 @@ heading as part of the `chore(release):` commit.
   `CloudflareReadBackBudget.afterAvailabilityDeploy` and `immediateFirstRound`
   are gone (the lane uses `afterDeploy`). No screen or wording changes;
   expected saving about 6–9 s per Cloudflare publish (S15 measures it).
+- **A GitHub publish skips the file-list read when nothing moved** (plan SP4,
+  S14; ADR 0017 amendment of 2026-11-03). `GitHubGitDataApi.headTree` is
+  split into `branchHead` (one ref read) and `treeAt` (the commit and its
+  recursive tree); the reconciler reads the head first and, when this
+  phone's record is `live` for the same repository and branch at exactly
+  that head, reconciles from the record
+  (`PublishManifest.reconciledAtUnchangedHead`, the same `reconciledFrom`
+  rules) without the tree request. Blob reuse then knows the record's own
+  blobs. A move always reads the whole tree. GitHub records gain the
+  additive `adoptedFromBackup`, set by the restore adopter, so another
+  phone's record is read against the tree once before it is trusted; the
+  lenient record reader moved unchanged to `publish_manifest_json.dart`. The
+  GitHub `reconcile` timing mark reports `treeReads`.
+- **A GitHub Pages site carries an empty `.nojekyll`** (plan SP5, S14; same
+  amendment). Measured on real Pages builds of Pitak-shaped sites, skipping
+  Jekyll cut the median build by 23 % on a 10-cover site and 17 % on a
+  1,000-cover site (5 builds each; push → served 29 % and 20 %) with
+  byte-identical served files. The catalogue section owns the file
+  (`GitHubPagesNoJekyll`) and writes it only for a GitHub Pages target
+  (`CatalogueInputs.gitHubPagesSite`, decided from the target when the
+  inputs are read); existing sites gain it with their next catalogue
+  publish, a move to GitHub carries it, Cloudflare never gets it.
 
 ### Fixed
 - A damaged local `publish_manifest.json` whose `ownershipConfirmed` was not

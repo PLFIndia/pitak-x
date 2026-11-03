@@ -8,7 +8,8 @@
 - **Date:** 2026-11-02
 - **Amends:** nothing directly. ADR 0014 gained its amendment with Fix 2
   (W5, 2026-11-02, S11, Decision 7); ADR 0017 gained one with the
-  non-blocking GitHub outcome (2026-11-02, S12, Decision 8). Builds on
+  non-blocking GitHub outcome (2026-11-02, S12, Decision 8) and one with
+  SP4/SP5 (2026-11-03, S14, Decision 10). Builds on
   ADR 0017 Decision 4 (complete snapshots) and
   ADR 0019 (the availability lane, the J9 reset).
 - **Plan:** `publishOptimisation_PLAN.md` — product decisions P4/P5 (A.3),
@@ -267,6 +268,16 @@ need to do.
     record of the same repo and branch at the same head; `.nojekyll` is
     adopted only with a measured ≥ 15 % build-time gain (SP5); the S0 timings
     stay as the regression tool, compiled out of normal builds (SP6).
+    *As built in S14 (2026-11-03):* the port reads the branch head alone
+    first (`branchHead`) and the tree of that head only when needed
+    (`treeAt`); `PublishManifest.reconciledAtUnchangedHead` reconciles from
+    the record through the same `reconciledFrom` rules, so Decision 6 then
+    knows the record's own blobs. A record adopted from a backup
+    (`adoptedFromBackup`, Decision 7) is read against the tree once first.
+    SP5 measured median Pages builds 23 % (10 covers) and 17 % (1,000 covers)
+    shorter without Jekyll, so `.nojekyll` is
+    adopted: a catalogue-owned, GitHub-only, empty file (ADR 0017 amendment
+    of 2026-11-03). The GitHub reconcile timing mark reports `treeReads`.
 
 ### What is public (plan P8)
 

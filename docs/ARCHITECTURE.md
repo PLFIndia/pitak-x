@@ -675,6 +675,26 @@ target passed to the current operation — that is what lets a move publish the
   per path decides" rule are unchanged. On a failed preflight the later reads
   may already have been sent; they are reads only and their answers are
   ignored.
+- **A GitHub publish reads the file list only when the head moved** (plan
+  SP4, ADR 0017 amendment of 2026-11-03). `GitHubPublicationReconciler`
+  reads the branch head alone first (`GitHubGitDataApi.branchHead`). When
+  the record is `live` for the same repository and branch at exactly that
+  head and was not adopted from a backup, a commit id fixes the content, so
+  the record already describes the file list:
+  `PublishManifest.reconciledAtUnchangedHead` runs the ordinary
+  `reconciledFrom` rules over the recorded files and the recursive tree
+  (`treeAt`) is never requested; blob reuse then knows the record's own
+  blobs. Every other case — `deployed`, `retired`, another repository or
+  branch, no head, `adoptedFromBackup` — reads the tree of the head just
+  read. A move always reads the whole tree. The debug timing line's GitHub
+  `reconcile` mark says `treeReads=0` or `1`.
+- **A GitHub Pages site carries `.nojekyll`** (plan SP5, same amendment).
+  The empty file stops GitHub Pages from running Jekyll over the site; the
+  S14 measurement on real Pages builds showed median builds 23 % (10 covers)
+  and 17 % (1,000 covers) shorter, and byte-identical served files. The catalogue section owns it
+  (`GitHubPagesNoJekyll`) and writes it only when `CatalogueInputs.gitHubPagesSite`
+  is true, which `PublishSnapshotBuilder.read` decides from the target — so
+  a move to GitHub carries it and Cloudflare never does.
 - **`hashScheme` gates hashes, not paths.** A different Cloudflare asset-hash
   scheme means "re-hash the bytes", never "forget which files we wrote".
 - **The Cloudflare marker is the freshness anchor.** Every deploy writes
@@ -732,7 +752,9 @@ target passed to the current operation — that is what lets a move publish the
   record → journal (`PublishHostStateRepository.adoptFromBackup`), undoing the
   earlier writes if a later one fails. Records are saved with
   `catalogueKeyed` cleared and keep a local cover source only for a cover file
-  the archive carried. The salt store exposes `replace` only on the narrower
+  the archive carried; the GitHub record is also marked `adoptedFromBackup`, so
+  the first publish reads the whole tree before trusting it (plan SP4). The
+  salt store exposes `replace` only on the narrower
   `ReplaceablePublishCoverSaltStore` port, held by the adopter alone
   (`publish_salt_invariant_test.dart`). Targets are stored as JSON by one
   shared codec, `PublishTargetJson` (journal and backup).

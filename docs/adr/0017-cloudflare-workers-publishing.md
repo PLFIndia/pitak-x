@@ -18,7 +18,9 @@
   [ADR 0019](0019-availability-fast-lane.md): the availability section, its
   read-back set, per-record proof paths and GitHub's deferred check; amended
   2026-11-02 by publish-optimisation plan SP1: GitHub catalogue and events
-  publishes return at commit time)
+  publishes return at commit time; amended 2026-11-03 by plans SP4 and SP5:
+  a GitHub publish skips the file-list read at an unchanged head, and a
+  GitHub Pages site carries `.nojekyll`)
 - **Amends:** ADR 0007 (a third persisted `String` token plus ephemeral
   upload/completion JWTs) and ADR 0010 (no pinning for a second publishing
   API). ADR 0012 gains the `workers.dev` reader URL by the same work.
@@ -273,6 +275,52 @@ above. What changes is only *when* the requests are sent:
   baseline, Version URLs before and after a deploy), the pending-deploy
   record, the three outcomes, the read-back sets, and all GitHub behaviour.
   The S15 device measurements will record the time saved.
+
+## Amendment 2026-11-03 — GitHub: no file-list read at an unchanged head, and `.nojekyll` (plans SP4, SP5)
+
+Publish-optimisation plans SP4 and SP5 (session S14). Both make GitHub
+publishes faster without changing what is published or proven.
+
+- **The branch head is read first** (SP4). Every GitHub publish (catalogue,
+  events, availability lane) used to read the branch head, its commit and
+  then the whole recursive file list before planning (R6). It now reads the
+  head alone first (`GitHubGitDataApi.branchHead`, one small request). When
+  this phone's record is `live` for the same repository and branch at
+  exactly that head, the file list is already known: a commit id fixes the
+  commit's whole content, and the record was written from that very list
+  (this phone's own commit, or a full read). The publish then plans from the
+  record (`PublishManifest.reconciledAtUnchangedHead`, which runs the same
+  `reconciledFrom` rules over the recorded files, so the result is the one a
+  full read gives) and never asks for the list. Otherwise it reads the list
+  of the head it just read (`treeAt`): no request is repeated.
+- **What still reads the whole list:** a record that is `deployed` (an
+  unproven commit — its pre-publish check runs as before), `retired`, of
+  another repository or branch, without a head, or adopted from a backup
+  (`adoptedFromBackup`, set by the restore adopter: another phone's claim is
+  checked against the real list once before it is trusted). A move always
+  reads the whole list.
+- **Blob reuse (ADR 0020 Decision 6)** names only the record's own blobs
+  when the list was not read. That set can be smaller than the head tree's
+  (a file a person added before this phone's last commit), which costs at
+  most one more upload and can never name a missing blob.
+- **A listing GitHub cuts short** still stops a publish that reads it. A
+  publish that skips it does not need it: its deletions are this record's
+  own paths, which the record proves exist.
+- **`.nojekyll`** (SP5). GitHub Pages runs its Jekyll site generator on
+  every build unless the site holds a `.nojekyll` file. Measured on two
+  throwaway repositories with Pitak-shaped sites (S14; plan Appendix A), the
+  build without Jekyll skipped the generator's download and run, and the
+  median build time fell by 23 % on a 10-cover site (43 → 33 s) and by 17 % on a 1,000-cover site (48 → 40 s), above the plan's 15 % bar;
+  every Pitak file was served byte for byte the same either way. So the
+  catalogue section of a GitHub Pages target now also writes the empty
+  `.nojekyll` (decided from the target when the inputs are read, so a move
+  to GitHub carries it and a move to Cloudflare never does; Cloudflare has no
+  content type for a file without an extension). The catalogue owns it, a
+  retirement deletes it with the rest, and a move to GitHub verifies it like
+  every other file (an empty body).
+- **Unchanged:** the R6 ownership rules, `expectedHead` compare-and-swap,
+  the pre-publish check, the deferred proof (SP1), every message, and all of
+  Cloudflare.
 
 ## Consequences
 

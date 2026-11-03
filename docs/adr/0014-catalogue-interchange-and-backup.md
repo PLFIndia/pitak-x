@@ -280,6 +280,11 @@ already online.
   earlier write if a later one fails. Both records are saved with
   `catalogueKeyed` cleared, so the availability lane waits for this phone's
   first catalogue publish.
+- **The adopted GitHub record is marked `adoptedFromBackup`** (publish plan
+  SP4, S14, 2026-11-03). Everything above still holds; the mark only means
+  that the first publish reads the site's whole file list once instead of
+  trusting another phone's record at an unchanged branch head. The next
+  record this phone writes is its own again.
 - **Covers (ADR 0020 Decisions 4 and 7):** an adopted record keeps a local
   cover source (`covers/<leaf>`) only when the archive carries that file;
   every other local source and every legacy `file://` source is forgotten, so
