@@ -70,12 +70,20 @@ question, together with the SP5 measurement on two throwaway `PLFIndia`
 repositories). SP5 was measured and **`.nojekyll` is adopted** (§S14).
 **Two throwaway repositories wait for the product owner to delete them by
 hand:** `PLFIndia/pitak-sp5-small` and `PLFIndia/pitak-sp5-large` (archived).
-**S15 (final measurements, Appendix A "after" columns, release docs) has NOT
-started. Do not start it until the product owner explicitly says so.** Open
-decisions for the product owner: J11 (§S9), J12–J14 (§G4), J15 (§S10b), the
-copy of the rate-limit messages (§S10b), the copy of the backup/restore lines
-(§S11), the guide line of §S12 and the PRIVACY wording of J18 (§S14). Open
-engineering observation J17 (§S12).
+S15 — final measurements — **STARTED 2026-11-03, device run part 1 done
+(§S15)**, on the product owner's go-ahead ("Start now: all 17 tests, A–D").
+Blocks A (GitHub), B (restore, Phase 2 acceptance: **PASS**) and C
+(Cloudflare) are done. **Block D (the 1,000-item fixture) has NOT run**: the
+product owner stopped the session at 18:01 IST while its seeder was building
+("we will continue later in a new session"). **Still to do in S15:** block D,
+the Appendix A "after" columns (the numbers are in §S15; the plan is not
+updated yet), the release docs. The Linux golden regeneration stays deferred
+until all fixes are done. Open decisions for the product owner: J11 (§S9),
+J12–J14 (§G4; J12 has a new visible effect, §S15), J15 (§S10b), the copy of
+the rate-limit messages (§S10b), the copy of the backup/restore lines (§S11),
+the guide line of §S12, the PRIVACY wording of J18 (§S14), the missed
+Cloudflare lane p90 rule (§S15) and the new observations J19–J23 (§S15).
+Open engineering observation J17 (§S12).
 
 **Outside the plan (2026-11-03, before S15's device run, product owner's
 request):** commit `7708439` makes the Android launcher icon adaptive
@@ -86,14 +94,15 @@ byte-for-byte unchanged, so no golden is affected. **Phone state now:**
 `dev.khoj.pitaka.fdroid` runs a clean timing build of `7708439`
 (`--dart-define=publishTimings=true`, `libapp.so` holds `publish timings` and
 `treeReads=` once each; APK SHA-256 `8b9b5378…`), installed with
-`adb install -r` at 10:09 IST (data kept). It already holds S10–S14, so **no
-catalogue publish should happen before S15's run**: the first one is the
-"first publish after the update" check (`.nojekyll` added once). The product
-owner will test on this one phone with both flavours (F-Droid = phone A,
-Play = phone B for the §S11 restore check).
+`adb install -r` at 10:09 IST (data kept). S15's run used this build (§S15).
+The product owner tests on this one phone with both flavours (F-Droid =
+phone A, Play = phone B). Commit `8eb3d90` (docs) records that Play listing
+graphics are uploaded by hand: Play still showed the August 2026 icon; the
+product owner uploaded `icon.png` and `featureGraphic.png` in Play Console on
+2026-11-03 (in Google's review at 15:10 IST).
 
-> Read this file first in any new session. §S14 is the newest state, then
-> §S13, §S12, §S11, §S10b, §S10, §G4 (device evidence), §S9, §S8, §S7, §S6, §S5, §S4,
+> Read this file first in any new session. §S15 is the newest state, then
+> §S14, §S13, §S12, §S11, §S10b, §S10, §G4 (device evidence), §S9, §S8, §S7, §S6, §S5, §S4,
 > §S3, §S2 and §0 (S1). §1–§5 are the S0 record (plan Appendix A cites the
 > verbatim lines in §3), kept unchanged.
 
@@ -105,6 +114,182 @@ Play = phone B for the §S11 restore check).
 > settled and needs no new review: borrower names and loan details (P1, in the
 > vault) and credentials and tokens (security, `AGENTS.md` §6). `PRIVACY.md`
 > only has to state accurately what is uploaded (a store requirement).
+
+---
+
+## S15 — final measurements, device run part 1 (2026-11-03; blocks A–C done, D not run)
+
+**Started:** 2026-11-03 15:15 IST on the product owner's go-ahead. The
+product owner asked for the list of phone tests (17 in four blocks A–D),
+said there is "no end stuff, the whole pipe is test" (no end state to keep,
+no cleanup), and chose **"Start now: all 17 tests, A–D"**. One phone, two
+flavours: F-Droid = phone A, Play = phone B. **Stopped by the product owner
+at 18:01 IST** during block D's preparation ("stop this test now and record
+progress … we will continue later in a new session").
+
+**Build:** both flavours from `7708439` (S14 + adaptive icon; HEAD `8eb3d90`
+adds docs only): clean `--release --dart-define=publishTimings=true`. The
+two `libapp.so` are byte-equal (SHA-256 `06df228b…`) and hold `publish
+timings` and `treeReads=` once each. Phone: OnePlus 9R `678c5642`, Android
+14, Wi-Fi. The product owner did every tap; the agent read `adb logcat -s
+flutter` and polled the public files every ~1 s and the branch head every
+~2 s (`git ls-remote`), so "served" = first served to an anonymous client.
+The USB link dropped about every 1–3 min (logcat restarts); every timing line
+was recovered from the phone's own log buffer (`adb logcat -d`).
+
+**Measurement condition — GitHub writes from the phone were slow all day.**
+The `commit` mark took 13–29 s (G.4: 3.5–4.1 s). Not the app: the same
+requests from the phone's own shell (`curl`, outside Pitak) took 11.1, 2.0,
+1.5, 1.1, 4.0 s per blob POST and 0.5–2.7 s per ref GET, while the Mac on
+the same network took 0.65–1.1 s per blob, and the whole commit sequence
+(ref, commit, 3 paced blobs, tree, commit) 5.8–6.0 s. The network code is
+unchanged since G.4 (`git diff 6ac2ee1` of `lib/core/network` and the
+client provider: empty); the new commit path adds ≤ 1 s spacing per extra
+blob and two journal saves. GitHub's status page: all operational. So the
+GitHub `commit` and `total` numbers below are inflated by the network; the
+`reconcile`, `treeReads`, cover and Pages numbers are not. **Re-measure the
+GitHub rows of Appendix A on a normal network before filling them in**
+(product owner's call). Cloudflare API from the phone was fast (0.11–0.19 s).
+
+### Results
+
+| Test | Host | Result | Evidence |
+|---|---|---|---|
+| A1 first catalogue publish after the update | GH | **PASS** | Button free at commit (no `readBack`): total 24.8 s (S0 43.1, G.4 48.8; 20.2 s of it the slow commit). Commit `85456c8` = **`.nojekyll` added** + `books.json` + `availability.json`; `/.nojekyll` served 200, 0 B. `treeReads=0` (the old build's record was `live` at the head, so the shortcut applies; the §S14 note expecting 1 assumed otherwise). Covers 0 read, 9 reused. Commit → served 34 s. Card: going live → live. |
+| A2 unchanged republish | GH | **PASS** | `treeReads=0`, reconcile 1.43 s (S0 1.76, G.4 1.88); commit `89f2c82` = `books.json` + `availability.json` only (no `.nojekyll`); commit → served 31 s. |
+| A3 add 1 book + cover | GH | **PASS** | `treeReads=0`, `coversRead=1,coversReused=9`; commit `9609f98` = `covers/b54cadd5baa5f83d.jpg` + `books.json` + `availability.json`; 10 items; commit → served 49 s. |
+| A4 events publish right after a catalogue publish | GH | **PASS** | A poster was added first (with no poster the button reads "Clear the events page" and the file was already empty). The events publish queued behind the catalogue publish, ran while Pages still built it and carried on (no "Your site is showing something different…"): commit `887ee02` = poster + `events.json` + `events.html`; message "Published — your events page is going live (usually within a minute)…". `treeReads=1` (the catalogue record was still `deployed`: correct). The product owner tapped twice: a second events publish made an **empty commit** `067036d` (J19). Pages runs 26–29 s (G.4 ≈ 43 s). |
+| A5 lend → visible | GH | **PASS** (slower) | Lend ≈ 16:25:59; lane commit `627db7d` (commit 23.4 s); served 16:27:09.8 → **≈ 71 s** (G.4 ≈ 63 s). Commit → served 26 s (G.4 build 38 s: the `.nojekyll` gain), eaten by the slow upload; on G.4's network ≈ 52 s. Card: "updated 4:25 PM · going live" → "updated 4:25 PM". |
+| B1 backup on A | — | **PASS** | `Pitak-backup-20261103-162937.pitabak` (449,195 B, phone `Download/pitakBackups/`): manifest `hasPublishState: true`; `publish_state.json` = `schemaVersion`, `coverSalt`, `gitHubRecord` (`degt3rt/my-library`, `main`, `live`, head `627db7d`, 18 files), `cloudflareRecord` (retired), `host` (active github, verified `https://degt3rt.github.io/my-library/`); 10 covers; **token scan of every entry: 0 hits**. Intro copy seen by the product owner. |
+| B2 restore on B (fresh Play app) | — | **PASS** | Outcome "This phone now continues the website from the backup…". The summary line was not read (restore tapped first); it was read in B5. |
+| B3 B publishes (Phase 2 acceptance) | GH | **PASS** | `treeReads=1` (adopted record checked once), **`coversRead=0,coversReused=10`**, commit `a02e14a` = **`books.json` + `availability.json` only, no `covers/*`**. Then the lane committed its pending set (`a7589c8`, same 3 keys, `asOf` back 16:38 → 16:35) and superseded the catalogue's going-live check: the card ended at "Published! The commit is pushed — the site can take a minute to update." (J12, new visible effect). |
+| B4 A publishes after B | GH | **PASS** | 1st `treeReads=1` (head moved by B), 0 covers read (`8205541`); 2nd, after live, `treeReads=0` (`5a2905b`). Card live both times. The Play app was uninstalled after B4 (`adb uninstall`). |
+| B5 restore the same backup on A | — | **PASS** | Summary: "Website publishing record for … (used only if this phone has not published yet)"; outcome "Publishing settings on this phone were kept." Next publish `treeReads=0` at the same head (record kept), `coversRead=10` (ADR 0020 Decision 4). The restored vault was **locked**, so that publish deleted `availability.json` and wrote `books.json` without inline tags (`580e310`; by design, A.6 #60; J20). After unlocking, the lane republished by itself (`5060d42`, out=3 served 16:50:47). |
+| C1 move GH → CF (vault unlocked) | CF | **PASS** | Worker (was the G.4 moved page) serves 10 items, `availability.json` out=3, events; GitHub retired `2857fc1` ("My Library has moved"; `books.json`, `availability.json`, `.nojekyll`, `events.json` 404 — the retirement deletes `.nojekyll` as designed). Final message mentions reprinting the library card. Right after, the lane deployed the same 3 keys again (J21). |
+| C2 unchanged republish | CF | **PASS, smaller gain** | total 19.9 s (S0 25.0, G.4 26.3): reconcile 1.9 s (S0 3.3), unmarked gates ≈ 5.6 s (S0 ≈ 8.5: SP3), but `readBack` 6.4 s with **2 rounds** (round 1 at once did not see the new version yet). |
+| C3 add 1 book + cover | CF | **PASS** | total 19.1 s (S0 add-1 25.7 s): `readBack` 0.9 s in 1 round (S0 6.8 s), reconcile 2.0 s, `coversRead=1,coversReused=10`; 11 items. |
+| C4 lane, 8 lends/returns | CF | **p90 rule MISSED** | Totals (debounce done → read back) 49.3, 32.0, 33.7, 17.2, 25.0, 16.2, 14.1, 12.5 s: median 21.1 s, **p90 38.4 s** (linear; rule ≤ 20 s; G.4 26.0 s). Lend → visible 61, 43, 44, 36, 41, 37, 32, 32 s (median 39 s). Changes 6–8 (12.5–16.2 s) beat G.4's typical 15–16 s (SP3's 1–2 s). Changes 1–3 lost 15–26 s in the **unmarked** gates (normal ≈ 6–8 s); phone → Cloudflare stayed fast where probed (J23). Change 5: the edge served the new file, then the **previous version** for ≈ 3 s, then the new one (J22). |
+| D1–D3 1,000-item fixture | CF | **NOT RUN** | Stopped while the seeder built. Nothing was installed. |
+
+**Phase status after part 1:** Phase 2 acceptance "a restore on a second
+phone uploads no covers" is **met** (B3; A.6 #118 can close). Phase 3: the
+GitHub button returns at commit time (A1–A4: no `readBack`; the time left
+is the commit); an unchanged head makes no tree request (`treeReads=0` in
+A1–A3, the A4 catalogue, A5, B4's second publish and B5; `treeReads=1`
+exactly where the record was `deployed`, adopted or behind a moved head); `.nojekyll` is live and shortens Pages runs (26–29 s vs
+≈ 43 s); SP2/SP3 cut reconcile and the gates on Cloudflare, but **the lane's
+p90 ≤ 20 s is missed again** (product owner decides, as after G.4: keep or
+change "usually under a minute"; lend → visible stayed ≤ 61 s, median 39 s).
+
+### Verbatim lines (`adb logcat -s flutter`, IST; pid 18623 = F-Droid, 28970 = Play)
+
+```
+15:18:51.580 publish timings catalogue: total=24772ms reads=497ms reconcile=3360ms(treeReads=0) coverDecisions=556ms(coversRead=0,coversReused=9) build=671ms commit=20162ms(bytes=3281)
+15:27:14.100 publish timings catalogue: total=23291ms reads=4001ms reconcile=1431ms(treeReads=0) coverDecisions=573ms(coversRead=0,coversReused=9) build=676ms commit=17104ms(bytes=3281)
+15:30:59.759 publish timings catalogue: total=31933ms reads=449ms reconcile=3004ms(treeReads=0) coverDecisions=836ms(coversRead=1,coversReused=9) build=948ms commit=27462ms(bytes=68121)
+15:35:35.796 publish timings catalogue: total=26190ms reads=446ms reconcile=4730ms(treeReads=0) coverDecisions=573ms(coversRead=0,coversReused=10) build=653ms commit=20276ms(bytes=3629)
+15:36:10.425 publish timings events: total=34544ms reconcile=7529ms(treeReads=1) build=17ms commit=26941ms(bytes=70725)
+15:36:35.764 publish timings events: total=25160ms reconcile=13091ms(treeReads=1) build=12ms commit=11939ms(bytes=0)
+16:26:43.831 publish timings availability: total=24757ms reconcile=1288ms(treeReads=0) commit=23399ms(bytes=133)
+16:38:46.715 (Play) publish timings catalogue: total=30734ms reads=3862ms reconcile=11658ms(treeReads=1) coverDecisions=626ms(coversRead=0,coversReused=10) build=728ms commit=14363ms(bytes=3642)
+16:39:19.852 (Play) publish timings availability: total=32937ms reconcile=17660ms(treeReads=1) commit=15205ms(bytes=133)
+16:42:35.775 publish timings catalogue: total=23723ms reads=1032ms reconcile=4888ms(treeReads=1) coverDecisions=632ms(coversRead=0,coversReused=10) build=773ms commit=16955ms(bytes=3642)
+16:44:04.412 publish timings catalogue: total=39923ms reads=5307ms reconcile=5079ms(treeReads=0) coverDecisions=576ms(coversRead=0,coversReused=10) build=685ms commit=28760ms(bytes=3642)
+16:48:07.762 publish timings catalogue: total=18725ms reads=467ms reconcile=1640ms(treeReads=0) coverDecisions=1783ms(coversRead=10,coversReused=0) build=1864ms commit=14680ms(bytes=3177)
+16:50:24.567 publish timings availability: total=18430ms reconcile=5117ms(treeReads=0) commit=13228ms(bytes=133)
+17:29:31.727 publish timings cloudflareAvailability: total=12751ms reconcile=2031ms upload=2870ms(bytes=235) deploy=1283ms readBack=626ms(rounds=1)
+17:30:01.585 publish timings cloudflare: total=19947ms reads=202ms reconcile=1924ms coverDecisions=642ms(coversRead=0,coversReused=10) build=775ms upload=3761ms(bytes=3744) deploy=1294ms readBack=6355ms(rounds=2)
+17:32:13.377 publish timings cloudflare: total=19116ms reads=558ms reconcile=1974ms coverDecisions=852ms(coversRead=1,coversReused=10) build=1003ms upload=6872ms(bytes=70885) deploy=1679ms readBack=874ms(rounds=1)
+17:36:19.622 publish timings cloudflareAvailability: total=49274ms reconcile=8552ms upload=8055ms(bytes=254) deploy=1579ms readBack=4650ms(rounds=1)
+17:37:22.126 publish timings cloudflareAvailability: total=31984ms reconcile=5221ms upload=3297ms(bytes=273) deploy=2553ms readBack=709ms(rounds=1)
+17:38:24.378 publish timings cloudflareAvailability: total=33712ms reconcile=4491ms upload=5118ms(bytes=292) deploy=2551ms readBack=6215ms(rounds=1)
+17:39:11.705 publish timings cloudflareAvailability: total=17223ms reconcile=6120ms upload=3136ms(bytes=273) deploy=1250ms readBack=837ms(rounds=1)
+17:57:28.676 publish timings cloudflareAvailability: total=25038ms reconcile=4969ms upload=3034ms(bytes=254) deploy=2758ms readBack=6406ms(rounds=2)
+17:58:30.995 publish timings cloudflareAvailability: total=16161ms reconcile=3086ms upload=3628ms(bytes=235) deploy=1265ms readBack=648ms(rounds=1)
+17:59:11.064 publish timings cloudflareAvailability: total=14079ms reconcile=2117ms upload=2831ms(bytes=216) deploy=2199ms readBack=798ms(rounds=1)
+18:00:00.760 publish timings cloudflareAvailability: total=12525ms reconcile=1983ms upload=2851ms(bytes=235) deploy=1562ms readBack=641ms(rounds=1)
+```
+
+Served times (anonymous poll) for the C4 lane writes, in order: 17:36:11.2,
+17:37:12.8, 17:38:14.6, 17:39:10.4, 17:57:24.5 (old version again 17:57:36.3,
+new 17:57:39.3), 17:58:32.0, 17:59:08.8, 18:00:00.5. Lend time = line time −
+total − 20 s.
+
+### New observations for the product owner (proposed plan J19–J23; not yet in the plan)
+
+- **J12, new visible effect.** On a restored (or new) phone the lane holds a
+  pending set until the first catalogue publish; it then commits it right
+  after the catalogue commit, which supersedes the catalogue's going-live
+  check. The user's first publish ends at "Published! The commit is pushed —
+  the site can take a minute to update." instead of "Your site is live.",
+  costs one more commit/Pages build, and the site's `asOf` goes back. Every
+  restore hits it. Product + engineering decision.
+- **J19 — a double tap publishes twice; an unchanged events publish makes an
+  empty commit.** The Events button shows nothing while its publish waits in
+  the queue, so a second tap enqueues a second publish; with nothing
+  changed it still commits (no files), costing a Pages build and a budget
+  slot. Engineering (skip an empty tree) + UX (show "waiting").
+- **J20 — after a restore the vault is locked, and a catalogue publish
+  silently removes availability.** By design (A.6 #60: `catalogueKeyed` was
+  cleared by the J9 reset, so no unvouched file stays), but the site shows
+  no availability until the vault is unlocked; only the restore warning's
+  "lock and unlock it again" hints at it. Product decision (copy or a hint
+  on the Publish card).
+- **J21 — the lane re-deploys after a move.** The move already carried the
+  set; the lane then deployed the same keys again (record named the old
+  site). One extra Cloudflare deploy (12.8 s). Minor engineering.
+- **J22 — Cloudflare served the previous version for ≈ 3 s after the new
+  one.** So round 1 at once (SP2) sometimes needs round 2 (C2, C4 #5).
+  Information; no fix proposed.
+- **J23 — the Cloudflare pipeline's unmarked gates vary 5.5–26 s.** Not
+  attributable from the timing line. Suggest SP6 marks for the preflights,
+  the Version-URL checks, the upload session and the verified commit, so a
+  slow run can be explained. Engineering.
+
+### Device, site and account state at the stop (18:02 IST)
+
+- `dev.khoj.pitaka.fdroid`: the `7708439` timing build (install an ordinary
+  build before daily use). **Active host: Cloudflare**
+  (`pitak-worker.beli-log1234.workers.dev`): 11 items (two test books were
+  added in A3 and C3, one test poster in A4), `availability.json` out=3 at
+  18:00. GitHub `degt3rt/my-library` is **retired** (moved page, `2857fc1`).
+- `dev.khoj.pitaka` (Play): **not installed** (uninstalled after B4; block
+  D's seeder was killed while building, before any install). The phone's
+  "stay awake on USB" setting was set back to off.
+- Backup file `Download/pitakBackups/Pitak-backup-20261103-162937.pitabak`
+  stays on the phone (it holds the borrowers vault, encrypted).
+- **Security note:** to test the phone's network, the Mac's PLFIndia gh token
+  was pushed to `/data/local/tmp/h.txt` (umask 077 on the Mac side) for one
+  `curl` run and deleted in the same command (checked: file gone). The probes
+  wrote dangling objects to `PLFIndia/pitak-x` (14 blobs — 9 from the Mac, 5
+  from the phone — 2 trees and 2 commits, on no branch); no ref moved and
+  nothing else changed there.
+- Raw data outside the repo, lost on reboot: `/tmp/s15/` (`results.md`,
+  `logcat.txt`, `watch_gh.log`, `watch_cf.log`, the phone probe logs, both
+  APKs, the pulled backup). Every number is above.
+- No background job is left running on the Mac or the phone.
+
+### To continue S15 (new session)
+
+1. **Block D (1,000-item fixture, Cloudflare)** — on the product owner's
+   word. Keep the screen on (`adb shell svc power stayon usb`). Seed (debug
+   build; idempotent, re-run tops up if the USB drops):
+   `flutter test integration_test/publish_fixture_seed_test.dart --flavor play -d 678c5642 --no-uninstall --dart-define=fixtureItems=1000`.
+   Then `flutter build apk --profile --flavor play --dart-define=publishTimings=true`,
+   check `libapp.so` (`publish timings` = 1, `treeReads=` ≥ 1) and
+   `adb install -r` it (debug-signed like the seeder's build, data kept).
+   Unlock the vault with `smokePassphrase` (`integration_test/smoke_support.dart`),
+   connect Cloudflare (`pitak-worker`), then D1 first publish (reviewed
+   whole-site replacement; expect ≈ 10 min, J11 unchanged), D2 unchanged
+   republish (expect `coversRead=0,coversReused=1000`; S0 5 min 25 s), D3
+   add 1 book + cover (`coversRead=1`). Afterwards the F-Droid app's
+   Cloudflare record is stale (its next publish offers a reviewed
+   replacement: expected, safe).
+2. Decide with the product owner whether to re-measure the GitHub rows on a
+   normal network (today's commits were 4–7× slower than the Mac's).
+3. Fill plan Appendix A "After Phase 3" (and note that one build holds
+   Phases 2 + 3), close A.6 #118, add J19–J23 to Part J, then the release
+   docs. The goldens stay deferred until all fixes are done.
 
 ---
 
