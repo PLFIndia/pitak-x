@@ -53,6 +53,35 @@ void main() {
       });
     });
 
+    test('an empty file (.nojekyll, plan SP5) is proven by an empty body '
+        'and not by its absence', () async {
+      final empty = PublishFile(
+        path: '.nojekyll',
+        bytes: const [],
+        gitSha: GitBlobSha.of(const []),
+        upload: true,
+      );
+      Future<bool> verify(FakeStructuredReader reader) =>
+          CompleteSnapshotVerifier(
+            reader: reader,
+            sleep: (_) async {},
+            attempts: 1,
+          ).verify(
+            siteUrl: moveGitHubTarget.siteUrl,
+            files: [empty],
+            revision: 7,
+          );
+
+      expect(
+        await verify(FakeStructuredReader()..body('.nojekyll', [])),
+        isTrue,
+      );
+      expect(
+        await verify(FakeStructuredReader()..absent('.nojekyll')),
+        isFalse,
+      );
+    });
+
     test('one mismatched byte fails the whole set', () async {
       final reader = FakeStructuredReader()
         ..body('index.html', utf8.encode('<html>other</html>'));

@@ -35,6 +35,7 @@ import 'package:pitaka/features/publish/domain/publish_export.dart';
 import 'package:pitaka/features/publish/domain/publish_item_keys.dart';
 import 'package:pitaka/features/publish/domain/publish_periodical_links.dart';
 import 'package:pitaka/features/publish/domain/publish_redaction.dart';
+import 'package:pitaka/features/publish/domain/site/github_pages_no_jekyll.dart';
 import 'package:pitaka/features/publish/domain/site/previous_publication.dart';
 import 'package:pitaka/features/publish/domain/site/publish_artifact_sink.dart';
 import 'package:pitaka/features/publish/domain/site/publish_file.dart';
@@ -136,11 +137,16 @@ final class CatalogueSectionBuilder {
   /// otherwise nothing is built (fail closed), because an item without its
   /// key could never be matched to `availability.json`. The key-set id is
   /// written as `books.json`'s top-level `keySet` (plan A.6 #68).
+  ///
+  /// [gitHubPagesSite] adds the empty `.nojekyll` (`GitHubPagesNoJekyll`,
+  /// plan SP5); it is required so no caller can forget it, because a
+  /// catalogue built without it would delete the recorded file again.
   Future<Either<Failure, PublishSection>> build({
     required List<CatalogueItem> books,
     required List<Periodical> periodicals,
     required Map<int, int>? activeLoanCounts,
     required List<int>? libraryJson,
+    required bool gitHubPagesSite,
     required PublishPageSettings settings,
     required PreviousPublication previous,
     required int now,
@@ -326,6 +332,10 @@ final class CatalogueSectionBuilder {
       // order makes equal input ⇒ equal blob sha).
       if (libraryJson != null) _file(libraryJsonPath, libraryJson, previous),
       _file(indexHtmlPath, viewerHtml, previous),
+      // GitHub Pages skips its Jekyll step for this site (plan SP5). Empty
+      // and unchanged after the first publish, so it uploads once.
+      if (gitHubPagesSite)
+        _file(GitHubPagesNoJekyll.path, GitHubPagesNoJekyll.bytes, previous),
     ];
     for (final file in coreFiles) {
       final failure = await addFile(file);

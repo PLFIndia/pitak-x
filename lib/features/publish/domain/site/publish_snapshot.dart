@@ -102,6 +102,7 @@ final class CatalogueInputs {
     required this.periodicals,
     required this.activeLoanCounts,
     required this.libraryJson,
+    required this.gitHubPagesSite,
   });
 
   /// Every catalogue row of every kind, removed ones included (the builder
@@ -118,6 +119,12 @@ final class CatalogueInputs {
   /// The pre-encoded `library.json` descriptor for this publish's target, or
   /// null when descriptor publication is switched off.
   final List<int>? libraryJson;
+
+  /// True when this publish's target is served by GitHub Pages: the
+  /// catalogue then also writes `.nojekyll` (`GitHubPagesNoJekyll`, plan
+  /// SP5). Like [libraryJson] it is the one fact about the target the build
+  /// needs, decided once when the inputs are read.
+  final bool gitHubPagesSite;
 }
 
 /// The TARGET-FREE inputs one publish reads (R2).

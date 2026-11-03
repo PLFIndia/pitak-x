@@ -224,6 +224,24 @@ void main() {
       },
     );
 
+    test(
+      'the empty .nojekyll is read at its exact address as an empty '
+      'body, not as a failure (plan SP5: a move to GitHub verifies it)',
+      () async {
+        final requested = <String>[];
+        final outcome = await BoundedPublishedSiteVerifier(
+          client: MockClient((request) async {
+            requested.add(request.url.toString());
+            return http.Response.bytes(const [], 200);
+          }),
+        ).readOutcome(siteUrl: site, path: '.nojekyll', maxBytes: 1);
+
+        expect(requested, ['https://me.github.io/lib/.nojekyll']);
+        expect(outcome, isA<PublishedSiteReadBody>());
+        expect((outcome as PublishedSiteReadBody).bytes, isEmpty);
+      },
+    );
+
     test('structured reads preserve bounded success bytes', () async {
       final outcome = await BoundedPublishedSiteVerifier(
         client: MockClient((_) async => http.Response.bytes([1, 2], 200)),

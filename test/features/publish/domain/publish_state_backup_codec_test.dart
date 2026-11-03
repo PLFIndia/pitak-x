@@ -223,6 +223,15 @@ void main() {
       }
     });
 
+    test("GitHub's .nojekyll is a Pitak-owned path (plan SP5)", () {
+      final kept = decode(
+        withGitHub({
+          'fileShas': {'books.json': sha40('a'), '.nojekyll': sha40('b')},
+        }),
+      );
+      expect(kept?.gitHubRecord.shaFor('.nojekyll'), sha40('b'));
+    });
+
     test('a claimed path whose sha is not 40-hex', () {
       expect(
         decode(

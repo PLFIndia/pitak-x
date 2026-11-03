@@ -141,6 +141,7 @@ Future<CloudflareMemoryScenarioResult> runCloudflareMemoryScenario({
       periodicals: const [],
       activeLoanCounts: null,
       libraryJson: null,
+      gitHubPagesSite: false, // a Cloudflare scenario: never `.nojekyll`
       settings: const PublishPageSettings(libraryName: 'Memory test'),
       previous: CloudflareSiteManifest.empty,
       now: 1700000000000,

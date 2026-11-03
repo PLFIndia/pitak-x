@@ -709,7 +709,12 @@ void main() {
             )
             as Map<String, dynamic>;
     expect(payload['books'], isEmpty);
-    expect(files.map((file) => file.path), ['books.json', 'index.html']);
+    // A GitHub Pages site also carries the empty `.nojekyll` (plan SP5).
+    expect(files.map((file) => file.path), [
+      'books.json',
+      'index.html',
+      '.nojekyll',
+    ]);
     expect(manifest.saved?.repo, 'me/lib');
   });
 
@@ -920,6 +925,7 @@ void main() {
         'books.json',
         'library.json',
         'index.html',
+        '.nojekyll',
       ]);
       expect(api.deleted, isEmpty);
     });
@@ -2390,6 +2396,35 @@ void main() {
       );
 
       expect(api.treeReads, readsBefore + 1);
+    });
+  });
+
+  group('SP5 — .nojekyll on GitHub Pages', () {
+    test('the first publish uploads the empty .nojekyll and records it; the '
+        'next one names it, unchanged', () async {
+      final api = _CapturingApi();
+      final first = _MemManifest();
+      await makeUseCase(api, first, books: [book()]).run();
+
+      final sent = api.committed!.singleWhere((f) => f.path == '.nojekyll');
+      expect(sent.bytes, isEmpty);
+      expect(sent.upload, isTrue);
+      expect(
+        first.current.shaFor('.nojekyll'),
+        'e69de29bb2d1d6434b8b29ae775ad8c2e48c5391',
+      );
+
+      final again = makeUseCase(
+        api,
+        _MemManifest(first.current),
+        books: [book()],
+      );
+      api.treeHead = 'NEWCOMMIT';
+      await again.run();
+
+      final named = api.committed!.singleWhere((f) => f.path == '.nojekyll');
+      expect(named.upload, isFalse);
+      expect(api.deleted, isNot(contains('.nojekyll')));
     });
   });
 }

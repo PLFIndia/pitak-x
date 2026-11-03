@@ -43,6 +43,27 @@ void main() {
     });
   });
 
+  group('plan SP5: .nojekyll', () {
+    test('the catalogue owns exactly .nojekyll; no other section does', () {
+      expect(SiteSection.catalogue.owns('.nojekyll'), isTrue);
+      expect(SiteSection.anyOwns('.nojekyll'), isTrue);
+      for (final section in SiteSection.values) {
+        if (section == SiteSection.catalogue) continue;
+        expect(section.owns('.nojekyll'), isFalse, reason: section.name);
+      }
+      for (final path in [
+        '.nojekyll.bak',
+        '.NOJEKYLL',
+        'nojekyll',
+        '.jekyll',
+        '_config.yml',
+        'posters/.nojekyll',
+      ]) {
+        expect(SiteSection.catalogue.owns(path), isFalse, reason: path);
+      }
+    });
+  });
+
   group('anyOwns: the one app-owned-path rule', () {
     test('accepts every section file, including availability.json', () {
       for (final path in [

@@ -91,6 +91,7 @@ void main() {
     periodicals: const [series],
     activeLoanCounts: null,
     libraryJson: null,
+    gitHubPagesSite: false,
     settings: const PublishPageSettings(libraryName: 'Test Library'),
     previous: previous,
     now: 1000,

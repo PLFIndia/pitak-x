@@ -232,6 +232,52 @@ void main() {
     });
   });
 
+  group('plan SP5: .nojekyll follows the target', () {
+    Future<PublishSnapshot> snapshotFor(PublishTarget target) async {
+      final inputs = (await builder().read(
+        reads: _FakeReads()..books = [book()],
+        target: target,
+        sections: const {SiteSection.catalogue},
+      )).toNullable()!;
+      return (await builder().build(
+        inputs: inputs,
+        previous: PublishManifest.empty,
+        now: 1000,
+        mode: PublishMode.complete,
+      )).toNullable()!;
+    }
+
+    test('a GitHub Pages target: the catalogue carries the empty '
+        '.nojekyll, uploaded once', () async {
+      final snapshot = await snapshotFor(target);
+
+      final file = snapshot.catalogue!.files.singleWhere(
+        (f) => f.path == '.nojekyll',
+      );
+      expect(file.bytes, isEmpty);
+      // The git blob sha of empty content.
+      expect(file.gitSha, 'e69de29bb2d1d6434b8b29ae775ad8c2e48c5391');
+      expect(file.upload, isTrue);
+    });
+
+    test(
+      'a Cloudflare target never gets it (a complete move included)',
+      () async {
+        final cloudflare = CloudflarePublishTarget.create(
+          accountId: '0123456789abcdef0123456789abcdef',
+          workerName: 'pitak-library',
+          accountSubdomain: 'library',
+        )!;
+        final snapshot = await snapshotFor(cloudflare);
+
+        expect(
+          snapshot.sections.expand((s) => s.paths),
+          isNot(contains('.nojekyll')),
+        );
+      },
+    );
+  });
+
   group('build — complete means refuse, never omit', () {
     test('counts come from the snapshot that is written', () async {
       final reads = _FakeReads()

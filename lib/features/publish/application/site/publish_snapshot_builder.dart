@@ -130,6 +130,9 @@ final class PublishSnapshotBuilder {
         periodicals: titles.toNullable()!,
         activeLoanCounts: counts.toNullable(),
         libraryJson: descriptor.toNullable(),
+        // Decided from the target, here and only here, so a move to GitHub
+        // carries `.nojekyll` and a move to Cloudflare never does (SP5).
+        gitHubPagesSite: target is GitHubPublishTarget,
       );
     }
 
@@ -193,6 +196,7 @@ final class PublishSnapshotBuilder {
         periodicals: catalogueInputs.periodicals,
         activeLoanCounts: catalogueInputs.activeLoanCounts,
         libraryJson: catalogueInputs.libraryJson,
+        gitHubPagesSite: catalogueInputs.gitHubPagesSite,
         settings: inputs.pageSettings,
         previous: previous,
         now: now,

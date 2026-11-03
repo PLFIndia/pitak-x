@@ -667,6 +667,32 @@ void main() {
       );
     });
 
+    test('a refused tree listing is a typed failure', () async {
+      final svc = api(
+        MockClient((req) async {
+          if (req.url.path.endsWith('/git/commits/$_headSha')) {
+            return http.Response(
+              jsonEncode({
+                'tree': {'sha': treeSha},
+              }),
+              200,
+            );
+          }
+          return http.Response('', 500);
+        }),
+      );
+      await expectLater(
+        svc.treeAt(
+          owner: 'me',
+          repo: 'lib',
+          branch: 'main',
+          headSha: _headSha,
+          token: 'TKN',
+        ),
+        throwsA(isA<GitHubApiException>()),
+      );
+    });
+
     test('a malformed listing is a typed failure', () async {
       final svc = treeApi(jsonEncode({'sha': treeSha, 'tree': 'nope'}));
       await expectLater(

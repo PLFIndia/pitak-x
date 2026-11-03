@@ -2,19 +2,22 @@
 /// Cloudflare plan R3/R7).
 ///
 /// A section is the unit of OWNERSHIP: the catalogue owns `books.json`,
-/// `index.html`, `library.json` and `covers/*`; events own `events.html`,
+/// `index.html`, `library.json`, `covers/*` and, on GitHub Pages only,
+/// `.nojekyll` (plan SP5); events own `events.html`,
 /// `events.json` and `posters/*`; availability owns `availability.json`
 /// (ADR 0019). Merging is section-scoped (R7), so a section's builder can
 /// never delete another section's files.
 library;
 
 import 'package:pitaka/features/publish/domain/availability/availability_document.dart';
+import 'package:pitaka/features/publish/domain/site/github_pages_no_jekyll.dart';
 import 'package:pitaka/features/publish/domain/site/publish_file.dart';
 import 'package:pitaka/features/publish/domain/site/site_path.dart';
 
 /// Which part of the site a [PublishSection] owns.
 enum SiteSection {
-  /// The catalogue: books.json, the viewer page, covers and the descriptor.
+  /// The catalogue: books.json, the viewer page, covers and the descriptor
+  /// (and `.nojekyll` on GitHub Pages, plan SP5).
   catalogue,
 
   /// Announcements and events: events.html, events.json and posters.
@@ -54,7 +57,10 @@ extension SiteSectionOwnership on SiteSection {
         path == 'books.json' ||
             path == 'index.html' ||
             path == 'library.json' ||
-            path.startsWith('covers/'),
+            path.startsWith('covers/') ||
+            // Written for GitHub Pages targets only (plan SP5); owning it on
+            // every host is harmless, because nothing else writes it.
+            path == GitHubPagesNoJekyll.path,
       SiteSection.events =>
         path == 'events.html' ||
             path == 'events.json' ||
