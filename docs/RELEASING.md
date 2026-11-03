@@ -483,3 +483,10 @@ published.
 - **Listing** copy: `fastlane/metadata/android/en-US/{short,full}_description.txt`;
   icon via `tool/gen_app_icon.py`, feature graphic via `tool/gen_play_assets.py`;
   category Books & Reference. Organisation account ⇒ no closed-test gate.
+- **Listing graphics are uploaded by hand.** F-Droid reads `fastlane/metadata`
+  from the tagged commit, but nothing pushes it to Play. After any change to
+  `fastlane/metadata/android/en-US/images/icon.png` (512 × 512) or
+  `featureGraphic.png` (1024 × 500), upload both in Play Console → Store
+  presence → Main store listing → Graphics, save, and send the change for
+  review. (Found 2026-11-03: Play still showed the August 2026 icon after the
+  1.9.0 face-up redraw.)
