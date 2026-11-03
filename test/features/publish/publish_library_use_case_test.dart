@@ -20,6 +20,7 @@ import 'package:pitaka/features/publish/application/site/catalogue_section_build
 import 'package:pitaka/features/publish/application/site/events_section_builder.dart';
 import 'package:pitaka/features/publish/application/site/publish_host_state_repository.dart';
 import 'package:pitaka/features/publish/application/site/publish_snapshot_builder.dart';
+import 'package:pitaka/features/publish/application/site/publish_timings.dart';
 import 'package:pitaka/features/publish/domain/availability/availability_request.dart';
 import 'package:pitaka/features/publish/domain/git_blob_sha.dart';
 import 'package:pitaka/features/publish/domain/github_api.dart';
@@ -191,8 +192,11 @@ class _CapturingApi implements GitHubGitDataApi {
   /// Branch the commit was made to (N09: must be the Pages source branch).
   String? committedBranch;
 
-  /// Branch the head tree was read from.
+  /// Branch the head was read from.
   String? headTreeBranch;
+
+  /// Recursive tree reads (plan SP4: none when the head is unchanged).
+  int treeReads = 0;
 
   @override
   Future<PagesSite?> pagesSite({
@@ -205,7 +209,7 @@ class _CapturingApi implements GitHubGitDataApi {
   }
 
   @override
-  Future<GitHubTreeSnapshot> headTree({
+  Future<String> branchHead({
     required String owner,
     required String repo,
     required String branch,
@@ -213,10 +217,22 @@ class _CapturingApi implements GitHubGitDataApi {
   }) async {
     headTreeBranch = branch;
     if (throwOnHeadTree) throw const GitHubApiException('boom');
+    return treeHead;
+  }
+
+  @override
+  Future<GitHubTreeSnapshot> treeAt({
+    required String owner,
+    required String repo,
+    required String branch,
+    required String headSha,
+    required String token,
+  }) async {
+    treeReads++;
     return GitHubTreeSnapshot(
       repo: '$owner/$repo',
       branch: branch,
-      headSha: treeHead,
+      headSha: headSha,
       files: treeFiles,
       truncated: treeTruncated,
     );
@@ -441,6 +457,7 @@ void main() {
     PublishReads? reads,
     BooksJsonEncoder? encodeBooksJson,
     AvailabilityRequest availability = const AvailabilityRemoval(),
+    PublishTimingSink? timingSink,
   }) {
     // R6: the fake remote starts as what this phone recorded — the state most
     // tests describe. Publishing against it therefore re-uploads nothing and
@@ -495,6 +512,7 @@ void main() {
       reader: verifier,
       sleep: (_) async {}, // no real waiting in tests
       clock: () => 1000,
+      timingSink: timingSink,
     );
   }
 
@@ -2267,6 +2285,111 @@ void main() {
       expect(api.committed!.where((f) => f.upload), isEmpty);
       expect(phases, contains(PublishPhase.committing));
       expect(phases, isNot(contains(PublishPhase.uploading)));
+    });
+  });
+
+  group('SP4 — an unchanged head skips the tree read', () {
+    Future<List<int>?> jpeg(String src) async => utf8.encode('JPEG:$src');
+    final books = [
+      book(cover: 'covers/one.jpg'),
+      book(id: 3, cover: 'covers/three.jpg'),
+    ];
+
+    /// This phone published [books] at `NEWCOMMIT` and the deferred check
+    /// proved it (S12): the record a normal next publish starts from.
+    Future<PublishManifest> provenFirstPublish(_CapturingApi api) async {
+      final first = _MemManifest();
+      expect(
+        await makeUseCase(api, first, readLocalCover: jpeg, books: books).run(),
+        isA<PublishSuccess>(),
+      );
+      return first.current.asLive();
+    }
+
+    test(
+      'a live record at the branch head: no tree read, the commit builds '
+      'on that head, unchanged files are named and the timings say so',
+      () async {
+        final api = _CapturingApi();
+        final live = await provenFirstPublish(api);
+        final readsBefore = api.treeReads;
+        final lines = <PublishTimings>[];
+
+        final result = await makeUseCase(
+          api,
+          _MemManifest(live),
+          readLocalCover: jpeg,
+          books: [
+            ...books,
+            book(id: 4, cover: 'covers/four.jpg'),
+          ],
+          timingSink: lines.add,
+        ).run();
+
+        expect(result, isA<PublishSuccess>());
+        expect(api.treeReads, readsBefore, reason: 'plan G.5: no tree request');
+        expect(api.committedExpectedHead, 'NEWCOMMIT');
+        // Every file the commit does not send is one the record holds.
+        final named = api.committed!.where((f) => !f.upload).toList();
+        expect(named, isNotEmpty);
+        for (final file in named) {
+          expect(
+            live.fileShas.values,
+            contains(file.gitSha),
+            reason: file.path,
+          );
+        }
+        // The new cover is sent; the two covers already online are not.
+        final sentCovers = api.committed!
+            .where((f) => f.upload && f.path.startsWith('covers/'))
+            .toList();
+        expect(sentCovers, hasLength(1));
+        final reconcile = lines.single.markFor(PublishTimingStage.reconcile)!;
+        expect(reconcile.treeReads, 0);
+      },
+    );
+
+    test('the same publish after another commit moved the branch reads the '
+        'tree, once', () async {
+      final api = _CapturingApi();
+      final live = await provenFirstPublish(api);
+      final readsBefore = api.treeReads;
+      final lines = <PublishTimings>[];
+      final useCase = makeUseCase(
+        api,
+        _MemManifest(live),
+        readLocalCover: jpeg,
+        books: books,
+        timingSink: lines.add,
+      );
+      // Someone else committed after this phone did.
+      api.treeHead = 'SOMEONE-ELSE';
+
+      expect(await useCase.run(), isA<PublishSuccess>());
+
+      expect(api.treeReads, readsBefore + 1);
+      expect(api.committedExpectedHead, 'SOMEONE-ELSE');
+      final reconcile = lines.single.markFor(PublishTimingStage.reconcile)!;
+      expect(reconcile.treeReads, 1);
+    });
+
+    test('a record adopted from a backup is read against the tree first, '
+        'even at the same head (plan S11)', () async {
+      final api = _CapturingApi();
+      final live = await provenFirstPublish(api);
+      final readsBefore = api.treeReads;
+
+      expect(
+        await makeUseCase(
+          api,
+          _MemManifest(live.asAdoptedFromBackup()),
+          readLocalCover: jpeg,
+          books: books,
+        ).run(),
+        isA<PublishSuccess>(),
+      );
+
+      expect(api.treeReads, readsBefore + 1);
     });
   });
 }

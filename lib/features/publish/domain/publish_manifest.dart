@@ -45,13 +45,18 @@
 /// publish can tell "Pages is still building it" from "the site changed".
 /// Absent reads as unknown, which keeps the older, stricter rule.
 ///
+/// And one with plan SP4 (schema still 2): `adoptedFromBackup` says the
+/// record came from a restored backup and this phone has not checked it
+/// against the site yet, so `reconciledAtUnchangedHead` will not trust it.
+/// Absent reads as false (written by this phone).
+///
 /// PUBLIC data only — repo paths, git blob shas, public cover URLs — so it
-/// needs no encryption.
+/// needs no encryption. The JSON reader is `publish_manifest_json.dart`.
 library;
 
 import 'package:pitaka/features/import_export/domain/cover_paths.dart';
 import 'package:pitaka/features/publish/domain/github_models.dart';
-import 'package:pitaka/features/publish/domain/publish_cover_rendition.dart';
+import 'package:pitaka/features/publish/domain/publish_manifest_json.dart';
 import 'package:pitaka/features/publish/domain/site/previous_publication.dart';
 import 'package:pitaka/features/publish/domain/site/publish_proof_path.dart';
 import 'package:pitaka/features/publish/domain/site/publish_state.dart';
@@ -72,82 +77,15 @@ final class PublishManifest implements PreviousPublication {
     this.catalogueKeyed = false,
     this.coverRendition,
     this.committedAt,
+    this.adoptedFromBackup = false,
   });
 
-  /// Parses a manifest from [json]; tolerant of missing/odd fields.
-  ///
-  /// A schema-1 record (written by the previous app version, which stored only
-  /// `repo`, `fileShas` and `coverUrlByBookId`) decodes as:
-  ///  - [state] `deployed` — the commit was accepted, but the old app never
-  ///    stored its read-back result, so "live" would be an invented claim;
-  ///  - [ownershipConfirmed] `fileShas.isNotEmpty` — those paths were written
-  ///    by this app, so they are app-owned by construction (R13). A record
-  ///    with no paths claims nothing.
-  ///
-  /// [headSha] stays null for a legacy record, which is what makes every later
-  /// publish treat it as "unknown state" and reconcile against the remote tree.
-  ///
-  /// The ADR 0019 fields:
-  ///  - no `proofPath` → [proofPath] null (the per-section file, as before);
-  ///  - a `proofPath` that is not a known name, or that disagrees with the
-  ///    record's own files, cannot prove anything. For an unproven
-  ///    (`deployed`) record the head is then forgotten too, so the record
-  ///    reads exactly like a legacy one in "unknown state" and no later check
-  ///    can prove it through a guessed file (plan A.1 item 8). A `live` or
-  ///    `retired` record is already settled and needs no proof;
-  ///  - `catalogueKeyed` is true only for a stored `true`.
-  ///
-  /// The ADR 0020 field: `coverRendition` is kept only when it is a positive
-  /// whole number; anything else reads as unknown (null). The SP1 field
-  /// `committedAt` is kept only as a non-negative whole number.
-  factory PublishManifest.fromJson(Map<String, dynamic> json) {
-    Map<String, String> strMap(Object? o) => o is Map
-        ? {
-            for (final e in o.entries)
-              if (e.value is String) '${e.key}': e.value as String,
-          }
-        : const {};
-    final fileShas = strMap(json['fileShas']);
-    final schema = json['schema'];
-    // A wrong TYPE is a corrupt record, not a crash: the store must be able to
-    // read a bad file as "nothing recorded" (fail closed) instead of throwing
-    // a TypeError the file loader's `on Exception` would not catch.
-    String? str(Object? o) => o is String ? o : null;
-    final state = _stateFrom(json['state']) ?? PublishState.deployed;
-    final proof = PublishProofPath.tryParse(json['proofPath']);
-    final proofUnreadable =
-        json.containsKey('proofPath') &&
-        (proof == null || !proof.agreesWith(fileShas));
-    final unknownHead = proofUnreadable && state == PublishState.deployed;
-    return PublishManifest(
-      schema: schema is int ? schema : 1,
-      repo: str(json['repo']),
-      branch: str(json['branch']),
-      headSha: unknownHead ? null : str(json['headSha']),
-      // Absent = a legacy record (its paths are ours by construction); a
-      // value of another type is damage, read as "not confirmed" (fewer
-      // deletions allowed, R13) instead of a cast that throws (plan J16).
-      ownershipConfirmed: switch (json['ownershipConfirmed']) {
-        final bool stored => stored,
-        null => fileShas.isNotEmpty,
-        _ => false,
-      },
-      state: state,
-      fileShas: fileShas,
-      coverUrlByBookId: strMap(json['coverUrlByBookId']),
-      proofPath: proofUnreadable ? null : proof,
-      // A keyed catalogue without a recorded books.json is a contradiction,
-      // and the safe reading of a contradiction is "not keyed".
-      catalogueKeyed:
-          json['catalogueKeyed'] == true &&
-          fileShas.containsKey(_booksJsonPath),
-      coverRendition: PublishCoverRendition.tryParse(json['coverRendition']),
-      committedAt: switch (json['committedAt']) {
-        final int at when at >= 0 => at,
-        _ => null,
-      },
-    );
-  }
+  /// Parses a manifest from [json]; tolerant of missing/odd fields: a
+  /// damaged or older value reads as LESS trust, never as a crash. The rules,
+  /// field by field, are on [decodePublishManifest]
+  /// (`publish_manifest_json.dart`).
+  factory PublishManifest.fromJson(Map<String, dynamic> json) =>
+      decodePublishManifest(json);
 
   /// The schema this build writes.
   static const int currentSchema = 2;
@@ -209,6 +147,19 @@ final class PublishManifest implements PreviousPublication {
   /// clock), or null when unknown (plan SP1). It describes that one commit,
   /// so it follows [headSha] exactly like [proofPath] does.
   final int? committedAt;
+
+  /// True when this record came from a restored backup (plan S11) and this
+  /// phone has not yet read the site's file list or committed to it itself
+  /// (plan SP4).
+  ///
+  /// Another phone's record is a CLAIM about the site: a backup can be old,
+  /// damaged or hand-made. Such a record still works for everything that
+  /// checks it against the remote tree, but [reconciledAtUnchangedHead]
+  /// refuses it, so the first publish reads the whole tree once. Records this
+  /// phone writes after its own read or commit ([reconciledFrom],
+  /// [afterCommit], [asRetired]) are its own again (false); the copies made
+  /// by [asLive] and friends keep the flag.
+  final bool adoptedFromBackup;
 
   /// The empty manifest (no publication recorded on this phone).
   static const PublishManifest empty = PublishManifest();
@@ -322,6 +273,50 @@ final class PublishManifest implements PreviousPublication {
     );
   }
 
+  /// The record to publish FROM when [ownerRepo]'s [branch] still points at
+  /// [headSha], WITHOUT reading the tree (plan SP4); null when this record
+  /// cannot vouch for that head, and the caller must read the tree.
+  ///
+  /// Why no read is needed (beginner note): a git commit id is a fingerprint
+  /// of the commit's whole content, so the file list at [headSha] can never
+  /// change. A `live` record of this exact repo and branch at that head was
+  /// written by this phone from that very file list — its own commit
+  /// ([afterCommit]) or a full read ([reconciledFrom]) — so its file shas ARE
+  /// what the branch holds at those paths. Feeding them to [reconciledFrom]
+  /// as the tree therefore gives exactly the record a full read would give;
+  /// the rules stay in ONE place.
+  ///
+  /// Null when the record:
+  ///  - is not `live`: a commit no read has proven yet (`deployed`) must go
+  ///    through the full read and its pre-publish check, as before;
+  ///  - describes another repo or branch, or names another head (someone
+  ///    else committed, or the record is a legacy one with no head);
+  ///  - came from a backup ([adoptedFromBackup]): another phone's claim is
+  ///    checked against the real tree once before it is trusted.
+  PublishManifest? reconciledAtUnchangedHead({
+    required String ownerRepo,
+    required String branch,
+    required String headSha,
+  }) {
+    if (state != PublishState.live ||
+        adoptedFromBackup ||
+        this.headSha != headSha ||
+        !describes(ownerRepo: ownerRepo, branch: branch)) {
+      return null;
+    }
+    return reconciledFrom(
+      tree: GitHubTreeSnapshot(
+        repo: ownerRepo,
+        branch: branch,
+        headSha: headSha,
+        files: fileShas,
+        truncated: false,
+      ),
+      ownerRepo: ownerRepo,
+      branch: branch,
+    );
+  }
+
   /// The record to persist right after a commit landed at [commitSha].
   ///
   /// [mergedShas] is the merge's complete app-owned set. The record's
@@ -419,7 +414,12 @@ final class PublishManifest implements PreviousPublication {
     ),
   );
 
-  /// This record with only the given fields replaced. The three derived
+  /// The same record, marked as taken from a restored backup
+  /// ([adoptedFromBackup] true); everything else is kept. Only the restore
+  /// adopter calls it (plan S11, SP4).
+  PublishManifest asAdoptedFromBackup() => _copyWith(adoptedFromBackup: true);
+
+  /// This record with only the given fields replaced. The four derived
   /// records above share this ONE copy, so a field added later cannot be
   /// forgotten in one of them (beginner note: that is how a record silently
   /// loses a fact on its way through `asLive`).
@@ -427,6 +427,7 @@ final class PublishManifest implements PreviousPublication {
     PublishState? state,
     Map<String, String>? coverUrlByBookId,
     bool? catalogueKeyed,
+    bool? adoptedFromBackup,
   }) => PublishManifest(
     schema: schema,
     repo: repo,
@@ -440,6 +441,7 @@ final class PublishManifest implements PreviousPublication {
     catalogueKeyed: catalogueKeyed ?? this.catalogueKeyed,
     coverRendition: coverRendition,
     committedAt: committedAt,
+    adoptedFromBackup: adoptedFromBackup ?? this.adoptedFromBackup,
   );
 
   /// The exact moved-page record after retirement read-back succeeds.
@@ -477,19 +479,12 @@ final class PublishManifest implements PreviousPublication {
     'catalogueKeyed': catalogueKeyed,
     if (coverRendition case final rendition?) 'coverRendition': rendition,
     if (committedAt case final at?) 'committedAt': at,
+    if (adoptedFromBackup) 'adoptedFromBackup': true,
   };
 
   /// The ONE local/remote rule for cover sources (`CoverPaths.isLocal`),
   /// shared with the cover decider.
   static bool _isLocal(String source) => CoverPaths.isLocal(source);
-
-  static PublishState? _stateFrom(Object? raw) {
-    for (final value in PublishState.values) {
-      if (value.name == raw) return value;
-    }
-    // An unknown state is not "live": the caller treats null as `deployed`.
-    return null;
-  }
 
   @override
   String toString() =>

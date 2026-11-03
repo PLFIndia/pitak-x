@@ -54,6 +54,7 @@ void main() {
             manifest: local,
             headSha: 'HEAD',
             knownBlobShas: const {},
+            treeRead: true,
           ),
           target: target,
           legacyProof: legacyProof,

@@ -224,8 +224,10 @@ final class PublishEventsUseCase {
     }
 
     // R6: shas and ownership come from the remote tree, never from the local
-    // file. That is also what makes the catalogue gate below trustworthy: a
-    // claimed `index.html` means the file really exists on the site.
+    // file alone (plan SP4: or from a `live` record of exactly the current
+    // head, which describes that same tree). That is also what makes the
+    // catalogue gate below trustworthy: a claimed `index.html` means the file
+    // really exists on the site.
     final localRecord = _manifest.load();
     final reconciliation = await GitHubPublicationReconciler(
       _api,
@@ -251,7 +253,11 @@ final class PublishEventsUseCase {
       revision: checkedAt,
       now: checkedAt,
     );
-    timings.end(PublishTimingStage.reconcile, reconcileStartedAt);
+    timings.end(
+      PublishTimingStage.reconcile,
+      reconcileStartedAt,
+      treeReads: publication.treeRead ? 1 : 0,
+    );
     if (verification == PublishVerificationOutcome.contradicted) {
       return const PublishEventsFailure(gitHubSiteChangedSincePublishMessage);
     }

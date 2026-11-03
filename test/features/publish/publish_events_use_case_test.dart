@@ -137,6 +137,9 @@ class _CapturingApi implements GitHubGitDataApi {
   bool treeTruncated = false;
   bool throwOnTree = false;
 
+  /// Recursive tree reads (plan SP4: none when the head is unchanged).
+  int treeReads = 0;
+
   List<DesiredFile>? committed;
   List<String> deleted = [];
   String? committedBranch;
@@ -151,17 +154,29 @@ class _CapturingApi implements GitHubGitDataApi {
   }) async => pages;
 
   @override
-  Future<GitHubTreeSnapshot> headTree({
+  Future<String> branchHead({
     required String owner,
     required String repo,
     required String branch,
     required String token,
   }) async {
     if (throwOnTree) throw const GitHubApiException('boom');
+    return treeHead;
+  }
+
+  @override
+  Future<GitHubTreeSnapshot> treeAt({
+    required String owner,
+    required String repo,
+    required String branch,
+    required String headSha,
+    required String token,
+  }) async {
+    treeReads++;
     return GitHubTreeSnapshot(
       repo: '$owner/$repo',
       branch: branch,
-      headSha: treeHead,
+      headSha: headSha,
       files: treeFiles,
       truncated: treeTruncated,
     );
@@ -888,6 +903,45 @@ void main() {
         manifest: _MemManifest(published()),
       ).call(twoPosters());
       expect(api.deleted, isNot(contains('availability.json')));
+    });
+  });
+
+  group('SP4 — an unchanged head skips the tree read', () {
+    PublishManifest live() => const PublishManifest(
+      repo: 'me/lib',
+      branch: 'main',
+      headSha: 'HEAD',
+      ownershipConfirmed: true,
+      state: PublishState.live,
+      fileShas: {'index.html': 'abc', 'books.json': 'def'},
+    );
+
+    test('a live record at the branch head: no tree read; the commit builds '
+        'on that head and keeps the catalogue files', () async {
+      final api = _CapturingApi();
+      final manifest = _MemManifest(live());
+
+      final result = await make(
+        api: api,
+        manifest: manifest,
+      ).call(twoPosters());
+
+      expect(result, isA<PublishEventsSuccess>());
+      expect(api.treeReads, 0);
+      expect(api.committedExpectedHead, 'HEAD');
+      expect(manifest.saved!.shaFor('index.html'), 'abc');
+      expect(manifest.saved!.shaFor('books.json'), 'def');
+    });
+
+    test('an unproven (deployed) record reads the tree', () async {
+      final api = _CapturingApi();
+
+      await make(
+        api: api,
+        manifest: _MemManifest(published()),
+      ).call(twoPosters());
+
+      expect(api.treeReads, 1);
     });
   });
 }

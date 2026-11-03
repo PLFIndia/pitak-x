@@ -77,6 +77,9 @@ void main() {
     expect(value.value, moveGitHubHead);
     expect(value.branch!.value, 'main');
     expect(value.ownedPaths, ['books.json', 'index.html', 'library.json']);
+    // A move always reads the whole tree, even though the record is live at
+    // this very head: the plan SP4 shortcut is for publishes only.
+    expect(gitData.treeReads, 1);
   });
 
   test(
@@ -100,7 +103,7 @@ void main() {
 
     expect(anchor.isLeft(), isTrue);
     expect(credentials.reads, 1);
-    expect(gitData.headTreeCalls, 0);
+    expect(gitData.treeReads, 0);
   });
 
   test('retire writes moved pages plus exact deletions in one expected-head '
@@ -352,7 +355,7 @@ final class _FakeGitData implements GitHubGitDataApi {
     'retired-head',
     [],
   );
-  int headTreeCalls = 0;
+  int treeReads = 0;
   final List<
     ({
       List<DesiredFile> files,
@@ -372,13 +375,22 @@ final class _FakeGitData implements GitHubGitDataApi {
   }) async => _pages;
 
   @override
-  Future<GitHubTreeSnapshot> headTree({
+  Future<String> branchHead({
     required String owner,
     required String repo,
     required String branch,
     required String token,
+  }) async => tree.headSha;
+
+  @override
+  Future<GitHubTreeSnapshot> treeAt({
+    required String owner,
+    required String repo,
+    required String branch,
+    required String headSha,
+    required String token,
   }) async {
-    headTreeCalls++;
+    treeReads++;
     return tree;
   }
 

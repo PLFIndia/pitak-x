@@ -11,6 +11,12 @@
 /// branch, an HTTP error, a malformed body. It never answers with an empty or
 /// partial map: "I could not read the site" and "the site is empty" must not be
 /// the same value, because the second one permits a destructive publish.
+///
+/// Two steps, two methods (plan SP4): `readHead` asks which commit the branch
+/// points at (one small request), and `readTree` reads that commit's complete
+/// file list (two requests, the second one large). Splitting them lets the
+/// caller skip the large read when the head is a commit it already knows —
+/// the decision itself lives in the domain (`PublishManifest`), not here.
 library;
 
 import 'package:http/http.dart' as http;
@@ -31,8 +37,8 @@ final class GitHubTreeReader {
 
   static const String _accept = 'application/vnd.github+json';
 
-  /// Reads the head commit of [branch] and its full recursive blob map.
-  Future<GitHubTreeSnapshot> read({
+  /// Reads the commit sha [branch] points at now (one request).
+  Future<String> readHead({
     required String owner,
     required String repo,
     required String branch,
@@ -41,18 +47,37 @@ final class GitHubTreeReader {
     if (!GitHubBranchName.isValid(branch)) {
       throw const GitHubApiException('Unsafe branch name');
     }
-    final headers = {'Authorization': 'Bearer $token', 'Accept': _accept};
-
     final ref = await _get(
       '/repos/$owner/$repo/git/ref/heads/$branch',
-      headers,
+      _headers(token),
     );
     if (ref.statusCode != 200) {
       // Setup creates repos with auto_init, so a branch the app cannot read
       // means the site state is UNKNOWN — never "nothing is published" (R6).
       throw GitHubApiException('head ref: HTTP ${ref.statusCode}');
     }
-    final headSha = gitHubObjectSha(ref.body, 'object');
+    return gitHubObjectSha(ref.body, 'object');
+  }
+
+  /// Reads the full recursive blob map of commit [headSha] on [branch].
+  ///
+  /// [headSha] must be a 40-hex commit sha (normally [readHead]'s answer); it
+  /// becomes part of a request path, so anything else is refused before a
+  /// request is made.
+  Future<GitHubTreeSnapshot> readTree({
+    required String owner,
+    required String repo,
+    required String branch,
+    required String headSha,
+    required String token,
+  }) async {
+    if (!GitHubBranchName.isValid(branch)) {
+      throw const GitHubApiException('Unsafe branch name');
+    }
+    if (!gitHubShaPattern.hasMatch(headSha)) {
+      throw const GitHubApiException('Malformed Git object SHA');
+    }
+    final headers = _headers(token);
 
     final commit = await _get(
       '/repos/$owner/$repo/git/commits/$headSha',
@@ -92,6 +117,11 @@ final class GitHubTreeReader {
       truncated: decoded['truncated'] == true,
     );
   }
+
+  static Map<String, String> _headers(String token) => {
+    'Authorization': 'Bearer $token',
+    'Accept': _accept,
+  };
 
   Future<http.Response> _get(
     String path,

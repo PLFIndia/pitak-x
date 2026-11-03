@@ -28,6 +28,8 @@ enum PublishTimingStage {
   /// Pages configuration plus the remote head/tree reconciliation. Also
   /// includes the pre-publish check of an unconfirmed earlier commit, because
   /// that check is part of establishing the baseline this publish builds on.
+  /// On GitHub it carries `treeReads`: 0 when the branch head was unchanged
+  /// and the recursive tree read was skipped (plan SP4), 1 otherwise.
   reconcile,
 
   /// Cover decisions, with counts of covers read and covers reused.
@@ -68,6 +70,7 @@ final class PublishTimingMark {
     this.coversReused,
     this.bytes,
     this.rounds,
+    this.treeReads,
   });
 
   /// Which stage this mark times.
@@ -89,6 +92,10 @@ final class PublishTimingMark {
 
   /// Read-back rounds spent (one round = one pass over the pending files).
   final int? rounds;
+
+  /// Recursive GitHub tree reads made while reconciling (plan SP4): 0 when
+  /// the unchanged branch head let the publish skip it.
+  final int? treeReads;
 }
 
 /// The marks of one publish, in the order they finished.
@@ -134,6 +141,7 @@ final class PublishTimings {
         if (mark.coversReused case final value?) 'coversReused=$value',
         if (mark.bytes case final value?) 'bytes=$value',
         if (mark.rounds case final value?) 'rounds=$value',
+        if (mark.treeReads case final value?) 'treeReads=$value',
       ];
       if (facts.isNotEmpty) buffer.write('(${facts.join(',')})');
     }
@@ -205,6 +213,7 @@ final class PublishTimingRecorder {
     int? coversReused,
     int? bytes,
     int? rounds,
+    int? treeReads,
   }) {
     if (startedAt == null || !enabled) return;
     final elapsed = _clock() - startedAt;
@@ -216,6 +225,7 @@ final class PublishTimingRecorder {
         coversReused: coversReused,
         bytes: bytes,
         rounds: rounds,
+        treeReads: treeReads,
       ),
     );
   }

@@ -73,7 +73,20 @@ void main() {
       expect(gitHub.coverUrlByBookId, archived.gitHubRecord.coverUrlByBookId);
       expect(gitHub.coverRendition, archived.gitHubRecord.coverRendition);
       expect(gitHub.headSha, archived.gitHubRecord.headSha);
+      expect(gitHub.state, archived.gitHubRecord.state);
       expect(gitHub.catalogueKeyed, isFalse);
+      // Plan SP4: another phone's record is checked against the tree before
+      // a publish trusts it, even at the same head.
+      expect(gitHub.adoptedFromBackup, isTrue);
+      expect(archived.gitHubRecord.adoptedFromBackup, isFalse);
+      expect(
+        gitHub.reconciledAtUnchangedHead(
+          ownerRepo: gitHub.repo!,
+          branch: gitHub.branch!,
+          headSha: gitHub.headSha!,
+        ),
+        isNull,
+      );
 
       final cloudflare = keys.cloudflare.current;
       expect(cloudflare.describes(archiveCloudflare), isTrue);

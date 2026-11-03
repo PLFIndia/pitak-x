@@ -311,20 +311,37 @@ abstract interface class GitHubGitDataApi {
     required String token,
   });
 
-  /// Reads the head commit and the full recursive blob path→sha map of
-  /// [owner]/[repo]'s [branch] (R6 reconciliation).
+  /// Reads which commit [owner]/[repo]'s [branch] points at now: ONE small
+  /// request (plan SP4).
   ///
-  /// Throws [GitHubApiException] for ANY read that cannot be trusted: no
-  /// branch, a malformed response, a transport failure, or a truncated tree.
-  /// It never answers with a smaller/empty map, because an empty map would be
+  /// Throws [GitHubApiException] when that cannot be read: no branch, a
+  /// malformed response or a transport failure. Callers that know the
+  /// answer's tree already (a `live` record at this very commit) need no
+  /// further read; every other caller reads the tree with [treeAt].
+  Future<String> branchHead({
+    required String owner,
+    required String repo,
+    required String branch,
+    required String token,
+  });
+
+  /// Reads the full recursive blob path→sha map of commit [headSha] on
+  /// [owner]/[repo]'s [branch] (R6 reconciliation). [headSha] is normally
+  /// [branchHead]'s answer, read just before; the snapshot's
+  /// [GitHubTreeSnapshot.headSha] is [headSha].
+  ///
+  /// Throws [GitHubApiException] for ANY read that cannot be trusted: a
+  /// malformed sha or response, an HTTP error or a transport failure. It
+  /// never answers with a smaller/empty map, because an empty map would be
   /// indistinguishable from "nothing is published" — the state that permits a
   /// destructive publish. A truncated listing is returned as
   /// [GitHubTreeSnapshot.truncated] so the caller reports the real reason
   /// instead of guessing.
-  Future<GitHubTreeSnapshot> headTree({
+  Future<GitHubTreeSnapshot> treeAt({
     required String owner,
     required String repo,
     required String branch,
+    required String headSha,
     required String token,
   });
 

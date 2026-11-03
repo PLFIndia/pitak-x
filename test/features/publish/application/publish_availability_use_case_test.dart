@@ -74,10 +74,15 @@ void main() {
   }) {
     final local = record ?? keyedLive();
     // R6: the remote starts as what this phone recorded, unless a test says
-    // otherwise.
+    // otherwise. Other files mean another commit: a commit id fixes its
+    // files, so "the recorded head with other files" cannot happen, and a
+    // `live` record at an unchanged head skips the tree read (plan SP4).
+    final remote = tree ?? local.fileShas;
     final api = LaneGitHub(
-      tree: tree ?? local.fileShas,
-      head: local.headSha ?? 'HEAD',
+      tree: remote,
+      head: _sameFiles(remote, local.fileShas)
+          ? local.headSha ?? 'HEAD'
+          : 'someone-elses-head',
     );
     final manifest = LaneMemManifest(local);
     final recorder = LaneRecorder();
@@ -399,7 +404,10 @@ void main() {
         gitHubSiteStateUnreadableMessage,
       );
 
-      final truncated = harness()..api.truncated = true;
+      // A listing is only read when the head moved (plan SP4).
+      final truncated = harness()
+        ..api.truncated = true
+        ..api.head = 'someone-elses-head';
       expect(
         (await write(truncated.useCase) as AvailabilityPending).reason,
         gitHubTreeTooLargeMessage,
@@ -573,6 +581,44 @@ void main() {
     expect(timings.markFor(PublishTimingStage.readBack), isNull);
   });
 
+  group('plan SP4: an unchanged head skips the tree read', () {
+    test('a live record at the branch head: no tree read, and the commit '
+        'builds on that head', () async {
+      final lines = <PublishTimings>[];
+      final h = harness(timingSink: lines.add);
+
+      expect(await write(h.useCase), isA<AvailabilityGoingLive>());
+
+      expect(h.api.treeReads, 0);
+      expect(h.api.commits.single.head, 'HEAD');
+      expect(h.api.commits.single.files.single.path, 'availability.json');
+      expect(lines.single.markFor(PublishTimingStage.reconcile)!.treeReads, 0);
+      expect(lines.single.describe(), contains('(treeReads=0)'));
+    });
+
+    test('a moved head reads the tree, once', () async {
+      final lines = <PublishTimings>[];
+      final h = harness(timingSink: lines.add)..api.head = 'someone-elses-head';
+
+      expect(await write(h.useCase), isA<AvailabilityGoingLive>());
+
+      expect(h.api.treeReads, 1);
+      expect(h.api.commits.single.head, 'someone-elses-head');
+      expect(lines.single.markFor(PublishTimingStage.reconcile)!.treeReads, 1);
+    });
+
+    test('the record its own commit saved is proven only by a read: the '
+        'next publish reads the tree again', () async {
+      final h = harness();
+      await write(h.useCase);
+      expect(h.manifest.current.state, PublishState.deployed);
+
+      await write(h.useCase, snapshot(['00000000000000cc']));
+
+      expect(h.api.treeReads, 1, reason: 'deployed: the full read, as before');
+    });
+  });
+
   group('end to end against fakes: publish, then the deferred check', () {
     test('the lane commits, the queue is free, and the check proves it live '
         'once Pages serves the new bytes', () async {
@@ -664,3 +710,7 @@ void main() {
     });
   });
 }
+
+/// True when [a] and [b] hold the same paths with the same shas.
+bool _sameFiles(Map<String, String> a, Map<String, String> b) =>
+    a.length == b.length && a.entries.every((e) => b[e.key] == e.value);

@@ -229,10 +229,26 @@ final class ResumableUploadGitHubApi implements GitHubApi {
   );
 
   @override
-  Future<GitHubTreeSnapshot> headTree({
+  Future<String> branchHead({
     required String owner,
     required String repo,
     required String branch,
     required String token,
-  }) => _inner.headTree(owner: owner, repo: repo, branch: branch, token: token);
+  }) =>
+      _inner.branchHead(owner: owner, repo: repo, branch: branch, token: token);
+
+  @override
+  Future<GitHubTreeSnapshot> treeAt({
+    required String owner,
+    required String repo,
+    required String branch,
+    required String headSha,
+    required String token,
+  }) => _inner.treeAt(
+    owner: owner,
+    repo: repo,
+    branch: branch,
+    headSha: headSha,
+    token: token,
+  );
 }

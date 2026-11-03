@@ -380,10 +380,15 @@ void main() {
     );
     await api.enablePages(owner: 'o', repo: 'r', branch: 'main', token: 't');
     expect(
-      (await api.headTree(
+      await api.branchHead(owner: 'o', repo: 'r', branch: 'main', token: 't'),
+      'head',
+    );
+    expect(
+      (await api.treeAt(
         owner: 'o',
         repo: 'r',
         branch: 'main',
+        headSha: 'head',
         token: 't',
       )).headSha,
       'head',
@@ -403,7 +408,8 @@ void main() {
       'pagesSite',
       'createUserRepo',
       'enablePages',
-      'headTree',
+      'branchHead',
+      'treeAt',
       'requestDeviceCode',
       'pollAccessToken',
     ]);
@@ -510,13 +516,25 @@ final class _ScriptedInner implements GitHubApi {
   }) async => calls.add('enablePages');
 
   @override
-  Future<GitHubTreeSnapshot> headTree({
+  Future<String> branchHead({
     required String owner,
     required String repo,
     required String branch,
     required String token,
   }) async {
-    calls.add('headTree');
+    calls.add('branchHead');
+    return 'head';
+  }
+
+  @override
+  Future<GitHubTreeSnapshot> treeAt({
+    required String owner,
+    required String repo,
+    required String branch,
+    required String headSha,
+    required String token,
+  }) async {
+    calls.add('treeAt');
     return const GitHubTreeSnapshot(
       repo: 'o/r',
       branch: 'main',

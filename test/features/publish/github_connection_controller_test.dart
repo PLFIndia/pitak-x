@@ -186,10 +186,19 @@ class _FakeGitHubApi implements GitHubApi {
       null;
 
   @override
-  Future<GitHubTreeSnapshot> headTree({
+  Future<String> branchHead({
     required String owner,
     required String repo,
     required String branch,
+    required String token,
+  }) async => 'sha';
+
+  @override
+  Future<GitHubTreeSnapshot> treeAt({
+    required String owner,
+    required String repo,
+    required String branch,
+    required String headSha,
     required String token,
   }) async => const GitHubTreeSnapshot(
     repo: 'me/lib',

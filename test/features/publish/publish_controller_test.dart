@@ -1176,17 +1176,29 @@ class _Api implements GitHubApi {
   }
 
   @override
-  Future<GitHubTreeSnapshot> headTree({
+  Future<String> branchHead({
     required String owner,
     required String repo,
     required String branch,
     required String token,
   }) async {
     reads++;
+    return head;
+  }
+
+  @override
+  Future<GitHubTreeSnapshot> treeAt({
+    required String owner,
+    required String repo,
+    required String branch,
+    required String headSha,
+    required String token,
+  }) async {
+    reads++;
     return GitHubTreeSnapshot(
       repo: '$owner/$repo',
       branch: branch,
-      headSha: head,
+      headSha: headSha,
       files: tree,
       truncated: false,
     );

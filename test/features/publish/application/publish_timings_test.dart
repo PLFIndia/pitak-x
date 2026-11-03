@@ -168,6 +168,28 @@ void main() {
       );
     });
 
+    test('the GitHub reconcile reports its tree reads (plan SP4)', () {
+      var now = 0;
+      PublishTimings? captured;
+      final timings = PublishTimingRecorder(
+        sink: (value) => captured = value,
+        operation: 'catalogue',
+        clock: () => now,
+      );
+
+      final reconcile = timings.begin();
+      now += 300;
+      timings
+        ..end(PublishTimingStage.reconcile, reconcile, treeReads: 0)
+        ..finish();
+
+      expect(captured!.markFor(PublishTimingStage.reconcile)!.treeReads, 0);
+      expect(
+        captured!.describe(),
+        'publish timings catalogue: total=300ms reconcile=300ms(treeReads=0)',
+      );
+    });
+
     test('never carries a path, URL or scheme (AGENTS.md §6.2)', () {
       var now = 0;
       PublishTimings? captured;

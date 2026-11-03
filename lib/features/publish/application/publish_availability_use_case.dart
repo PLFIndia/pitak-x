@@ -145,7 +145,8 @@ final class PublishAvailabilityUseCase {
     }
 
     // R6: shas, ownership and `catalogueKeyed` come from the remote tree,
-    // never from the local file alone.
+    // never from the local file alone (plan SP4: or from a `live` record of
+    // exactly the current head, which describes that same tree).
     final localRecord = _manifest.load();
     final reconciliation = await GitHubPublicationReconciler(
       _api,
@@ -181,7 +182,11 @@ final class PublishAvailabilityUseCase {
       revision: now,
       now: now,
     );
-    timings.end(PublishTimingStage.reconcile, reconcileStartedAt);
+    timings.end(
+      PublishTimingStage.reconcile,
+      reconcileStartedAt,
+      treeReads: publication.treeRead ? 1 : 0,
+    );
     // `stillBuilding` (the last commit is inside its Pages build window) and
     // `unreachable` carry on: neither is evidence of another writer (SP1).
     if (verification == PublishVerificationOutcome.contradicted) {

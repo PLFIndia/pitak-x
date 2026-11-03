@@ -120,10 +120,16 @@ void main() {
 
     test('the adopter saves both records with catalogueKeyed cleared', () {
       final source = File(adopterPath).readAsStringSync();
+      // The GitHub record is also marked as another phone's claim, so the
+      // first publish reads the whole tree before trusting it (plan SP4).
       expect(
         source,
-        contains('_gitHubRecord.save(gitHub.withoutCatalogueKeys())'),
+        contains(
+          'final adopted = '
+          'gitHub.withoutCatalogueKeys().asAdoptedFromBackup();',
+        ),
       );
+      expect(source, contains('_gitHubRecord.save(adopted)'));
       expect(
         source,
         contains('_cloudflareRecord.save(cloudflare.withoutCatalogueKeys())'),

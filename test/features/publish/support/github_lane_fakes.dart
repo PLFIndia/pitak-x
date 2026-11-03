@@ -138,10 +138,14 @@ final class LaneGitHub implements GitHubGitDataApi {
   /// What `pagesSite()` answers (null = Pages off).
   PagesSite? pages;
 
-  /// Throw on `pagesSite()` / `headTree()` / `commitFiles()`.
+  /// Throw on `pagesSite()` / the head read (`branchHead()`) /
+  /// `commitFiles()`.
   bool throwOnPages = false;
   bool throwOnTree = false;
   bool throwOnCommit = false;
+
+  /// Recursive tree reads (plan SP4: none when the head is unchanged).
+  int treeReads = 0;
 
   /// GitHub truncated the tree listing.
   bool truncated = false;
@@ -165,17 +169,29 @@ final class LaneGitHub implements GitHubGitDataApi {
   }
 
   @override
-  Future<GitHubTreeSnapshot> headTree({
+  Future<String> branchHead({
     required String owner,
     required String repo,
     required String branch,
     required String token,
   }) async {
     if (throwOnTree) throw const GitHubApiException('boom');
+    return head;
+  }
+
+  @override
+  Future<GitHubTreeSnapshot> treeAt({
+    required String owner,
+    required String repo,
+    required String branch,
+    required String headSha,
+    required String token,
+  }) async {
+    treeReads++;
     return GitHubTreeSnapshot(
       repo: '$owner/$repo',
       branch: branch,
-      headSha: head,
+      headSha: headSha,
       files: Map.of(tree),
       truncated: truncated,
     );

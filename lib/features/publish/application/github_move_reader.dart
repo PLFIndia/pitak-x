@@ -82,10 +82,19 @@ final class GitHubMoveReader {
           ValidationFailure(MoveSiteMessages.sourceUnavailable),
         );
       }
-      final tree = await _api.headTree(
+      // A move copies and later retires the WHOLE site, so it always reads
+      // the complete tree; it never takes the reconcile shortcut of plan SP4.
+      final head = await _api.branchHead(
         owner: expected.owner,
         repo: expected.repo,
         branch: branch!,
+        token: token,
+      );
+      final tree = await _api.treeAt(
+        owner: expected.owner,
+        repo: expected.repo,
+        branch: branch,
+        headSha: head,
         token: token,
       );
       if (tree.truncated) {

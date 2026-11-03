@@ -371,7 +371,7 @@ final class HttpGitHubApi implements GitHubApi {
   // --- Git Data: read head + tree (manifest reconciliation) ----------------
 
   @override
-  Future<GitHubTreeSnapshot> headTree({
+  Future<String> branchHead({
     required String owner,
     required String repo,
     required String branch,
@@ -379,7 +379,22 @@ final class HttpGitHubApi implements GitHubApi {
   }) => GitHubTreeReader(
     client: _client,
     apiBase: _apiBase,
-  ).read(owner: owner, repo: repo, branch: branch, token: token);
+  ).readHead(owner: owner, repo: repo, branch: branch, token: token);
+
+  @override
+  Future<GitHubTreeSnapshot> treeAt({
+    required String owner,
+    required String repo,
+    required String branch,
+    required String headSha,
+    required String token,
+  }) => GitHubTreeReader(client: _client, apiBase: _apiBase).readTree(
+    owner: owner,
+    repo: repo,
+    branch: branch,
+    headSha: headSha,
+    token: token,
+  );
 
   // --- Git Data: atomic incremental commit ---------------------------------
 

@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -575,7 +576,8 @@ void main() {
     );
 
     test('reports the head and every blob, ignoring non-blob types', () async {
-      final snapshot = await treeApi(
+      final calls = <String>[];
+      final svc = treeApi(
         jsonEncode({
           'sha': treeSha,
           'truncated': false,
@@ -586,7 +588,30 @@ void main() {
             {'path': 'index.html', 'type': 'blob', 'sha': 'sha-index'},
           ],
         }),
-      ).headTree(owner: 'me', repo: 'lib', branch: 'main', token: 'TKN');
+        calls: calls,
+      );
+      final head = await svc.branchHead(
+        owner: 'me',
+        repo: 'lib',
+        branch: 'main',
+        token: 'TKN',
+      );
+      // Plan SP4: the head is ONE request; the caller decides whether the
+      // large tree read is needed at all.
+      expect(head, _headSha);
+      expect(calls, ['GET /repos/me/lib/git/ref/heads/main']);
+
+      final snapshot = await svc.treeAt(
+        owner: 'me',
+        repo: 'lib',
+        branch: 'main',
+        headSha: head,
+        token: 'TKN',
+      );
+      expect(calls.skip(1), [
+        'GET /repos/me/lib/git/commits/$_headSha',
+        'GET /repos/me/lib/git/trees/$treeSha',
+      ], reason: 'the tree read does not read the ref again');
 
       expect(snapshot.headSha, _headSha);
       expect(snapshot.branch, 'main');
@@ -599,15 +624,22 @@ void main() {
     });
 
     test('a truncated listing is reported, not silently shortened', () async {
-      final snapshot = await treeApi(
-        jsonEncode({
-          'sha': treeSha,
-          'truncated': true,
-          'tree': [
-            {'path': 'books.json', 'type': 'blob', 'sha': 'sha-books'},
-          ],
-        }),
-      ).headTree(owner: 'me', repo: 'lib', branch: 'main', token: 'TKN');
+      final snapshot =
+          await treeApi(
+            jsonEncode({
+              'sha': treeSha,
+              'truncated': true,
+              'tree': [
+                {'path': 'books.json', 'type': 'blob', 'sha': 'sha-books'},
+              ],
+            }),
+          ).treeAt(
+            owner: 'me',
+            repo: 'lib',
+            branch: 'main',
+            headSha: _headSha,
+            token: 'TKN',
+          );
       expect(snapshot.truncated, isTrue);
     });
 
@@ -616,7 +648,21 @@ void main() {
     test('a missing branch is a typed failure, not an empty tree', () async {
       final svc = api(MockClient((_) async => http.Response('', 404)));
       await expectLater(
-        svc.headTree(owner: 'me', repo: 'lib', branch: 'main', token: 'TKN'),
+        svc.branchHead(owner: 'me', repo: 'lib', branch: 'main', token: 'TKN'),
+        throwsA(isA<GitHubApiException>()),
+      );
+    });
+
+    test('a missing commit is a typed failure, not an empty tree', () async {
+      final svc = api(MockClient((_) async => http.Response('', 404)));
+      await expectLater(
+        svc.treeAt(
+          owner: 'me',
+          repo: 'lib',
+          branch: 'main',
+          headSha: _headSha,
+          token: 'TKN',
+        ),
         throwsA(isA<GitHubApiException>()),
       );
     });
@@ -624,9 +670,86 @@ void main() {
     test('a malformed listing is a typed failure', () async {
       final svc = treeApi(jsonEncode({'sha': treeSha, 'tree': 'nope'}));
       await expectLater(
-        svc.headTree(owner: 'me', repo: 'lib', branch: 'main', token: 'TKN'),
+        svc.treeAt(
+          owner: 'me',
+          repo: 'lib',
+          branch: 'main',
+          headSha: _headSha,
+          token: 'TKN',
+        ),
         throwsA(isA<GitHubApiException>()),
       );
+    });
+
+    test('a head that is not a 40-hex sha, or an unsafe branch, is refused '
+        'before any request', () async {
+      final calls = <String>[];
+      final svc = treeApi('{}', calls: calls);
+      for (final headSha in ['../../etc', 'abc', '${_headSha}0', '']) {
+        await expectLater(
+          svc.treeAt(
+            owner: 'me',
+            repo: 'lib',
+            branch: 'main',
+            headSha: headSha,
+            token: 'TKN',
+          ),
+          throwsA(isA<GitHubApiException>()),
+          reason: headSha,
+        );
+      }
+      await expectLater(
+        svc.treeAt(
+          owner: 'me',
+          repo: 'lib',
+          branch: '../main',
+          headSha: _headSha,
+          token: 'TKN',
+        ),
+        throwsA(isA<GitHubApiException>()),
+      );
+      await expectLater(
+        svc.branchHead(
+          owner: 'me',
+          repo: 'lib',
+          branch: '../main',
+          token: 'TKN',
+        ),
+        throwsA(isA<GitHubApiException>()),
+      );
+      expect(calls, isEmpty);
+    });
+
+    test('a transport failure is a typed failure without its text', () async {
+      final svc = api(
+        MockClient((_) async => throw const SocketException('secret-host')),
+      );
+      for (final read in [
+        () => svc.branchHead(
+          owner: 'me',
+          repo: 'lib',
+          branch: 'main',
+          token: 'TKN',
+        ),
+        () => svc.treeAt(
+          owner: 'me',
+          repo: 'lib',
+          branch: 'main',
+          headSha: _headSha,
+          token: 'TKN',
+        ),
+      ]) {
+        await expectLater(
+          read(),
+          throwsA(
+            isA<GitHubApiException>().having(
+              (e) => e.toString(),
+              'text',
+              isNot(contains('secret-host')),
+            ),
+          ),
+        );
+      }
     });
   });
 

@@ -231,10 +231,12 @@ final class PublishLibraryUseCase {
     }
 
     // R6: read the remote head + tree and reconcile the local record against
-    // it BEFORE building. Shas come from the tree (never from the local file),
-    // and a path this phone did not write is never claimed — so `mergeSection`
-    // below cannot delete a human's file, and an unchanged file is compared
-    // against what the site really holds.
+    // it BEFORE building. Shas come from the tree (never from the local file
+    // alone; plan SP4 skips the tree read only when a `live` record describes
+    // exactly the current head, i.e. that same tree), and a path this phone
+    // did not write is never claimed — so `mergeSection` below cannot delete a
+    // human's file, and an unchanged file is compared against what the site
+    // really holds.
     final localRecord = _manifest.load();
     final reconciliation = await GitHubPublicationReconciler(
       _api,
@@ -260,7 +262,11 @@ final class PublishLibraryUseCase {
       revision: now,
       now: now,
     );
-    timings.end(PublishTimingStage.reconcile, reconcileStartedAt);
+    timings.end(
+      PublishTimingStage.reconcile,
+      reconcileStartedAt,
+      treeReads: publication.treeRead ? 1 : 0,
+    );
     if (verification == PublishVerificationOutcome.contradicted) {
       return const PublishFailure(gitHubSiteChangedSincePublishMessage);
     }

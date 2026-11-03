@@ -951,4 +951,156 @@ void main() {
       });
     });
   });
+
+  group('plan SP4: adoptedFromBackup and the unchanged-head rule', () {
+    const live = PublishManifest(
+      repo: 'me/lib',
+      branch: 'main',
+      headSha: 'head-a',
+      ownershipConfirmed: true,
+      state: PublishState.live,
+      fileShas: {'books.json': 'sha-books', 'covers/a.jpg': 'sha-a'},
+      coverUrlByBookId: {'1': 'covers/a.jpg'},
+      proofPath: PublishProofPath.booksJson,
+      catalogueKeyed: true,
+      coverRendition: PublishCoverRendition.current,
+      committedAt: 42,
+    );
+
+    test('JSON: written only when true; absent or false read as false; any '
+        'other value is damage and reads as true (less trust)', () {
+      expect(live.toJson().containsKey('adoptedFromBackup'), isFalse);
+      final adopted = live.asAdoptedFromBackup();
+      expect(adopted.toJson()['adoptedFromBackup'], isTrue);
+      expect(
+        PublishManifest.fromJson(adopted.toJson()).adoptedFromBackup,
+        isTrue,
+      );
+      expect(
+        PublishManifest.fromJson(live.toJson()).adoptedFromBackup,
+        isFalse,
+      );
+      for (final (stored, expected) in [
+        (false, false),
+        (true, true),
+        ('yes', true),
+        (1, true),
+        (const <String, Object>{}, true),
+      ]) {
+        final json = {...live.toJson(), 'adoptedFromBackup': stored};
+        expect(
+          PublishManifest.fromJson(json).adoptedFromBackup,
+          expected,
+          reason: '$stored',
+        );
+      }
+    });
+
+    test('asAdoptedFromBackup changes that flag only', () {
+      final adopted = live.asAdoptedFromBackup();
+      final json = adopted.toJson()..remove('adoptedFromBackup');
+      expect(json, live.toJson());
+    });
+
+    test('the copies keep the flag; records this phone writes clear it', () {
+      final adopted = live.asAdoptedFromBackup();
+      expect(adopted.asLive().adoptedFromBackup, isTrue);
+      expect(adopted.withoutCatalogueKeys().adoptedFromBackup, isTrue);
+      expect(adopted.withoutLocalCoverSources().adoptedFromBackup, isTrue);
+
+      expect(
+        adopted
+            .reconciledFrom(
+              tree: tree(live.fileShas),
+              ownerRepo: 'me/lib',
+              branch: 'main',
+            )
+            .adoptedFromBackup,
+        isFalse,
+        reason: 'this phone has now read the tree itself',
+      );
+      expect(
+        adopted
+            .afterCommit(
+              commitSha: 'head-b',
+              mergedShas: live.fileShas,
+              coverUrlByBookId: live.coverUrlByBookId,
+              coverRendition: live.coverRendition,
+              proofPath: PublishProofPath.booksJson,
+              committedAt: 43,
+            )
+            .adoptedFromBackup,
+        isFalse,
+        reason: "this phone's own commit",
+      );
+      expect(
+        adopted
+            .asRetired(commitSha: 'head-c', movedFileShas: const {})
+            .adoptedFromBackup,
+        isFalse,
+      );
+    });
+
+    test('a live record of the same repo and branch at the same head: the '
+        'record a full read would give, without a tree', () {
+      final skipped = live.reconciledAtUnchangedHead(
+        ownerRepo: 'me/lib',
+        branch: 'main',
+        headSha: 'head-a',
+      );
+      final full = live.reconciledFrom(
+        tree: tree({...live.fileShas, 'README.md': 'sha-readme'}),
+        ownerRepo: 'me/lib',
+        branch: 'main',
+      );
+
+      expect(skipped, isNotNull);
+      expect(skipped!.toJson(), full.toJson());
+      expect(skipped.state, PublishState.live);
+      expect(skipped.catalogueKeyed, isTrue);
+      expect(skipped.coverRendition, PublishCoverRendition.current);
+    });
+
+    test('anything else needs the tree (null)', () {
+      PublishManifest? at(
+        PublishManifest record, {
+        String ownerRepo = 'me/lib',
+        String branch = 'main',
+        String headSha = 'head-a',
+      }) => record.reconciledAtUnchangedHead(
+        ownerRepo: ownerRepo,
+        branch: branch,
+        headSha: headSha,
+      );
+      PublishManifest withState(PublishState state) => PublishManifest(
+        repo: live.repo,
+        branch: live.branch,
+        headSha: live.headSha,
+        ownershipConfirmed: true,
+        state: state,
+        fileShas: live.fileShas,
+      );
+
+      expect(at(live, headSha: 'head-b'), isNull, reason: 'head moved');
+      expect(at(live, ownerRepo: 'me/other'), isNull, reason: 'repo');
+      expect(at(live, branch: 'gh-pages'), isNull, reason: 'branch');
+      expect(at(withState(PublishState.deployed)), isNull, reason: 'unproven');
+      expect(at(withState(PublishState.retired)), isNull, reason: 'retired');
+      expect(at(live.asAdoptedFromBackup()), isNull, reason: 'a backup');
+      expect(at(PublishManifest.empty), isNull, reason: 'nothing recorded');
+      expect(
+        at(
+          const PublishManifest(
+            repo: 'me/lib',
+            branch: 'main',
+            state: PublishState.live,
+            fileShas: {'books.json': 'sha-books'},
+          ),
+        ),
+        isNull,
+        reason: 'no head (a legacy record)',
+      );
+      expect(at(withState(PublishState.live)), isNotNull, reason: 'control');
+    });
+  });
 }

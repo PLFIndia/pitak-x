@@ -20,7 +20,10 @@
 ///     the Cloudflare record, then the host journal. Both records are saved
 ///     with `catalogueKeyed` cleared: the live `books.json` was keyed on
 ///     another phone, so the lane waits for this phone's first catalogue
-///     publish (the salt invariant, `publish_salt_invariant_test.dart`).
+///     publish (the salt invariant, `publish_salt_invariant_test.dart`). The
+///     GitHub record is also marked `adoptedFromBackup`: it is another
+///     phone's claim, so the first publish reads the site's whole file list
+///     once instead of trusting it (plan SP4).
 ///  4. If any write fails, the earlier writes are undone in reverse order
 ///     and the outcome is "not applied" (fail closed). The journal is written
 ///     LAST, so it never needs undoing. Even a failed undo cannot make a
@@ -140,9 +143,8 @@ final class RestoredPublishStateAdopter implements PublishStateAdopter {
 
     final gitHub = archived.gitHubRecord;
     if (PublishStateBackup.gitHubRecordHoldsSite(gitHub)) {
-      if (_gitHubRecord.save(gitHub.withoutCatalogueKeys()).isLeft()) {
-        return failed();
-      }
+      final adopted = gitHub.withoutCatalogueKeys().asAdoptedFromBackup();
+      if (_gitHubRecord.save(adopted).isLeft()) return failed();
       // The rule only adopts over EMPTY records, so the undo writes this
       // phone's empty record back.
       undo.add(
