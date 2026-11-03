@@ -85,9 +85,18 @@ decisions for the product owner: J11 (§S9), J12–J14 (§G4; J12 has a new
 visible effect, §S15), J15 (§S10b), the copy of the rate-limit messages
 (§S10b), the copy of the backup/restore lines (§S11), the guide line of
 §S12, the PRIVACY wording of J18 (§S14), the missed Cloudflare lane p90 rule
-(§S15), the new observations J19–J23 (§S15) and whether J24 becomes a fix
-session before the release (§S15 part 2). Open engineering observation J17
-(§S12).
+(§S15) and the new observations J19–J23 (§S15). Open engineering observation
+J17 (§S12).
+S16 — Fix 4 (J24) — **PLANNED, not started** (2026-11-04). After block D
+the product owner asked why covers carry a salt at all (P8: the catalogue is
+public) and **decided P9**: the salt is kept, but not as a privacy measure
+(stable cover names and keys, the J10 key-set binding; removing it would
+re-upload every site). Then "plan J24 fix": plan **D.5** (design, rejected
+alternatives, steps, tests, device check), **CV8**, Part F row and details
+for **S16**, P9 in A.3, and J19–J24 (plus J12's S15 effect) in Part J.
+**Order:** S16 (on the product owner's go-ahead) → S15's remaining paperwork
+(Appendix A, CHANGELOG, release checklist) → Linux goldens → push. Keep the
+Play fixture app installed: S16's device check re-runs D2 and D3 on it.
 
 **Outside the plan (2026-11-03, before S15's device run, product owner's
 request):** commit `7708439` makes the Android launcher icon adaptive
@@ -105,8 +114,9 @@ graphics are uploaded by hand: Play still showed the August 2026 icon; the
 product owner uploaded `icon.png` and `featureGraphic.png` in Play Console on
 2026-11-03 (in Google's review at 15:10 IST).
 
-> Read this file first in any new session. §S15 part 2 (block D) is the
-> newest state, then §S15 (part 1), then
+> Read this file first in any new session. The S16 paragraph at the top and
+> plan D.5 are the newest state, then §S15 part 2 (block D), then §S15
+> (part 1), then
 > §S14, §S13, §S12, §S11, §S10b, §S10, §G4 (device evidence), §S9, §S8, §S7, §S6, §S5, §S4,
 > §S3, §S2 and §0 (S1). §1–§5 are the S0 record (plan Appendix A cites the
 > verbatim lines in §3), kept unchanged.
@@ -170,7 +180,7 @@ run and set back to 256 KiB after it).
 23:57:31.656 publish timings cloudflare: total=112932ms reads=665ms reconcile=5039ms coverDecisions=72104ms(coversRead=1,coversReused=1000) build=72319ms upload=5332ms(bytes=275503) deploy=1431ms readBack=20632ms(rounds=2)
 ```
 
-### New observation J24 — reusing a cover still costs ≈ 72 ms (proposed plan J24; not yet in the plan)
+### New observation J24 — reusing a cover still costs ≈ 72 ms (plan J24 since 2026-11-04; fix planned as S16, plan D.5)
 
 **What:** D2 read no cover, yet its cover stage took 72.6 s, about **72.6 ms
 per reused cover**; D3: 72.1 s for 1,001 decisions. The test library shows
@@ -320,7 +330,7 @@ Served times (anonymous poll) for the C4 lane writes, in order: 17:36:11.2,
 new 17:57:39.3), 17:58:32.0, 17:59:08.8, 18:00:00.5. Lend time = line time −
 total − 20 s.
 
-### New observations for the product owner (proposed plan J19–J23; not yet in the plan)
+### New observations for the product owner (in plan Part J since 2026-11-04)
 
 - **J12, new visible effect.** On a restored (or new) phone the lane holds a
   pending set until the first catalogue publish; it then commits it right
@@ -392,9 +402,11 @@ total − 20 s.
    replacement: expected, safe).
 2. Decide with the product owner whether to re-measure the GitHub rows on a
    normal network (today's commits were 4–7× slower than the Mac's).
-3. Fill plan Appendix A "After Phase 3" (and note that one build holds
-   Phases 2 + 3), close A.6 #118, add J19–J23 to Part J, then the release
-   docs. The goldens stay deferred until all fixes are done.
+3. **After S16 (2026-11-04 order):** fill plan Appendix A "After Phase 3"
+   (and note that one build holds Phases 2 + 3, plus S16's D2/D3 re-run),
+   close A.6 #118, then the release docs. J19–J24 are already in Part J
+   (added 2026-11-04 with the S16 plan). The goldens stay deferred until all
+   fixes are done.
 
 ---
 
