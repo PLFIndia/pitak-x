@@ -51,7 +51,7 @@ bool availabilityLaneActivated(AvailabilityLaneActivatedRef ref) => true;
 /// uses (ADR 0019 Decision 3), so lane keys and `books.json` keys agree.
 @riverpod
 PublishItemKeys availabilityItemKeys(AvailabilityItemKeysRef ref) =>
-    PublishItemKeys(ref.watch(publishCoverIdsProvider).saltStore);
+    PublishItemKeys(ref.watch(publishCoverSaltStoreProvider));
 
 /// The GitHub availability-only publish (plan S4).
 @riverpod

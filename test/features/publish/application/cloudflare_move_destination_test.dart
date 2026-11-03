@@ -493,7 +493,6 @@ PublishSnapshotBuilder _builder() => PublishSnapshotBuilder(
   itemKeys: const PublishItemKeys(_FixedSalt()),
   catalogue: CatalogueSectionBuilder(
     covers: PublishCoverDecider(
-      coverIds: const PublishCoverIds(_FixedSalt()),
       readLocalCover: (_) async => null,
       fetchRemoteCover: (_) async => null,
     ),

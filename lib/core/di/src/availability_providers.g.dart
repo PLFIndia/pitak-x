@@ -45,7 +45,7 @@ final availabilityLaneActivatedProvider = Provider<bool>.internal(
 // ignore: unused_element
 typedef AvailabilityLaneActivatedRef = ProviderRef<bool>;
 String _$availabilityItemKeysHash() =>
-    r'130aaabb25d8c33b346f6a450a43b9681ff2fe56';
+    r'a48e07bbd8a083115d7cd9291fa98982db0bc2e0';
 
 /// Item keys for the lane, over the SAME salt store the snapshot builder
 /// uses (ADR 0019 Decision 3), so lane keys and `books.json` keys agree.

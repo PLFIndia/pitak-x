@@ -476,7 +476,6 @@ void main() {
         itemKeys: PublishItemKeys(_FixedSalt()),
         catalogue: CatalogueSectionBuilder(
           covers: PublishCoverDecider(
-            coverIds: PublishCoverIds(_FixedSalt()),
             readLocalCover: readLocalCover ?? (_) async => null,
             fetchRemoteCover: fetchRemoteCover ?? (_) async => null,
           ),
@@ -1519,9 +1518,7 @@ void main() {
                 verifier: _FakeVerifier((_, _) async => null),
               ),
             ),
-            publishCoverIdsProvider.overrideWithValue(
-              PublishCoverIds(_FixedSalt()),
-            ),
+            publishCoverSaltStoreProvider.overrideWithValue(_FixedSalt()),
             settingsRepositoryProvider.overrideWith((ref) async => settings),
             networkRepositoryProvider.overrideWith(
               (ref) async => _EmptyNetworkRepository(),

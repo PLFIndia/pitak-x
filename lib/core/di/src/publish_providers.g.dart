@@ -580,7 +580,7 @@ final eventsJsonFactoryProvider =
 // ignore: unused_element
 typedef EventsJsonFactoryRef = AutoDisposeProviderRef<EventsJsonFactory>;
 String _$publishSnapshotBuilderHash() =>
-    r'8f9c135a91a489a3d72187616804747411b14e07';
+    r'11c5f309984f3c970020a4221f74a34ba8ac1568';
 
 /// The ONE snapshot builder every publish host consumes (Cloudflare plan
 /// R2/R3/P5).
@@ -615,25 +615,29 @@ final publishSnapshotBuilderProvider =
 // ignore: unused_element
 typedef PublishSnapshotBuilderRef =
     AutoDisposeFutureProviderRef<PublishSnapshotBuilder>;
-String _$publishCoverIdsHash() => r'3c5bcadbb45d7e23406191680df0ebe5e294b100';
+String _$publishCoverSaltStoreHash() =>
+    r'03e584aaf20660ebaaf6c316087ba795ca87f5f0';
 
-/// Salted cover-path ids for publish (no internal-id leak, F-01).
+/// The cover salt store (plan P9: stable cover names and item keys, and the
+/// key-set binding). Read once per publish by `PublishItemKeys`.
 ///
-/// Copied from [publishCoverIds].
-@ProviderFor(publishCoverIds)
-final publishCoverIdsProvider = AutoDisposeProvider<PublishCoverIds>.internal(
-  publishCoverIds,
-  name: r'publishCoverIdsProvider',
-  debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
-      ? null
-      : _$publishCoverIdsHash,
-  dependencies: null,
-  allTransitiveDependencies: null,
-);
+/// Copied from [publishCoverSaltStore].
+@ProviderFor(publishCoverSaltStore)
+final publishCoverSaltStoreProvider =
+    AutoDisposeProvider<PublishCoverSaltStore>.internal(
+      publishCoverSaltStore,
+      name: r'publishCoverSaltStoreProvider',
+      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+          ? null
+          : _$publishCoverSaltStoreHash,
+      dependencies: null,
+      allTransitiveDependencies: null,
+    );
 
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
-typedef PublishCoverIdsRef = AutoDisposeProviderRef<PublishCoverIds>;
+typedef PublishCoverSaltStoreRef =
+    AutoDisposeProviderRef<PublishCoverSaltStore>;
 String _$publishManifestStoreHash() =>
     r'5aa1156d243efd66c3ce996c2ee810a597c87928';
 

@@ -50,7 +50,6 @@ void main() {
     itemKeys: PublishItemKeys(keySalt),
     catalogue: CatalogueSectionBuilder(
       covers: PublishCoverDecider(
-        coverIds: const PublishCoverIds(_FixedSalt(_saltBytes)),
         readLocalCover: readLocalCover ?? (_) async => null,
         fetchRemoteCover: (_) async => null,
       ),

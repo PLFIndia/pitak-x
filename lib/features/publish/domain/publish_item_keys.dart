@@ -33,6 +33,16 @@ library;
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/publish/domain/publish_cover_ids.dart';
+import 'package:pitaka/features/publish/domain/publish_cover_names.dart';
+
+/// Everything one publish derives from the salt, from ONE read (plan D.5,
+/// CV8): the item keys with their key-set id, and the cover file names.
+///
+/// Why one value (beginner note): keys and cover names must come from the
+/// SAME salt, or `books.json` could carry keys of one salt beside cover links
+/// of another. Handing them down together makes that impossible by
+/// construction instead of by careful wiring.
+typedef PublishNaming = ({PublishKeySet keys, PublishCoverNames coverNames});
 
 /// The keys of one publish, together with the id of the key set they belong
 /// to (ADR 0019 Decision 4 clarification, plan A.6 #68).
@@ -77,8 +87,9 @@ final class PublishKeySet {
 
 /// Computes the public `key` of catalogue items and the key-set id.
 final class PublishItemKeys {
-  /// Creates the helper over [saltStore], the SAME salt store the cover file
-  /// names use, so keys and cover names always change together.
+  /// Creates the helper over [saltStore]. Since plan S16 the cover names of
+  /// a publish come from the same read as its keys ([namingFor]), so the two
+  /// always change together.
   const PublishItemKeys(this.saltStore);
 
   /// Source of the persisted salt.
@@ -129,21 +140,47 @@ final class PublishItemKeys {
   static bool isValidKey(String value) => _keyPattern.hasMatch(value);
 
   /// The keys of every id in [itemIds] and their key-set id, with ONE salt
-  /// read.
+  /// read. Used by the availability lane, which names no cover.
   ///
   /// Fails closed: an unreadable or empty salt, or two ids that share a key,
   /// return a [ValidationFailure] and no keys at all, so nothing can be
   /// published with a wrong or ambiguous key.
   Future<Either<Failure, PublishKeySet>> keysFor(Iterable<int> itemIds) async {
-    final List<int> salt;
+    final salt = await _readSalt();
+    return salt.flatMap((bytes) => keysWithSalt(salt: bytes, itemIds: itemIds));
+  }
+
+  /// The keys of every id in [itemIds], their key-set id AND the cover names
+  /// of this publish, with ONE salt read (plan D.5, CV8). Used by the
+  /// snapshot builder, before any cover is decided.
+  ///
+  /// Same failures as [keysFor]: an unreadable or empty salt →
+  /// [saltUnavailableMessage]; two ids sharing a key → [collisionMessage].
+  Future<Either<Failure, PublishNaming>> namingFor(
+    Iterable<int> itemIds,
+  ) async {
+    final salt = await _readSalt();
+    return salt.flatMap((bytes) {
+      final coverNames = PublishCoverNames.tryCreate(bytes);
+      if (coverNames == null) {
+        return const Left(ValidationFailure(saltUnavailableMessage));
+      }
+      return keysWithSalt(
+        salt: bytes,
+        itemIds: itemIds,
+      ).map((keys) => (keys: keys, coverNames: coverNames));
+    });
+  }
+
+  /// The one place the salt is read for a publish or a lane run.
+  Future<Either<Failure, List<int>>> _readSalt() async {
     try {
-      salt = await saltStore.salt();
+      return Right(await saltStore.salt());
     } on Exception {
       // The store's own error text may name a platform detail; the caller
       // only needs to know that no key can be computed right now.
       return const Left(ValidationFailure(saltUnavailableMessage));
     }
-    return keysWithSalt(salt: salt, itemIds: itemIds);
   }
 
   /// The pure part of [keysFor]: computes every key and the key-set id, and

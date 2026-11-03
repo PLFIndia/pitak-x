@@ -34,7 +34,7 @@ library;
 import 'package:pitaka/features/import_export/domain/cover_paths.dart';
 import 'package:pitaka/features/publish/domain/cover_url_allow_list.dart';
 import 'package:pitaka/features/publish/domain/git_blob_sha.dart';
-import 'package:pitaka/features/publish/domain/publish_cover_ids.dart';
+import 'package:pitaka/features/publish/domain/publish_cover_names.dart';
 import 'package:pitaka/features/publish/domain/publish_cover_rendition.dart';
 import 'package:pitaka/features/publish/domain/site/previous_publication.dart';
 import 'package:pitaka/features/publish/domain/site/publish_mode.dart';
@@ -80,39 +80,44 @@ final class CoverDecision {
 }
 
 /// Decides covers for one publish run.
+///
+/// The cover NAMES arrive per call ([PublishCoverNames]), not through the
+/// constructor: they come from the one salt read the snapshot builder makes
+/// at the start of a build (plan D.5, CV8), so the decider never touches
+/// the salt store itself.
 final class PublishCoverDecider {
   /// Creates the decider over its ports.
   const PublishCoverDecider({
-    required PublishCoverIds coverIds,
     required LocalCoverReader readLocalCover,
     required RemoteCoverFetcher fetchRemoteCover,
-  }) : _coverIds = coverIds,
-       _readLocalCover = readLocalCover,
+  }) : _readLocalCover = readLocalCover,
        _fetchRemoteCover = fetchRemoteCover;
 
-  final PublishCoverIds _coverIds;
   final LocalCoverReader _readLocalCover;
   final RemoteCoverFetcher _fetchRemoteCover;
 
   /// Decides the cover of one item: [coverUrl] is the source reference,
-  /// [itemId] the identity the salted path is hashed from.
+  /// [itemId] the identity the salted path is hashed from, [names] this
+  /// publish's naming (one salt read).
   ///
-  /// Beginner note: the salted path hides the per-device id in the public
-  /// repo (see `PublishCoverIds`); the manifest's sha/source-identity skips
-  /// are what make a re-publish of an unchanged cover upload nothing.
+  /// Beginner note: the salted path keeps every cover's file name stable
+  /// across publishes (see `PublishCoverIds`); the manifest's
+  /// sha/source-identity skips are what make a re-publish of an unchanged
+  /// cover upload nothing.
   ///
   /// [mode] [PublishMode.complete] never reuses by source identity: a move
   /// or replacement reads every cover (plan CV4, ADR 0017 Decision 4).
   Future<CoverDecision> forItem(
     String? coverUrl, {
     required int itemId,
+    required PublishCoverNames names,
     required PreviousPublication manifest,
     required PublishMode mode,
   }) => _decide(
     coverUrl,
     manifest,
     mode: mode,
-    publishPath: () => _coverIds.pathFor(itemId),
+    publishPath: () => names.pathFor(itemId),
     urlKey: '$itemId',
   );
 
@@ -122,13 +127,14 @@ final class PublishCoverDecider {
   Future<CoverDecision> forPeriodical(
     String? coverUrl, {
     required String periodicalUid,
+    required PublishCoverNames names,
     required PreviousPublication manifest,
     required PublishMode mode,
   }) => _decide(
     coverUrl,
     manifest,
     mode: mode,
-    publishPath: () => _coverIds.pathForPeriodical(periodicalUid),
+    publishPath: () => names.pathForPeriodical(periodicalUid),
     urlKey: 'periodical:$periodicalUid',
   );
 
@@ -136,12 +142,12 @@ final class PublishCoverDecider {
     String? coverUrl,
     PreviousPublication manifest, {
     required PublishMode mode,
-    required Future<String> Function() publishPath,
+    required String Function() publishPath,
     required String urlKey,
   }) async {
     final src = coverUrl?.trim() ?? '';
     if (src.isEmpty) return const CoverDecision();
-    final path = await publishPath();
+    final path = publishPath();
     final repoSha = manifest.shaFor(path);
     final recordedSource = manifest.coverSourceFor(urlKey);
     // True when the record's covers were made by this build's recipe, so a

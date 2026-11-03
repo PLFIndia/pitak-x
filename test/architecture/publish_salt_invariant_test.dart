@@ -78,6 +78,29 @@ void main() {
     expect(secondWrite, greaterThan(lengthCheck));
   });
 
+  test('the salt is read in exactly three places (plan D.5, CV8)', () {
+    // Why (beginner note): every `.salt()` call opens the phone's secure
+    // storage (about 72 ms). Plan S16 made a publish read it ONCE, in
+    // `PublishItemKeys`, and name every cover from that read (J24). A new
+    // reader elsewhere — say, a decider asking per cover again — fails here
+    // until it is reviewed.
+    final readers = [
+      for (final file in libFiles())
+        if (file.readAsStringSync().contains('.salt()')) path(file),
+    ]..sort();
+    expect(
+      readers,
+      [
+        // The one reader for a publish or a lane run.
+        'lib/features/publish/domain/publish_item_keys.dart',
+        // The restore adopter keeps the previous salt for its undo (S11).
+        'lib/features/publish/application/site/restored_publish_state_adopter.dart',
+        // The backup archive carries the salt (CV6).
+        'lib/features/publish/application/site/publish_state_backup_reader.dart',
+      ]..sort(),
+    );
+  });
+
   test('no other production class implements the salt store port', () {
     final implementer = RegExp(
       r'implements\s+(Replaceable)?PublishCoverSaltStore\b',

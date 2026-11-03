@@ -8,7 +8,7 @@ import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/publish/application/publish_cover_decider.dart';
 import 'package:pitaka/features/publish/application/site/catalogue_section_builder.dart';
 import 'package:pitaka/features/publish/application/site/events_section_builder.dart';
-import 'package:pitaka/features/publish/domain/publish_cover_ids.dart';
+import 'package:pitaka/features/publish/domain/publish_cover_names.dart';
 import 'package:pitaka/features/publish/domain/publish_item_keys.dart';
 import 'package:pitaka/features/publish/domain/publish_manifest.dart';
 import 'package:pitaka/features/publish/domain/site/publish_artifact_sink.dart';
@@ -28,24 +28,19 @@ final class _Sink implements PublishArtifactSink {
   }
 }
 
-final class _Salt implements PublishCoverSaltStore {
-  const _Salt();
-
-  @override
-  Future<List<int>> salt() async => ascii.encode('salt-1234567890');
-}
-
 /// A valid public key for item 1 (ADR 0019): the builder refuses an item
-/// without one.
-final _keys = PublishKeySet.tryCreate(
-  id: 'fedcba9876543210',
-  keysById: const {1: '0123456789abcdef'},
-)!;
+/// without one. The cover names come from a fixed salt (plan D.5).
+final _naming = (
+  keys: PublishKeySet.tryCreate(
+    id: 'fedcba9876543210',
+    keysById: const {1: '0123456789abcdef'},
+  )!,
+  coverNames: PublishCoverNames.tryCreate(ascii.encode('salt-1234567890'))!,
+);
 
 void main() {
   CatalogueSectionBuilder catalogue(_Sink sink) => CatalogueSectionBuilder(
     covers: PublishCoverDecider(
-      coverIds: const PublishCoverIds(_Salt()),
       readLocalCover: (_) async => [1, 2, 3],
       fetchRemoteCover: (_) async => null,
     ),
@@ -77,7 +72,7 @@ void main() {
       settings: const PublishPageSettings(libraryName: 'Test Library'),
       previous: PublishManifest.empty,
       now: 1,
-      itemKeys: _keys,
+      naming: _naming,
       mode: PublishMode.complete,
     )).toNullable()!;
 
@@ -115,7 +110,7 @@ void main() {
       settings: const PublishPageSettings(libraryName: 'Test Library'),
       previous: PublishManifest.empty,
       now: 1,
-      itemKeys: _keys,
+      naming: _naming,
       mode: PublishMode.complete,
     );
     final eventsResult = await events(sink).build(

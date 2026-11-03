@@ -7,6 +7,7 @@ import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_content_typ
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_site_manifest.dart';
 import 'package:pitaka/features/publish/domain/git_blob_sha.dart';
 import 'package:pitaka/features/publish/domain/publish_cover_ids.dart';
+import 'package:pitaka/features/publish/domain/publish_cover_names.dart';
 import 'package:pitaka/features/publish/domain/publish_cover_rendition.dart';
 import 'package:pitaka/features/publish/domain/publish_manifest.dart';
 import 'package:pitaka/features/publish/domain/site/previous_publication.dart';
@@ -22,6 +23,8 @@ import 'package:pitaka/features/publish/domain/site/publish_mode.dart';
 /// republish, 1 after adding one book).
 void main() {
   final salt = ascii.encode('salt-1234567890');
+  // The names of this publish, from the one salt read (plan D.5).
+  final names = PublishCoverNames.tryCreate(salt)!;
   final itemPath = 'covers/${PublishCoverIds.shortHashHex(salt, 1)}.jpg';
   final seriesPath =
       'covers/${PublishCoverIds.shortHashHexForKey(salt, 'periodical:uid-1')}.jpg';
@@ -40,7 +43,6 @@ void main() {
   });
 
   PublishCoverDecider decider() => PublishCoverDecider(
-    coverIds: PublishCoverIds(_FixedSalt(salt)),
     readLocalCover: (src) async {
       reads.add(src);
       return readFails ? null : producedBytes;
@@ -70,7 +72,13 @@ void main() {
     String? cover,
     PreviousPublication previous, {
     PublishMode mode = PublishMode.incremental,
-  }) => decider().forItem(cover, itemId: 1, manifest: previous, mode: mode);
+  }) => decider().forItem(
+    cover,
+    itemId: 1,
+    names: names,
+    manifest: previous,
+    mode: mode,
+  );
 
   group('1. reuse, unread', () {
     test('a local cover already online is reused: nothing is read', () async {
@@ -99,6 +107,7 @@ void main() {
       final decision = await decider().forPeriodical(
         local,
         periodicalUid: 'uid-1',
+        names: names,
         manifest: record(
           path: seriesPath,
           sources: {'periodical:uid-1': local},
@@ -113,6 +122,7 @@ void main() {
       final other = await decider().forPeriodical(
         local,
         periodicalUid: 'uid-1',
+        names: names,
         manifest: record(path: seriesPath),
         mode: PublishMode.incremental,
       );
@@ -263,11 +273,4 @@ void main() {
       expect(fetches, isEmpty);
     });
   });
-}
-
-class _FixedSalt implements PublishCoverSaltStore {
-  const _FixedSalt(this.bytes);
-  final List<int> bytes;
-  @override
-  Future<List<int>> salt() async => bytes;
 }

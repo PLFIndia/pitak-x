@@ -12,10 +12,11 @@
 /// to publish" — the bug that would otherwise replace a live site (or a whole
 /// library) with an empty one.
 ///
-/// Item keys (ADR 0019 Decision 3) are resolved HERE, once per build: the
-/// catalogue writes them into `books.json`, and the availability section maps
-/// the "not available" ids through the very same map, so the two files always
-/// agree on which key names which item.
+/// Item keys (ADR 0019 Decision 3) and cover names (plan D.5, CV8) are
+/// resolved HERE, once per build, from ONE salt read: the catalogue writes
+/// the keys into `books.json` and names every cover from the same read, and
+/// the availability section maps the "not available" ids through the very
+/// same map, so the files always agree on which key names which item.
 library;
 
 import 'package:fpdart/fpdart.dart';
@@ -44,10 +45,11 @@ export 'package:pitaka/features/publish/domain/site/publish_snapshot.dart'
 final class PublishSnapshotBuilder {
   /// Creates the builder over the two section builders and the item keys.
   ///
-  /// [itemKeys] must use the SAME salt store as the cover names
-  /// (`PublishCoverIds`), so keys and cover names always change together
-  /// (ADR 0019 Decision 3). The availability section needs no injected
-  /// builder: it has no IO and exactly one encoder.
+  /// [itemKeys] is the ONE reader of the salt for a publish: its
+  /// `namingFor` returns the keys and the cover names from a single read, so
+  /// the two always change together (ADR 0019 Decision 3, plan D.5). The
+  /// availability section needs no injected builder: it has no IO and
+  /// exactly one encoder.
   const PublishSnapshotBuilder({
     required CatalogueSectionBuilder catalogue,
     required EventsSectionBuilder events,
@@ -182,14 +184,15 @@ final class PublishSnapshotBuilder {
     PublishKeySet? itemKeys;
     if (catalogueInputs != null) {
       final live = catalogueInputs.items.where((b) => !b.removed).toList();
-      // One salt read for the whole catalogue, before any cover is read. An
-      // unreadable salt or a key collision stops the publish here with the
-      // fixed message, so nothing is built or written (ADR 0019 Decision 3).
-      // The same read names the key set both files carry (plan A.6 #68).
-      final keys = await _itemKeys.keysFor([for (final b in live) b.id]);
-      if (keys case Left(value: final failure)) return Left(failure);
-      final computed = keys.toNullable()!;
-      itemKeys = computed;
+      // ONE salt read for the whole catalogue, before any cover is decided:
+      // the keys, the key-set id both files carry (plan A.6 #68) and every
+      // cover name come from it (plan D.5, CV8). An unreadable salt or a key
+      // collision stops the publish here with the fixed message, so nothing
+      // is built or written (ADR 0019 Decision 3).
+      final naming = await _itemKeys.namingFor([for (final b in live) b.id]);
+      if (naming case Left(value: final failure)) return Left(failure);
+      final computed = naming.toNullable()!;
+      itemKeys = computed.keys;
 
       final catalogue = await _catalogue.build(
         books: catalogueInputs.items,
@@ -200,7 +203,7 @@ final class PublishSnapshotBuilder {
         settings: inputs.pageSettings,
         previous: previous,
         now: now,
-        itemKeys: computed,
+        naming: computed,
         mode: mode,
         timing: timing,
       );

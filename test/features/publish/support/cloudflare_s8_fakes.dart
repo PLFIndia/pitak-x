@@ -327,7 +327,6 @@ final class S8PublishHarness {
       itemKeys: const PublishItemKeys(_FixedSalt()),
       catalogue: CatalogueSectionBuilder(
         covers: PublishCoverDecider(
-          coverIds: const PublishCoverIds(_FixedSalt()),
           // A test of cover reuse (ADR 0020) passes a counting reader; the
           // default reads nothing, as every older test expects.
           readLocalCover: readLocalCover ?? (_) async => null,

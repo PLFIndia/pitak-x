@@ -822,8 +822,8 @@ class _Harness {
         cloudflareCredentialStoreProvider.overrideWithValue(
           InMemoryCloudflareCredentialStore(),
         ),
-        publishCoverIdsProvider.overrideWithValue(
-          PublishCoverIds(_Salt(saltAvailable ? const [1, 2, 3, 4] : null)),
+        publishCoverSaltStoreProvider.overrideWithValue(
+          _Salt(saltAvailable ? const [1, 2, 3, 4] : null),
         ),
         publishManifestStoreProvider.overrideWith((ref) async => manifest),
         // R33: the journal is in memory here. Without this override the real

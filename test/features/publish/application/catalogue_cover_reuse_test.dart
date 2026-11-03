@@ -7,6 +7,7 @@ import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
 import 'package:pitaka/features/publish/application/publish_cover_decider.dart';
 import 'package:pitaka/features/publish/application/site/catalogue_section_builder.dart';
 import 'package:pitaka/features/publish/domain/publish_cover_ids.dart';
+import 'package:pitaka/features/publish/domain/publish_cover_names.dart';
 import 'package:pitaka/features/publish/domain/publish_cover_rendition.dart';
 import 'package:pitaka/features/publish/domain/publish_item_keys.dart';
 import 'package:pitaka/features/publish/domain/publish_manifest.dart';
@@ -38,7 +39,6 @@ void main() {
 
   CatalogueSectionBuilder builder() => CatalogueSectionBuilder(
     covers: PublishCoverDecider(
-      coverIds: PublishCoverIds(_FixedSalt(salt)),
       readLocalCover: (src) async {
         reads.add(src);
         return unreadable.contains(src) ? null : utf8.encode('JPEG:$src');
@@ -74,13 +74,18 @@ void main() {
   );
   final library = [book(1, 'covers/one.jpg'), issue, book(9, remote)];
 
-  PublishKeySet keysFor(List<CatalogueItem> items) => PublishKeySet.tryCreate(
-    id: PublishItemKeys.keySetIdFor(salt: salt),
-    keysById: {
-      for (final item in items)
-        item.id: PublishItemKeys.keyFor(salt: salt, itemId: item.id),
-    },
-  )!;
+  // Keys and cover names from the same fixed salt, as `namingFor` would
+  // return them from one read (plan D.5).
+  PublishNaming namingFor(List<CatalogueItem> items) => (
+    keys: PublishKeySet.tryCreate(
+      id: PublishItemKeys.keySetIdFor(salt: salt),
+      keysById: {
+        for (final item in items)
+          item.id: PublishItemKeys.keyFor(salt: salt, itemId: item.id),
+      },
+    )!,
+    coverNames: PublishCoverNames.tryCreate(salt)!,
+  );
 
   Future<PublishSection> build(
     List<CatalogueItem> items,
@@ -95,7 +100,7 @@ void main() {
     settings: const PublishPageSettings(libraryName: 'Test Library'),
     previous: previous,
     now: 1000,
-    itemKeys: keysFor(items),
+    naming: namingFor(items),
     mode: mode,
   )).toNullable()!;
 
@@ -278,11 +283,4 @@ void main() {
     await build(padded, record);
     expect(reads, isEmpty);
   });
-}
-
-class _FixedSalt implements PublishCoverSaltStore {
-  const _FixedSalt(this.bytes);
-  final List<int> bytes;
-  @override
-  Future<List<int>> salt() async => bytes;
 }

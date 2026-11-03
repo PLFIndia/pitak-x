@@ -131,12 +131,13 @@ final class CatalogueSectionBuilder {
   /// descriptor, or null when none may be written — null REMOVES a previously
   /// published descriptor, so a stale location never outlives an opt-out.
   ///
-  /// [itemKeys] holds the public keys and their key-set id
-  /// (`PublishItemKeys.keysFor`, ADR 0019 Decisions 3 and 4). Its keys are
-  /// well-formed and unique by construction; every live item must have one,
-  /// otherwise nothing is built (fail closed), because an item without its
-  /// key could never be matched to `availability.json`. The key-set id is
-  /// written as `books.json`'s top-level `keySet` (plan A.6 #68).
+  /// [naming] holds the public keys with their key-set id AND the cover
+  /// names, all from ONE salt read (`PublishItemKeys.namingFor`, ADR 0019
+  /// Decisions 3 and 4, plan D.5). Its keys are well-formed and unique by
+  /// construction; every live item must have one, otherwise nothing is
+  /// built (fail closed), because an item without its key could never be
+  /// matched to `availability.json`. The key-set id is written as
+  /// `books.json`'s top-level `keySet` (plan A.6 #68).
   ///
   /// [gitHubPagesSite] adds the empty `.nojekyll` (`GitHubPagesNoJekyll`,
   /// plan SP5); it is required so no caller can forget it, because a
@@ -150,7 +151,7 @@ final class CatalogueSectionBuilder {
     required PublishPageSettings settings,
     required PreviousPublication previous,
     required int now,
-    required PublishKeySet itemKeys,
+    required PublishNaming naming,
     PublishMode mode = PublishMode.incremental,
     PublishTimingRecorder? timing,
   }) async {
@@ -170,9 +171,10 @@ final class CatalogueSectionBuilder {
     // Keys are checked with the links, before any cover is read: like a bad
     // link, a missing or shared key stops the publish before any work or
     // write (ADR 0019 Decision 3).
-    final keyCheck = _liveKeys(library, itemKeys);
+    final keyCheck = _liveKeys(library, naming.keys);
     if (keyCheck case Left(value: final failure)) return Left(failure);
     final keys = keyCheck.toNullable()!;
+    final names = naming.coverNames;
     // Removed series stay in periodicalByUid for issue cover fallback (D8),
     // but only live series publish a top-level entry.
     final publishedPeriodicals = periodicals.where((p) => !p.removed).toList();
@@ -211,6 +213,7 @@ final class CatalogueSectionBuilder {
       final decision = await _covers.forPeriodical(
         series.coverUrl,
         periodicalUid: uid,
+        names: names,
         manifest: previous,
         mode: mode,
       );
@@ -226,6 +229,7 @@ final class CatalogueSectionBuilder {
         final decision = await _covers.forItem(
           book.coverUrl,
           itemId: book.id,
+          names: names,
           manifest: previous,
           mode: mode,
         );
@@ -275,7 +279,7 @@ final class CatalogueSectionBuilder {
 
     final export = PublishExport(
       exportedAt: now,
-      keySet: itemKeys.id,
+      keySet: naming.keys.id,
       books: [
         for (final book in library)
           redactForPublish(

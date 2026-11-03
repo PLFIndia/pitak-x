@@ -116,7 +116,6 @@ Future<CloudflareMemoryScenarioResult> runCloudflareMemoryScenario({
     stage('building');
     final builder = CatalogueSectionBuilder(
       covers: PublishCoverDecider(
-        coverIds: const PublishCoverIds(_ScenarioSalt()),
         readLocalCover: (source) async {
           final index = int.parse(source.split('/').last.split('.').first);
           return _assetBytes(index, fileBytes);
@@ -130,14 +129,15 @@ Future<CloudflareMemoryScenarioResult> runCloudflareMemoryScenario({
       sink: CloudflareArtifactSink(store),
     );
     final books = [for (var i = 0; i < fileCount; i++) _validatedMemoryItem(i)];
-    // The same keys a real publish writes (ADR 0019), from the scenario salt.
-    final itemKeys = (await const PublishItemKeys(
+    // The same keys and cover names a real publish writes (ADR 0019, plan
+    // D.5), from one read of the scenario salt.
+    final naming = (await const PublishItemKeys(
       _ScenarioSalt(),
-    ).keysFor([for (final book in books) book.id])).toNullable();
-    if (itemKeys == null) throw StateError('Synthetic keys failed');
+    ).namingFor([for (final book in books) book.id])).toNullable();
+    if (naming == null) throw StateError('Synthetic keys failed');
     final built = await builder.build(
       books: books,
-      itemKeys: itemKeys,
+      naming: naming,
       periodicals: const [],
       activeLoanCounts: null,
       libraryJson: null,

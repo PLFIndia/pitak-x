@@ -388,7 +388,7 @@ EventsJsonFactory eventsJsonFactory(EventsJsonFactoryRef ref) =>
 Future<PublishSnapshotBuilder> publishSnapshotBuilder(
   PublishSnapshotBuilderRef ref,
 ) async {
-  final coverIds = ref.watch(publishCoverIdsProvider);
+  final saltStore = ref.watch(publishCoverSaltStoreProvider);
   final readLocalCover = await ref.watch(
     publishLocalCoverReaderProvider.future,
   );
@@ -400,8 +400,9 @@ Future<PublishSnapshotBuilder> publishSnapshotBuilder(
 
   return PublishSnapshotBuilder(
     catalogue: CatalogueSectionBuilder(
+      // The decider holds no salt store: cover names reach it per call from
+      // the snapshot builder's one read (plan D.5).
       covers: PublishCoverDecider(
-        coverIds: coverIds,
         readLocalCover: readLocalCover,
         fetchRemoteCover: fetchRemoteCover,
       ),
@@ -414,16 +415,18 @@ Future<PublishSnapshotBuilder> publishSnapshotBuilder(
       buildEventsHtml: eventsHtml,
       buildEventsJson: eventsJson,
     ),
-    // ADR 0019 Decision 3: item keys use the SAME salt store instance as the
-    // cover names, so keys and cover names always change together.
-    itemKeys: PublishItemKeys(coverIds.saltStore),
+    // ADR 0019 Decision 3 / plan D.5: the ONE reader of the salt for a
+    // publish. Its `namingFor` gives the keys and the cover names from a
+    // single read, so the two always change together.
+    itemKeys: PublishItemKeys(saltStore),
   );
 }
 
-/// Salted cover-path ids for publish (no internal-id leak, F-01).
+/// The cover salt store (plan P9: stable cover names and item keys, and the
+/// key-set binding). Read once per publish by `PublishItemKeys`.
 @riverpod
-PublishCoverIds publishCoverIds(PublishCoverIdsRef ref) =>
-    PublishCoverIds(SecureStorageCoverSaltStore());
+PublishCoverSaltStore publishCoverSaltStore(PublishCoverSaltStoreRef ref) =>
+    SecureStorageCoverSaltStore();
 
 /// File-backed incremental-publish manifest, rooted at the app docs dir.
 /// Expose the port so tests can substitute an in-memory store without file IO.

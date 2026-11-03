@@ -9,7 +9,7 @@ import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
 import 'package:pitaka/features/periodicals/domain/value_objects/periodical_frequency.dart';
 import 'package:pitaka/features/publish/application/publish_cover_decider.dart';
 import 'package:pitaka/features/publish/application/site/catalogue_section_builder.dart';
-import 'package:pitaka/features/publish/domain/publish_cover_ids.dart';
+import 'package:pitaka/features/publish/domain/publish_cover_names.dart';
 import 'package:pitaka/features/publish/domain/publish_export.dart';
 import 'package:pitaka/features/publish/domain/publish_item_keys.dart';
 import 'package:pitaka/features/publish/domain/publish_manifest.dart';
@@ -34,7 +34,9 @@ import 'package:pitaka/features/publish/domain/site/publish_snapshot.dart';
 void main() {
   const salt = 'salt-1234567890';
 
-  final fixedSalt = _FixedSalt(ascii.encode(salt));
+  // The cover names of this salt (plan D.5): what the snapshot builder hands
+  // down from its one salt read.
+  final coverNames = PublishCoverNames.tryCreate(ascii.encode(salt))!;
 
   // The public item keys for this salt, pinned as literals:
   // sha256(salt + "item:<id>")[0..16]. A test below proves they are exactly
@@ -51,7 +53,10 @@ void main() {
   PublishKeySet keysOf(Map<int, String> keysById) =>
       PublishKeySet.tryCreate(id: keySetId, keysById: keysById)!;
 
-  final keys = keysOf(keyMap);
+  PublishNaming namingOf(Map<int, String> keysById) =>
+      (keys: keysOf(keysById), coverNames: coverNames);
+
+  final naming = namingOf(keyMap);
 
   CatalogueItem book({int id = 1, String? cover}) => CatalogueItem(
     id: id,
@@ -91,7 +96,6 @@ void main() {
     RemoteCoverFetcher? fetchRemote,
   }) => CatalogueSectionBuilder(
     covers: PublishCoverDecider(
-      coverIds: PublishCoverIds(fixedSalt),
       readLocalCover: readLocal ?? (_) async => null,
       fetchRemoteCover: fetchRemote ?? (_) async => null,
     ),
@@ -120,7 +124,7 @@ void main() {
             settings: const PublishPageSettings(libraryName: 'Test Library'),
             previous: PublishManifest.empty,
             now: 1000,
-            itemKeys: keys,
+            naming: naming,
           )).toNullable()!;
 
       // Paths, in the historical write order (books.json, descriptor, viewer,
@@ -201,7 +205,7 @@ void main() {
   group('item keys (ADR 0019 Decision 3)', () {
     Future<Either<Failure, PublishSection>> buildWith(
       List<CatalogueItem> books,
-      PublishKeySet itemKeys, {
+      PublishNaming naming, {
       List<Periodical> periodicals = const [],
     }) => builder().build(
       books: books,
@@ -212,7 +216,7 @@ void main() {
       settings: const PublishPageSettings(libraryName: 'Test Library'),
       previous: PublishManifest.empty,
       now: 1,
-      itemKeys: itemKeys,
+      naming: naming,
     );
 
     List<Map<String, dynamic>> rows(PublishSection section) {
@@ -234,7 +238,7 @@ void main() {
       );
       final section = (await buildWith(
         [book(), issue(), other],
-        keys,
+        naming,
         periodicals: [series()],
       )).toNullable()!;
       expect(
@@ -247,7 +251,7 @@ void main() {
       final section = (await buildWith([
         book(),
         const CatalogueItem(id: 3, title: 'Gone', removed: true),
-      ], keysOf(const {1: 'f1256752587d05c1'}))).toNullable()!;
+      ], namingOf(const {1: 'f1256752587d05c1'}))).toNullable()!;
       expect([for (final row in rows(section)) row['key']], [keyMap[1]]);
     });
 
@@ -273,7 +277,7 @@ void main() {
               settings: const PublishPageSettings(libraryName: 'Test Library'),
               previous: PublishManifest.empty,
               now: 1,
-              itemKeys: keysOf(const {1: 'f1256752587d05c1'}),
+              naming: namingOf(const {1: 'f1256752587d05c1'}),
             );
         expect(
           (result.swap().toNullable()! as ValidationFailure).message,
@@ -300,7 +304,7 @@ void main() {
     });
 
     test('books.json names the key set its keys belong to', () async {
-      final section = (await buildWith([book()], keys)).toNullable()!;
+      final section = (await buildWith([book()], naming)).toNullable()!;
       final payload =
           jsonDecode(
                 utf8.decode(
@@ -323,7 +327,7 @@ void main() {
         settings: const PublishPageSettings(libraryName: 'Test Library'),
         previous: PublishManifest.empty,
         now: 1,
-        itemKeys: keysOf(const {1: 'f1256752587d05c1'}),
+        naming: namingOf(const {1: 'f1256752587d05c1'}),
       )).toNullable()!;
       final payload =
           jsonDecode(
@@ -373,7 +377,7 @@ void main() {
       settings: const PublishPageSettings(libraryName: 'Test Library'),
       previous: manifest,
       now: 1000,
-      itemKeys: keys,
+      naming: naming,
     )).toNullable()!;
 
     final viewer = section.files.firstWhere((f) => f.path == 'index.html');
@@ -403,7 +407,7 @@ void main() {
         settings: const PublishPageSettings(libraryName: 'Test Library'),
         previous: manifest,
         now: 1,
-        itemKeys: keys,
+        naming: naming,
       )).toNullable()!;
 
       expect(section.deletePaths, ['library.json']);
@@ -422,7 +426,7 @@ void main() {
         settings: const PublishPageSettings(libraryName: 'Test Library'),
         previous: PublishManifest.empty,
         now: 1,
-        itemKeys: keys,
+        naming: naming,
         mode: PublishMode.complete,
       );
 
@@ -446,7 +450,7 @@ void main() {
         settings: const PublishPageSettings(libraryName: 'Test Library'),
         previous: PublishManifest.empty,
         now: 1,
-        itemKeys: keys,
+        naming: naming,
         mode: PublishMode.complete,
       );
 
@@ -470,7 +474,7 @@ void main() {
         settings: const PublishPageSettings(libraryName: 'Test Library'),
         previous: PublishManifest.empty,
         now: 1,
-        itemKeys: keys,
+        naming: naming,
       )).toNullable()!;
       expect(
         section.files.map((f) => f.path),
@@ -501,7 +505,7 @@ void main() {
         settings: const PublishPageSettings(libraryName: 'Test Library'),
         previous: PublishManifest.empty,
         now: 1,
-        itemKeys: keys,
+        naming: naming,
       );
       expect(result.swap().toNullable(), isA<ValidationFailure>());
     },
@@ -551,10 +555,3 @@ const _expectedBooksJson = '''
     }
   ]
 }''';
-
-class _FixedSalt implements PublishCoverSaltStore {
-  const _FixedSalt(this.bytes);
-  final List<int> bytes;
-  @override
-  Future<List<int>> salt() async => bytes;
-}

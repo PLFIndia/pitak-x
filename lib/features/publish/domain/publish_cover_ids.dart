@@ -1,14 +1,22 @@
 /// Salted cover-path hashing (pure domain, AGENTS.md §3.1, #32, F-01).
 ///
-/// Port of Kotlin `PublishCoverIds`. Cover filenames in the public repo must
-/// not leak the internal book id. The published cover for book id `n` is
+/// Port of Kotlin `PublishCoverIds`. The published cover for book id `n` is
 /// `covers/<shortHex(sha256(salt||utf8(n)))>.jpg`, stable across publishes so
 /// external links keep working between updates (same id maps to same path).
 ///
+/// Why a salt at all (plan P9, 2026-11-04): the catalogue is public by design
+/// (P8), so hiding row numbers is not the point. The salt stays because
+/// (1) cover names and item keys stay stable across publishes and across
+/// phones through backups, and (2) the key-set id derived from it binds
+/// `availability.json` to the catalogue it was made for (plan J10). It is
+/// public-safe data: never logged, never in `toString()`, nothing more.
+///
 /// 16 hex chars (64 bits): across a 100k-book library the birthday-collision
-/// probability is ~2.7e-10. The salt is generated once and stored encrypted; it
-/// is not high-value (an attacker with disk access already has the DB), but
-/// encrypting it is appropriate defence-in-depth.
+/// probability is ~2.7e-10.
+///
+/// Since plan S16 (D.5) this file holds the salt store port and the pure hash
+/// helpers only. The names of one publish are computed by `PublishCoverNames`
+/// from ONE salt read; nothing here reads the store.
 library;
 
 import 'dart:convert';
@@ -46,37 +54,17 @@ abstract interface class ReplaceablePublishCoverSaltStore
   Future<Either<Failure, Unit>> replace(List<int> salt);
 }
 
-/// Computes deterministic, id-hiding cover paths.
-final class PublishCoverIds {
-  /// Creates the helper over [saltStore].
-  const PublishCoverIds(this.saltStore);
-
-  /// Source of the persisted salt.
-  final PublishCoverSaltStore saltStore;
-
+/// The pure salted-hash helpers behind cover names and item keys.
+///
+/// Static only, on purpose: the ONE place the hash input is spelled out, so a
+/// cover name (`PublishCoverNames`) and an item key (`PublishItemKeys`) can
+/// never drift from the bytes that are already online.
+abstract final class PublishCoverIds {
   /// Hex chars in the path hash (64 bits).
   static const int hashHexChars = 16;
 
-  /// Returns the relative publish path for [bookId]'s cover, e.g.
-  /// `covers/3f2c7a1b9e4d8051.jpg`.
-  Future<String> pathFor(int bookId) async {
-    final s = await saltStore.salt();
-    return 'covers/${shortHashHex(s, bookId)}.jpg';
-  }
-
-  /// Returns the relative publish path for a PERIODICAL's cover (ADR 0014
-  /// W4: series covers go through the same salted pipeline as book covers).
-  /// Keyed on the stable `periodicalUid` — not the per-device id — so a
-  /// reinstall keeps linking to the same published file, and the
-  /// `periodical:` prefix keeps the hash domain separate from [pathFor]
-  /// (a periodical can never collide with a book's cover path).
-  Future<String> pathForPeriodical(String periodicalUid) async {
-    final s = await saltStore.salt();
-    return 'covers/${shortHashHexForKey(s, 'periodical:$periodicalUid')}.jpg';
-  }
-
-  /// Pure helper (exposed for tests): SHA-256 of `salt || utf8(id)`, hex,
-  /// first [hashHexChars] characters. Decimal ASCII ids keep their old bytes.
+  /// Pure helper: SHA-256 of `salt || utf8(id)`, hex, first [hashHexChars]
+  /// characters. Decimal ASCII ids keep their old bytes.
   static String shortHashHex(List<int> salt, int bookId) =>
       shortHashHexForKey(salt, '$bookId');
 
