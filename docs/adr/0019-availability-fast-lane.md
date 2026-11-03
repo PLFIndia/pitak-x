@@ -105,6 +105,17 @@ rebuilding the catalogue.** That automatic publisher is called the **lane**.
    (Decision 7b). Tests enforce this in S2, and again in S11 when the backup
    starts carrying the salt.
 
+   *Clarified 2026-11-04 (plan S16, D.5, CV8; J24):* "keys and cover names
+   always change together" is now true **by construction**, not by wiring.
+   A publish reads the salt **once** (`PublishItemKeys.namingFor`) and that
+   one read yields the keys, the key-set id and the `PublishCoverNames` that
+   names every cover; the catalogue builder accepts them only as one value.
+   Before, the keys came from one read and every cover name from a further
+   read of the same store (about 72 ms each in secure storage: 73 of the 90 s
+   of an unchanged 1,000-item republish). Hash inputs are unchanged, so no
+   cover changes its file name. `publish_salt_invariant_test.dart` pins the
+   three remaining readers of the salt.
+
 4. **Readers (AV14, AV15).** The tag is decided **per item**:
 
    | The item has a valid `key` | `availability.json` | Tag shown |

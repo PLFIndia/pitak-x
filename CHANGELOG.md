@@ -220,6 +220,24 @@ heading as part of the `chore(release):` commit.
   (`CatalogueInputs.gitHubPagesSite`, decided from the target when the
   inputs are read); existing sites gain it with their next catalogue
   publish, a move to GitHub carries it, Cloudflare never gets it.
+- **The cover salt is read once per publish** (plan D.5, CV8, J24; S16;
+  ADR 0019 Decision 3 clarification of 2026-11-04). Before, every cover
+  decision read the salt from secure storage again (about 72 ms each on the
+  test phone), so an unchanged republish of 1,000 covers spent 73 of its
+  90 s there although it read no cover file. `PublishItemKeys.namingFor`
+  now reads the salt once and returns the keys, the key-set id and a pure
+  `PublishCoverNames` together; the snapshot builder hands them to the
+  catalogue builder as one value and the decider names covers from it per
+  call, holding no salt store. `PublishCoverIds` keeps only the static hash
+  helpers; `publishCoverIdsProvider` becomes `publishCoverSaltStoreProvider`.
+  Hash inputs are unchanged, so every cover keeps its file name and nothing
+  is uploaded again. An architecture test pins the three remaining readers
+  of the salt. Measured on the 1,001-item Cloudflare fixture (2026-11-04):
+  an unchanged republish takes **17.2 s instead of 90.1 s**, its cover
+  stage 24 ms instead of 72.6 s with 0 covers read and 1,001 reused;
+  adding one book with a new photo takes **39.5 s instead of 112.9 s**, its
+  cover stage 174 ms with exactly 1 cover read. A small library saves
+  about half a second per publish.
 
 ### Fixed
 - **Android launcher icon: no more white ring.** The app shipped only a flat

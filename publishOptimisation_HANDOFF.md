@@ -87,16 +87,22 @@ visible effect, §S15), J15 (§S10b), the copy of the rate-limit messages
 §S12, the PRIVACY wording of J18 (§S14), the missed Cloudflare lane p90 rule
 (§S15) and the new observations J19–J23 (§S15). Open engineering observation
 J17 (§S12).
-S16 — Fix 4 (J24) — **PLANNED, not started** (2026-11-04). After block D
-the product owner asked why covers carry a salt at all (P8: the catalogue is
-public) and **decided P9**: the salt is kept, but not as a privacy measure
-(stable cover names and keys, the J10 key-set binding; removing it would
-re-upload every site). Then "plan J24 fix": plan **D.5** (design, rejected
-alternatives, steps, tests, device check), **CV8**, Part F row and details
-for **S16**, P9 in A.3, and J19–J24 (plus J12's S15 effect) in Part J.
-**Order:** S16 (on the product owner's go-ahead) → S15's remaining paperwork
-(Appendix A, CHANGELOG, release checklist) → Linux goldens → push. Keep the
-Play fixture app installed: S16's device check re-runs D2 and D3 on it.
+S16 — Fix 4 (J24) — **complete** (2026-11-04, §S16): on the 1,001-item
+fixture D2 **17.2 s (was 90.1 s), cover stage 24 ms (was 72.6 s)**, 0 covers
+read, 1,001 reused; D3 **39.5 s (was 112.9 s), cover stage 174 ms (was
+72.1 s)**, 1 read, 1,001 reused. After block D the product owner asked why covers carry a salt at all
+(P8: the catalogue is public) and **decided P9**: the salt is kept, but not
+as a privacy measure (stable cover names and keys, the J10 key-set binding;
+removing it would re-upload every site). Then "plan J24 fix": plan **D.5**
+(design, rejected alternatives, steps, tests, device check), **CV8**, Part F
+row and details for **S16**, P9 in A.3, and J19–J24 (plus J12's S15 effect)
+in Part J. The product owner gave the go-ahead the same night with a
+**trimmed scope** ("I do not want to overengineer the app"): a Dart record
+instead of a `PublishNaming` class, the five essential tests, and
+CHANGELOG + handoff + one ADR 0019 note instead of six doc targets.
+**Order now:** S15's remaining paperwork (Appendix A "after" columns,
+release checklist) → Linux goldens → push. The Play fixture app stays
+installed (S16's timing build) in case D3 is wanted later.
 
 **Outside the plan (2026-11-03, before S15's device run, product owner's
 request):** commit `7708439` makes the Android launcher icon adaptive
@@ -114,9 +120,8 @@ graphics are uploaded by hand: Play still showed the August 2026 icon; the
 product owner uploaded `icon.png` and `featureGraphic.png` in Play Console on
 2026-11-03 (in Google's review at 15:10 IST).
 
-> Read this file first in any new session. The S16 paragraph at the top and
-> plan D.5 are the newest state, then §S15 part 2 (block D), then §S15
-> (part 1), then
+> Read this file first in any new session. §S16 below and plan D.5 are the
+> newest state, then §S15 part 2 (block D), then §S15 (part 1), then
 > §S14, §S13, §S12, §S11, §S10b, §S10, §G4 (device evidence), §S9, §S8, §S7, §S6, §S5, §S4,
 > §S3, §S2 and §0 (S1). §1–§5 are the S0 record (plan Appendix A cites the
 > verbatim lines in §3), kept unchanged.
@@ -129,6 +134,114 @@ product owner uploaded `icon.png` and `featureGraphic.png` in Play Console on
 > settled and needs no new review: borrower names and loan details (P1, in the
 > vault) and credentials and tokens (security, `AGENTS.md` §6). `PRIVACY.md`
 > only has to state accurately what is uploaded (a store requirement).
+
+---
+
+## S16 — Fix 4 (J24): one salt read per publish (2026-11-04, 00:31–00:55 IST)
+
+**Started:** 00:31 IST. The product owner asked for a read of plan D.5 and
+said "I do not want to overengineer the app"; the agent proposed a trimmed
+scope and the product owner chose it (record, five tests, three doc
+targets). Code, tests and docs below; **the device check has not run yet.**
+
+**Pinned first (plan step 1).** A counting salt store on the snapshot
+builder, 25 reused book covers + 1 series cover, record vouching for all:
+**27 salt reads, 0 cover reads** under the pre-S16 code
+(`1 + n + 1`: the keys once, then every cover decision again). That is J24's
+cause, proven from the code before anything changed. The exact cover paths
+of today's code under two fixed salts were captured as literals
+(`publish_cover_names_test.dart`).
+
+**As built.**
+- Domain: `publish_cover_names.dart` (new, 50 lines): `PublishCoverNames`
+  holds one salt privately, `tryCreate` refuses an empty one, sync
+  `pathFor` / `pathForPeriodical` with exactly today's hash inputs,
+  `toString()` → `PublishCoverNames(***)`. `publish_item_keys.dart`:
+  `typedef PublishNaming = ({PublishKeySet keys, PublishCoverNames
+  coverNames})` (a record, not a class, by the product owner's choice);
+  `namingFor(itemIds)` → one read → both; `keysFor` stays for the lane and
+  shares the private `_readSalt()`. `publish_cover_ids.dart`: the async
+  `pathFor` / `pathForPeriodical` and the `saltStore` field are gone; the
+  class is `abstract final` with the three static helpers; the two ports
+  stay in the file; header rewritten to P9's reasons.
+- Application: `PublishCoverDecider` has no `coverIds` constructor field;
+  `forItem` / `forPeriodical` take `names:`; `_decide`'s `publishPath` is a
+  sync closure. `CatalogueSectionBuilder.build`: `itemKeys:` →
+  `naming:` (required), `naming.coverNames` is passed to both decider calls,
+  `keySet: naming.keys.id` (479 lines). `PublishSnapshotBuilder.build`:
+  `namingFor` where `keysFor` was; `itemKeys = computed.keys` for the
+  availability section. `lib/dev/cloudflare_memory_scenario.dart` follows.
+- DI: `publishCoverIdsProvider` → `publishCoverSaltStoreProvider`
+  (`PublishCoverSaltStore`, `SecureStorageCoverSaltStore()`); the snapshot
+  builder's and the lane's `PublishItemKeys` take it; build_runner
+  regenerated `publish_providers.g.dart` and `availability_providers.g.dart`.
+- Tests (new): `publish_salt_reads_test.dart` — exactly 1 read for
+  incremental reuse, new covers, complete mode, a library without covers,
+  a lane run; a salt store answering a different salt per call → every
+  cover path, the `keySet` and every row key come from the first read and
+  `served` has length 1; an empty salt and a throwing store → the fixed
+  message, 0 cover reads; `namingFor` fails the same way.
+  `domain/publish_cover_names_test.dart` — the pinned literal paths (book,
+  series, non-ASCII uid, a second salt), equality with the static helpers
+  over 200 ids and 6 uids, the empty-salt refusal, the redacted
+  `toString()`, a copied salt. `publish_salt_invariant_test.dart` gains
+  "the salt is read in exactly three places": `PublishItemKeys`, the
+  restore adopter, the backup reader. Eleven existing test files updated
+  mechanically (`coverIds:` dropped, `itemKeys:` → `naming:`, the two
+  provider overrides renamed); `publish_cover_ids_test.dart` lost its two
+  store-backed path tests (moved, as literals, to the new file).
+- Docs: ADR 0019 Decision 3 clarification of 2026-11-04; `CHANGELOG.md`
+  under Unreleased → Changed; this file. Not done, by the trimmed scope:
+  the ADR 0020 note, the ADR index entry, plan A.6 rows (the product owner
+  may add them with S15's paperwork).
+
+**Gates (01:04 IST):** `dart run build_runner build
+--delete-conflicting-outputs` (two `.g.dart` regenerated); `flutter analyze
+lib test integration_test` no issues; `dart format --set-exit-if-changed
+lib test integration_test` clean; full `flutter test`: **5,743 passed, 10
+failed — all ten in `test/golden/key_screens_test.dart`**, the Linux
+goldens that fail on this Mac; the same ten fail on a clean HEAD (checked
+by stashing S16's changes and re-running). No publish screen is in that
+file and S16 changes no screen.
+
+### Device check (01:08–01:13 IST, the Play fixture app)
+
+**Build:** `flutter clean`, `pub get --enforce-lockfile`, `flutter build
+apk --profile --flavor play --dart-define=publishTimings=true` (01:08:17 →
+01:11:12; Gradle 166.9 s). Packaged arm64 `libapp.so` SHA-256 `ee103244…`,
+APK `1f9908b9…`; it holds `publish timings` 1×, `treeReads=` 1×, and
+**`PublishCoverNames(***)` 1×** — a string that exists only in the S16
+code, so this is proven not to be a stale binary (§G4 issue 1; use
+`grep -a -F` for it, the parentheses are regex otherwise). `adb install -r`
+at 01:11:35, **Success**; data kept (`firstInstallTime` 23:31:31,
+`lastUpdateTime` 01:11:44; 1,003 cover files and the Cloudflare record in
+place). The product owner tapped; the agent read `adb logcat -d -s flutter`.
+
+| Test | Result | Numbers (S15 in brackets) |
+|---|---|---|
+| **D2** unchanged republish | **PASS** | **total 17.2 s [90.1 s, −81 %]**; **`coverDecisions` 24 ms [72,595 ms]** with `coversRead=0,coversReused=1001` [0 / 1,000]; build 195 ms [72.8 s]. Reads 0.65 s [0.6], reconcile 2.0 s [2.0], upload 5.3 s (253,494 B) [5.5 s, 253,283 B], deploy 1.4 s [1.5], readBack 1.2 s in 1 round [0.9]. The upload is the same `books.json`-sized payload, so no cover was uploaded again: every cover kept its file name (CV6). |
+| **D3** add 1 book + cover | **PASS** | **total 39.5 s [112.9 s, −65 %]**; **`coverDecisions` 174 ms [72,104 ms]** with **`coversRead=1,coversReused=1001`** [1 / 1,000]: the one new camera photo read and re-encoded (≈ 150 ms), every other cover reused; build 341 ms [72.3 s]. Reads 0.59 s, reconcile 4.7 s [5.0 s; the foreign-site range, J23], upload 8.7 s (274,261 B: the new cover's bytes on top of `books.json`) [5.3 s, 275,503 B], deploy 1.9 s [1.4], readBack 1.0 s in 1 round [20.6 s in 2 rounds: J22, Cloudflare propagation, not code]. The product owner confirmed the site live with 1,002 items ("done. live"). |
+
+Verbatim (`adb logcat -d -v time -s flutter`, IST, pid 25785):
+
+```
+11-04 01:12:44.828 publish timings cloudflare: total=17211ms reads=652ms reconcile=1995ms coverDecisions=24ms(coversRead=0,coversReused=1001) build=195ms upload=5342ms(bytes=253494) deploy=1378ms readBack=1194ms(rounds=1)
+11-04 01:15:12.868 publish timings cloudflare: total=39488ms reads=588ms reconcile=4660ms coverDecisions=174ms(coversRead=1,coversReused=1001) build=341ms upload=8733ms(bytes=274261) deploy=1912ms readBack=1046ms(rounds=1)
+```
+
+**Reading:** the plan's D.5 exit expected "about 1 s" for D2's cover
+stage; it is 24 ms for 1,001 reused covers (about 24 µs each: a map lookup
+and a SHA-256 over ~20 bytes). So J24's cause was exactly and only the
+per-cover secure-storage read; nothing else was hiding in that stage. D3
+is at the top of its 20–40 s band, but 13.4 s of its 39.5 s is upload and
+reconcile (network, variable); the stage this fix targets is 174 ms.
+**S16 exit met on both rows.** Against S0 (324.9 s unchanged, 327.5 s
+add-one) the whole publish-optimisation plan now stands at **−95 % and
+−88 %** on the 1,000-item fixture.
+
+**Next:** S15's remaining paperwork with these as the final numbers
+(Appendix A "after" columns, the release checklist), then the Linux
+goldens, then push.
 
 ---
 
