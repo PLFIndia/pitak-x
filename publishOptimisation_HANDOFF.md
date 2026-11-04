@@ -110,6 +110,10 @@ the doc targets the trimmed scope had left out are now written to the code
 state — ADR 0020 Decision 11, the ADR index rows for 0019 and 0020,
 ARCHITECTURE §5.8's Fix 4 bullet, plan D.5 "As built in S16" with A.6
 #143–#147, and the Part F row; see §S16 "Docs".
+S16b — review follow-up — **complete** (2026-11-04, §S16b): the independent
+review's one nit is fixed; the salt-reader rule pins call counts as well as
+files, proven by the exact second-`_readSalt()` mutation. Doc sync `feea701`;
+gates and the mutation proof are below.
 
 **Outside the plan (2026-11-03, before S15's device run, product owner's
 request):** commit `7708439` makes the Android launcher icon adaptive
@@ -127,8 +131,8 @@ graphics are uploaded by hand: Play still showed the August 2026 icon; the
 product owner uploaded `icon.png` and `featureGraphic.png` in Play Console on
 2026-11-03 (in Google's review at 15:10 IST).
 
-> Read this file first in any new session. §S16 below and plan D.5 are the
-> newest state, then §S15 part 2 (block D), then §S15 (part 1), then
+> Read this file first in any new session. §S16b and §S16 below, with plan
+> D.5, are the newest state, then §S15 part 2 (block D), then §S15 (part 1), then
 > §S14, §S13, §S12, §S11, §S10b, §S10, §G4 (device evidence), §S9, §S8, §S7, §S6, §S5, §S4,
 > §S3, §S2 and §0 (S1). §1–§5 are the S0 record (plan Appendix A cites the
 > verbatim lines in §3), kept unchanged.
@@ -141,6 +145,58 @@ product owner uploaded `icon.png` and `featureGraphic.png` in Play Console on
 > settled and needs no new review: borrower names and loan details (P1, in the
 > vault) and credentials and tokens (security, `AGENTS.md` §6). `PRIVACY.md`
 > only has to state accurately what is uploaded (a store requirement).
+
+---
+
+## S16b — review follow-up (2026-11-04, 08:11 IST)
+
+**Finding and scope.** The independent review of `d0c8449..HEAD` approved
+S16, SP4, SP5 and the adaptive icon with one nit: the salt-reader rule pinned
+the three files but allowed another call inside an approved file. The already
+prepared doc sync was checked against the code and committed as `feea701`.
+No production code changed in S16b.
+
+**Fix.** `publish_salt_invariant_test.dart` keeps the file-set assertion and
+now requires exactly one `.salt()` occurrence in each of the three files. The
+review's exact mutation called the private wrapper again, which a literal
+`.salt()` count alone cannot see, so the same test also pins `_readSalt()` in
+`publish_item_keys.dart` to three occurrences: its declaration, `keysFor` and
+`namingFor`. A.6 #145 now marks the nit fixed. No helpers or new test files.
+
+**Mutation proof (fail → pass).** The architecture file passed first:
+`00:00 +10: All tests passed!`. After adding the review's second `_readSalt()`
+in `namingFor` and building `PublishCoverNames` from it, the rule failed:
+
+```
+Expected: <3>
+  Actual: <4>
+Only the declaration, keysFor and namingFor may mention _readSalt(); a second call in namingFor repeats the read (S16b)
+```
+
+The mutation was reverted with `git checkout --
+lib/features/publish/domain/publish_item_keys.dart`; `git status --porcelain`
+showed only the architecture test changed. The rerun passed:
+`00:00 +10: All tests passed!`. The mutation was never committed.
+
+**Gates (Flutter 3.44.2, 08:11 IST):**
+- `dart run build_runner build --delete-conflicting-outputs`: the first run
+  ended `Built with build_runner in 15s; wrote 2 outputs.` with no `.g.dart`
+  diff; the immediate idempotence run ended
+  `Built with build_runner in 8s; wrote 0 outputs.` Both
+  `git status --porcelain '*.g.dart'` commands printed nothing.
+- `flutter analyze lib test integration_test`:
+  `No issues found! (ran in 2.1s)`.
+- `dart format --set-exit-if-changed lib test integration_test`:
+  `Formatted 1211 files (0 changed) in 1.94 seconds.`.
+- `flutter test`: `02:45 +5743 -10: Some tests failed.` All ten failures are
+  the known Linux-golden failures in `test/golden/key_screens_test.dart`.
+  The pass count is unchanged because S16b adds assertions to an existing
+  test, not three new test cases.
+
+**Commits:** `feea701` is the doc sync; the S16b commit contains the test,
+A.6 #145 and this handoff (this commit; its hash is reported at session end).
+
+**Still open:** S15 paperwork, Linux goldens, J18.
 
 ---
 

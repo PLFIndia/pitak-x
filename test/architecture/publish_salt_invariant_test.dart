@@ -99,6 +99,26 @@ void main() {
         'lib/features/publish/application/site/publish_state_backup_reader.dart',
       ]..sort(),
     );
+    // Beginner note: one read per publish is S16's whole point.
+    // A second call in one file would be the J24 regression in disguise.
+    for (final reader in readers) {
+      final source = File(reader).readAsStringSync();
+      expect(
+        '.salt()'.allMatches(source).length,
+        1,
+        reason: '$reader must read the salt exactly once (plan D.5, CV8)',
+      );
+    }
+    final itemKeysSource = File(
+      'lib/features/publish/domain/publish_item_keys.dart',
+    ).readAsStringSync();
+    expect(
+      '_readSalt()'.allMatches(itemKeysSource).length,
+      3,
+      reason:
+          'Only the declaration, keysFor and namingFor may mention '
+          '_readSalt(); a second call in namingFor repeats the read (S16b)',
+    );
   });
 
   test('no other production class implements the salt store port', () {
