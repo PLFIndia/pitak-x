@@ -187,7 +187,7 @@ file. Every rule above still applies to it. What changes:
 
 Publish-optimisation plan SP1 (session S12). A GitHub catalogue publish
 spent 36–42 s of a 43–57 s run waiting for GitHub Pages inside the publish
-queue (plan Appendix A), so the button spun and every other publish waited.
+queue (the S0 baseline), so the button spun and every other publish waited.
 The S11 truthful-outcomes rule above is kept word for word: nothing is
 called live without proof, and the share address is still written only
 after proof. What changes:
@@ -280,7 +280,7 @@ above. What changes is only *when* the requests are sent:
   separate lane sample's read-back p90 was 38.4 s, above its 20 s budget;
   the product owner's decision to keep "usually under a minute" from the
   reader-visible samples, and the remaining p90/J23 observation, are recorded
-  in plan A.6 #149.
+  in `publishOptimisation_PLAN.md` (Cloudflare wording decision).
 
 ## Amendment 2026-11-03 — GitHub: no file-list read at an unchanged head, and `.nojekyll` (plans SP4, SP5)
 
@@ -314,7 +314,7 @@ publishes faster without changing what is published or proven.
   own paths, which the record proves exist.
 - **`.nojekyll`** (SP5). GitHub Pages runs its Jekyll site generator on
   every build unless the site holds a `.nojekyll` file. Measured on two
-  throwaway repositories with Pitak-shaped sites (S14; plan Appendix A), the
+  throwaway repositories with Pitak-shaped sites (S14; SP5 measurements), the
   build without Jekyll skipped the generator's download and run, and the
   median build time fell by 23 % on a 10-cover site (43 → 33 s) and by 17 % on a 1,000-cover site (48 → 40 s), above the plan's 15 % bar;
   every Pitak file was served byte for byte the same either way. So the

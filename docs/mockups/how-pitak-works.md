@@ -237,7 +237,7 @@ anyone can open and search. It is free: on **GitHub Pages**, or on
 lend or return something (switch it off in **Settings → Data**).
 **Never goes online:** borrowers, loans, notes, shelf locations.
 
-> **Updated 2026-11-02 (publish-optimisation S8, plan C.9, product decision
+> **Updated 2026-11-02 (publish-optimisation S8, host-choice guide, product decision
 > P7):** the host table and its worked example below are new; the minutes and
 > the "10 updates an hour" are pinned to `AvailabilityPacing` by
 > `guide_catalog_test.dart`.
@@ -688,7 +688,7 @@ have no books of its own.
 | GitHub publish: the card says **Published — going live**, then "Your site is live." once GitHub serves it, and **Your site** appears then (2026-11-02) | `publish_status_copy.dart` (`gitHubGoingLiveMessage`); `PublishGoingLive`; ADR 0017 amendment of 2026-11-02 |
 | Only changed files are uploaded | `PublishLibraryUseCase` sha-skip via manifest |
 | Available / Not available updates by itself after a loan or return (on by default, switch in Settings → Data); borrowers never (2026-11-02) | `AvailabilityAutoPublisher` started from `main.dart`; `PublishingSettingsGroup`; ADR 0019 |
-| GitHub: about a minute per update, at most about 10 an hour, up to about 7 minutes in a busy hour; Cloudflare usually under a minute (2026-11-02; confirmed 2026-11-04) | `AvailabilityPacing.gitHubSpacing` / `gitHubBudget` (pinned by `guide_catalog_test.dart`); ADR 0019 Decision 13a; product owner kept the Cloudflare wording after G.4 and S15 from reader-visible evidence (plan A.6 #93/#149) |
+| GitHub: about a minute per update, at most about 10 an hour, up to about 7 minutes in a busy hour; Cloudflare usually under a minute (2026-11-02; confirmed 2026-11-04) | `AvailabilityPacing.gitHubSpacing` / `gitHubBudget` (pinned by `guide_catalog_test.dart`); ADR 0019 Decision 13a; product owner kept the Cloudflare wording after G.4 and S15 from reader-visible evidence (`publishOptimisation_PLAN.md`, Cloudflare wording decisions) |
 | Location switch: Not shared / Approximate (~1 km) / Exact; default off | `basic_info_tab.dart`; `LocationSharing` |
 | Phone GPS is never read; coordinates are typed as "lat, lng" | `BuildOwnDescriptor.ownLocation` (D6); GPS field hint |
 | Approximate = rounded to 2 decimals ≈ 1.1 km | `GeoPoint.coarsen()` |

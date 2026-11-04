@@ -82,7 +82,8 @@ heading as part of the `chore(release):` commit.
   that is already online. **S15 B3 proved this on one real device across the
   two flavours:** a backup from the F-Droid app (phone A) restored onto the
   fresh Play app (phone B), whose next catalogue publish read 0 covers,
-  reused 10 and committed no `covers/*` (plan A.6 #118).
+  reused 10 and committed no `covers/*` (restore acceptance in
+  `publishOptimisation_PLAN.md`).
   Archives without the entry restore exactly as before.
 
 ### Changed
@@ -207,7 +208,8 @@ heading as part of the `chore(release):` commit.
   (S0: 25.7 s). These are whole-pipeline totals, not isolated SP2/SP3 savings.
   The separate C4 lane sample missed its internal read-back p90 budget (38.4 s), while
   lend → visible had a 39 s median; the product owner kept "usually under a
-  minute" and left the p90/J23 observation open (plan A.6 #149).
+  minute" and left the p90/J23 observation open (Cloudflare wording decision
+  in `publishOptimisation_PLAN.md`).
 - **A GitHub publish skips the file-list read when nothing moved** (plan SP4,
   S14; ADR 0017 amendment of 2026-11-03). `GitHubGitDataApi.headTree` is
   split into `branchHead` (one ref read) and `treeAt` (the commit and its
@@ -230,8 +232,8 @@ heading as part of the `chore(release):` commit.
   (`CatalogueInputs.gitHubPagesSite`, decided from the target when the
   inputs are read); existing sites gain it with their next catalogue
   publish, a move to GitHub carries it, Cloudflare never gets it.
-- **The cover salt is read once per publish** (plan D.5, CV8, J24; S16;
-  ADR 0019 Decision 3 clarification of 2026-11-04). Before, every cover
+- **The cover salt is read once per publish** (S16, one salt read in
+  `publishOptimisation_PLAN.md`; ADR 0019 Decision 3 clarification of 2026-11-04). Before, every cover
   decision read the salt from secure storage again (about 72 ms each on the
   test phone), so an unchanged republish of 1,000 covers spent 73 of its
   90 s there although it read no cover file. `PublishItemKeys.namingFor`
@@ -270,7 +272,7 @@ heading as part of the `chore(release):` commit.
   overwritten by the item count at once.
 - A remote cover whose new URL failed to download once kept its old picture
   for good: the record stored the new URL over the old file, so later
-  publishes skipped it (ADR 0020 Decision 2, plan A.6 #85).
+  publishes skipped it (ADR 0020 Decision 2).
 
 ## [1.9.0] - 2026-10 (tag `1.9.0`, versionCode 32)
 

@@ -5,7 +5,7 @@
   CV1–CV4) into code; Decisions 6–10 are the agreed design for S10–S14.
   Decision 6 gained the product owner's J8 decision the same day (resume +
   pacing, session S10b; see its J8 amendment). Decision 11 (Fix 4: one salt
-  read per publish, plan D.5/CV8, S16) was added 2026-11-04 after the
+  read per publish, S16) was added 2026-11-04 after the
   product owner's go-ahead for the J24 fix.
 - **Date:** 2026-11-02
 - **Amends:** nothing directly. ADR 0014 gained its amendment with Fix 2
@@ -15,17 +15,16 @@
   clarification with Fix 4 (2026-11-04, S16, Decision 11). Builds on
   ADR 0017 Decision 4 (complete snapshots) and
   ADR 0019 (the availability lane, the J9 reset).
-- **Plan:** `publishOptimisation_PLAN.md` — product decisions P4/P5 and P9
-  (A.3), engineering decisions CV1–CV8 and SP1–SP6 (A.4), Part D (Phase 2,
-  D.5 = Fix 4), Part E (Phase 3), measurements in Appendix A, deviations
-  A.6 #84–#92 and #143–#147.
+- **Plan:** `publishOptimisation_PLAN.md` — shipped cover, blob, backup
+  and salt outcomes (What shipped), the current contract, product-owner
+  decisions and S15 final measurements.
 
 ## Context
 
 Phase 1 (ADR 0019) took loans out of the catalogue publish. What is left is
 the catalogue publish itself, and S0 measured where its time goes on a real
-phone (OnePlus 9R, Android 14; plan Appendix A, `publishOptimisation_HANDOFF.md`
-§3):
+phone (OnePlus 9R, Android 14; `publishOptimisation_PLAN.md`, S0 baseline
+and S15 final measurements):
 
 | Publish | Total | Of which |
 |---|---|---|
@@ -282,8 +281,7 @@ need to do.
     shorter without Jekyll, so `.nojekyll` is
     adopted: a catalogue-owned, GitHub-only, empty file (ADR 0017 amendment
     of 2026-11-03). The GitHub reconcile timing mark reports `treeReads`.
-11. **The cover salt is read once per publish (Fix 4, plan D.5, CV8, J24;
-    S16, 2026-11-04).** Decision 2's reuse branch reads no cover file, yet
+11. **The cover salt is read once per publish (Fix 4, S16, 2026-11-04).** Decision 2's reuse branch reads no cover file, yet
     S15's block D found an unchanged republish of 1,000 covers still spending
     73 of its 90 s in the cover stage: every cover decision asked the salt
     store again, and each read opens the phone's secure storage (about

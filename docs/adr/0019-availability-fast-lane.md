@@ -9,9 +9,9 @@
   availability-only read-back set, the lane never replaces a site) and
   ADR 0018 (a third saved file). Narrows the `docs/ARCHITECTURE.md` §1.2
   non-goal "no background or scheduled publishing".
-- **Plan:** `publishOptimisation_PLAN.md` — product decisions P1–P7 (A.3),
-  engineering decisions G1–G7 and AV1–AV18 (A.4), measurements in
-  Appendix A. Related: ADR 0012, ADR 0013, ADR 0016.
+- **Plan:** `publishOptimisation_PLAN.md` — the shipped availability
+  contract (What shipped, Current contract), product-owner decisions and
+  S15 final measurements. Related: ADR 0012, ADR 0013, ADR 0016.
 
 ## Context
 
@@ -22,8 +22,8 @@ publish time (`CatalogueSectionBuilder._availabilityFor`). So a loan reaches
 the site only through a **full catalogue publish**: rebuild `books.json`,
 re-process every cover, upload, then wait for the host.
 
-S0 measured that cost on a real phone (OnePlus 9R, Android 14; plan
-Appendix A, `publishOptimisation_HANDOFF.md` §3):
+S0 measured that cost on a real phone (OnePlus 9R, Android 14;
+`publishOptimisation_PLAN.md`, S0 baseline and S15 final measurements):
 
 | Library | GitHub Pages | Cloudflare Workers |
 |---|---|---|
@@ -31,7 +31,7 @@ Appendix A, `publishOptimisation_HANDOFF.md` §3):
 | Fixture, 1,000 covers | not measured (plan A.6 #14) | ≈ 5 min 25 s, of which 4 min 46 s is covers |
 
 Lending is the action that happens all day, so this is the wrong price for it.
-The product owner decided (plan A.3): the only public loan data stays one
+The product owner decided (P1–P7 in `publishOptimisation_PLAN.md`): the only public loan data stays one
 coarse tag per item (**P1**); that tag must update as soon as possible
 (**P2**); automatic updates are **on by default** with a switch in Settings
 (**P3**); and this ships before the cover and speed work (**P4**).
