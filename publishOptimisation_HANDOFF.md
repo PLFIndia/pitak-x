@@ -1,4 +1,4 @@
-# Publish optimisation — handoff (S15/S16 complete; Linux goldens done, 2026-11-04)
+# Publish optimisation — handoff (S15/S16 and J18 complete; Linux goldens done, 2026-11-04)
 
 **Branch:** `publishOptimisation` (from `03313a3`, release 1.9.0+32).
 **Plan:** `publishOptimisation_PLAN.md` (product decisions A.3, engineering decisions A.4, deviations A.6, measurements Appendix A).
@@ -86,8 +86,8 @@ the p90/J23 observation stays open. The Linux golden regeneration completed
 on 2026-11-04 (§Golden regeneration). Open decisions for the product owner: J11
 (§S9), J12–J14 (§G4; J12 has a new visible effect, §S15), J15 (§S10b), the
 copy of the rate-limit messages (§S10b), the copy of the backup/restore lines
-(§S11), the guide line of §S12, the PRIVACY wording of J18 (§S14) and the new
-observations J19–J23 (§S15). Open engineering observation J17 (§S12).
+(§S11), the guide line of §S12 and the new observations J19–J23 (§S15).
+J18 was closed later (§J18). Open engineering observation J17 (§S12).
 S16 — Fix 4 (J24) — **complete** (2026-11-04, §S16): on the 1,001-item
 fixture D2 **17.2 s (was 90.1 s), cover stage 24 ms (was 72.6 s)**, 0 covers
 read, 1,001 reused; D3 **39.5 s (was 112.9 s), cover stage 174 ms (was
@@ -102,7 +102,8 @@ in Part J. The product owner gave the go-ahead the same night with a
 instead of a `PublishNaming` class, the five essential tests, and
 CHANGELOG + handoff + one ADR 0019 note instead of six doc targets.
 **Order now:** S15's paperwork and the Linux goldens are complete
-(§S15 wrap-up, §Golden regeneration); J18 and the Part J observations remain.
+(§S15 wrap-up, §Golden regeneration); the Part J observations remain (J18
+closed in §J18).
 The branch was pushed at `704d725`
 (2026-11-04, 01:24 IST; `origin/publishOptimisation`), so "push" is no longer
 a step. The Play fixture app stays installed (S16's timing build) in case D3
@@ -132,8 +133,8 @@ graphics are uploaded by hand: Play still showed the August 2026 icon; the
 product owner uploaded `icon.png` and `featureGraphic.png` in Play Console on
 2026-11-03 (in Google's review at 15:10 IST).
 
-> Read this file first in any new session. §Golden regeneration below is the
-> newest state, then §S15 wrap-up, then §S16b and §S16 with plan D.5, then §S15 part 2 (block D), then §S15 (part 1), then
+> Read this file first in any new session. §J18 below is the newest state,
+> then §Golden regeneration, then §S15 wrap-up, then §S16b and §S16 with plan D.5, then §S15 part 2 (block D), then §S15 (part 1), then
 > §S14, §S13, §S12, §S11, §S10b, §S10, §G4 (device evidence), §S9, §S8, §S7, §S6, §S5, §S4,
 > §S3, §S2 and §0 (S1). §1–§5 are the S0 record (plan Appendix A cites the
 > verbatim lines in §3), kept unchanged.
@@ -146,6 +147,43 @@ product owner uploaded `icon.png` and `featureGraphic.png` in Play Console on
 > settled and needs no new review: borrower names and loan details (P1, in the
 > vault) and credentials and tokens (security, `AGENTS.md` §6). `PRIVACY.md`
 > only has to state accurately what is uploaded (a store requirement).
+
+---
+
+## J18 — host-specific read-back privacy wording (2026-11-04, 10:12 IST)
+
+**Started:** the product owner's "go ahead for J18" after agreeing that the
+remaining observations were not serious. `PRIVACY.md` now has effective date
+2026-11-04 and a wording-only change note. Its site-check paragraph says:
+Cloudflare uses up to 12 cache-busted `books.json` reads, five seconds apart;
+GitHub Pages proves a catalogue or events publish afterwards with up to 13
+reads of `books.json` (or `events.json`), first after 30 s and then every 10 s
+(about two and a half minutes). The existing availability-lane wording and
+the statement that these are unauthenticated public reads are unchanged.
+
+**Scope and records:** no request behavior, uploaded data or code changed;
+no new data is collected, stored or sent. `CHANGELOG.md` carries the new
+effective date and the distinction. Plan J18 is closed and its status/Part H
+notes point here. Earlier S15/S16 entries remain historical and now link to
+this closure. No other J item was changed.
+
+**Gates (Flutter 3.44.2):**
+- `dart run build_runner build --delete-conflicting-outputs`:
+  `Built with build_runner in 9s; wrote 0 outputs.`;
+  `git status --porcelain '*.g.dart'` printed nothing.
+- `flutter analyze lib test integration_test`:
+  `No issues found! (ran in 4.0s)`.
+- `dart format --set-exit-if-changed lib test integration_test`:
+  `Formatted 1211 files (0 changed) in 2.09 seconds.`.
+- `flutter test --coverage`: `03:21 +5743 -10: Some tests failed.` The ten
+  failures are only the expected macOS-versus-Linux renderer comparisons in
+  `test/golden/key_screens_test.dart`; no other test failed. The previously
+  regenerated Linux goldens were not changed.
+
+**Commit and CI:** the four documentation files are one commit. The branch is
+pushed and draft PR #22 runs the full CI matrix again; the result is reported
+at session end. Other Part J observations, including p90/J23, remain as
+recorded and were not promoted into release blockers.
 
 ---
 
@@ -191,7 +229,8 @@ comparisons on Linux.
 **Commit and CI:** the three PNGs and these record updates are one commit.
 The branch is pushed and a draft PR (not for merging at this step) runs the
 full CI matrix, including Linux golden tests; the result is reported at the
-end of the session. J18 and the Part J observations remain as recorded.
+end of the session. The Part J observations remain as recorded (J18 closed in
+§J18).
 
 ---
 
@@ -220,7 +259,8 @@ miss is not claimed as met.
 A; `CHANGELOG.md`; RELEASING §6.6; ADR 0017/0019/0020 measurement and wording
 notes; the mockup mirror's wording provenance. Fastlane files remain part of
 the actual `chore(release):` version bump, not this paperwork. No production
-code, golden, version or `PRIVACY.md` change (J18 stays open).
+code, golden or version change. `PRIVACY.md` stayed unchanged at S15 wrap-up
+and was corrected later in §J18.
 
 **Independent read-only audit:** every final Appendix A value was compared
 with the verbatim handoff logs. It caught and I corrected one transcription
@@ -242,8 +282,8 @@ B3 setup and S0 baselines explicit. No number came from an estimate.
 
 **Commit:** the S15 wrap-up documents and this handoff are one commit (this
 commit; its hash is reported at session end). **Next at S15 wrap-up:** Linux
-goldens (completed in §Golden regeneration). J18 and the other Part J
-observations, including p90/J23, remain as recorded.
+goldens (completed in §Golden regeneration). J18 was closed later (§J18);
+the other Part J observations, including p90/J23, remain as recorded.
 
 ---
 
@@ -296,7 +336,7 @@ showed only the architecture test changed. The rerun passed:
 A.6 #145 and this handoff (this commit; its hash is reported at session end).
 
 **Still open after S16b:** S15 paperwork (closed in §S15 wrap-up), Linux
-goldens (completed in §Golden regeneration), J18.
+goldens (completed in §Golden regeneration), J18 (closed in §J18).
 
 ---
 
@@ -363,8 +403,8 @@ of today's code under two fixed salts were captured as literals
   `PublishCoverIds.pathForPeriodical`. The comment in
   `secure_storage_cover_salt_store.dart` now gives P9's reasons for the
   salt (plan D.5 step 5), as `publish_cover_ids.dart` already did. Not
-  changed: `PRIVACY.md` (J18, the product owner's open wording decision)
-  and Appendix A (S15's paperwork).
+  changed at S16: `PRIVACY.md` (J18, later closed in §J18) and Appendix A
+  (S15's paperwork, completed in §S15 wrap-up).
 
 **Gates (01:04 IST):** `dart run build_runner build
 --delete-conflicting-outputs` (two `.g.dart` regenerated); `flutter analyze

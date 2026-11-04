@@ -1,6 +1,10 @@
 # Privacy Policy — Pitak
 
-_Effective date: 2026-11-02 · Publisher: Parallel Line Foundation_
+_Effective date: 2026-11-04 · Publisher: Parallel Line Foundation_
+
+_Changed 2026-11-04 — wording only: the site-check paragraph now distinguishes
+Cloudflare's read-back from GitHub Pages' deferred proof. No new data is
+collected, stored or sent._
 
 _Changed 2026-11-02 — if you publish a site, the *Available / Not available*
 tags on it now update by themselves shortly after you lend or return an item
@@ -168,10 +172,13 @@ Settings → Data), and the passive update check of Google Play builds
    publishing stops rather than exposing an older copy.
 
    **Checking the site and moving it.** After uploading, Pitak reads the site
-   back from its public address to prove it serves the new files — up to 12
-   cache-busted `books.json` requests, five seconds apart, for a catalogue
-   publish; a Cloudflare publish also reads the marker, `library.json` (or its
-   absence), `events.json` and the poster files it just published. An
+   back from its public address to prove it serves the new files. On
+   Cloudflare, a catalogue publish uses up to 12 cache-busted `books.json`
+   requests, five seconds apart, and also reads the marker, `library.json` (or
+   its absence), `events.json` and the poster files it just published. On
+   GitHub Pages, a catalogue or events publish is proven afterwards by up to
+   13 reads of `books.json` (or `events.json`) over about two and a half
+   minutes after the commit: the first 30 s after it, then every 10 s. An
    automatic availability update is checked the same way: on GitHub Pages by
    reading `availability.json` up to 13 times over about two and a half
    minutes, on Cloudflare by reading the marker and `availability.json`. These

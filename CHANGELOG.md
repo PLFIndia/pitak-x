@@ -165,9 +165,11 @@ heading as part of the `chore(release):` commit.
   the 500-line ratchet); the backup copy and the backup guide now say what
   publishing data travels ("your GitHub or Cloudflare sign-in" is what does
   not).
-- `PRIVACY.md` (effective 2026-11-02): availability updates automatically;
+- `PRIVACY.md` (effective 2026-11-04): availability updates automatically;
   the viewer requests and saves `availability.json`; backups carry the
-  website publishing record (no credentials).
+  website publishing record (no credentials). Its site-check paragraph now
+  distinguishes Cloudflare's 12-read check from GitHub Pages' deferred 13-read
+  proof for catalogue and events publishes (J18; wording only).
 - **A GitHub catalogue or events publish returns at commit time** (plan SP1,
   S12; ADR 0017 amendment of 2026-11-02). The use cases save the commit
   `deployed` and return a `DeferredVerificationRequest`
