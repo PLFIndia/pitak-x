@@ -18,7 +18,13 @@ import 'package:pitaka/features/settings/application/settings_controller.dart';
 /// and start a fresh library ID. Pairing is in-person only (QR), no network.
 class CommunityLibrarySection extends ConsumerWidget {
   /// Creates the section.
-  const CommunityLibrarySection({super.key});
+  ///
+  /// [buildScanner] is passed straight to [QrScanPage.buildScanner] — the
+  /// same camera-replacement test seam; production leaves it null.
+  const CommunityLibrarySection({this.buildScanner, super.key});
+
+  /// Test seam replacing the camera widget on the scan page.
+  final Widget Function(void Function(String raw) onText)? buildScanner;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -78,9 +84,10 @@ class CommunityLibrarySection extends ConsumerWidget {
       // else the camera sees is silently ignored.
       final id = await Navigator.of(context).push<String>(
         MaterialPageRoute(
-          builder: (_) => const QrScanPage<String>(
+          builder: (_) => QrScanPage<String>(
             title: 'Scan a library QR',
             accept: LibraryQrPayload.parse,
+            buildScanner: buildScanner,
           ),
         ),
       );
@@ -111,10 +118,20 @@ class CommunityLibrarySection extends ConsumerWidget {
         ),
       );
       if (confirmed != true || !context.mounted) return;
-      await controller.setLibraryId(id);
+      // Item 12: "Joined" is only true once the ID is PERSISTED. A failed
+      // write leaves the previous identity in force (the controller fails
+      // closed), so the user must be told to retry — never that a merge is
+      // ready to go.
+      final saved = await controller.setLibraryId(id);
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Joined library — now merge their file.')),
+        SnackBar(
+          content: Text(
+            saved.isRight()
+                ? 'Joined library — now merge their file.'
+                : 'Could not save the library ID. Please scan again.',
+          ),
+        ),
       );
     }
 
