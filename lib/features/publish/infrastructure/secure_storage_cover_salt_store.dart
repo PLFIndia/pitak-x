@@ -2,9 +2,14 @@
 ///
 /// Generates a 16-byte random salt on first use and persists it (base64) in the
 /// OS secure store, separate from the credential store so a "sign out" wipe
-/// doesn't churn the salt and invalidate every published cover URL. Defence-in-
-/// depth: the salt only hides enumerable internal ids on the public page; an
-/// attacker with disk access already has the DB.
+/// doesn't churn the salt and invalidate every published cover URL. The salt
+/// is not a secret (plan P9): it keeps cover names and item keys stable
+/// across publishes and phones and binds `availability.json` to its catalogue
+/// (the key-set id); it is simply kept out of logs and `toString()`.
+///
+/// Every `salt()` call is one secure-storage read (about 72 ms on the test
+/// phone), which is why a publish reads it ONCE (`PublishItemKeys.namingFor`,
+/// plan S16) instead of once per cover.
 library;
 
 import 'dart:convert';
@@ -27,11 +32,12 @@ final class SecureStorageCoverSaltStore
   /// Creates the store. [storage]/[random] are injectable for tests.
   SecureStorageCoverSaltStore({FlutterSecureStorage? storage, Random? random})
     // M3 (deliberate): UNLIKE the token / biometric secret, the salt stays
-    // `first_unlock_this_device`. It is NOT a secret — it only hides
-    // enumerable internal book ids on the public page (an attacker with disk
-    // access already has the DB). It must also be readable in background
-    // contexts (e.g. a post-reboot publish) so cover URLs stay stable; the
-    // stricter accessibility would buy nothing and risk breaking that.
+    // `first_unlock_this_device`. It is NOT a secret (plan P9: the catalogue
+    // is public by design; the salt exists for stable names and keys and the
+    // key-set binding, not for privacy). It must also be readable in
+    // background contexts (e.g. a post-reboot publish) so cover URLs stay
+    // stable; the stricter accessibility would buy nothing and risk breaking
+    // that.
     : _storage =
           storage ??
           hardenedSecureStorage(

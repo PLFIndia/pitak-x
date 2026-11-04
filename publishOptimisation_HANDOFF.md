@@ -1,4 +1,4 @@
-# Publish optimisation — handoff (S14 complete, 2026-11-03)
+# Publish optimisation — handoff (S16 complete, 2026-11-04)
 
 **Branch:** `publishOptimisation` (from `03313a3`, release 1.9.0+32).
 **Plan:** `publishOptimisation_PLAN.md` (product decisions A.3, engineering decisions A.4, deviations A.6, measurements Appendix A).
@@ -22,7 +22,8 @@ owner's go-ahead ("go ahead for next session", 2026-11-02, the same words
 again). The G.4 device evidence is now done (§G4). **Still open:** the
 Linux golden regeneration, which the product owner **deferred until all
 fixes are done** (2026-11-02: "golden images we do after we are done with
-all fixes"); the branch stays unpushed until then. §6 is the checklist.
+all fixes"); the branch stayed unpushed until S16 (pushed 2026-11-04 at
+`704d725`, see the S16 entry). §6 is the checklist.
 S9 — ADR 0020 and Fix 1 (covers) — **complete** (§S9), started on the
 product owner's go-ahead ("go ahead for next session", 2026-11-02, the same
 words that started S3–S8). The G.4 rows were not run first: no phone was
@@ -101,8 +102,14 @@ in Part J. The product owner gave the go-ahead the same night with a
 instead of a `PublishNaming` class, the five essential tests, and
 CHANGELOG + handoff + one ADR 0019 note instead of six doc targets.
 **Order now:** S15's remaining paperwork (Appendix A "after" columns,
-release checklist) → Linux goldens → push. The Play fixture app stays
-installed (S16's timing build) in case D3 is wanted later.
+release checklist) → Linux goldens. The branch was pushed at `704d725`
+(2026-11-04, 01:24 IST; `origin/publishOptimisation`), so "push" is no longer
+a step. The Play fixture app stays installed (S16's timing build) in case D3
+is wanted later. **Doc sync (2026-11-04, after the review of `d0c8449..HEAD`):**
+the doc targets the trimmed scope had left out are now written to the code
+state — ADR 0020 Decision 11, the ADR index rows for 0019 and 0020,
+ARCHITECTURE §5.8's Fix 4 bullet, plan D.5 "As built in S16" with A.6
+#143–#147, and the Part F row; see §S16 "Docs".
 
 **Outside the plan (2026-11-03, before S15's device run, product owner's
 request):** commit `7708439` makes the Android launcher icon adaptive
@@ -191,9 +198,17 @@ of today's code under two fixed salts were captured as literals
   provider overrides renamed); `publish_cover_ids_test.dart` lost its two
   store-backed path tests (moved, as literals, to the new file).
 - Docs: ADR 0019 Decision 3 clarification of 2026-11-04; `CHANGELOG.md`
-  under Unreleased → Changed; this file. Not done, by the trimmed scope:
-  the ADR 0020 note, the ADR index entry, plan A.6 rows (the product owner
-  may add them with S15's paperwork).
+  under Unreleased → Changed; this file. Left out by the trimmed scope at
+  the time, **written in the doc sync of 2026-11-04 (after the review of
+  `d0c8449..HEAD`)**: ADR 0020 Decision 11 (one salt read per publish), the
+  ADR index rows for 0019 and 0020, the Fix 4 bullet in ARCHITECTURE §5.8,
+  plan D.5 "As built in S16" with A.6 #143–#147, the Part F row S16, and a
+  pointer in `docs/plans/magazines-progress.md` where it still names
+  `PublishCoverIds.pathForPeriodical`. The comment in
+  `secure_storage_cover_salt_store.dart` now gives P9's reasons for the
+  salt (plan D.5 step 5), as `publish_cover_ids.dart` already did. Not
+  changed: `PRIVACY.md` (J18, the product owner's open wording decision)
+  and Appendix A (S15's paperwork).
 
 **Gates (01:04 IST):** `dart run build_runner build
 --delete-conflicting-outputs` (two `.g.dart` regenerated); `flutter analyze

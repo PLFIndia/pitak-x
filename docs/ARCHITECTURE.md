@@ -738,6 +738,25 @@ target passed to the current operation — that is what lets a move publish the
   makes both records forget their local cover sources first (a record adopted
   from the backup keeps them only for covers the backup carried). Changing
   the recipe on purpose means a new rendition number.
+- **The cover salt is read once per publish** (ADR 0020 Decision 11, ADR
+  0019 Decision 3 clarification of 2026-11-04; plan S16, Fix 4). Every
+  secure-storage read of the salt costs about 72 ms, and the cover decider
+  used to read it for every cover, so an unchanged republish of 1,000 covers
+  spent 73 of its 90 s there without reading one cover file.
+  `PublishSnapshotBuilder.build` now calls `PublishItemKeys.namingFor` once,
+  before any cover is decided; that one read yields a `PublishNaming` record
+  — the `PublishKeySet` (keys and `keySet` id for `books.json` and
+  `availability.json`) and a pure `PublishCoverNames` that names every cover
+  (`pathFor`, `pathForPeriodical`; same hash inputs as before, so no file is
+  renamed or re-uploaded). `CatalogueSectionBuilder.build` takes the record as
+  one required `naming:` argument and hands the names to `PublishCoverDecider`
+  per call; the decider holds no store. `PublishCoverIds` keeps only the
+  static hash helpers; the store port is wired through
+  `publishCoverSaltStoreProvider`. An empty or unreadable salt stops the
+  build before any cover is read. Production reads the salt in exactly three
+  places — `PublishItemKeys`, the restore adopter, the backup reader — pinned
+  by `publish_salt_invariant_test.dart`. Measured on the 1,001-item fixture:
+  unchanged republish 17.2 s (was 90.1 s), add-one 39.5 s (was 112.9 s).
 - **A backup carries the publishing record; a restore adopts it only on a
   phone that has not published** (ADR 0014 W5, ADR 0020 Decision 7, plan
   S11). `PublishStateBackupReader` takes the cover salt, both records and the

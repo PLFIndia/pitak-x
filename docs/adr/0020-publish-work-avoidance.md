@@ -4,17 +4,21 @@
   Proposed the same day in session S9, which put Decisions 1–5 (plan
   CV1–CV4) into code; Decisions 6–10 are the agreed design for S10–S14.
   Decision 6 gained the product owner's J8 decision the same day (resume +
-  pacing, session S10b; see its J8 amendment).
+  pacing, session S10b; see its J8 amendment). Decision 11 (Fix 4: one salt
+  read per publish, plan D.5/CV8, S16) was added 2026-11-04 after the
+  product owner's go-ahead for the J24 fix.
 - **Date:** 2026-11-02
 - **Amends:** nothing directly. ADR 0014 gained its amendment with Fix 2
   (W5, 2026-11-02, S11, Decision 7); ADR 0017 gained one with the
   non-blocking GitHub outcome (2026-11-02, S12, Decision 8) and one with
-  SP4/SP5 (2026-11-03, S14, Decision 10). Builds on
+  SP4/SP5 (2026-11-03, S14, Decision 10); ADR 0019 Decision 3 gained its
+  clarification with Fix 4 (2026-11-04, S16, Decision 11). Builds on
   ADR 0017 Decision 4 (complete snapshots) and
   ADR 0019 (the availability lane, the J9 reset).
-- **Plan:** `publishOptimisation_PLAN.md` — product decisions P4/P5 (A.3),
-  engineering decisions CV1–CV7 and SP1–SP6 (A.4), Part D (Phase 2), Part E
-  (Phase 3), measurements in Appendix A, deviations A.6 #84–#92.
+- **Plan:** `publishOptimisation_PLAN.md` — product decisions P4/P5 and P9
+  (A.3), engineering decisions CV1–CV8 and SP1–SP6 (A.4), Part D (Phase 2,
+  D.5 = Fix 4), Part E (Phase 3), measurements in Appendix A, deviations
+  A.6 #84–#92 and #143–#147.
 
 ## Context
 
@@ -278,6 +282,31 @@ need to do.
     shorter without Jekyll, so `.nojekyll` is
     adopted: a catalogue-owned, GitHub-only, empty file (ADR 0017 amendment
     of 2026-11-03). The GitHub reconcile timing mark reports `treeReads`.
+11. **The cover salt is read once per publish (Fix 4, plan D.5, CV8, J24;
+    S16, 2026-11-04).** Decision 2's reuse branch reads no cover file, yet
+    S15's block D found an unchanged republish of 1,000 covers still spending
+    73 of its 90 s in the cover stage: every cover decision asked the salt
+    store again, and each read opens the phone's secure storage (about
+    72 ms). Now `PublishItemKeys.namingFor` reads the salt ONCE at the start
+    of a snapshot build and returns the item keys, the key-set id and a pure
+    `PublishCoverNames` (a Dart record, `PublishNaming`) from that read; the
+    catalogue builder accepts them only together and the decider names every
+    cover from that value, holding no store. The hash inputs are unchanged
+    (`<id>`, `periodical:<uid>`), so every cover keeps its file name and
+    Decision 1 (stored cover files never change) is untouched; the pinned
+    pre-S16 paths prove it. An empty or unreadable salt stops the build
+    before any cover is read, with the same message as before. Production
+    reads the salt in exactly three places — `PublishItemKeys`, the restore
+    adopter, the backup reader — pinned by `publish_salt_invariant_test.dart`.
+    The salt itself stays (plan P9): it is not a privacy measure, it keeps
+    cover names and keys stable across publishes and phones and binds
+    `availability.json` to its catalogue (ADR 0019 Decision 3 clarification
+    of 2026-11-04). Measured on the 1,001-item fixture: cover stage 24 ms
+    instead of 72.6 s (D2, 0 read / 1,001 reused), 174 ms instead of 72.1 s
+    (D3, 1 read); totals 17.2 s and 39.5 s. A cache inside the salt store
+    was rejected: the restore adopter replaces the salt through its own
+    store instance, so a cache would need a cross-instance invalidation
+    rule; one read per build has nothing to invalidate.
 
 ### What is public (plan P8)
 

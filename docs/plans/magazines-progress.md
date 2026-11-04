@@ -215,7 +215,10 @@ Notes from S20 (what S20 built, and the seams S21 consumed):
   the `LocalCoverReader`/`RemoteCoverFetcher` typedefs, re-exported from
   the use case file — the S19 one-import idiom). Periodical covers are
   keyed by UID: `PublishCoverIds.pathForPeriodical` hashes
-  `'periodical:<uid>'` (domain-separated from book ids), and the
+  `'periodical:<uid>'` (since publish-optimisation S16, 2026-11-04, the
+  same hash lives in `PublishCoverNames.pathForPeriodical`, made from one
+  salt read per publish; `PublishCoverIds` keeps the static helpers)
+  (domain-separated from book ids), and the
   manifest's `coverUrlByBookId` carries `'periodical:<uid>'` keys for the
   remote source-identity skip. `FilePublishManifestStore` needs no
   migration: the map is string→string, old manifests simply lack the keys
@@ -1045,7 +1048,9 @@ Rename technique (learned in S1–S4):
   use case (482) plus periodical covers would have crossed the 500-line
   cap (B.5's split-before-capping, the S14/S16/S19 idiom). It nets to 500.
   Periodical covers are keyed by UID, not the per-device id:
-  `PublishCoverIds.pathForPeriodical` hashes `'periodical:<uid>'`
+  `PublishCoverIds.pathForPeriodical` hashes `'periodical:<uid>'` (now
+  `PublishCoverNames.pathForPeriodical`, publish-optimisation S16; the hash
+  input is unchanged)
   (domain-separated so a series can never collide with a book's path, and
   stable across reinstalls), and the manifest's `coverUrlByBookId` carries
   `'periodical:<uid>'` keys — the store needs no migration (string map;
