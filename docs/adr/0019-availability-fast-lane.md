@@ -408,6 +408,11 @@ rebuilding the catalogue.** That automatic publisher is called the **lane**.
       *S8 (plan A.6 #80):* the guide ships these words, the GitHub numbers
       pinned to `AvailabilityPacing` by a test; the Cloudflare wording stands
       unless the G.4 measurement shows a p90 above 20 s after the debounce.
+      *G.4 and S15 (plan A.6 #93 and #149):* both read-back p90 samples missed
+      that proxy (26.0 s, then 38.4 s), and the product owner kept the wording
+      from reader-visible evidence. S15's lend → visible median was 39 s, with
+      seven of eight samples under a minute and one at 61 s. The p90 budget
+      miss and J23 remain open observations, not claimed as met.
       The lane's own sentences got their final words (they name **Publish
       catalogue now**, **Settings → Data** and the **Borrowers vault**; the
       repair sentence of Decision 11 now reads "Your site needs a full

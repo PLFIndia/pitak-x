@@ -274,7 +274,13 @@ above. What changes is only *when* the requests are sent:
 - **Unchanged:** every gate (Decisions 6 and 7: freshness, the session
   baseline, Version URLs before and after a deploy), the pending-deploy
   record, the three outcomes, the read-back sets, and all GitHub behaviour.
-  The S15 device measurements will record the time saved.
+  S15's combined Phase 2+3, pre-S16 build measured an unchanged test-library
+  publish at 19.9 s (S0: 25.0 s) and add-one at 19.1 s (S0: 25.7 s).
+  These are whole-pipeline totals, not isolated SP2/SP3 savings. The
+  separate lane sample's read-back p90 was 38.4 s, above its 20 s budget;
+  the product owner's decision to keep "usually under a minute" from the
+  reader-visible samples, and the remaining p90/J23 observation, are recorded
+  in plan A.6 #149.
 
 ## Amendment 2026-11-03 — GitHub: no file-list read at an unchanged head, and `.nojekyll` (plans SP4, SP5)
 

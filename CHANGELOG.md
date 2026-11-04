@@ -79,8 +79,11 @@ heading as part of the `chore(release):` commit.
   records → journal with `catalogueKeyed` cleared, undoes every write on a
   failure, and keeps local cover sources only for covers the archive carries.
   A restored phone therefore keeps the same cover names and uploads no cover
-  that is already online. Archives without the entry restore exactly as
-  before.
+  that is already online. **S15 B3 proved this on one real device across the
+  two flavours:** a backup from the F-Droid app (phone A) restored onto the
+  fresh Play app (phone B), whose next catalogue publish read 0 covers,
+  reused 10 and committed no `covers/*` (plan A.6 #118).
+  Archives without the entry restore exactly as before.
 
 ### Changed
 - **`books.json`** (schema still 1, additive): every item carries `key`
@@ -196,8 +199,13 @@ heading as part of the `chore(release):` commit.
   route read still waits for presence) and judge the answers in the old order,
   so every result and typed failure is unchanged. Budgets keep their numbers;
   `CloudflareReadBackBudget.afterAvailabilityDeploy` and `immediateFirstRound`
-  are gone (the lane uses `afterDeploy`). No screen or wording changes;
-  expected saving about 6–9 s per Cloudflare publish (S15 measures it).
+  are gone (the lane uses `afterDeploy`). No screen or wording changes.
+  S15's combined Phase 2+3, pre-S16 build measured an unchanged test-library
+  Cloudflare publish at **19.9 s** (S0: 25.0 s) and add-one at **19.1 s**
+  (S0: 25.7 s). These are whole-pipeline totals, not isolated SP2/SP3 savings.
+  The separate C4 lane sample missed its internal read-back p90 budget (38.4 s), while
+  lend → visible had a 39 s median; the product owner kept "usually under a
+  minute" and left the p90/J23 observation open (plan A.6 #149).
 - **A GitHub publish skips the file-list read when nothing moved** (plan SP4,
   S14; ADR 0017 amendment of 2026-11-03). `GitHubGitDataApi.headTree` is
   split into `branchHead` (one ref read) and `treeAt` (the commit and its
@@ -236,8 +244,8 @@ heading as part of the `chore(release):` commit.
   an unchanged republish takes **17.2 s instead of 90.1 s**, its cover
   stage 24 ms instead of 72.6 s with 0 covers read and 1,001 reused;
   adding one book with a new photo takes **39.5 s instead of 112.9 s**, its
-  cover stage 174 ms with exactly 1 cover read. A small library saves
-  about half a second per publish.
+  cover stage 174 ms with exactly 1 cover read. S16 re-measured the fixture
+  only; it did not re-measure a small library.
 
 ### Fixed
 - **Android launcher icon: no more white ring.** The app shipped only a flat

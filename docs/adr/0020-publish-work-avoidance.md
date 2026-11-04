@@ -330,8 +330,12 @@ which is public-data bookkeeping like the rest of them.
 ## Consequences
 
 - **An unchanged republish produces no cover; adding one book produces one**
-  (plan A.2), whatever the library size. At 1,000 covers that removes
-  ≈ 4 min 46 s from every publish (S15 measures the "after" column).
+  (plan A.2), whatever the library size. Against S0, S16 measured final
+  end-to-end totals on the 1,000-item Cloudflare fixture at
+  **324.9 → 17.2 s unchanged** (0 covers read) and
+  **327.5 → 39.5 s add-one** (1 cover read). S15 B3 also proved the restore
+  acceptance on one real device across the two flavours: the fresh Play app
+  reused ten covers and uploaded none (plan A.6 #118).
 - **The first catalogue publish after this update is as slow as before**,
   once: every local cover is read and every remote cover fetched again, and
   identical bytes upload nothing. The same happens after a restore (local

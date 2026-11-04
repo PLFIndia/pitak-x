@@ -425,8 +425,21 @@ desktop browser.
 | 9 | Fresh install (or cleared data), connect the host, do NOT republish the catalogue, lend | Status "Tap Publish catalogue now once; after that, availability updates by itself."; nothing sent (no commit, no deploy) |
 | 10 | Native viewer: open the library from Library Bookmarks with and without `availability.json` on the site | Tags, **Available now** and "N of M available" shown; "· updated <time>" only when the file decided the tags; without the file the inline tags (or none) and the catalogue still opens |
 
-If the Cloudflare p90 exceeds 20 s after the debounce, the guide's "usually
-under a minute" wording must change before release (plan G4/C.9). The build's
+**S15 final evidence (2026-11-03/04):** blocks A–D are recorded in
+`publishOptimisation_HANDOFF.md` §S15/§S15 part 2, with S16's final D2/D3
+rerun in §S16 and the cells in `publishOptimisation_PLAN.md` Appendix A.
+B3 closed the second-phone restore acceptance (`coversRead=0,
+coversReused=10`, no `covers/*` in the commit; plan A.6 #118). The fixture
+finished at 17.2 s unchanged and 39.5 s add-one. GitHub's functional rows
+passed, but its commit/total values are explicitly network-inflated (#148),
+not normal-network baselines. C4's read-back p90 was 38.4 s; the product
+owner kept the reader-facing wording from the visible-time samples (#149).
+
+If the Cloudflare p90 exceeds 20 s after the debounce, review the guide's
+"usually under a minute" wording with the product owner before release and
+record the decision as a plan A.6 deviation. G.4 (#93) and S15 (#149) kept the
+wording from reader-visible evidence; without such a decision, the wording
+must change (plan G4/C.9). The build's
 kill switch is `availabilityLaneActivatedProvider` in
 `lib/core/di/src/availability_providers.dart`: set to `false`, a build
 behaves exactly as before the lane, and its next publish deletes the file it

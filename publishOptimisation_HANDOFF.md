@@ -1,4 +1,4 @@
-# Publish optimisation — handoff (S16 complete, 2026-11-04)
+# Publish optimisation — handoff (S15 wrap-up and S16 complete, 2026-11-04)
 
 **Branch:** `publishOptimisation` (from `03313a3`, release 1.9.0+32).
 **Plan:** `publishOptimisation_PLAN.md` (product decisions A.3, engineering decisions A.4, deviations A.6, measurements Appendix A).
@@ -53,9 +53,9 @@ S11 — Fix 2 (backup publish state) — **complete** (§S11), started on the
 product owner's go-ahead ("go ahead for the next item", 2026-11-02). At the
 start the product owner **decided the adoption rule: a restore adopts the
 backup's publishing record only on a phone that has not published itself**
-(plan A.6 #109). J5 is closed (A.6 #110). **Still open for Phase 2:** the
-device evidence "a restore on a second phone uploads no covers" (§S11 has
-the steps; A.6 #118).
+(plan A.6 #109). J5 is closed (A.6 #110). **Phase 2's second-phone evidence
+completed in S15 B3 (A.6 #118):** the fresh Play flavour reused ten covers and
+uploaded none.
 S12 — SP1 (GitHub returns at commit time) — **complete** (§S12), started on
 the product owner's go-ahead ("go ahead for the next item", 2026-11-02,
 confirmed as S12 in the session's first question, with the copy choices).
@@ -71,23 +71,24 @@ question, together with the SP5 measurement on two throwaway `PLFIndia`
 repositories). SP5 was measured and **`.nojekyll` is adopted** (§S14).
 **Two throwaway repositories wait for the product owner to delete them by
 hand:** `PLFIndia/pitak-sp5-small` and `PLFIndia/pitak-sp5-large` (archived).
-S15 — final measurements — **device runs done (§S15)**, on the product
-owner's go-ahead ("Start now: all 17 tests, A–D"; block D: "go ahead with
+S15 — final measurements and wrap-up — **complete** (§S15 and §S15 wrap-up),
+on the product owner's go-ahead ("Start now: all 17 tests, A–D"; block D: "go ahead with
 D", 23:28 IST). Blocks A (GitHub), B (restore, Phase 2 acceptance: **PASS**)
 and C (Cloudflare) ran in part 1 (stopped by the product owner at 18:01 IST);
 **block D (the 1,000-item fixture) ran in part 2, 23:29–23:58 IST: PASS**
 (D2 0 covers read / 1,000 reused, 1 min 30 s vs S0 5 min 25 s; D3 1 read).
 **New finding J24 (§S15 part 2):** 73 s of D2's 90 s is still the cover
 stage although no cover is read — the cover salt is read from secure storage
-once per cover. **Still to do in S15:** the Appendix A "after" columns (the
-numbers are in §S15; the plan is not updated yet), the release docs. The
-Linux golden regeneration stays deferred until all fixes are done. Open
-decisions for the product owner: J11 (§S9), J12–J14 (§G4; J12 has a new
-visible effect, §S15), J15 (§S10b), the copy of the rate-limit messages
-(§S10b), the copy of the backup/restore lines (§S11), the guide line of
-§S12, the PRIVACY wording of J18 (§S14), the missed Cloudflare lane p90 rule
-(§S15) and the new observations J19–J23 (§S15). Open engineering observation
-J17 (§S12).
+once per cover. **Wrap-up completed 2026-11-04 (§S15 wrap-up):** Appendix A
+has the final values, A.6 #118 is closed, and the release docs are synced.
+The product owner chose the actual GitHub values with their network caveat
+(#148) and kept "usually under a minute" from reader-visible evidence (#149);
+the p90/J23 observation stays open. The Linux golden regeneration stays
+deferred until all fixes are done. Open decisions for the product owner: J11
+(§S9), J12–J14 (§G4; J12 has a new visible effect, §S15), J15 (§S10b), the
+copy of the rate-limit messages (§S10b), the copy of the backup/restore lines
+(§S11), the guide line of §S12, the PRIVACY wording of J18 (§S14) and the new
+observations J19–J23 (§S15). Open engineering observation J17 (§S12).
 S16 — Fix 4 (J24) — **complete** (2026-11-04, §S16): on the 1,001-item
 fixture D2 **17.2 s (was 90.1 s), cover stage 24 ms (was 72.6 s)**, 0 covers
 read, 1,001 reused; D3 **39.5 s (was 112.9 s), cover stage 174 ms (was
@@ -101,8 +102,8 @@ in Part J. The product owner gave the go-ahead the same night with a
 **trimmed scope** ("I do not want to overengineer the app"): a Dart record
 instead of a `PublishNaming` class, the five essential tests, and
 CHANGELOG + handoff + one ADR 0019 note instead of six doc targets.
-**Order now:** S15's remaining paperwork (Appendix A "after" columns,
-release checklist) → Linux goldens. The branch was pushed at `704d725`
+**Order now:** S15's paperwork is complete (§S15 wrap-up) → Linux goldens.
+The branch was pushed at `704d725`
 (2026-11-04, 01:24 IST; `origin/publishOptimisation`), so "push" is no longer
 a step. The Play fixture app stays installed (S16's timing build) in case D3
 is wanted later. **Doc sync (2026-11-04, after the review of `d0c8449..HEAD`):**
@@ -131,8 +132,8 @@ graphics are uploaded by hand: Play still showed the August 2026 icon; the
 product owner uploaded `icon.png` and `featureGraphic.png` in Play Console on
 2026-11-03 (in Google's review at 15:10 IST).
 
-> Read this file first in any new session. §S16b and §S16 below, with plan
-> D.5, are the newest state, then §S15 part 2 (block D), then §S15 (part 1), then
+> Read this file first in any new session. §S15 wrap-up below is the newest
+> state, then §S16b and §S16 with plan D.5, then §S15 part 2 (block D), then §S15 (part 1), then
 > §S14, §S13, §S12, §S11, §S10b, §S10, §G4 (device evidence), §S9, §S8, §S7, §S6, §S5, §S4,
 > §S3, §S2 and §0 (S1). §1–§5 are the S0 record (plan Appendix A cites the
 > verbatim lines in §3), kept unchanged.
@@ -145,6 +146,57 @@ product owner uploaded `icon.png` and `featureGraphic.png` in Play Console on
 > settled and needs no new review: borrower names and loan details (P1, in the
 > vault) and credentials and tokens (security, `AGENTS.md` §6). `PRIVACY.md`
 > only has to state accurately what is uploaded (a store requirement).
+
+---
+
+## S15 wrap-up — Appendix A and release paperwork (2026-11-04, 08:29 IST)
+
+**Started:** the product owner's "go ahead for S15". No device measurement was
+re-run. Two decisions closed the evidence questions: record GitHub's actual
+values with the abnormal-network caveat (A.6 #148), and keep "usually under a
+minute" from reader-visible evidence while leaving the p90/J23 observation
+open (A.6 #149).
+
+**Evidence now in plan Appendix A.** Every After Phase 3 cell is filled from
+the S15/S16 logs, or explicitly "not measured" for the GitHub fixture. S15's
+build held Phases 2 + 3, so After Phase 2 is n/a rather than a fabricated
+isolated run. S16's D2/D3 are the final fixture values (17.2 s / 39.5 s);
+all other measured publish rows are marked pre-S16. D1 keeps its unmarked
+preparation and pre-existing-host-bytes caveats. B3 closed #118 on ONE
+physical OnePlus 9R across two flavours: F-Droid phone A → fresh Play phone
+B, `coversRead=0,coversReused=10`, no `covers/*` in commit `a02e14a`. The
+subsequent lane/UI behaviour remains J12, separate from that acceptance.
+C4's read-back p90 was 38.4 s; lend → visible had a 39 s median, seven of
+eight samples under a minute and one at 61 s. The wording is kept, the budget
+miss is not claimed as met.
+
+**Documents synced:** plan status, A.6 #118/#148/#149, Part F/G/H and Appendix
+A; `CHANGELOG.md`; RELEASING §6.6; ADR 0017/0019/0020 measurement and wording
+notes; the mockup mirror's wording provenance. Fastlane files remain part of
+the actual `chore(release):` version bump, not this paperwork. No production
+code, golden, version or `PRIVACY.md` change (J18 stays open).
+
+**Independent read-only audit:** every final Appendix A value was compared
+with the verbatim handoff logs. It caught and I corrected one transcription
+(Cloudflare C4 readBack minimum 621 → **641 ms**), then confirmed all ten
+cells and the required caveats. Its wording review also made the two-flavour
+B3 setup and S0 baselines explicit. No number came from an estimate.
+
+**Gates (Flutter 3.44.2, 08:29 IST):**
+- `dart run build_runner build --delete-conflicting-outputs`:
+  `Built with build_runner in 9s; wrote 0 outputs.`;
+  `git status --porcelain '*.g.dart'` printed nothing.
+- `flutter analyze lib test integration_test`:
+  `No issues found! (ran in 3.3s)`.
+- `dart format --set-exit-if-changed lib test integration_test`:
+  `Formatted 1211 files (0 changed) in 2.08 seconds.`.
+- `flutter test --coverage`: `03:42 +5743 -10: Some tests failed.` All ten
+  failures are the known Linux-golden cases in
+  `test/golden/key_screens_test.dart`; no other failure.
+
+**Commit:** the S15 wrap-up documents and this handoff are one commit (this
+commit; its hash is reported at session end). **Next:** Linux goldens. J18
+and the other Part J observations, including p90/J23, remain as recorded.
 
 ---
 
@@ -196,7 +248,8 @@ showed only the architecture test changed. The rerun passed:
 **Commits:** `feea701` is the doc sync; the S16b commit contains the test,
 A.6 #145 and this handoff (this commit; its hash is reported at session end).
 
-**Still open:** S15 paperwork, Linux goldens, J18.
+**Still open after S16b:** S15 paperwork (closed in §S15 wrap-up), Linux
+goldens, J18.
 
 ---
 
@@ -310,9 +363,8 @@ reconcile (network, variable); the stage this fix targets is 174 ms.
 add-one) the whole publish-optimisation plan now stands at **−95 % and
 −88 %** on the 1,000-item fixture.
 
-**Next:** S15's remaining paperwork with these as the final numbers
-(Appendix A "after" columns, the release checklist), then the Linux
-goldens, then push.
+**Next at the end of S16:** S15's remaining paperwork with these as the
+final numbers (completed in §S15 wrap-up), then the Linux goldens.
 
 ---
 
@@ -471,7 +523,8 @@ GitHub rows of Appendix A on a normal network before filling them in**
 | D1–D3 1,000-item fixture | CF | **NOT RUN in part 1; PASS in part 2** | Stopped while the seeder built; nothing was installed. Run later the same day: see §S15 part 2. |
 
 **Phase status after part 1:** Phase 2 acceptance "a restore on a second
-phone uploads no covers" is **met** (B3; A.6 #118 can close). Phase 3: the
+phone uploads no covers" is **met** (B3; A.6 #118 closed in §S15 wrap-up).
+Phase 3: the
 GitHub button returns at commit time (A1–A4: no `readBack`; the time left
 is the commit); an unchanged head makes no tree request (`treeReads=0` in
 A1–A3, the A4 catalogue, A5, B4's second publish and B5; `treeReads=1`
