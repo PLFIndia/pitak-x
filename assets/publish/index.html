@@ -601,19 +601,67 @@
   }
 
   // One request for availability.json. Never rejects; the answer is either
-  //   { file: <parsed file or null> } — the server answered. null means the
-  //       file is missing (404 or any other non-OK status) or broke a rule;
-  //       both count as "no file";
-  //   { unreachable: true } — the request itself failed (offline, dropped
-  //       connection), so we learned nothing new about the file.
+  //   { file: <parsed file or null> } — a 404 or a refused body means "no
+  //       file", so inline tags return;
+  //   { unreachable: true } — any other non-OK status, a network/body failure,
+  //       or no streaming support. None proves the old file disappeared.
   // cache: "no-cache" lets the browser revalidate its saved copy (a cheap
   // "not modified" when nothing changed). Never a ?query cache-buster:
   // GitHub's edge ignores query strings.
   async function fetchAvailability() {
     try {
       const res = await fetch("availability.json", { cache: "no-cache" });
-      if (!res.ok) return { file: null };
-      return { file: parseAvailability(await res.arrayBuffer()) };
+      if (res.status === 404) return { file: null };
+      if (!res.ok) return { unreachable: true };
+
+      // The header is only an early rejection: it is untrusted, so the actual
+      // streamed bytes below are ALWAYS capped too.
+      const declared = res.headers && typeof res.headers.get === "function"
+        ? res.headers.get("content-length")
+        : null;
+      if (declared !== null && Number(declared) > AVAILABILITY_MAX_BYTES) {
+        return { file: null };
+      }
+      if (!res.body || typeof res.body.getReader !== "function") {
+        return { unreachable: true };
+      }
+
+      const reader = res.body.getReader();
+      const chunks = [];
+      let total = 0;
+      while (true) {
+        const part = await reader.read();
+        if (part.done) break;
+        const value = part.value;
+        if (!value || !Number.isInteger(value.byteLength)) {
+          return { unreachable: true };
+        }
+        let chunk;
+        if (value instanceof Uint8Array) chunk = value;
+        else if (value instanceof ArrayBuffer) chunk = new Uint8Array(value);
+        else if (ArrayBuffer.isView(value)) {
+          chunk = new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
+        } else return { unreachable: true };
+        if (total + chunk.byteLength > AVAILABILITY_MAX_BYTES) {
+          try {
+            await reader.cancel();
+          } catch (e) {
+            // The over-cap answer is already refused; cancellation failure
+            // must not turn certain refusal into a retained older file.
+          }
+          return { file: null };
+        }
+        chunks.push(chunk);
+        total += chunk.byteLength;
+      }
+
+      const bytes = new Uint8Array(total);
+      let offset = 0;
+      for (const chunk of chunks) {
+        bytes.set(chunk, offset);
+        offset += chunk.byteLength;
+      }
+      return { file: parseAvailability(bytes.buffer) };
     } catch (e) {
       // fetch() or reading the body failed: a network problem, not an answer.
       return { unreachable: true };

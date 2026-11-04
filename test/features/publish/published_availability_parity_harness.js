@@ -58,9 +58,9 @@ function makeElement() {
   };
 }
 
-// The file's exact bytes as an ArrayBuffer — what `Response.arrayBuffer()`
-// gives the browser. Node may hand back a view into a larger shared buffer,
-// so only this file's slice is copied out.
+// The file's exact bytes as an ArrayBuffer, later exposed through the
+// browser's streamed-body API. Node may hand back a view into a larger
+// shared buffer, so only this file's slice is copied out.
 function readArrayBuffer(path) {
   const bytes = new Uint8Array(fs.readFileSync(path));
   return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
@@ -125,8 +125,21 @@ async function main() {
         return {
           ok: true,
           status: 200,
-          // A fresh copy per read, like a real response body.
-          async arrayBuffer() { return availabilityBytes.slice(0); },
+          headers: { get() { return null; } },
+          body: {
+            getReader() {
+              let sent = false;
+              return {
+                async read() {
+                  if (sent) return { done: true };
+                  sent = true;
+                  // A fresh copy per response, like a real body stream.
+                  return { done: false, value: new Uint8Array(availabilityBytes.slice(0)) };
+                },
+                async cancel() {},
+              };
+            },
+          },
         };
       }
       if (url === 'events.html') return { ok: false, status: 404 };

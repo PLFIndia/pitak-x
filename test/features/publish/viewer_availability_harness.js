@@ -78,9 +78,38 @@ function toArrayBuffer(bytes) {
 // ---- Answers the fake server gives for availability.json ----
 const notFound = () => ({ ok: false, status: 404 });
 const networkError = () => { throw new TypeError('Failed to fetch'); };
-function bytesAnswer(bytes) {
-  const buffer = toArrayBuffer(bytes);
-  return () => ({ ok: true, status: 200, async arrayBuffer() { return buffer.slice(0); } });
+function bytesAnswer(bytes, { chunkSize = 16384, declaredLength } = {}) {
+  const state = { cancelled: false, reads: 0 };
+  const answer = () => ({
+    ok: true,
+    status: 200,
+    headers: {
+      get(name) {
+        return name.toLowerCase() === 'content-length' && declaredLength !== undefined
+          ? String(declaredLength)
+          : null;
+      },
+    },
+    body: {
+      getReader() {
+        let offset = 0;
+        return {
+          async read() {
+            state.reads++;
+            if (offset >= bytes.length) return { done: true };
+            const end = Math.min(offset + chunkSize, bytes.length);
+            const value = bytes.subarray(offset, end);
+            offset = end;
+            return { done: false, value };
+          },
+          async cancel() { state.cancelled = true; },
+        };
+      },
+    },
+    async arrayBuffer() { throw new Error('unbounded arrayBuffer() was called'); },
+  });
+  answer.state = state;
+  return answer;
 }
 const textAnswer = (text) => bytesAnswer(Buffer.from(text, 'utf8'));
 
@@ -340,6 +369,49 @@ const checks = {
     viewer.setAnswer(textAnswer(fileText()));
     await viewer.fireInterval();
     assert.deepEqual(viewer.tags(), TAGS_WITH_FILE);
+  },
+
+  async '500 and 429 re-checks preserve the last accepted file'() {
+    const viewer = await started({ answer: textAnswer(fileText()) });
+    for (const status of [500, 429]) {
+      viewer.setAnswer(() => ({ ok: false, status }));
+      await viewer.fireInterval();
+      assert.deepEqual(viewer.tags(), TAGS_WITH_FILE, `HTTP ${status}`);
+    }
+  },
+
+  async 'a response without streaming is unreachable, never arrayBuffer-read'() {
+    const viewer = await started({ answer: textAnswer(fileText()) });
+    const withoutStream = textAnswer(fileText())();
+    withoutStream.body = null;
+    viewer.setAnswer(() => withoutStream);
+    await viewer.fireInterval();
+    assert.deepEqual(viewer.tags(), TAGS_WITH_FILE);
+  },
+
+  async 'an honestly declared over-cap length is refused before body reads'() {
+    const answer = bytesAnswer(Buffer.from(fileText()), { declaredLength: MAX_BYTES + 1 });
+    const viewer = startViewer({ answer });
+    let parseCalls = 0;
+    const parse = viewer.context.parseAvailability;
+    viewer.context.parseAvailability = (buffer) => { parseCalls++; return parse(buffer); };
+    await settle();
+    assert.equal(answer.state.reads, 0);
+    assert.equal(parseCalls, 0);
+    assert.deepEqual(viewer.tags(), TAGS_INLINE);
+  },
+
+  async 'a streamed body over 1 MiB is cancelled and never parsed'() {
+    const overCap = Buffer.from(paddedTo(MAX_BYTES + 1), 'utf8');
+    const answer = bytesAnswer(overCap, { chunkSize: MAX_BYTES - 1 });
+    const viewer = startViewer({ answer });
+    let parseCalls = 0;
+    const parse = viewer.context.parseAvailability;
+    viewer.context.parseAvailability = (buffer) => { parseCalls++; return parse(buffer); };
+    await settle();
+    assert.equal(answer.state.cancelled, true);
+    assert.equal(parseCalls, 0);
+    assert.deepEqual(viewer.tags(), TAGS_INLINE);
   },
 
   async 'a body over 1 MiB is ignored; a valid file at the cap is used'() {
