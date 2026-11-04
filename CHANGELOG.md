@@ -12,7 +12,16 @@ The release script (`tool/release_build.sh`) refuses to build a version
 that has no heading here, so `Unreleased` entries move under the version
 heading as part of the `chore(release):` commit.
 
-## [Unreleased]
+## [1.9.1] - 2026-11 (tag `1.9.1`, versionCode 33)
+
+Release sentinel (`tool/release_build.sh --sentinel`): `GitHubBlobPacer`.
+
+AAB sha256: `f6250cf4082179205c899767d78f0b1cceb278b917e271bbe2ba51fbbaeb8e6c`.
+The 221-second `tool/release_build.sh` build (its own `flutter clean`, locked
+dependencies, Rust for three ABIs and Dart AOT) passed upload-signature,
+package/version and fresh arm64 Dart-sentinel verification. Built from
+`publishOptimisation` at `e5e0179` plus this release metadata; `lib/` and
+`pubspec.lock` were unchanged by the release preparation.
 
 ### Added
 - **Availability fast lane (ADR 0019; publish-optimisation Phase 1, S2–S8):**
@@ -273,6 +282,37 @@ heading as part of the `chore(release):` commit.
 - A remote cover whose new URL failed to download once kept its old picture
   for good: the record stored the new URL over the old file, so later
   publishes skipped it (ADR 0020 Decision 2).
+- **Optimisation review remediation (`opt-fixes.md`, items 1–16):**
+  - Availability input reads and lane application are serialized in trigger
+    order, so an older answer cannot overwrite a newer one.
+  - GitHub redirects are refused; a renamed repository is adopted only when
+    its canonical owner/repository identity matches.
+  - The restore pointer rename is the commit point. Old-generation cleanup is
+    best-effort and retried, never misreported as a failed activation.
+  - Identity adoption rolls back where possible and truthfully reports partial
+    adoption.
+  - Complete read-back is deadline-bounded with at most four concurrent reads.
+  - GitHub artifacts use operation-scoped spools instead of retaining the whole
+    produced site; exact sizes are preserved and only upload bytes are opened.
+  - App lock re-locks when picker grace expires in the background.
+  - Rust and Kotlin native secret buffers are wiped on validation,
+    cancellation and success paths.
+  - Web availability uses status-aware, bounded streaming; over-cap bodies are
+    refused before parsing and there is no unbounded `arrayBuffer()` fallback.
+  - Share UI distinguishes hand-off from proof of saving and handles dismissed,
+    unavailable and throwing outcomes without losing retry.
+  - Restore's terminal result survives route pop/reopen until a new archive is
+    chosen; duplicate-run refusal and passphrase disposal are unchanged.
+  - A QR join is announced only after the library ID is persisted; a failed
+    write keeps the old identity and starts no merge.
+  - Provider-status colours meet at least 4.5:1 on the real card colour in both
+    themes, expanded and collapsed; text labels and icons remain.
+  - Editable settings fields await saves, keep failed input open, reject
+    duplicate submits and follow external values only while idle.
+  - Published-cover recency is touched only for an actual cached-image hit,
+    not failure dedupe, queued misses, disabled consent or disposed sessions.
+  - One process-wide `GitHubBlobPacer` paces blob starts across commits;
+    backward clocks remain capped and each commit moves the ref exactly once.
 
 ## [1.9.0] - 2026-10 (tag `1.9.0`, versionCode 32)
 
