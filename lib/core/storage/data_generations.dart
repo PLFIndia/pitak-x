@@ -23,10 +23,14 @@
 /// target atomically, so the pointer always names either the old or the new
 /// generation — never half of each. Anything that fails before the rename
 /// simply leaves the builder directory to be discarded; the live data is
-/// untouched. Startup recovery is LevelDB's rule too: obey the pointer only if
-/// it names a complete generation, otherwise fall back to the newest complete
-/// one, and delete every other `gen-*` directory (so a crashed restore never
-/// leaves a second plaintext copy of the catalogue behind — privacy §3.1).
+/// untouched. The rename IS the commit point: deleting superseded generations
+/// afterwards is best-effort cleanup, so a delete that the system refuses
+/// leaves an extra directory to be removed on the next `open` rather than
+/// turning a successful switch into a failed restore. Startup recovery is
+/// LevelDB's rule too: obey the pointer only if it names a complete
+/// generation, otherwise fall back to the newest complete one, and delete
+/// every other `gen-*` directory (so a crashed restore never leaves a second
+/// plaintext copy of the catalogue behind — privacy §3.1).
 ///
 /// Honest limits (recorded, not hidden):
 ///  - `dart:io` cannot `fsync` a directory, so the durability of the rename
@@ -122,7 +126,8 @@ final class DataGenerations {
   ///  3. if nothing complete exists, create an empty `gen-000001`;
   ///  4. make `CURRENT` name the chosen generation (no-op when already so);
   ///  5. delete every OTHER `gen-*` directory (crashed builders, superseded
-  ///     generations). Nothing outside `gen-*` is ever touched.
+  ///     generations). Best effort: a directory that cannot be removed now is
+  ///     retried on the next open. Nothing outside `gen-*` is ever touched.
   ///
   /// Throws [FileSystemException] when the docs dir itself is unusable; the
   /// app cannot run without its data directory, so there is nothing safe to
@@ -162,13 +167,17 @@ final class DataGenerations {
     ).writeAsBytesSync(const [], flush: true);
   }
 
-  /// Atomically makes [generation] the active one and deletes the previous
+  /// Atomically makes [generation] the active one, then deletes the previous
   /// generation(s). The switch is a single `rename` of the pointer file.
   ///
   /// Throws [StateError] if [generation] is not [complete]d (so an unfinished
   /// build can never become live), and rethrows [FileSystemException] from the
   /// pointer write/rename with the temp pointer removed and the OLD generation
   /// still active (nothing is deleted before the rename succeeds).
+  ///
+  /// Once the rename has succeeded the switch has happened: a later cleanup
+  /// failure does NOT throw and does NOT undo it. The caller can publish the
+  /// new paths and forget its builder; `open` retries the cleanup.
   DataGeneration activate(DataGeneration generation) {
     if (!_isComplete(generation.name)) {
       throw StateError(
@@ -330,12 +339,24 @@ final class DataGenerations {
     return number;
   }
 
-  /// Removes every `gen-*` directory except [keep]. Only generation-named
-  /// directories directly under `data/` qualify; nothing else is touched.
+  /// Removes every `gen-*` directory except [keep], best effort. Only
+  /// generation-named directories directly under `data/` qualify; nothing
+  /// else is touched.
+  ///
+  /// Why per directory (beginner note): this runs AFTER the pointer switch, so
+  /// it is only cleanup. One directory the system refuses to delete (a file
+  /// still open on another platform, a permission problem) must not fail the
+  /// restore; it is left for the next `open`, which calls this again. A
+  /// programming error (anything that is not a [FileSystemException]) still
+  /// propagates.
   void _deleteAllExcept(String keep) {
     for (final name in _generationNames()) {
       if (name == keep) continue;
-      Directory(p.join(_dataDir, name)).deleteSync(recursive: true);
+      try {
+        Directory(p.join(_dataDir, name)).deleteSync(recursive: true);
+      } on FileSystemException {
+        // Best-effort cleanup; the next open() retries this directory.
+      }
     }
   }
 }

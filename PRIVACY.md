@@ -286,9 +286,10 @@ Settings → Data), and the passive update check of Google Play builds
    those fields, so share backups only with people you trust with that data.
    Restoring writes the new catalogue, covers and vault into a fresh
    app-private folder and switches to it in one step; the previous folder is
-   deleted immediately after a successful switch (and any half-built folder
-   is removed on the next launch), so no second copy of your data lingers on
-   the device.
+   deleted after a successful switch, and a half-built folder is removed on
+   the next launch. If the system refuses one of those deletes, Pitak retries
+   it at the next launch rather than reporting the restore as failed, so no
+   second copy of your data lingers on the device.
 8. **Update check (Google Play builds only).** When the app starts, the
    Play-distributed build asks the Google Play Store whether a newer version
    of Pitak is available for the flexible flow, Play shows its update dialog;

@@ -59,8 +59,9 @@ a **library network** (pins on a map, hub/member cards).
   accordingly. Restore is
   all-or-nothing: the catalogue, covers and vault are written into a new data
   folder and the app switches to it in one step, so a failed or interrupted
-  restore leaves your current data untouched (the previous folder is deleted
-  right after a successful switch).
+  restore leaves your current data untouched. The previous folder is deleted
+  after a successful switch; if the system refuses the delete, Pitak removes
+  the leftover on the next launch.
 - **Publish** — push a read-only library viewer to **one active host**:
   **GitHub Pages** (device-flow auth + git data API) or **Cloudflare Workers**
   (a pasted `Workers Scripts · Edit` token, one account, assets-only Worker),

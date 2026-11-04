@@ -30,12 +30,16 @@ class ActiveDataGeneration extends _$ActiveDataGeneration {
     return generations.open();
   }
 
-  /// Makes a COMPLETE [generation] live: switches the pointer atomically and
-  /// deletes the previous generation, then publishes the new value so every
-  /// `ref.watch`er (database, covers, vault store) rebuilds onto it.
+  /// Makes a COMPLETE [generation] live: switches the pointer atomically,
+  /// deletes the previous generation (best effort — a delete the system
+  /// refuses is retried by the next `open`), then publishes the new value so
+  /// every `ref.watch`er (database, covers, vault store) rebuilds onto it.
   ///
-  /// Throws (does not publish) if the switch fails; the old generation is then
-  /// still active on disk AND in state, which is the fail-closed outcome.
+  /// Throws (does not publish) only if the pointer switch itself fails; the
+  /// old generation is then still active on disk AND in state, which is the
+  /// fail-closed outcome. A failed cleanup AFTER the switch never throws:
+  /// that would leave memory on the old paths while `CURRENT` names the new
+  /// generation (review finding 3).
   Future<DataGeneration> activate(DataGeneration generation) async {
     final generations = await ref.read(dataGenerationsProvider.future);
     final active = generations.activate(generation);

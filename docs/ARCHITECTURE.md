@@ -417,8 +417,11 @@ to false** (the `hasX` forward-compat pattern):
   Whole-archive encryption is deferred (trigger: a user asks, or a review
   flags it).
 - Restore is **all-or-nothing**: everything is written into a new data folder
-  and the app switches to it in one step; a failed restore leaves current data
-  untouched.
+  and the app switches to it in one step (the `CURRENT` pointer rename is the
+  commit point); a failed restore leaves current data untouched. Deleting the
+  superseded folder afterwards is **best effort** — the next launch retries
+  it, so a refused delete cannot turn a successful switch into a failed
+  restore or leave in-memory paths pointing at the old generation.
 - Compatibility is **one-way**: Pitak restores Kotlin-era archives; the Kotlin
   app is not a restore target. `books.db` holds the base rows of **every**
   item kind in the Room shape, so a build older than ADR 0013 restores

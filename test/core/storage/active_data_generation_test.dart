@@ -7,6 +7,7 @@ import 'package:path/path.dart' as p;
 import 'package:pitaka/core/database/app_database.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/storage/active_data_generation.dart';
+import 'package:pitaka/core/storage/data_generations.dart';
 
 /// M02: the storage providers (catalogue DB, covers dir, vault store) must all
 /// derive from ONE active generation and all move together when it switches.
@@ -130,6 +131,52 @@ void main() {
       File(p.join(docs.path, 'data', 'CURRENT')).readAsStringSync().trim(),
       next.name,
     );
+  });
+
+  test('a refused delete of the previous generation still publishes the new '
+      'generation and rebuilds every path', () async {
+    // Review finding 3: `CURRENT` names the new generation once the pointer
+    // rename succeeds, so memory must move with it even when cleanup fails.
+    final notifier = container.read(activeDataGenerationProvider.notifier);
+    final first = await container.read(activeDataGenerationProvider.future);
+    final oldDb = await container.read(appDatabaseProvider.future);
+    final oldCovers = await container.read(coversDirProvider.future);
+    final generations = await container.read(dataGenerationsProvider.future);
+    final next = generations.beginNext(first);
+    final nextDb = AppDatabase(NativeDatabase(File(next.catalogueDbPath)));
+    await nextDb
+        .into(nextDb.books)
+        .insert(BooksCompanion.insert(title: 'New generation', addedDate: 2));
+    await nextDb.close();
+    Directory(next.coversDir).createSync();
+    // Make the OLD generation undeletable (POSIX: no write bit).
+    Directory(first.coversDir).createSync(recursive: true);
+    File(p.join(first.coversDir, 'c.jpg')).writeAsBytesSync([1]);
+    Process.runSync('chmod', ['500', first.coversDir]);
+    addTearDown(() => Process.runSync('chmod', ['700', first.coversDir]));
+    generations.complete(next);
+
+    final active = await notifier.activate(next);
+
+    expect(active.name, next.name);
+    expect(
+      (await container.read(activeDataGenerationProvider.future)).name,
+      next.name,
+    );
+    final db = await container.read(appDatabaseProvider.future);
+    expect(db, isNot(same(oldDb)));
+    expect((await db.select(db.books).get()).single.title, 'New generation');
+    final covers = await container.read(coversDirProvider.future);
+    expect(covers, isNot(oldCovers));
+    expect(
+      File(p.join(docs.path, 'data', 'CURRENT')).readAsStringSync().trim(),
+      next.name,
+    );
+    // Only the cleanup is pending; the old directory is gone on the next open.
+    expect(Directory(first.path).existsSync(), isTrue);
+    Process.runSync('chmod', ['700', first.coversDir]);
+    expect(DataGenerations(docsDir: docs.path).open().name, next.name);
+    expect(Directory(first.path).existsSync(), isFalse);
   });
 
   test('a failed activate keeps the old generation in state', () async {

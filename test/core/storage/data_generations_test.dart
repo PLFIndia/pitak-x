@@ -290,6 +290,34 @@ void main() {
       expect(DataGenerations(docsDir: docs.path).open().name, builder.name);
     });
 
+    test('activate succeeds when the old generation cannot be deleted, and '
+        'the next open removes it', () {
+      // Review finding 3: the pointer rename is the commit point. A cleanup
+      // the system refuses must not throw after the switch.
+      final active = generations.open();
+      final locked = Directory(p.join(active.path, 'covers'))
+        ..createSync(recursive: true);
+      File(p.join(locked.path, 'c.jpg')).writeAsBytesSync([1]);
+      final builder = generations.beginNext(active);
+      generations.complete(builder);
+      Process.runSync('chmod', ['500', locked.path]);
+      addTearDown(() => Process.runSync('chmod', ['700', locked.path]));
+
+      final now = generations.activate(builder);
+
+      expect(now.name, builder.name);
+      expect(current().readAsStringSync().trim(), builder.name);
+      expect(Directory(active.path).existsSync(), isTrue);
+      expect(File(p.join(active.path, 'covers', 'c.jpg')).existsSync(), isTrue);
+
+      // The next explicit open retries the cleanup and finishes it.
+      Process.runSync('chmod', ['700', locked.path]);
+      final reopened = DataGenerations(docsDir: docs.path).open();
+
+      expect(reopened.name, builder.name);
+      expect(Directory(active.path).existsSync(), isFalse);
+    });
+
     test('activate leaves the OLD generation active when the pointer rename '
         'fails', () {
       final active = generations.open();
