@@ -484,11 +484,13 @@ void main() {
         branch: 'main',
         token: 'TKN',
         plan: GitHubCommitPlan(
-          files: const [
+          files: [
             PublishFile(
               path: 'x',
-              bytes: [1],
-              gitSha: 'deadbeef',
+              bytes: const [1],
+              // The plan must be self-consistent now: the writer verifies the
+              // bytes it would send against this sha (review finding 6).
+              gitSha: GitBlobSha.of(const [1]),
               upload: true,
             ),
           ],
@@ -522,11 +524,13 @@ void main() {
         branch: 'main',
         token: 'TKN',
         plan: GitHubCommitPlan(
-          files: const [
+          files: [
             PublishFile(
               path: 'x',
-              bytes: [1],
-              gitSha: 'deadbeef',
+              bytes: const [1],
+              // The plan must be self-consistent now: the writer verifies the
+              // bytes it would send against this sha (review finding 6).
+              gitSha: GitBlobSha.of(const [1]),
               upload: true,
             ),
           ],

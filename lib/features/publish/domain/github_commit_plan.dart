@@ -52,6 +52,7 @@ final class GitHubCommitPlan {
   factory GitHubCommitPlan({
     required Iterable<PublishFile> files,
     required Set<String> knownBlobShas,
+    Future<List<int>?> Function(String path)? readBytes,
   }) {
     // Shas this commit already sends: a second file with the same bytes then
     // names the blob the first one created (rule 3).
@@ -67,6 +68,8 @@ final class GitHubCommitPlan {
           bytes: file.bytes,
           gitSha: file.gitSha,
           upload: send,
+          storedSize: file.storedSize,
+          readBytes: readBytes,
         ),
       );
     }
@@ -99,6 +102,8 @@ final class GitHubCommitPlan {
                   bytes: f.bytes,
                   gitSha: f.gitSha,
                   upload: false,
+                  storedSize: f.storedSize,
+                  readBytes: f.readBytes,
                 )
               : f,
       ]),
@@ -123,5 +128,5 @@ final class GitHubCommitPlan {
   List<String> get uploadedPaths => [for (final f in uploads) f.path];
 
   /// How many bytes this commit sends (the S0 timings report it).
-  int get uploadBytes => uploads.fold(0, (sum, f) => sum + f.bytes.length);
+  int get uploadBytes => uploads.fold(0, (sum, f) => sum + f.size);
 }

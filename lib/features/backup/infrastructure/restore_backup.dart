@@ -328,10 +328,8 @@ final class RestoreBackup {
       // The lease is checked last: a lock/disposal during the build must not
       // be followed by a switch that reports success for a session that ended.
       if (!scope.isCurrent) return left(CatalogueReplacementScope.cancelled);
-      // From the pointer rename on, `builder` is the live generation. Cleanup
-      // of the superseded one is the store's best-effort job afterward, so a
-      // failed delete can never fail this restore or make `discard` target
-      // live data below.
+      // After the pointer rename, `builder` is live. Old-generation cleanup
+      // is best-effort, so a failed delete cannot make `discard` target it.
       await activate(builder);
       builder = null; // now live: never discard it in `finally`
 

@@ -337,8 +337,7 @@ final class MergeLibraryUseCase {
     );
     return switch (adopted.outcome) {
       LibraryAdoptionOutcome.adopted => MergeNamespaceOutcome.adopted,
-      LibraryAdoptionOutcome.notAdopted =>
-        MergeNamespaceOutcome.adoptionFailed,
+      LibraryAdoptionOutcome.notAdopted => MergeNamespaceOutcome.adoptionFailed,
       LibraryAdoptionOutcome.partiallyAdopted =>
         MergeNamespaceOutcome.partiallyAdopted,
     };

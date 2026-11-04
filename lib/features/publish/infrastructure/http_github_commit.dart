@@ -16,6 +16,7 @@ library;
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
+import 'package:pitaka/features/publish/domain/git_blob_sha.dart';
 import 'package:pitaka/features/publish/domain/github_api.dart';
 import 'package:pitaka/features/publish/domain/github_branch_name.dart';
 import 'package:pitaka/features/publish/domain/github_commit_plan.dart';
@@ -124,8 +125,17 @@ final class GitHubCommitWriter {
         }
       }
       lastBlobAt = _clock();
+      // Resolve ONE source immediately before this blob's body is built, so
+      // only one file's bytes are in memory at a time and a reused/known blob
+      // is never opened (review finding 6). The bytes must still be the
+      // snapshot's content: a missing or changed source aborts BEFORE the
+      // tree, so nothing is committed.
+      final bytes = await f.resolveBytes();
+      if (bytes == null || GitBlobSha.of(bytes) != f.gitSha) {
+        throw const GitHubApiException('Publish artifact unavailable');
+      }
       final blobResp = await _post('$base/blobs', headers, {
-        'content': base64Encode(f.bytes),
+        'content': base64Encode(bytes),
         'encoding': 'base64',
       });
       if (blobResp.statusCode >= 400) return refused(blobResp);

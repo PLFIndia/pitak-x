@@ -26,6 +26,8 @@ import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
 import 'package:pitaka/features/periodicals/domain/issue_cover.dart';
 import 'package:pitaka/features/publish/application/publish_cover_decider.dart';
+import 'package:pitaka/features/publish/application/site/catalogue_cover_artifact_writer.dart';
+import 'package:pitaka/features/publish/application/site/publish_artifact_writer.dart';
 import 'package:pitaka/features/publish/application/site/publish_timings.dart';
 import 'package:pitaka/features/publish/domain/cover_url_allow_list.dart';
 import 'package:pitaka/features/publish/domain/git_blob_sha.dart';
@@ -206,10 +208,19 @@ final class CatalogueSectionBuilder {
     final coverStartedAt = timing?.begin();
     final coverDecisions = <int, CoverDecision>{};
     final periodicalCoverDecisions = <String, CoverDecision>{};
-    Future<CoverDecision> decidePeriodicalCover(Periodical series) async {
+    // One build-scoped writer consumes each cover BEFORE the next is read
+    // and keeps only metadata for the original-order assembly below.
+    final coverArtifacts = CatalogueCoverArtifactWriter(
+      sink: _sink,
+      previous: previous,
+    );
+
+    Future<Either<Failure, CoverDecision>> decidePeriodicalCover(
+      Periodical series,
+    ) async {
       final uid = series.periodicalUid!;
       final cached = periodicalCoverDecisions[uid];
-      if (cached != null) return cached;
+      if (cached != null) return Right(cached);
       final decision = await _covers.forPeriodical(
         series.coverUrl,
         periodicalUid: uid,
@@ -218,7 +229,11 @@ final class CatalogueSectionBuilder {
         mode: mode,
       );
       requireCover(decision);
-      return periodicalCoverDecisions[uid] = decision;
+      final written = await coverArtifacts.write(decision);
+      if (written case Left(value: final failure)) return Left(failure);
+      final kept = written.toNullable()!;
+      periodicalCoverDecisions[uid] = kept;
+      return Right(kept);
     }
 
     for (final book in library) {
@@ -234,29 +249,29 @@ final class CatalogueSectionBuilder {
           mode: mode,
         );
         requireCover(decision);
-        coverDecisions[book.id] = decision;
+        final written = await coverArtifacts.write(decision);
+        if (written case Left(value: final failure)) return Left(failure);
+        coverDecisions[book.id] = written.toNullable()!;
       } else if (series != null) {
-        await decidePeriodicalCover(series);
+        final decided = await decidePeriodicalCover(series);
+        if (decided case Left(value: final failure)) return Left(failure);
       }
     }
     // A published series with a cover of its own gets its decision even when
     // no issue falls back to it (the series entry shows it).
     for (final series in publishedPeriodicals) {
       if ((series.coverUrl?.trim() ?? '').isNotEmpty) {
-        await decidePeriodicalCover(series);
+        final decided = await decidePeriodicalCover(series);
+        if (decided case Left(value: final failure)) return Left(failure);
       }
     }
 
     if (timing != null) {
-      final decisions = <CoverDecision>[
-        ...coverDecisions.values,
-        ...periodicalCoverDecisions.values,
-      ];
       timing.end(
         PublishTimingStage.coverDecisions,
         coverStartedAt,
-        coversRead: decisions.where((d) => d.bytes != null).length,
-        coversReused: decisions.where((d) => d.reuseSha != null).length,
+        coversRead: coverArtifacts.coversRead,
+        coversReused: coverArtifacts.coversReused,
       );
     }
 
@@ -349,20 +364,26 @@ final class CatalogueSectionBuilder {
       ...coverDecisions.values,
       ...periodicalCoverDecisions.values,
     ]) {
-      if (d.bytes != null && d.publishPath != null && d.gitSha != null) {
+      final path = d.publishPath;
+      final already = path == null ? null : coverArtifacts[path];
+      if (already != null) {
+        // Written when the decision was made; only its metadata goes in, in
+        // this (the original) order.
+        desired.add(already);
+      } else if (d.bytes != null && path != null && d.gitSha != null) {
         final failure = await addFile(
           PublishFile(
-            path: d.publishPath!,
+            path: path,
             bytes: d.bytes!,
             gitSha: d.gitSha!,
-            upload: previous.shaFor(d.publishPath!) != d.gitSha,
+            upload: previous.shaFor(path) != d.gitSha,
           ),
         );
         if (failure != null) return Left(failure);
-      } else if (d.reuseSha != null && d.publishPath != null) {
+      } else if (d.reuseSha != null && path != null) {
         desired.add(
           PublishFile(
-            path: d.publishPath!,
+            path: path,
             bytes: const [],
             gitSha: d.reuseSha!,
             upload: false,
@@ -373,6 +394,7 @@ final class CatalogueSectionBuilder {
     // Do not retain every cover or the large catalogue JSON after consumption.
     coverDecisions.clear();
     periodicalCoverDecisions.clear();
+    coverArtifacts.clear();
     booksJson = const [];
     viewerHtml = const [];
     // De-dup by path (deterministic: keep the first).
@@ -416,22 +438,8 @@ final class CatalogueSectionBuilder {
     );
   }
 
-  Future<Either<Failure, PublishFile>> _write(PublishFile file) async {
-    final sink = _sink;
-    if (sink == null) return Right(file);
-    final result = await sink.write(file);
-    final failure = result.swap().toNullable();
-    if (failure != null) return Left(failure);
-    // The sink owns the bytes now; retain only metadata in the snapshot.
-    return Right(
-      PublishFile(
-        path: file.path,
-        bytes: const [],
-        gitSha: file.gitSha,
-        upload: file.upload,
-      ),
-    );
-  }
+  Future<Either<Failure, PublishFile>> _write(PublishFile file) =>
+      writePublishArtifact(sink: _sink, file: file);
 
   /// The inline tag, through the ONE rule (`isBookUnavailable`, ADR 0019
   /// Decision 1, plan A.6 #18). `notAvailableItemIds` uses the same function,

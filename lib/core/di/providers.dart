@@ -25,6 +25,7 @@ export 'package:pitaka/core/di/src/backup_providers.dart';
 export 'package:pitaka/core/di/src/cloudflare_publish_providers.dart';
 export 'package:pitaka/core/di/src/database_providers.dart';
 export 'package:pitaka/core/di/src/events_providers.dart';
+export 'package:pitaka/core/di/src/github_artifact_providers.dart';
 export 'package:pitaka/core/di/src/import_export_providers.dart';
 export 'package:pitaka/core/di/src/library_providers.dart';
 export 'package:pitaka/core/di/src/lookup_providers.dart';

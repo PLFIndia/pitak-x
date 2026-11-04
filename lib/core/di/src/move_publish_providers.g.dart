@@ -28,7 +28,7 @@ final configuredMoveTargetResolverProvider =
 // ignore: unused_element
 typedef ConfiguredMoveTargetResolverRef =
     AutoDisposeFutureProviderRef<ConfiguredMoveTargetResolver>;
-String _$moveSiteUseCaseHash() => r'99f8cdd3849791c243bb3bdc35355ba4978ecce6';
+String _$moveSiteUseCaseHash() => r'ed6cc8c4dac97d676a644e3eefe2f7892fa787bb';
 
 /// Wires both host operations over the same builders, queue and journal.
 ///

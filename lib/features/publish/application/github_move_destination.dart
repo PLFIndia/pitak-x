@@ -3,6 +3,7 @@ library;
 
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/features/publish/application/github_artifact_store.dart';
 import 'package:pitaka/features/publish/application/github_move_reader.dart';
 import 'package:pitaka/features/publish/application/publish_library_use_case.dart'
     show PublishManifestGateway;
@@ -32,25 +33,26 @@ final class GitHubMoveDestination implements MoveDestinationPublisher {
     required PublishReads reads,
     required CompleteSnapshotVerifier verifier,
     required int Function() clock,
+    required GitHubArtifactStoreFactory artifactStores,
   }) : _reader = reader,
        _api = api,
        _manifest = manifest,
+       _snapshotBuilder = snapshotBuilder,
        _reads = reads,
        _verifier = verifier,
-       _preparation = MoveSnapshotPreparation(
-         builder: snapshotBuilder,
-         emptyPrevious: PublishManifest.empty,
-         clock: clock,
-       ),
-       _clock = clock;
+       _clock = clock,
+       _artifactStores = artifactStores;
 
   final GitHubMoveReader _reader;
   final GitHubGitDataApi _api;
   final PublishManifestGateway _manifest;
+  final PublishSnapshotBuilder _snapshotBuilder;
   final PublishReads _reads;
   final CompleteSnapshotVerifier _verifier;
-  final MoveSnapshotPreparation _preparation;
   final int Function() _clock;
+
+  /// A FRESH spool per prepare/publish operation (review finding 6).
+  final GitHubArtifactStoreFactory _artifactStores;
 
   @override
   Future<Either<Failure, MoveSiteConfirmation>> prepare({
@@ -61,28 +63,70 @@ final class GitHubMoveDestination implements MoveDestinationPublisher {
     if (newTarget is! GitHubPublishTarget) {
       return const Left(ValidationFailure(MoveSiteMessages.targetMismatch));
     }
-    final remote = await _reader(newTarget);
-    if (remote case Left(value: final failure)) return Left(failure);
-    final prepared = await _prepare(oldTarget, newTarget, sourceAnchor);
-    if (prepared case Left(value: final failure)) return Left(failure);
-    return Right(prepared.toNullable()!.confirmation);
+    final store = _artifactStores();
+    try {
+      final remote = await _reader(newTarget);
+      if (remote case Left(value: final failure)) return Left(failure);
+      final prepared = await _prepare(
+        oldTarget,
+        newTarget,
+        sourceAnchor,
+        store: store,
+      );
+      if (prepared case Left(value: final failure)) return Left(failure);
+      return Right(prepared.toNullable()!.confirmation);
+    } finally {
+      // The confirmation carries no bytes; this operation's spool is done.
+      await store.dispose();
+    }
   }
 
+  /// Builds through the operation's own store: the section builder spools each
+  /// file, and the digest re-reads only the volatile JSON fields from it.
   Future<Either<Failure, MovePreparedSnapshot>> _prepare(
     PublishTarget oldTarget,
     GitHubPublishTarget newTarget,
-    MoveSourceAnchor sourceAnchor,
-  ) => _preparation(
-    reads: _reads,
-    oldTarget: oldTarget,
-    newTarget: newTarget,
-    sourceAnchor: sourceAnchor,
-  );
+    MoveSourceAnchor sourceAnchor, {
+    required GitHubArtifactStore store,
+  }) =>
+      MoveSnapshotPreparation(
+        builder: _snapshotBuilder.withArtifactSink(store),
+        emptyPrevious: PublishManifest.empty,
+        clock: _clock,
+        readBytes: store.read,
+      )(
+        reads: _reads,
+        oldTarget: oldTarget,
+        newTarget: newTarget,
+        sourceAnchor: sourceAnchor,
+      );
 
   @override
   Future<MoveDestinationResult> publish({
     required MoveSiteConfirmation confirmation,
     required Future<bool> Function() beforeWrite,
+    MoveVerificationProgress? onVerify,
+  }) async {
+    // One fresh spool for this publish, kept alive until read-back finishes.
+    final store = _artifactStores();
+    try {
+      return await _publish(
+        confirmation: confirmation,
+        beforeWrite: beforeWrite,
+        onVerify: onVerify,
+        store: store,
+      );
+    } finally {
+      // `dispose` never throws; a temp-folder cleanup failure must not turn a
+      // committed move into a different result.
+      await store.dispose();
+    }
+  }
+
+  Future<MoveDestinationResult> _publish({
+    required MoveSiteConfirmation confirmation,
+    required Future<bool> Function() beforeWrite,
+    required GitHubArtifactStore store,
     MoveVerificationProgress? onVerify,
   }) async {
     final target = confirmation.newTarget;
@@ -91,6 +135,7 @@ final class GitHubMoveDestination implements MoveDestinationPublisher {
       confirmation.oldTarget,
       target,
       confirmation.sourceAnchor,
+      store: store,
     );
     final failure = prepared.swap().toNullable();
     if (failure != null) return MoveDestinationFailed(_message(failure));
@@ -143,6 +188,7 @@ final class GitHubMoveDestination implements MoveDestinationPublisher {
         plan: GitHubCommitPlan(
           files: files,
           knownBlobShas: remote.tree.blobShas,
+          readBytes: store.read,
         ),
         commitMessage: 'Pitak move ${_clock()}',
         deletePaths: deleted,

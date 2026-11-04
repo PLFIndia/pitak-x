@@ -166,12 +166,15 @@ final class DesiredFile {
     required this.bytes,
     required this.gitSha,
     required this.upload,
+    this.storedSize,
+    this.readBytes,
   });
 
   /// Repo-relative path (e.g. `books.json`, `covers/3f2c.jpg`).
   final String path;
 
-  /// Content bytes; needed only when [upload] is true.
+  /// Content bytes; needed only when [upload] is true. Empty when an
+  /// operation store holds them ([storedSize] then keeps the length).
   final List<int> bytes;
 
   /// The file's git blob sha (from `GitBlobSha.of`); used as the tree entry
@@ -181,4 +184,32 @@ final class DesiredFile {
   /// True = changed/new, bytes must be uploaded as a blob; false = unchanged,
   /// reuse [gitSha] in the tree.
   final bool upload;
+
+  /// Exact byte length when [bytes] were released to an operation store
+  /// (review finding 6); null when the bytes are in memory.
+  final int? storedSize;
+
+  /// Reopens a spooled file's bytes by path, or null when this commit's
+  /// store has no entry (an in-memory file then stays valid).
+  final Future<List<int>?> Function(String path)? readBytes;
+
+  /// The file's exact byte length (in memory or in the store).
+  int get size => storedSize ?? bytes.length;
+
+  /// The bytes this entry must send, or null when they cannot be found.
+  ///
+  /// Only an upload is ever resolved: a reused or known blob must never open
+  /// a source (review finding 6). Resolution is per file:
+  ///  - an in-memory file is used as it is (including a legitimately empty
+  ///    `.nojekyll`, or an `availability.json` that no store was installed
+  ///    for), so the store is never asked for a path it cannot hold;
+  ///  - a byte-less SPOOLED file ([storedSize] is set) asks the store, and
+  ///    falls back to the in-memory bytes so a file the store lacks (a merged
+  ///    availability document) still commits.
+  Future<List<int>?> resolveBytes() async {
+    if (!upload) return null;
+    if (bytes.isNotEmpty || storedSize == null) return bytes;
+    final resolved = await readBytes?.call(path);
+    return resolved ?? bytes;
+  }
 }

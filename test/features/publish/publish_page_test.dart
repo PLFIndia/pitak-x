@@ -216,6 +216,9 @@ List<Override> _cloudflareOverrides() {
     setupCloudflareSiteProvider.overrideWith((ref) async => graph.setup),
     cloudflareCredentialStoreProvider.overrideWithValue(graph.credentials),
     appDocsDirProvider.overrideWith((ref) async => documents),
+    // Review finding 6: a GitHub publish spools into the temporary directory;
+    // the page fixture points it at the same temporary folder.
+    appTempDirProvider.overrideWith((ref) async => documents),
   ];
 }
 

@@ -19,7 +19,6 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
-import 'package:pitaka/core/platform/app_log.dart';
 import 'package:pitaka/features/publish/domain/github_api.dart';
 import 'package:pitaka/features/publish/domain/github_branch_name.dart';
 import 'package:pitaka/features/publish/domain/github_commit_plan.dart';
@@ -27,6 +26,7 @@ import 'package:pitaka/features/publish/domain/github_models.dart';
 import 'package:pitaka/features/publish/infrastructure/github_http_support.dart';
 import 'package:pitaka/features/publish/infrastructure/http_github_commit.dart';
 import 'package:pitaka/features/publish/infrastructure/http_github_tree.dart';
+import 'package:pitaka/features/publish/infrastructure/no_redirect_http_client.dart';
 
 /// `http`-backed GitHub client.
 final class HttpGitHubApi implements GitHubApi {
@@ -45,7 +45,7 @@ final class HttpGitHubApi implements GitHubApi {
        // request answer for a target the user did not choose (review
        // finding 2). Wrapping here (rather than per call site) means no
        // future endpoint can forget the policy.
-       _client = _NoRedirectClient(client),
+       _client = NoRedirectHttpClient(client),
        _authBase = authBase ?? Uri.parse('https://github.com'),
        _apiBase = apiBase ?? Uri.parse('https://api.github.com'),
        _sleep = sleep ?? Future<void>.delayed,
@@ -464,48 +464,4 @@ final class HttpGitHubApi implements GitHubApi {
       throw GitHubApiException('$e');
     }
   }
-}
-
-/// Refuses every GitHub redirect: `send` returns the 3xx answer as a
-/// [http.ClientException] without following it.
-///
-/// Why (beginner note): `package:http` follows redirects by default, and a
-/// redirect can point at another host. For GitHub this is both a security and
-/// a correctness problem — a renamed repository answers 301 to its OLD API
-/// path, so following it would quietly make Pitak adopt or publish to a
-/// repository (or host) the user never chose. Every call site already maps a
-/// [http.ClientException] to its own typed, fixed failure, so refusing here
-/// needs no new error type.
-final class _NoRedirectClient extends http.BaseClient {
-  _NoRedirectClient(this._inner);
-
-  final http.Client _inner;
-
-  /// The one message a refused redirect produces. It names no URL or host.
-  static const String refusal = 'GitHub answered with a redirect';
-
-  @override
-  Future<http.StreamedResponse> send(http.BaseRequest request) async {
-    // 0 as well as `false`: some clients only look at one of the two.
-    request
-      ..followRedirects = false
-      ..maxRedirects = 0;
-    final response = await _inner.send(request);
-    if (response.statusCode >= 300 && response.statusCode <= 399) {
-      // Abandon the body unread: its bytes are never used, and cancelling
-      // closes the connection instead of buffering a hostile payload.
-      try {
-        await response.stream.listen(null).cancel();
-      } on Object catch (error) {
-        // The connection is already going away; the refusal below is the
-        // answer either way. Type only (AGENTS §6.2).
-        appLog('GitHub redirect body not cancelled: ${error.runtimeType}');
-      }
-      throw http.ClientException(refusal);
-    }
-    return response;
-  }
-
-  @override
-  void close() => _inner.close();
 }

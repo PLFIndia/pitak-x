@@ -359,6 +359,175 @@ void main() {
     });
   }
 
+  // Review finding 6: after a section builder spools the produced site, the
+  // commit resolves ONE source per uploaded blob, never a reused/known one,
+  // and an in-memory file needs no store entry.
+  group('spooled sources (finding 6)', () {
+    /// A file whose bytes the operation store holds (only metadata here).
+    PublishFile spooled(String path, String content) {
+      final bytes = utf8.encode(content);
+      return PublishFile(
+        path: path,
+        bytes: const [],
+        gitSha: GitBlobSha.of(bytes),
+        upload: true,
+        storedSize: bytes.length,
+      );
+    }
+
+    Future<PublishCommitResult> commitWithSources(
+      FakeGitHubGitServer server,
+      Map<String, List<int>> sources, {
+      required List<PublishFile> files,
+      Set<String> known = const {},
+      void Function(String path)? onRead,
+    }) async {
+      var active = 0;
+      var maxActive = 0;
+      final plan = GitHubCommitPlan(
+        files: files,
+        knownBlobShas: known,
+        readBytes: (path) async {
+          onRead?.call(path);
+          active++;
+          if (active > maxActive) maxActive = active;
+          // A real spool read is a file read: yielding lets an overlapping
+          // read show up if the writer ever started two at once.
+          await Future<void>.delayed(Duration.zero);
+          active--;
+          expect(active, lessThanOrEqualTo(1));
+          return sources[path];
+        },
+      );
+      final result = await commit(api(server.client), plan, head: server.head);
+      expect(maxActive, 1, reason: 'one source resolved at a time');
+      return result;
+    }
+
+    test('at most one source is read for upload at a time', () async {
+      final server = FakeGitHubGitServer();
+      final result = await commitWithSources(
+        server,
+        {
+          'a.json': utf8.encode('A'),
+          'b.json': utf8.encode('B'),
+          'c.json': utf8.encode('C'),
+        },
+        files: [
+          spooled('a.json', 'A'),
+          spooled('b.json', 'B'),
+          spooled('c.json', 'C'),
+        ],
+      );
+      expect(result, isA<PublishCommitSuccess>());
+      expect(server.acceptedBlobs, 3);
+      expect(server.treeRequests, 1);
+      expect(server.refMoves, 1);
+    });
+
+    test('held and reused blobs are never opened', () async {
+      // The branch already holds both contents, so the tree names them.
+      final server = FakeGitHubGitServer(
+        files: {
+          'held.json': utf8.encode('already held'),
+          'unchanged.json': utf8.encode('unchanged content'),
+        },
+      );
+      final read = <String>[];
+      final result = await commitWithSources(
+        server,
+        {'books.json': utf8.encode('books')},
+        known: {sha('already held')},
+        files: [
+          spooled('books.json', 'books'),
+          spooled('reused.json', 'already held'),
+          PublishFile(
+            path: 'unchanged.json',
+            bytes: const [],
+            gitSha: sha('unchanged content'),
+            upload: false,
+            storedSize: 17,
+          ),
+        ],
+        onRead: read.add,
+      );
+
+      expect(result, isA<PublishCommitSuccess>());
+      expect(read, ['books.json']);
+      expect(server.blobRequests, 1);
+    });
+
+    test('a mixed spooled catalogue + in-memory availability.json + an '
+        'in-memory zero-byte flag commits', () async {
+      final server = FakeGitHubGitServer();
+      final read = <String>[];
+      final availability = PublishFile(
+        path: 'availability.json',
+        bytes: utf8.encode('{"keys":[]}'),
+        gitSha: GitBlobSha.of(utf8.encode('{"keys":[]}')),
+        upload: true,
+      );
+      final result = await commitWithSources(
+        server,
+        {'books.json': utf8.encode('books')},
+        files: [
+          spooled('books.json', 'books'),
+          // The availability builder installs no sink, so its file stays in
+          // memory and has no store entry.
+          availability,
+          PublishFile(
+            path: '.nojekyll',
+            bytes: const [],
+            gitSha: GitBlobSha.of(const []),
+            upload: true,
+          ),
+        ],
+        onRead: read.add,
+      );
+
+      expect(result, isA<PublishCommitSuccess>());
+      expect(read, ['books.json'], reason: 'in-memory files are not opened');
+      expect(server.acceptedBlobs, 3);
+    });
+
+    test(
+      'a source with the wrong bytes aborts before any blob or tree',
+      () async {
+        final server = FakeGitHubGitServer();
+        final plan = GitHubCommitPlan(
+          files: [spooled('books.json', 'books')],
+          knownBlobShas: const {},
+          readBytes: (_) async => utf8.encode('changed on disk'),
+        );
+
+        await expectLater(
+          commit(api(server.client), plan, head: server.head),
+          throwsA(isA<GitHubApiException>()),
+        );
+        expect(server.blobRequests, 0);
+        expect(server.treeRequests, 0);
+        expect(server.commitRequests, 0);
+        expect(server.refMoves, 0);
+      },
+    );
+
+    test('a missing source aborts before any blob or tree', () async {
+      final server = FakeGitHubGitServer();
+      final plan = GitHubCommitPlan(
+        files: [spooled('books.json', 'books')],
+        knownBlobShas: const {},
+        readBytes: (_) async => null,
+      );
+
+      await expectLater(
+        commit(api(server.client), plan, head: server.head),
+        throwsA(isA<GitHubApiException>()),
+      );
+      expect(server.blobRequests, 0);
+      expect(server.treeRequests, 0);
+    });
+  });
+
   test('a tree naming a blob the repository does not hold is a 422 (the '
       'real API answer, plan A.6 #100)', () async {
     final server = FakeGitHubGitServer();

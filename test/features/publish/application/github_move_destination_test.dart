@@ -22,8 +22,10 @@ import 'package:pitaka/features/publish/domain/publish_item_keys.dart';
 import 'package:pitaka/features/publish/domain/publish_target.dart';
 import 'package:pitaka/features/publish/domain/site/publish_proof_path.dart';
 import 'package:pitaka/features/publish/domain/site/publish_state.dart';
+import 'package:pitaka/features/publish/domain/site/published_site_verifier.dart';
 
 import '../support/cloudflare_s8_fakes.dart';
+import '../support/in_memory_github_artifact_store.dart';
 import '../support/move_fakes.dart';
 
 const _token = 'synthetic-token-never-printed';
@@ -81,6 +83,9 @@ void main() {
         attempts: 1,
       ),
       clock: () => 1700000000000,
+      // The move builds through a per-operation spool; the in-memory fake
+      // keeps this suite free of file IO while exercising the same seam.
+      artifactStores: MemoryGitHubArtifactStore.new,
     );
   });
 
@@ -119,9 +124,12 @@ void main() {
     final confirmation = prepared.getOrElse(
       (f) => fail('expected success, got $f'),
     );
-    api.onCommit = (files) {
+    api.onCommit = (files) async {
       for (final file in files) {
-        reader.body(file.path, file.bytes);
+        // Spooled entries carry only metadata; resolve them the way the real
+        // commit writer does (review finding 6).
+        final bytes = await file.resolveBytes();
+        reader.body(file.path, bytes!);
       }
     };
 
@@ -130,7 +138,20 @@ void main() {
       beforeWrite: () async => true,
     );
 
-    expect(result, isA<MoveDestinationPublished>());
+    final mismatched = <String>[];
+    for (final file in api.commits.single.files) {
+      final outcome = reader.outcomes[file.path];
+      if (outcome is! PublishedSiteReadBody ||
+          GitBlobSha.of(outcome.bytes) != file.gitSha) {
+        mismatched.add(file.path);
+      }
+    }
+    expect(mismatched, isEmpty);
+    expect(
+      result,
+      isA<MoveDestinationPublished>(),
+      reason: result is MoveDestinationFailed ? result.reason : null,
+    );
     expect((result as MoveDestinationPublished).localStateSaved, isTrue);
     expect(api.commits, hasLength(1));
     final commit = api.commits.single;
@@ -167,9 +188,12 @@ void main() {
       newTarget: moveGitHubTarget,
       sourceAnchor: moveAnchor(moveCloudflareTarget),
     );
-    api.onCommit = (files) {
+    api.onCommit = (files) async {
       for (final file in files) {
-        reader.body(file.path, file.bytes);
+        // Spooled entries carry only metadata; resolve them the way the real
+        // commit writer does (review finding 6).
+        final bytes = await file.resolveBytes();
+        reader.body(file.path, bytes!);
       }
     };
 
@@ -201,9 +225,14 @@ void main() {
       newTarget: moveGitHubTarget,
       sourceAnchor: moveAnchor(moveCloudflareTarget),
     );
-    api.onCommit = (files) {
+    // `index.html` is already held at another path, so the commit NAMES it and
+    // never resolves its bytes (review finding 6); the live site still serves
+    // it, which is what the read-back sees.
+    reader.body('index.html', utf8.encode('<html>viewer</html>'));
+    api.onCommit = (files) async {
       for (final file in files) {
-        reader.body(file.path, file.bytes);
+        final bytes = await file.resolveBytes();
+        if (bytes != null) reader.body(file.path, bytes);
       }
     };
 
@@ -376,9 +405,10 @@ void main() {
         sourceAnchor: moveAnchor(moveCloudflareTarget),
       );
       final confirmation = prepared.toNullable()!;
-      api.onCommit = (files) {
+      api.onCommit = (files) async {
         for (final file in files) {
-          reader.body(file.path, file.bytes);
+          final bytes = await file.resolveBytes();
+          reader.body(file.path, bytes!);
         }
       };
       await destination.publish(
@@ -422,7 +452,7 @@ final class _FakeDestinationApi implements GitHubGitDataApi {
     truncated: false,
   );
   PublishCommitResult commitResult = const PublishCommitSuccess('commit-1', []);
-  void Function(List<DesiredFile> files)? onCommit;
+  Future<void> Function(List<DesiredFile> files)? onCommit;
   final List<
     ({
       List<DesiredFile> files,
@@ -476,7 +506,7 @@ final class _FakeDestinationApi implements GitHubGitDataApi {
       expectedHead: expectedHead,
       branch: branch,
     ));
-    onCommit?.call(files);
+    await onCommit?.call(files);
     return commitResult;
   }
 }

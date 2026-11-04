@@ -83,7 +83,9 @@ final class CompleteSnapshotVerifier {
   }) async {
     final pending = <String, _Expectation>{
       for (final file in files)
-        file.path: _Expectation(file.gitSha, file.bytes.length),
+        // `size` keeps the exact length after a store consumed the bytes
+        // (review finding 6); the verifier never reopens a spooled artifact.
+        file.path: _Expectation(file.gitSha, file.size),
       for (final path in deletedPaths) path: const _Expectation.absent(),
     };
     final budget = Duration(milliseconds: interval.inMilliseconds * attempts);

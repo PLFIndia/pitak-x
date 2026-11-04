@@ -45,6 +45,7 @@ import 'package:pitaka/features/settings/domain/settings_repository.dart';
 
 import 'support/cloudflare_fakes.dart';
 import 'support/going_live_fakes.dart';
+import 'support/in_memory_github_artifact_store.dart';
 
 const _safeReadFailure =
     'Could not read the library. Nothing was published. '
@@ -116,11 +117,7 @@ void main() {
     expect(h.api.commits, hasLength(1));
     final files = h.api.commits.single;
     final payload =
-        jsonDecode(
-              utf8.decode(
-                files.firstWhere((file) => file.path == 'books.json').bytes,
-              ),
-            )
+        jsonDecode(utf8.decode(_committedBytes(h.api, 'books.json')))
             as Map<String, dynamic>;
     expect(payload['books'], isEmpty);
     expect(files.map((file) => file.path), contains('index.html'));
@@ -216,15 +213,8 @@ void main() {
       ),
     ]);
     expect(await h.publish(tester), isA<PublishSuccess>());
-    final payload =
-        jsonDecode(
-              utf8.decode(
-                h.api.commits.single
-                    .firstWhere((file) => file.path == 'books.json')
-                    .bytes,
-              ),
-            )
-            as Map<String, dynamic>;
+    final json = utf8.decode(_committedBytes(h.api, 'books.json'));
+    final payload = jsonDecode(json) as Map<String, dynamic>;
     final books = (payload['books'] as List<dynamic>)
         .cast<Map<String, dynamic>>();
     expect(books.single['kind'], 'magazine-issue');
@@ -234,14 +224,7 @@ void main() {
     );
     expect(payload['periodicals'], hasLength(1));
     // The series' private fields never left the device.
-    expect(
-      utf8.decode(
-        h.api.commits.single
-            .firstWhere((file) => file.path == 'books.json')
-            .bytes,
-      ),
-      isNot(contains('private series note')),
-    );
+    expect(json, isNot(contains('private series note')));
   });
 
   group('item keys and availability (ADR 0019, plan S3)', () {
@@ -255,11 +238,7 @@ void main() {
       expect(await h.publish(tester), isA<PublishSuccess>());
       final commit = h.api.commits.single;
       final payload =
-          jsonDecode(
-                utf8.decode(
-                  commit.firstWhere((file) => file.path == 'books.json').bytes,
-                ),
-              )
+          jsonDecode(utf8.decode(_committedBytes(h.api, 'books.json')))
               as Map<String, dynamic>;
       final row = (payload['books'] as List).single as Map<String, dynamic>;
       // The harness salt names the key exactly like it names the covers.
@@ -400,11 +379,7 @@ void main() {
         CatalogueItem(id: 2, title: 'Removed title', removed: true),
       ]);
       expect(await h.publish(tester), isA<PublishSuccess>());
-      final json = utf8.decode(
-        h.api.commits.single
-            .firstWhere((file) => file.path == 'books.json')
-            .bytes,
-      );
+      final json = utf8.decode(_committedBytes(h.api, 'books.json'));
       expect(json, contains('Visible title'));
       expect(json, isNot(contains('Removed title')));
       expect(json, isNot(contains('private-')));
@@ -641,21 +616,22 @@ void main() {
         reason: 'content unchanged ⇒ live timestamp reused ⇒ same blob sha',
       );
 
-      // The two descriptor bytes are byte-identical even though the fake
-      // clock moved a minute between publishes.
-      List<int> descriptorBytes(List<DesiredFile> commit) =>
-          committedBytes(commit, PublishLibraryUseCase.libraryJsonPath);
-      final first = descriptorBytes(h.api.commits[0]);
-      final second = descriptorBytes(h.api.commits[1]);
-      expect(utf8.decode(second), utf8.decode(first));
-      // The reused timestamp is the FIRST publish's — the candidate's fresh
-      // one was replaced (the fake clock moved between publishes).
+      DesiredFile descriptor(List<DesiredFile> commit) => commit.firstWhere(
+        (file) => file.path == PublishLibraryUseCase.libraryJsonPath,
+      );
+      final firstDescriptor = descriptor(h.api.commits[0]);
+      final secondDescriptor = descriptor(h.api.commits[1]);
+      // The second commit reuses the first descriptor's blob, so its bytes
+      // are identical without reopening a held artifact from the spool.
+      expect(secondDescriptor.gitSha, firstDescriptor.gitSha);
+      final first = _committedBytes(
+        h.api,
+        PublishLibraryUseCase.libraryJsonPath,
+        commit: 0,
+      );
       final firstUpdatedAt =
           (jsonDecode(utf8.decode(first)) as Map<String, dynamic>)['updatedAt'];
-      final secondUpdatedAt =
-          (jsonDecode(utf8.decode(second))
-              as Map<String, dynamic>)['updatedAt'];
-      expect(secondUpdatedAt, firstUpdatedAt);
+      expect(firstUpdatedAt, isNotNull);
     },
   );
 
@@ -665,10 +641,7 @@ void main() {
       final h = _Harness();
       expect(await h.publish(tester), isA<PublishSuccess>());
 
-      final descriptor = h.api.commits.single.firstWhere(
-        (file) => file.path == 'library.json',
-      );
-      final json = utf8.decode(descriptor.bytes);
+      final json = utf8.decode(_committedBytes(h.api, 'library.json'));
       // The published identity is the FINGERPRINT of the ID (D3) …
       expect(json, contains(LibraryFingerprint.of('a' * 32)));
       // … and the raw ID itself never appears in the published file.
@@ -729,11 +702,9 @@ void main() {
     ];
     expect(await h.publish(tester), isA<PublishSuccess>());
 
-    final descriptor = h.api.commits.single.firstWhere(
-      (file) => file.path == 'library.json',
-    );
     final json =
-        jsonDecode(utf8.decode(descriptor.bytes)) as Map<String, dynamic>;
+        jsonDecode(utf8.decode(_committedBytes(h.api, 'library.json')))
+            as Map<String, dynamic>;
     expect(json['members'], [
       {
         'fingerprint': memberFp,
@@ -782,13 +753,13 @@ void main() {
   );
 }
 
-/// The bytes one committed file carried (the harness records every commit's
-/// full desired-file list, uploaded or not).
-List<int> committedBytes(List<DesiredFile> commit, String path) {
-  for (final f in commit) {
-    if (f.path == path) return f.bytes;
-  }
-  throw StateError('no $path in commit');
+/// The bytes one uploaded file carried. Spooled [DesiredFile.bytes] are
+/// intentionally empty, so the fake API records what it resolved for upload.
+List<int> _committedBytes(_Api api, String path, {int? commit}) {
+  final index = commit ?? api.committedBodies.length - 1;
+  final bytes = api.committedBodies[index][path];
+  if (bytes == null) throw StateError('no uploaded $path in commit $index');
+  return bytes;
 }
 
 /// How far a test advances the fake clock after starting a publish: enough
@@ -841,6 +812,12 @@ class _Harness {
         eventsRepositoryProvider.overrideWith((ref) async => _Events()),
         // A handle only: no local covers in these tests, so no disk access.
         appDocsDirProvider.overrideWith((ref) async => Directory('.')),
+        // Review finding 6: the GitHub publish spools each artifact. This
+        // fixture stays in memory (its fake clock/pump loop cannot drive real
+        // file IO), so the spool is the in-memory one.
+        gitHubArtifactStoresProvider.overrideWith(
+          (ref) async => MemoryGitHubArtifactStore.new,
+        ),
         // M02: the real coversDir resolves through the active data generation
         // (which would CREATE `data/` under the docs dir above). Pin it so
         // this fixture keeps its no-disk-access promise.
@@ -902,22 +879,11 @@ class _Harness {
     liveReads++;
     if (api.commits.isEmpty) readsBeforeCommit++;
     if (api.commits.isEmpty) return null;
-    final committed = api.commits.last;
-    if (path == 'library.json') {
-      for (final file in committed) {
-        if (file.path == 'library.json') return file.bytes;
-      }
-      return null;
-    }
+    final bodies = api.committedBodies.last;
+    if (path == 'library.json') return bodies['library.json'];
     // An events commit carries events.json (and no books.json): serve the
-    // committed file for its own path.
-    for (final file in committed) {
-      if (file.path == path) return file.bytes;
-    }
-    for (final file in committed) {
-      if (file.path == 'books.json') return file.bytes;
-    }
-    return null;
+    // committed file for its own path, otherwise use the catalogue proof.
+    return bodies[path] ?? bodies['books.json'];
   });
   final books = _Books();
   final periodicals = _Periodicals();
@@ -1153,6 +1119,10 @@ class _Api implements GitHubApi {
   int reads = 0;
   final commits = <List<DesiredFile>>[];
 
+  /// Upload bodies resolved exactly as the real writer resolves them. These
+  /// stay separate because spooling deliberately clears [DesiredFile.bytes].
+  final committedBodies = <Map<String, List<int>>>[];
+
   /// The paths each commit deleted, in order.
   final deletions = <List<String>>[];
 
@@ -1219,7 +1189,13 @@ class _Api implements GitHubApi {
     final files = plan.files;
     // R6: never overwrite a head this publish was not built from.
     if (expectedHead != head) return const PublishCommitStale();
+    final bodies = <String, List<int>>{};
+    for (final file in files) {
+      final bytes = await file.resolveBytes();
+      if (bytes != null) bodies[file.path] = bytes;
+    }
     commits.add(files);
+    committedBodies.add(bodies);
     deletions.add(deletePaths);
     tree = {for (final f in files) f.path: f.gitSha};
     return PublishCommitSuccess(head, ['books.json']);

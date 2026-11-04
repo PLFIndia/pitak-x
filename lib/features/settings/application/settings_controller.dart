@@ -212,42 +212,40 @@ class SettingsController extends _$SettingsController
   ///    previous name) and report [LibraryAdoptionOutcome.partiallyAdopted],
   ///    so no screen can claim the old identity is still in force.
   @override
-  Future<LibraryAdoption> adopt({
-    required String id,
-    required String name,
-  }) => _serialised(() async {
-    final repo = await ref.read(settingsRepositoryProvider.future);
-    final trimmedId = id.trim();
-    final trimmedName = name.trim();
-    // Read BEFORE writing: this is what a rollback must restore.
-    final previous = _current;
+  Future<LibraryAdoption> adopt({required String id, required String name}) =>
+      _serialised(() async {
+        final repo = await ref.read(settingsRepositoryProvider.future);
+        final trimmedId = id.trim();
+        final trimmedName = name.trim();
+        // Read BEFORE writing: this is what a rollback must restore.
+        final previous = _current;
 
-    final Either<Failure, Unit> idWritten;
-    try {
-      idWritten = await repo.setLibraryId(trimmedId);
-    } on Object catch (e) {
-      return _notAdopted(_writeThrew(e));
-    }
-    if (idWritten case Left(value: final failure)) {
-      return _notAdopted(failure);
-    }
-    if (trimmedName.isEmpty) {
-      _publishIdentity(id: trimmedId, name: previous.libraryName);
-      return (outcome: LibraryAdoptionOutcome.adopted, failure: null);
-    }
+        final Either<Failure, Unit> idWritten;
+        try {
+          idWritten = await repo.setLibraryId(trimmedId);
+        } on Object catch (e) {
+          return _notAdopted(_writeThrew(e));
+        }
+        if (idWritten case Left(value: final failure)) {
+          return _notAdopted(failure);
+        }
+        if (trimmedName.isEmpty) {
+          _publishIdentity(id: trimmedId, name: previous.libraryName);
+          return (outcome: LibraryAdoptionOutcome.adopted, failure: null);
+        }
 
-    final Either<Failure, Unit> nameWritten;
-    try {
-      nameWritten = await repo.setLibraryName(trimmedName);
-    } on Object catch (e) {
-      return _rollBackId(repo, previous, trimmedId, _writeThrew(e));
-    }
-    if (nameWritten case Left(value: final failure)) {
-      return _rollBackId(repo, previous, trimmedId, failure);
-    }
-    _publishIdentity(id: trimmedId, name: trimmedName);
-    return (outcome: LibraryAdoptionOutcome.adopted, failure: null);
-  });
+        final Either<Failure, Unit> nameWritten;
+        try {
+          nameWritten = await repo.setLibraryName(trimmedName);
+        } on Object catch (e) {
+          return _rollBackId(repo, previous, trimmedId, _writeThrew(e));
+        }
+        if (nameWritten case Left(value: final failure)) {
+          return _rollBackId(repo, previous, trimmedId, failure);
+        }
+        _publishIdentity(id: trimmedId, name: trimmedName);
+        return (outcome: LibraryAdoptionOutcome.adopted, failure: null);
+      });
 
   static LibraryAdoption _notAdopted(Failure failure) =>
       (outcome: LibraryAdoptionOutcome.notAdopted, failure: failure);

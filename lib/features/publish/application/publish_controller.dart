@@ -157,6 +157,11 @@ class PublishController extends _$PublishController implements PublishReads {
       reader: reader,
       // Debug-only timings (plan S0); null in release builds.
       timingSink: ref.read(publishTimingSinkProvider),
+      // One spool per publish, released as each artifact is produced instead
+      // of retaining a whole-site copy (review finding 6). Resolved LAZILY:
+      // a failed read must not touch the spool directories (R2).
+      artifactStores: () async =>
+          await ref.read(gitHubArtifactStoresProvider.future),
     );
 
     final result = await useCase.call(target: target, mode: mode);

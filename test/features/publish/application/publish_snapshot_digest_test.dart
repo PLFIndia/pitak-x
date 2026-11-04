@@ -68,6 +68,42 @@ PublishSnapshot _snapshot({
 }
 
 void main() {
+  test('spooling the artifacts does not change the confirmation digest, '
+      'including the volatile JSON fields', () async {
+    final inMemory = _snapshot();
+    final bytesByPath = <String, List<int>>{
+      for (final file in inMemory.catalogue!.files) file.path: file.bytes,
+    };
+    final spooled = PublishSnapshot(
+      mode: inMemory.mode,
+      catalogue: PublishSection(
+        section: SiteSection.catalogue,
+        files: [
+          for (final file in inMemory.catalogue!.files)
+            PublishFile(
+              path: file.path,
+              bytes: const [],
+              gitSha: file.gitSha,
+              upload: file.upload,
+              storedSize: file.size,
+            ),
+        ],
+      ),
+      catalogueItemCount: inMemory.catalogueItemCount,
+      posterCount: 0,
+      availabilityOmitted: false,
+    );
+
+    final before = await PublishSnapshotDigest.of(inMemory);
+    final after = await PublishSnapshotDigest.of(
+      spooled,
+      readBytes: (path) async => bytesByPath[path],
+    );
+
+    expect(after.isRight(), isTrue);
+    expect(after.toNullable(), before.toNullable());
+  });
+
   test('operation timestamps do not change the canonical digest', () async {
     final first = await PublishSnapshotDigest.of(_snapshot());
     final second = await PublishSnapshotDigest.of(

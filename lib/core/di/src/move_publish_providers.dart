@@ -2,6 +2,7 @@
 library;
 
 import 'package:pitaka/core/di/src/cloudflare_publish_providers.dart';
+import 'package:pitaka/core/di/src/github_artifact_providers.dart';
 import 'package:pitaka/core/di/src/platform_providers.dart';
 import 'package:pitaka/core/di/src/publish_providers.dart';
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_move_destination.dart';
@@ -49,6 +50,9 @@ Future<MoveSiteUseCaseFactory> moveSiteUseCase(MoveSiteUseCaseRef ref) async {
   final builder = await ref.watch(publishSnapshotBuilderProvider.future);
   final artifactStores = await ref.watch(
     cloudflareArtifactStoresProvider.future,
+  );
+  final gitHubArtifactStores = await ref.watch(
+    gitHubArtifactStoresProvider.future,
   );
   final markerCodec = ref.watch(publishMarkerCodecProvider);
   final markerProbe = ref.watch(cloudflarePublishMarkerProbeProvider);
@@ -119,6 +123,7 @@ Future<MoveSiteUseCaseFactory> moveSiteUseCase(MoveSiteUseCaseRef ref) async {
         sleep: Future<void>.delayed,
       ),
       clock: clock,
+      artifactStores: gitHubArtifactStores,
     ),
     cloudflareDestination: CloudflareMoveDestination(
       reader: cloudflareReader,

@@ -36,6 +36,7 @@ library;
 
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/features/publish/application/github_artifact_store.dart';
 import 'package:pitaka/features/publish/application/github_publication_reconciler.dart';
 import 'package:pitaka/features/publish/application/github_unconfirmed_commit_check.dart';
 import 'package:pitaka/features/publish/application/publish_result.dart';
@@ -86,6 +87,7 @@ final class PublishLibraryUseCase {
     Future<void> Function(Duration)? sleep,
     int Function()? clock,
     PublishTimingSink? timingSink,
+    Future<GitHubArtifactStoreFactory?> Function()? artifactStores,
   }) : _api = api,
        _credentials = credentials,
        _manifest = manifest,
@@ -98,7 +100,8 @@ final class PublishLibraryUseCase {
          sleep: sleep ?? Future<void>.delayed,
        ),
        _clock = clock ?? (() => DateTime.now().millisecondsSinceEpoch),
-       _timingSink = timingSink;
+       _timingSink = timingSink,
+       _artifactStores = artifactStores;
 
   final GitHubGitDataApi _api;
   final PublishCredentialReader _credentials;
@@ -124,6 +127,15 @@ final class PublishLibraryUseCase {
   /// is timed and nothing is logged; only `--dart-define=publishTimings=true`
   /// supplies one.
   final PublishTimingSink? _timingSink;
+
+  /// Resolves a fresh per-operation spool factory (review finding 6), or null
+  /// for the in-memory path.
+  ///
+  /// Resolved LAZILY, after the strict reads: a library that cannot be read
+  /// must fail before the temp/docs directories are touched (R2), which the
+  /// spool root would otherwise initialise. Optional so focused tests keep the
+  /// in-memory path, exactly like the Cloudflare use cases.
+  final Future<GitHubArtifactStoreFactory?> Function()? _artifactStores;
 
   /// Repo-relative path of the network descriptor (docs/ARCHITECTURE.md §5.1).
   static const String libraryJsonPath = CatalogueSectionBuilder.libraryJsonPath;
@@ -271,13 +283,64 @@ final class PublishLibraryUseCase {
       return const PublishFailure(gitHubSiteChangedSincePublishMessage);
     }
 
-    // Phase 2: build the section through the SHARED builders (R3) against the
-    // publication record that will also be merged, so change detection and
-    // the merge can never disagree. A typed failure here means NOTHING was
-    // written. The catalogue section owns no poster path, so a catalogue
-    // publish can never delete one (R7).
+    // Review finding 6: only NOW (after every strict read and the remote
+    // reconciliation succeeded) resolve the operation's artifact spool, so a
+    // failed read never touches the temp/docs directories (R2). The builder
+    // spools each finished artifact instead of retaining a whole-site copy.
+    final storeFactory = await _artifactStores?.call();
+    final store = storeFactory?.call();
+    final builder = store == null
+        ? _snapshotBuilder
+        : _snapshotBuilder.withArtifactSink(store);
+    try {
+      return await _buildCommitAndRecord(
+        target: target,
+        mode: mode,
+        onPhase: onPhase,
+        timings: timings,
+        builder: builder,
+        store: store,
+        inputs: inputs,
+        token: token,
+        owner: owner,
+        repo: repo,
+        pagesUrl: pagesUrl,
+        now: now,
+        branch: branch,
+        publication: publication,
+        previous: previous,
+        expectedHead: expectedHead,
+      );
+    } finally {
+      // `dispose` never throws: a temp-folder cleanup failure must not turn
+      // an accepted commit into a different result.
+      await store?.dispose();
+    }
+  }
+
+  /// The build → commit → record half of a publish, over the operation's
+  /// builder/store.
+  Future<PublishResult> _buildCommitAndRecord({
+    required GitHubPublishTarget target,
+    required PublishMode mode,
+    required void Function(PublishPhase)? onPhase,
+    required PublishTimingRecorder timings,
+    required PublishSnapshotBuilder builder,
+    required GitHubArtifactStore? store,
+    required PublishInputs inputs,
+    required String token,
+    required String owner,
+    required String repo,
+    required String pagesUrl,
+    required int now,
+    required String branch,
+    required ReconciledPublication publication,
+    required PublishManifest previous,
+    required String expectedHead,
+  }) async {
+    void phase(PublishPhase p) => onPhase?.call(p);
     final buildStartedAt = timings.begin();
-    final built = await _snapshotBuilder.build(
+    final built = await builder.build(
       inputs: inputs,
       previous: previous,
       now: now,
@@ -311,6 +374,8 @@ final class PublishLibraryUseCase {
     final plan = GitHubCommitPlan(
       files: merge.files,
       knownBlobShas: publication.knownBlobShas,
+      // Byte-less spooled entries are reopened one at a time by the writer.
+      readBytes: store?.read,
     );
 
     phase(plan.hasUploads ? PublishPhase.uploading : PublishPhase.committing);

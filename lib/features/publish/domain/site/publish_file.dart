@@ -14,12 +14,15 @@ library;
 /// One built site file.
 final class PublishFile {
   /// Creates a built file. [bytes] is empty when [upload] is false and only
-  /// the known content hash is carried (a reused published file).
+  /// the known content hash is carried (a reused published file), or when a
+  /// host artifact store consumed the bytes ([storedSize] then keeps the
+  /// exact length).
   const PublishFile({
     required this.path,
     required this.bytes,
     required this.gitSha,
     required this.upload,
+    this.storedSize,
   });
 
   /// Site-relative path (`books.json`, `covers/<hash>.jpg`). No leading slash
@@ -37,7 +40,13 @@ final class PublishFile {
   /// known [gitSha] may be reused.
   final bool upload;
 
-  /// Byte length of [bytes] (0 for a reused file — the live size is known to
-  /// the host, not here).
-  int get size => bytes.length;
+  /// The exact byte length when [bytes] were released to an artifact store
+  /// (review finding 6), else null. Without it a spooled file would look
+  /// zero bytes long to timing, upload accounting and read-back caps.
+  final int? storedSize;
+
+  /// Byte length of the file: [storedSize] once the bytes were consumed,
+  /// otherwise the in-memory length (0 for a reused file — the live size is
+  /// known to the host, not here).
+  int get size => storedSize ?? bytes.length;
 }

@@ -18,6 +18,7 @@ library;
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/events/domain/entities/event_poster.dart';
+import 'package:pitaka/features/publish/application/site/publish_artifact_writer.dart';
 import 'package:pitaka/features/publish/domain/events_posters_html.dart';
 import 'package:pitaka/features/publish/domain/git_blob_sha.dart';
 import 'package:pitaka/features/publish/domain/publish_events_ports.dart';
@@ -163,20 +164,6 @@ final class EventsSectionBuilder {
     );
   }
 
-  Future<Either<Failure, PublishFile>> _write(PublishFile file) async {
-    final sink = _sink;
-    if (sink == null) return Right(file);
-    final result = await sink.write(file);
-    final failure = result.swap().toNullable();
-    if (failure != null) return Left(failure);
-    // The sink owns the bytes now; retain only metadata in the snapshot.
-    return Right(
-      PublishFile(
-        path: file.path,
-        bytes: const [],
-        gitSha: file.gitSha,
-        upload: file.upload,
-      ),
-    );
-  }
+  Future<Either<Failure, PublishFile>> _write(PublishFile file) =>
+      writePublishArtifact(sink: _sink, file: file);
 }

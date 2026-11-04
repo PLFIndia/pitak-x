@@ -13,6 +13,7 @@ import 'package:pitaka/features/network/domain/entities/network_library.dart';
 import 'package:pitaka/features/network/domain/repositories/network_repository.dart';
 import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
 import 'package:pitaka/features/periodicals/domain/value_objects/periodical_frequency.dart';
+import 'package:pitaka/features/publish/application/github_artifact_store.dart';
 import 'package:pitaka/features/publish/application/publish_controller.dart';
 import 'package:pitaka/features/publish/application/publish_cover_decider.dart';
 import 'package:pitaka/features/publish/application/publish_library_use_case.dart';
@@ -43,6 +44,7 @@ import '../../support/raw_catalogue_rows.dart';
 import '../import_export/bundle_test_fixture.dart';
 import '../library/replacement_harness.dart';
 import 'support/cloudflare_fakes.dart';
+import 'support/in_memory_github_artifact_store.dart';
 
 class _FakeCreds implements PublishCredentialReader {
   _FakeCreds({this.tok = 'TKN'});
@@ -458,6 +460,7 @@ void main() {
     BooksJsonEncoder? encodeBooksJson,
     AvailabilityRequest availability = const AvailabilityRemoval(),
     PublishTimingSink? timingSink,
+    Future<GitHubArtifactStoreFactory?> Function()? artifactStores,
   }) {
     // R6: the fake remote starts as what this phone recorded — the state most
     // tests describe. Publishing against it therefore re-uploads nothing and
@@ -512,8 +515,88 @@ void main() {
       sleep: (_) async {}, // no real waiting in tests
       clock: () => 1000,
       timingSink: timingSink,
+      artifactStores: artifactStores,
     );
   }
+
+  // Review finding 6: the GitHub publish spools each produced artifact and
+  // disposes the one operation store in `finally`, whatever the outcome.
+  group('artifact spool (finding 6)', () {
+    test('every produced file is consumed and the store is disposed on '
+        'success', () async {
+      final store = MemoryGitHubArtifactStore();
+      final api = _CapturingApi();
+      final result = await makeUseCase(
+        api,
+        _MemManifest(),
+        artifactStores: () async =>
+            () => store,
+        readLocalCover: (_) async => [1, 2, 3],
+        books: [book(cover: 'covers/a.jpg')],
+      ).run();
+
+      expect(result, isA<PublishSuccess>());
+      expect(store.disposals, 1);
+      expect(store.writes, contains('books.json'));
+      expect(store.writes, contains('index.html'));
+      expect(store.writes.any((path) => path.startsWith('covers/')), isTrue);
+      // The commit's tree names only metadata; every uploaded entry still
+      // knows its exact size.
+      final committed = api.committed!;
+      expect(committed.every((file) => file.bytes.isEmpty), isTrue);
+      final byPath = {for (final file in committed) file.path: file};
+      expect(byPath['books.json']!.size, greaterThan(0));
+      // The zero-byte Pages flag keeps its exact (zero) length.
+      expect(byPath['.nojekyll']!.size, 0);
+    });
+
+    test('a failed read never creates the spool', () async {
+      final store = MemoryGitHubArtifactStore();
+      final result = await makeUseCase(
+        _CapturingApi(),
+        _MemManifest(),
+        artifactStores: () async =>
+            () => store,
+        reads: _FailingReads(),
+      ).run();
+
+      expect(result, isA<PublishFailure>());
+      expect(store.disposals, 0);
+      expect(store.writes, isEmpty);
+    });
+
+    test('a typed commit failure disposes the populated store', () async {
+      final store = MemoryGitHubArtifactStore();
+      final api = _CapturingApi()..result = const PublishCommitStale();
+      final result = await makeUseCase(
+        api,
+        _MemManifest(),
+        artifactStores: () async =>
+            () => store,
+        books: [book()],
+      ).run();
+
+      expect(result, isA<PublishFailure>());
+      expect(store.disposals, 1);
+      expect(store.writes, isNotEmpty);
+    });
+
+    test('a throwing build still disposes the store', () async {
+      final store = MemoryGitHubArtifactStore()..throwOnWrite = true;
+
+      await expectLater(
+        makeUseCase(
+          _CapturingApi(),
+          _MemManifest(),
+          artifactStores: () async =>
+              () => store,
+          books: [book()],
+        ).run(),
+        throwsA(isA<StateError>()),
+      );
+      expect(store.disposals, 1);
+    });
+  });
 
   test(
     'R2: an unreadable library aborts BEFORE any commit or manifest save',
