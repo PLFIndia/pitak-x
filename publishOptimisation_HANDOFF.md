@@ -1,4 +1,4 @@
-# Publish optimisation — handoff (S15 wrap-up and S16 complete, 2026-11-04)
+# Publish optimisation — handoff (S15/S16 complete; Linux goldens done, 2026-11-04)
 
 **Branch:** `publishOptimisation` (from `03313a3`, release 1.9.0+32).
 **Plan:** `publishOptimisation_PLAN.md` (product decisions A.3, engineering decisions A.4, deviations A.6, measurements Appendix A).
@@ -19,11 +19,10 @@ S7 — Readers — **complete** (§S7), started on the product owner's go-ahead
 product owner decided J10 at its start (key-set id in both files).
 S8 — Switch on — **code and docs complete** (§S8), started on the product
 owner's go-ahead ("go ahead for next session", 2026-11-02, the same words
-again). The G.4 device evidence is now done (§G4). **Still open:** the
-Linux golden regeneration, which the product owner **deferred until all
-fixes are done** (2026-11-02: "golden images we do after we are done with
-all fixes"); the branch stayed unpushed until S16 (pushed 2026-11-04 at
-`704d725`, see the S16 entry). §6 is the checklist.
+again). The G.4 device evidence is now done (§G4). **Linux goldens:**
+deferred until all fixes were done, then regenerated on 2026-11-04
+(§Golden regeneration). The branch stayed unpushed until S16 (pushed
+2026-11-04 at `704d725`, see the S16 entry). §6 is the checklist.
 S9 — ADR 0020 and Fix 1 (covers) — **complete** (§S9), started on the
 product owner's go-ahead ("go ahead for next session", 2026-11-02, the same
 words that started S3–S8). The G.4 rows were not run first: no phone was
@@ -35,8 +34,8 @@ phone, build `6ac2ee1`): every Cloudflare row and GitHub rows 2 and 9 PASS;
 row 8 shortened by the product owner (plan A.6 #94); "usually under a
 minute" kept by the product owner although the p90 rule was missed (A.6
 #93); Fix 1 confirmed on both hosts. Three observations for the product
-owner: plan J12–J14. **Phase 1's only open G.5 item is now the Linux golden
-regeneration (still deferred; the branch stays unpushed).**
+owner: plan J12–J14. **Phase 1's Linux golden item is complete**
+(2026-11-04, §Golden regeneration).
 S10 — Fix 3 (GitHub blob reuse, CV5) — **complete** (§S10), started on the
 product owner's go-ahead ("go ahead for the next item", 2026-11-02). J8 was
 **not measured**: the product owner skipped the live probe and treats it as
@@ -83,8 +82,8 @@ once per cover. **Wrap-up completed 2026-11-04 (§S15 wrap-up):** Appendix A
 has the final values, A.6 #118 is closed, and the release docs are synced.
 The product owner chose the actual GitHub values with their network caveat
 (#148) and kept "usually under a minute" from reader-visible evidence (#149);
-the p90/J23 observation stays open. The Linux golden regeneration stays
-deferred until all fixes are done. Open decisions for the product owner: J11
+the p90/J23 observation stays open. The Linux golden regeneration completed
+on 2026-11-04 (§Golden regeneration). Open decisions for the product owner: J11
 (§S9), J12–J14 (§G4; J12 has a new visible effect, §S15), J15 (§S10b), the
 copy of the rate-limit messages (§S10b), the copy of the backup/restore lines
 (§S11), the guide line of §S12, the PRIVACY wording of J18 (§S14) and the new
@@ -102,7 +101,8 @@ in Part J. The product owner gave the go-ahead the same night with a
 **trimmed scope** ("I do not want to overengineer the app"): a Dart record
 instead of a `PublishNaming` class, the five essential tests, and
 CHANGELOG + handoff + one ADR 0019 note instead of six doc targets.
-**Order now:** S15's paperwork is complete (§S15 wrap-up) → Linux goldens.
+**Order now:** S15's paperwork and the Linux goldens are complete
+(§S15 wrap-up, §Golden regeneration); J18 and the Part J observations remain.
 The branch was pushed at `704d725`
 (2026-11-04, 01:24 IST; `origin/publishOptimisation`), so "push" is no longer
 a step. The Play fixture app stays installed (S16's timing build) in case D3
@@ -132,8 +132,8 @@ graphics are uploaded by hand: Play still showed the August 2026 icon; the
 product owner uploaded `icon.png` and `featureGraphic.png` in Play Console on
 2026-11-03 (in Google's review at 15:10 IST).
 
-> Read this file first in any new session. §S15 wrap-up below is the newest
-> state, then §S16b and §S16 with plan D.5, then §S15 part 2 (block D), then §S15 (part 1), then
+> Read this file first in any new session. §Golden regeneration below is the
+> newest state, then §S15 wrap-up, then §S16b and §S16 with plan D.5, then §S15 part 2 (block D), then §S15 (part 1), then
 > §S14, §S13, §S12, §S11, §S10b, §S10, §G4 (device evidence), §S9, §S8, §S7, §S6, §S5, §S4,
 > §S3, §S2 and §0 (S1). §1–§5 are the S0 record (plan Appendix A cites the
 > verbatim lines in §3), kept unchanged.
@@ -146,6 +146,52 @@ product owner uploaded `icon.png` and `featureGraphic.png` in Play Console on
 > settled and needs no new review: borrower names and loan details (P1, in the
 > vault) and credentials and tokens (security, `AGENTS.md` §6). `PRIVACY.md`
 > only has to state accurately what is uploaded (a store requirement).
+
+---
+
+## Golden regeneration — Linux reference (2026-11-04, 08:52 IST)
+
+**Started:** the product owner supplied a GitHub PAT with API/workflow scope
+and said to do what was needed for the goldens. The reviewed branch was pushed
+at `a871d90`, then `update_goldens.yml` ran on that exact head. Workflow run
+`41765271517` completed successfully in 5 m 12 s: **10 golden tests passed**.
+Artifact `13292452353` (`goldens`, 250,900 B, SHA-256
+`54f34e079867ec5be4298bc86c12bd998a3ca18fe70af9b3ce50fe22f6dbb338`)
+was downloaded and copied over the checked-in PNGs. No macOS render was used.
+
+**Changed (3):**
+- `published_catalogue_populated_light.png`: SHA-256 `d6009528300c…`;
+- `published_catalogue_populated_dark.png`: SHA-256 `ee01c0e0b492…`;
+- `restore_initial.png`: SHA-256 `851d24a15b95…`.
+
+**Byte-identical (7):** `library_empty_light`, `library_populated_light`,
+`library_populated_dark`, `network_library_tiles`, `periodicals_badge_states`,
+`publish_connection`, `vault_unlock`. All images remain 1080×2400 RGBA. Image
+viewing was unavailable to the model, so no visual-review claim is made:
+pixel-diff checks found the catalogue changes inside the content region
+((39,299)–(1041,2140)) and the restore changes inside its warning/content
+region ((42,1275)–(1038,1859)). The workflow itself passed all ten golden
+comparisons on Linux.
+
+**Gates (Flutter 3.44.2):**
+- `dart run build_runner build --delete-conflicting-outputs`:
+  `Built with build_runner in 9s; wrote 0 outputs.`;
+  `git status --porcelain '*.g.dart'` printed nothing.
+- `flutter analyze lib test integration_test`:
+  `No issues found! (ran in 3.5s)`.
+- `dart format --set-exit-if-changed lib test integration_test`:
+  `Formatted 1211 files (0 changed) in 2.14 seconds.`.
+- `flutter test test/golden/golden_files_exist_test.dart`:
+  `00:00 +10: All tests passed!`.
+- `flutter test --coverage`: `03:38 +5743 -10: Some tests failed.` The only
+  failures are the same ten macOS-versus-Linux renderer comparisons in
+  `test/golden/key_screens_test.dart`; no other test failed. The Linux
+  regeneration run and the draft PR's CI are the reference-renderer checks.
+
+**Commit and CI:** the three PNGs and these record updates are one commit.
+The branch is pushed and a draft PR (not for merging at this step) runs the
+full CI matrix, including Linux golden tests; the result is reported at the
+end of the session. J18 and the Part J observations remain as recorded.
 
 ---
 
@@ -195,8 +241,9 @@ B3 setup and S0 baselines explicit. No number came from an estimate.
   `test/golden/key_screens_test.dart`; no other failure.
 
 **Commit:** the S15 wrap-up documents and this handoff are one commit (this
-commit; its hash is reported at session end). **Next:** Linux goldens. J18
-and the other Part J observations, including p90/J23, remain as recorded.
+commit; its hash is reported at session end). **Next at S15 wrap-up:** Linux
+goldens (completed in §Golden regeneration). J18 and the other Part J
+observations, including p90/J23, remain as recorded.
 
 ---
 
@@ -249,7 +296,7 @@ showed only the architecture test changed. The rerun passed:
 A.6 #145 and this handoff (this commit; its hash is reported at session end).
 
 **Still open after S16b:** S15 paperwork (closed in §S15 wrap-up), Linux
-goldens, J18.
+goldens (completed in §Golden regeneration), J18.
 
 ---
 
@@ -364,7 +411,8 @@ add-one) the whole publish-optimisation plan now stands at **−95 % and
 −88 %** on the 1,000-item fixture.
 
 **Next at the end of S16:** S15's remaining paperwork with these as the
-final numbers (completed in §S15 wrap-up), then the Linux goldens.
+final numbers (completed in §S15 wrap-up), and the Linux goldens (completed
+in §Golden regeneration).
 
 ---
 
