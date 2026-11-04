@@ -45,8 +45,14 @@ import javax.crypto.spec.GCMParameterSpec
  * One prompt at a time — a second request while one is pending is refused
  * (`busy`) rather than queued, mirroring the Dart session FIFO.
  */
-class BiometricSecretVault(private val activity: FragmentActivity) :
-    MethodChannel.MethodCallHandler {
+class BiometricSecretVault(
+    private val activity: FragmentActivity,
+    private val promptLauncher: (
+        FragmentActivity,
+        Cipher,
+        BiometricPrompt.AuthenticationCallback,
+    ) -> Unit = ::launchAuthenticationPrompt,
+) : MethodChannel.MethodCallHandler {
 
     private var inFlight = false
 
@@ -64,6 +70,7 @@ class BiometricSecretVault(private val activity: FragmentActivity) :
     private fun seal(call: MethodCall, result: MethodChannel.Result) {
         val secret = call.argument<ByteArray>("secret")
         if (secret == null || secret.isEmpty() || secret.size > MAX_SECRET_BYTES) {
+            secret?.fill(0)
             result.error(CODE_FAILED, "invalid secret argument", null)
             return
         }
@@ -85,7 +92,7 @@ class BiometricSecretVault(private val activity: FragmentActivity) :
             result.error(mapInitError(e), "cipher init failed", null)
             return
         }
-        authenticate(cipher, result) { boundCipher ->
+        authenticate(cipher, result, onTerminal = { secret.fill(0) }) { boundCipher ->
             try {
                 val ciphertext = boundCipher.doFinal(secret)
                 result.success(mapOf("iv" to boundCipher.iv, "ciphertext" to ciphertext))
@@ -124,11 +131,18 @@ class BiometricSecretVault(private val activity: FragmentActivity) :
             result.error(mapInitError(e), "cipher init failed", null)
             return
         }
-        authenticate(cipher, result) { boundCipher ->
+        authenticate(cipher, result, onTerminal = {}) { boundCipher ->
             try {
                 // GCM verifies the tag: a tampered ciphertext throws here and
                 // no plaintext is returned.
-                result.success(boundCipher.doFinal(ciphertext))
+                val plaintext = boundCipher.doFinal(ciphertext)
+                try {
+                    result.success(plaintext)
+                } finally {
+                    // MethodChannel has serialized the value by this point;
+                    // do not retain a second native plaintext buffer.
+                    plaintext.fill(0)
+                }
             } catch (e: Exception) {
                 result.error(CODE_FAILED, "open failed", null)
             }
@@ -151,9 +165,11 @@ class BiometricSecretVault(private val activity: FragmentActivity) :
     private fun authenticate(
         cipher: Cipher,
         result: MethodChannel.Result,
+        onTerminal: () -> Unit,
         onAuthenticated: (Cipher) -> Unit,
     ) {
         if (inFlight) {
+            onTerminal()
             result.error(CODE_BUSY, "authentication already in progress", null)
             return
         }
@@ -165,14 +181,18 @@ class BiometricSecretVault(private val activity: FragmentActivity) :
                 // prompt authorised; a null here means the OS did not bind it.
                 val bound = res.cryptoObject?.cipher
                 if (bound == null) {
+                    onTerminal()
                     result.error(CODE_FAILED, "no bound cipher", null)
                     return
                 }
+                // The success path wipes only AFTER the bound cipher has used
+                // the secret (in seal/open's own finally block).
                 onAuthenticated(bound)
             }
 
             override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
                 inFlight = false
+                onTerminal()
                 result.error(mapPromptError(errorCode), "authentication error", null)
             }
 
@@ -180,20 +200,11 @@ class BiometricSecretVault(private val activity: FragmentActivity) :
             // terminal outcome arrives via onAuthenticationError/Succeeded.
             override fun onAuthenticationFailed() = Unit
         }
-        val prompt = BiometricPrompt(activity, ContextCompat.getMainExecutor(activity), callback)
-        val info = BiometricPrompt.PromptInfo.Builder()
-            .setTitle("Pitak vault")
-            .setSubtitle("Confirm it is you to use your vault key")
-            // CryptoObject prompts REQUIRE Class 3 (strong) biometrics; the
-            // library throws for WEAK or credential-only combinations.
-            .setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG)
-            .setNegativeButtonText("Cancel")
-            .setConfirmationRequired(false)
-            .build()
         try {
-            prompt.authenticate(info, BiometricPrompt.CryptoObject(cipher))
+            promptLauncher(activity, cipher, callback)
         } catch (e: Exception) {
             inFlight = false
+            onTerminal()
             result.error(CODE_UNAVAILABLE, "prompt could not be shown", null)
         }
     }
@@ -290,4 +301,22 @@ class BiometricSecretVault(private val activity: FragmentActivity) :
         private const val CODE_BUSY = "busy"
         private const val CODE_FAILED = "failed"
     }
+}
+
+private fun launchAuthenticationPrompt(
+    activity: FragmentActivity,
+    cipher: Cipher,
+    callback: BiometricPrompt.AuthenticationCallback,
+) {
+    val prompt = BiometricPrompt(activity, ContextCompat.getMainExecutor(activity), callback)
+    val info = BiometricPrompt.PromptInfo.Builder()
+        .setTitle("Pitak vault")
+        .setSubtitle("Confirm it is you to use your vault key")
+        // CryptoObject prompts REQUIRE Class 3 (strong) biometrics; the
+        // library throws for WEAK or credential-only combinations.
+        .setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG)
+        .setNegativeButtonText("Cancel")
+        .setConfirmationRequired(false)
+        .build()
+    prompt.authenticate(info, BiometricPrompt.CryptoObject(cipher))
 }

@@ -170,6 +170,10 @@ dependencies {
     // artifacts (F-Droid reproducibility unaffected). User-approved D3.
     implementation("androidx.biometric:biometric:1.1.0")
 
+    // Native buffer-wiping tests use fake crypto/prompt outcomes only.
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("io.mockk:mockk:1.13.13")
+
     // S36: Google Play in-app updates — PLAY FLAVOR ONLY. This is the
     // proprietary Play Core library; `playImplementation` keeps it out of the
     // fdroid flavor's classpath entirely (F-Droid requirement; the former

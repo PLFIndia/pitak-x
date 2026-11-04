@@ -54,13 +54,12 @@ pub enum VaultUnlockError {
 ///
 /// `passphrase_utf8` is taken by value so we own and can wipe it.
 pub fn unlock_and_read_vault(
-    mut passphrase_utf8: Vec<u8>,
+    passphrase_utf8: Vec<u8>,
     blob: String,
     db_path: String,
 ) -> Result<VaultContents, VaultUnlockError> {
-    let result = unlock_inner(&passphrase_utf8, &blob, &db_path);
-    passphrase_utf8.zeroize();
-    result
+    let passphrase_utf8 = wiping_owner(passphrase_utf8);
+    unlock_inner(passphrase_utf8.as_slice(), &blob, &db_path)
 }
 
 fn unlock_inner(
@@ -136,21 +135,25 @@ pub enum VaultWriteError {
     Validation(String),
 }
 
+/// Takes secret ownership immediately, so every return path wipes it on drop.
+fn wiping_owner<T: Zeroize>(value: T) -> Zeroizing<T> {
+    Zeroizing::new(value)
+}
+
 /// Unwraps the vault key from `passphrase_utf8` + `blob`, runs `op` with the
 /// key against `db_path`, then wipes the passphrase. The key (Zeroizing) is
 /// dropped + wiped when `op` returns. Single place the write key is materialised.
 fn with_vault_key<T>(
-    mut passphrase_utf8: Vec<u8>,
+    passphrase_utf8: Zeroizing<Vec<u8>>,
     blob: &str,
     op: impl FnOnce(&Zeroizing<Vec<u8>>) -> Result<T, VaultError>,
 ) -> Result<T, VaultWriteError> {
-    let result = (|| {
+    (|| {
         let parsed = WrappedBlob::parse(blob).map_err(map_unwrap_err_write)?;
-        let key = unwrap_vault_key(&passphrase_utf8, &parsed).map_err(map_unwrap_err_write)?;
+        let key =
+            unwrap_vault_key(passphrase_utf8.as_slice(), &parsed).map_err(map_unwrap_err_write)?;
         op(&key).map_err(map_vault_err_write)
-    })();
-    passphrase_utf8.zeroize();
-    result
+    })()
 }
 
 // --- FFI boundary input validation (review finding N14: borrower/loan -------
@@ -249,6 +252,7 @@ pub fn insert_borrower(
     contact: Option<String>,
     notes: Option<String>,
 ) -> Result<i64, VaultWriteError> {
+    let passphrase_utf8 = wiping_owner(passphrase_utf8);
     validate_borrower_fields(&name, contact.as_deref(), notes.as_deref())?;
     with_vault_key(passphrase_utf8, &blob, |key| {
         vault::insert_borrower(
@@ -273,6 +277,7 @@ pub fn update_borrower(
     contact: Option<String>,
     notes: Option<String>,
 ) -> Result<(), VaultWriteError> {
+    let passphrase_utf8 = wiping_owner(passphrase_utf8);
     validate_borrower_fields(&name, contact.as_deref(), notes.as_deref())?;
     with_vault_key(passphrase_utf8, &blob, |key| {
         vault::update_borrower(
@@ -297,6 +302,7 @@ pub fn delete_borrower(
     db_path: String,
     id: i64,
 ) -> Result<(), VaultWriteError> {
+    let passphrase_utf8 = wiping_owner(passphrase_utf8);
     with_vault_key(passphrase_utf8, &blob, |key| {
         vault::delete_borrower(&db_path, key, id)
     })
@@ -315,6 +321,7 @@ pub fn insert_loan(
     returned_date: Option<i64>,
     notes: Option<String>,
 ) -> Result<i64, VaultWriteError> {
+    let passphrase_utf8 = wiping_owner(passphrase_utf8);
     validate_loan_fields(
         book_id,
         borrower_id,
@@ -353,6 +360,7 @@ pub fn update_loan(
     returned_date: Option<i64>,
     notes: Option<String>,
 ) -> Result<(), VaultWriteError> {
+    let passphrase_utf8 = wiping_owner(passphrase_utf8);
     validate_loan_fields(
         book_id,
         borrower_id,
@@ -385,6 +393,7 @@ pub fn delete_loan(
     db_path: String,
     id: i64,
 ) -> Result<(), VaultWriteError> {
+    let passphrase_utf8 = wiping_owner(passphrase_utf8);
     with_vault_key(passphrase_utf8, &blob, |key| {
         vault::delete_loan(&db_path, key, id)
     })
@@ -414,21 +423,16 @@ pub enum VaultCreateError {
 /// Creates a new empty encrypted vault at `db_path` and returns its
 /// `backup_blob` (`base64(salt).base64(iv).base64(ciphertext)`). The passphrase
 /// bytes are wiped before returning; the vault key never leaves Rust.
-pub fn create_vault(
-    mut passphrase_utf8: Vec<u8>,
-    db_path: String,
-) -> Result<String, VaultCreateError> {
-    let result = (|| {
+pub fn create_vault(passphrase_utf8: Vec<u8>, db_path: String) -> Result<String, VaultCreateError> {
+    let passphrase_utf8 = wiping_owner(passphrase_utf8);
+    (|| {
         let key = generate_vault_key();
         // Create the DB FIRST so we never persist a blob for a vault that
         // failed to materialise (fail-closed: no orphan blob).
         vault::create_vault(&db_path, &key).map_err(map_vault_err_create)?;
-        let blob = wrap_vault_key(&passphrase_utf8, &key).map_err(map_wrap_err)?;
-        Ok(blob)
+        wrap_vault_key(passphrase_utf8.as_slice(), &key).map_err(map_wrap_err)
         // `key` (Zeroizing) is dropped + wiped here.
-    })();
-    passphrase_utf8.zeroize();
-    result
+    })()
 }
 
 // --- Passphrase change / re-wrap (#28A) -----------------------------------
@@ -460,19 +464,19 @@ pub enum VaultRewrapError {
 /// wiped before returning; the vault key never leaves Rust and the DB is not
 /// opened (the key is unchanged, so existing rows stay readable).
 pub fn rewrap_blob(
-    mut old_passphrase_utf8: Vec<u8>,
-    mut new_passphrase_utf8: Vec<u8>,
+    old_passphrase_utf8: Vec<u8>,
+    new_passphrase_utf8: Vec<u8>,
     blob: String,
 ) -> Result<String, VaultRewrapError> {
-    let result = (|| {
+    let old_passphrase_utf8 = wiping_owner(old_passphrase_utf8);
+    let new_passphrase_utf8 = wiping_owner(new_passphrase_utf8);
+    (|| {
         let parsed = WrappedBlob::parse(&blob).map_err(map_unwrap_err_rewrap)?;
-        let key = unwrap_vault_key(&old_passphrase_utf8, &parsed).map_err(map_unwrap_err_rewrap)?;
-        wrap_vault_key(&new_passphrase_utf8, &key).map_err(map_wrap_err_rewrap)
+        let key = unwrap_vault_key(old_passphrase_utf8.as_slice(), &parsed)
+            .map_err(map_unwrap_err_rewrap)?;
+        wrap_vault_key(new_passphrase_utf8.as_slice(), &key).map_err(map_wrap_err_rewrap)
         // `key` (Zeroizing) is dropped + wiped here.
-    })();
-    old_passphrase_utf8.zeroize();
-    new_passphrase_utf8.zeroize();
-    result
+    })()
 }
 
 // --- Biometric enrolment (#34 B2) -----------------------------------------
@@ -512,12 +516,14 @@ pub enum VaultBiometricError {
 /// bytes are wiped before returning; MK stays in Rust `Zeroizing<>` and never
 /// crosses FFI. S is returned by value because it is meant to be stored.
 pub fn wrap_for_biometric(
-    mut active_secret_utf8: Vec<u8>,
+    active_secret_utf8: Vec<u8>,
     blob: String,
 ) -> Result<BiometricWrap, VaultBiometricError> {
-    let result = (|| {
+    let active_secret_utf8 = wiping_owner(active_secret_utf8);
+    (|| {
         let parsed = WrappedBlob::parse(&blob).map_err(map_unwrap_err_bio)?;
-        let mk = unwrap_vault_key(&active_secret_utf8, &parsed).map_err(map_unwrap_err_bio)?;
+        let mk =
+            unwrap_vault_key(active_secret_utf8.as_slice(), &parsed).map_err(map_unwrap_err_bio)?;
         let s = generate_vault_key();
         let blob_bio = wrap_vault_key(&s, &mk).map_err(map_wrap_err_bio)?;
         Ok(BiometricWrap {
@@ -525,9 +531,7 @@ pub fn wrap_for_biometric(
             blob: blob_bio,
         })
         // `mk` and `s` (Zeroizing) are dropped + wiped here.
-    })();
-    active_secret_utf8.zeroize();
-    result
+    })()
 }
 
 fn map_unwrap_err_bio(e: UnwrapError) -> VaultBiometricError {
@@ -620,6 +624,24 @@ fn map_vault_err(e: VaultError) -> VaultUnlockError {
 mod tests {
     use super::*;
     use crate::crypto::{generate_vault_key, unwrap_vault_key, wrap_vault_key, WrappedBlob};
+    use std::{cell::Cell, rc::Rc};
+
+    struct WipeProbe(Rc<Cell<bool>>);
+
+    impl Zeroize for WipeProbe {
+        fn zeroize(&mut self) {
+            self.0.set(true);
+        }
+    }
+
+    #[test]
+    fn wiping_owner_zeroizes_on_drop() {
+        let wiped = Rc::new(Cell::new(false));
+        {
+            let _owner = wiping_owner(WipeProbe(Rc::clone(&wiped)));
+        }
+        assert!(wiped.get(), "the owned value was not wiped on drop");
+    }
 
     // Re-wrap (#28A): an old blob, re-wrapped under a new passphrase, must open
     // with the NEW passphrase and yield the SAME key; the OLD passphrase must no
