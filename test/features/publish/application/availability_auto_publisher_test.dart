@@ -51,6 +51,10 @@ void main() {
   late int runnerBuilds;
   late int catalogueReads;
   late _PublishResults? publishResults;
+  Completer<void>? catalogueGate;
+
+  final salt = ascii.encode('salt-1234567890');
+  final keyOfOne = PublishItemKeys.keyFor(salt: salt, itemId: 1);
 
   setUp(() {
     items = const [CatalogueItem(id: 1, title: 'One copy')];
@@ -61,6 +65,7 @@ void main() {
     runnerBuilds = 0;
     catalogueReads = 0;
     publishResults = null;
+    catalogueGate = null;
   });
 
   ProviderContainer container(
@@ -77,8 +82,11 @@ void main() {
         ),
         settingsRepositoryProvider.overrideWith((ref) async => settings),
         catalogueItemRepositoryProvider.overrideWith(
-          (ref) async =>
-              _Catalogue(() => items, onRead: () => catalogueReads++),
+          (ref) async => _Catalogue(
+            () => items,
+            onRead: () => catalogueReads++,
+            gate: () => catalogueGate,
+          ),
         ),
         libraryControllerProvider.overrideWith(_Library.new),
         publishControllerProvider.overrideWith(() {
@@ -268,6 +276,72 @@ void main() {
     });
   });
 
+  test('a slow start read cannot publish an older loan set', () {
+    // Review finding 1: the start's inputs capture `{}` before the blocked
+    // catalogue read; the loan made meanwhile must still be the set that goes
+    // out. Before the fix the older empty set was applied last and published.
+    fakeAsync((fake) {
+      catalogueGate = Completer<void>();
+      final c = container(fake, activated: true);
+      c.read(_counts.notifier).state = {};
+      c.listen(availabilityAutoPublisherProvider, (_, _) {});
+      fake.flushMicrotasks();
+      expect(catalogueReads, 1, reason: 'the start read is holding the gate');
+
+      c.read(_counts.notifier).state = {1: 1};
+      fake.elapse(Duration.zero);
+      catalogueGate!.complete();
+      fake.elapse(const Duration(seconds: 20));
+
+      expect((sent.single as AvailabilityWrite).snapshot.keys, [keyOfOne]);
+    });
+  });
+
+  test('a slow start read cannot resurrect a newer empty set', () {
+    // The reverse order: `{1:1}` was captured first and `{}` arrived while
+    // the read was blocked. The empty set must win.
+    fakeAsync((fake) {
+      catalogueGate = Completer<void>();
+      final c = container(fake, activated: true);
+      c.read(_counts.notifier).state = {1: 1};
+      c.listen(availabilityAutoPublisherProvider, (_, _) {});
+      fake.flushMicrotasks();
+      expect(catalogueReads, 1);
+
+      c.read(_counts.notifier).state = {};
+      fake.elapse(Duration.zero);
+      catalogueGate!.complete();
+      fake.elapse(const Duration(seconds: 20));
+
+      expect((sent.single as AvailabilityWrite).snapshot.keys, isEmpty);
+    });
+  });
+
+  test('a slow restore signal cannot overwrite a newer loan set', () {
+    // Review finding 1, `catalogueIdsChangesProvider` variant: the restore's
+    // input read is blocked, a return happens meanwhile, and the newer set
+    // must be the one published.
+    fakeAsync((fake) {
+      final c = container(fake, activated: true)
+        ..listen(availabilityAutoPublisherProvider, (_, _) {});
+      c.read(_counts.notifier).state = {1: 1};
+      fake.elapse(const Duration(seconds: 21));
+      expect(sent, hasLength(1));
+
+      catalogueGate = Completer<void>();
+      c.read(catalogueIdsChangesProvider.notifier).changed();
+      fake.flushMicrotasks();
+      expect(catalogueReads, 2, reason: 'the restore read is holding the gate');
+
+      c.read(_counts.notifier).state = {};
+      fake.elapse(Duration.zero);
+      catalogueGate!.complete();
+      fake.elapse(const Duration(seconds: 21));
+
+      expect((sent.last as AvailabilityWrite).snapshot.keys, isEmpty);
+    });
+  });
+
   test('a lane that cannot start stays quiet (fail closed)', () {
     fakeAsync((fake) {
       final c = container(fake, activated: true, laneStoreFails: true)
@@ -314,14 +388,20 @@ final class _Salt implements PublishCoverSaltStore {
 }
 
 final class _Catalogue implements CatalogueItemRepository {
-  _Catalogue(this.items, {this.onRead});
+  _Catalogue(this.items, {this.onRead, this.gate});
 
   final List<CatalogueItem> Function() items;
   final void Function()? onRead;
 
+  /// When the getter answers a completer, the read waits on it: it models a
+  /// slow catalogue read that a newer notification could otherwise overtake.
+  final Completer<void>? Function()? gate;
+
   @override
   Future<Either<Failure, List<CatalogueItem>>> getAllForInterchange() async {
     onRead?.call();
+    final waiting = gate?.call();
+    if (waiting != null) await waiting.future;
     return Right(items());
   }
 

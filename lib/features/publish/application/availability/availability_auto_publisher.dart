@@ -22,6 +22,7 @@ library;
 
 import 'dart:async';
 
+import 'package:pitaka/core/async/serial_op_queue.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/platform/app_log.dart';
 import 'package:pitaka/features/library/application/library_controller.dart';
@@ -47,6 +48,17 @@ class AvailabilityAutoPublisher extends _$AvailabilityAutoPublisher {
   /// so a loan (counts only) does not re-read every row.
   List<CatalogueItem>? _items;
   bool _itemsStale = true;
+
+  /// Orders input reads together with the lane step that applies them
+  /// (review finding 1).
+  ///
+  /// Why (beginner note): reading the inputs can wait on the catalogue, so
+  /// two notifications could read in one order and apply in the other — an
+  /// older loan set finishing last would overwrite a newer one. Reading and
+  /// applying as ONE queued step means the next read cannot start until the
+  /// previous snapshot has been applied, so the last step always sees the
+  /// newest provider values.
+  final SerialOpQueue _inputSteps = SerialOpQueue();
 
   @override
   AvailabilityLaneView build() {
@@ -76,9 +88,17 @@ class AvailabilityAutoPublisher extends _$AvailabilityAutoPublisher {
         _itemsStale = true;
         final lane = _lane;
         // Inputs read AFTER the change: the old ones name the old items.
-        if (lane != null) unawaited(_inputs().then(lane.libraryReplaced));
+        // Through the same queue, so a restore/overwrite cannot be overtaken
+        // by an older queued update.
+        if (lane != null) _applyInBackground(lane, lane.libraryReplaced);
       })
-      ..onDispose(() => _lane?.dispose());
+      ..onDispose(() {
+        // Cleared before disposal so a step still waiting in `_inputSteps`
+        // sees `_lane != lane` and cannot write into a dead lane.
+        final lane = _lane;
+        _lane = null;
+        lane?.dispose();
+      });
     if (ref.read(availabilityLaneActivatedProvider)) unawaited(_start());
     return AvailabilityLaneView.starting;
   }
@@ -124,7 +144,10 @@ class AvailabilityAutoPublisher extends _$AvailabilityAutoPublisher {
         clock: ref.read(clockProvider),
       );
       _lane = lane;
-      await lane.start(await _inputs());
+      // The first inputs are read inside the same queue as every later
+      // update, so a notification arriving during startup cannot be applied
+      // before the start does.
+      await _applyLatest(lane, lane.start);
     } on Object catch (error) {
       // Fail closed: no lane, nothing published. Type only (AGENTS §6.2).
       appLog('availability lane did not start: ${error.runtimeType}');
@@ -134,7 +157,32 @@ class AvailabilityAutoPublisher extends _$AvailabilityAutoPublisher {
   void _forward() {
     final lane = _lane;
     if (lane == null) return;
-    unawaited(_inputs().then(lane.update));
+    _applyInBackground(lane, lane.update);
+  }
+
+  /// Reads the newest inputs, then applies them as one queued step.
+  Future<void> _applyLatest(
+    AvailabilityLane lane,
+    Future<void> Function(AvailabilityLaneInputs inputs) apply,
+  ) => _inputSteps.enqueue(() async {
+    final inputs = await _inputs();
+    // A disposed or replaced notifier must not write into a newer lane.
+    if (!identical(_lane, lane)) return;
+    await apply(inputs);
+  });
+
+  /// Fire-and-forget variant: a failed read or apply changes nothing (fail
+  /// closed) and is logged by type only; the queue keeps its next step alive
+  /// (`SerialOpQueue` always completes its tail normally).
+  void _applyInBackground(
+    AvailabilityLane lane,
+    Future<void> Function(AvailabilityLaneInputs inputs) apply,
+  ) {
+    unawaited(
+      _applyLatest(lane, apply).onError<Object>((error, _) {
+        appLog('availability input step failed: ${error.runtimeType}');
+      }),
+    );
   }
 
   Future<AvailabilityLaneInputs> _inputs() async {
