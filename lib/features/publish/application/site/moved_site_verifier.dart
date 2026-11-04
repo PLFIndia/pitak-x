@@ -20,6 +20,7 @@ final class MovedSiteVerifier {
     required Future<void> Function(Duration) sleep,
     this.attempts = ReadBackBudget.defaultAttempts,
     this.interval = ReadBackBudget.defaultInterval,
+    this.clock,
   }) : _reader = reader,
        _markerCodec = markerCodec,
        _validateMovedHtml = validateMovedHtml,
@@ -36,6 +37,7 @@ final class MovedSiteVerifier {
     required PublishMarkerCodec markerCodec,
     required MovedHtmlValidationFn validateMovedHtml,
     required Future<void> Function(Duration) sleep,
+    int Function()? clock,
   }) : this(
          reader: reader,
          markerCodec: markerCodec,
@@ -43,6 +45,7 @@ final class MovedSiteVerifier {
          sleep: sleep,
          attempts: ReadBackBudget.gitHubPagesAttempts,
          interval: ReadBackBudget.gitHubPagesInterval,
+         clock: clock,
        );
 
   final PublishedSiteReadVerifier _reader;
@@ -55,6 +58,14 @@ final class MovedSiteVerifier {
 
   /// Delay before each polling round.
   final Duration interval;
+
+  /// Clock in epoch milliseconds, or null for the system clock. Injectable so
+  /// a test can prove the deadline stops new reads (review finding 5).
+  final int Function()? clock;
+
+  /// At most this many reads run at once (the same four-worker bound the
+  /// complete verifier uses; this check has at most three paths).
+  static const int maxConcurrentReads = 4;
 
   /// Returns true only when every old-site requirement is proven.
   Future<bool> verify(PendingMove pending, {required int revision}) async {
@@ -71,21 +82,41 @@ final class MovedSiteVerifier {
       );
     }
 
+    // One deadline for the whole check (review finding 5): no new read starts
+    // after it, and in-flight reads finish under their own transport bound.
+    final deadline = _now() + interval.inMilliseconds * attempts;
     for (
       var attempt = 0;
       attempt < attempts && expectations.isNotEmpty;
       attempt++
     ) {
-      await _sleep(interval);
-      for (final path in expectations.keys.toList()) {
-        final expectation = expectations[path]!;
-        final outcome = await _read(
-          siteUrl: pending.oldTarget.siteUrl,
-          path: path,
-          maxBytes: expectation.maxBytes,
-          cacheBuster: '$revision-$attempt',
-        );
-        if (expectation.isSatisfiedBy(outcome)) expectations.remove(path);
+      final remaining = deadline - _now();
+      if (remaining <= 0) break;
+      final wait = remaining < interval.inMilliseconds
+          ? Duration(milliseconds: remaining)
+          : interval;
+      await _sleep(wait);
+      if (_now() >= deadline) break;
+      final paths = expectations.keys.toList();
+      for (var start = 0; start < paths.length; start += maxConcurrentReads) {
+        if (_now() >= deadline) break;
+        var end = start + maxConcurrentReads;
+        if (end > paths.length) end = paths.length;
+        final batch = paths.sublist(start, end);
+        final outcomes = await Future.wait([
+          for (final path in batch)
+            _read(
+              siteUrl: pending.oldTarget.siteUrl,
+              path: path,
+              maxBytes: expectations[path]!.maxBytes,
+              cacheBuster: '$revision-$attempt',
+            ),
+        ]);
+        for (var i = 0; i < batch.length; i++) {
+          if (expectations[batch[i]]!.isSatisfiedBy(outcomes[i])) {
+            expectations.remove(batch[i]);
+          }
+        }
       }
     }
     return expectations.isEmpty;
@@ -145,6 +176,8 @@ final class MovedSiteVerifier {
       PublishedSiteReadUnreadable() => null,
     };
   }
+
+  int _now() => clock?.call() ?? DateTime.now().millisecondsSinceEpoch;
 
   Future<PublishedSiteReadOutcome> _read({
     required String siteUrl,

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -195,6 +196,157 @@ void main() {
           waited.fold(Duration.zero, (sum, delay) => sum + delay),
           const Duration(seconds: 100),
         );
+      });
+
+      // Review finding 5: one operation deadline and at most four reads in
+      // flight, so a complete move proof cannot outlive `attempts × interval`
+      // or take the whole budget for a single round of covers.
+      test(
+        '1,000 covers are all checked, four at a time, in two rounds',
+        () async {
+          final files = [
+            for (var i = 0; i < 1000; i++) file('covers/$i.jpg', 'cover-$i'),
+          ];
+          final reader = FakeStructuredReader(); // every read is unreadable
+          final verifier = CompleteSnapshotVerifier(
+            reader: reader,
+            sleep: (_) async {},
+            attempts: 2,
+          );
+
+          final verified = await verifier.verify(
+            siteUrl: moveGitHubTarget.siteUrl,
+            files: files,
+            revision: 7,
+          );
+
+          expect(verified, isFalse);
+          expect(
+            reader.calls,
+            hasLength(2000),
+            reason: 'every path, per round',
+          );
+          final perRound = <String, int>{};
+          for (final call in reader.calls) {
+            perRound.update(call.$2, (n) => n + 1, ifAbsent: () => 1);
+          }
+          expect(perRound, hasLength(1000));
+          expect(perRound.values.every((n) => n == 2), isTrue);
+        },
+      );
+
+      test('no more than four reads are in flight at once', () async {
+        final bodies = {
+          for (var i = 0; i < 6; i++) 'covers/$i.jpg': utf8.encode('cover-$i'),
+        };
+        final files = [
+          for (final entry in bodies.entries)
+            PublishFile(
+              path: entry.key,
+              bytes: entry.value,
+              gitSha: GitBlobSha.of(entry.value),
+              upload: true,
+            ),
+        ];
+        final reader = _HoldingReader(bodies);
+        final verifier = CompleteSnapshotVerifier(
+          reader: reader,
+          sleep: (_) async {},
+          attempts: 1,
+        );
+
+        final result = verifier.verify(
+          siteUrl: moveGitHubTarget.siteUrl,
+          files: files,
+          revision: 7,
+        );
+        await pumpEventQueue();
+        expect(reader.started, hasLength(4), reason: 'the first batch');
+
+        // Answer the first batch, which lets the remaining two start.
+        reader.releaseAll();
+        await pumpEventQueue();
+        expect(reader.started, hasLength(6));
+        reader.releaseAll();
+
+        expect(await result, isTrue);
+        expect(reader.maxActive, 4);
+      });
+
+      test('a fake clock proves no read starts after the deadline', () async {
+        var now = 0;
+        final reader = _ClockRecordingReader(() => now);
+        final verifier = CompleteSnapshotVerifier(
+          reader: reader,
+          sleep: (delay) async => now += delay.inMilliseconds,
+          attempts: 3,
+          interval: const Duration(seconds: 10),
+          clock: () => now,
+        );
+
+        final verified = await verifier.verify(
+          siteUrl: moveGitHubTarget.siteUrl,
+          files: [file('index.html', '<html>one</html>')],
+          revision: 7,
+        );
+
+        expect(verified, isFalse);
+        // Two rounds started at t=10 s and t=20 s; the third sleep reached
+        // the 30 s deadline, so that round begins no read.
+        expect(now, 30000);
+        expect(reader.started, [10000, 20000]);
+      });
+
+      test('a sleep is capped by the time left, and in-flight reads still '
+          'count', () async {
+        var now = 0;
+        final bodies = {
+          for (var i = 0; i < 2; i++) 'covers/$i.jpg': utf8.encode('cover-$i'),
+        };
+        final files = [
+          for (final entry in bodies.entries)
+            PublishFile(
+              path: entry.key,
+              bytes: entry.value,
+              gitSha: GitBlobSha.of(entry.value),
+              upload: true,
+            ),
+        ];
+        final held = <Completer<void>>[];
+        final reader = _LateAnswerReader(
+          bodies,
+          onRead: () {
+            held.add(Completer<void>());
+            return held.last.future;
+          },
+        );
+        final waited = <Duration>[];
+        final verifier = CompleteSnapshotVerifier(
+          reader: reader,
+          sleep: (delay) async {
+            waited.add(delay);
+            now += delay.inMilliseconds;
+          },
+          attempts: 2,
+          interval: const Duration(seconds: 10),
+          clock: () => now,
+        );
+
+        final result = verifier.verify(
+          siteUrl: moveGitHubTarget.siteUrl,
+          files: files,
+          revision: 7,
+        );
+        await pumpEventQueue();
+        expect(held, hasLength(2));
+        // Time passes beyond the 20 s deadline while the reads are open.
+        now = 25000;
+        for (final gate in held) {
+          gate.complete();
+        }
+
+        expect(await result, isTrue, reason: 'the open batch was awaited');
+        expect(waited, [const Duration(seconds: 10)]);
       });
 
       test('still fails closed when the build never appears', () async {
@@ -457,6 +609,87 @@ final class _FlakyReader implements PublishedSiteReadVerifier {
     calls.add((siteUrl, path, maxBytes, cacheBuster));
     if (calls.length <= failingRounds) return first;
     return PublishedSiteReadBody(utf8.encode('<html>one</html>'));
+  }
+}
+
+/// Records the injected clock at every read it answers (all unreadable).
+final class _ClockRecordingReader implements PublishedSiteReadVerifier {
+  _ClockRecordingReader(this.clock);
+
+  final int Function() clock;
+  final List<int> started = [];
+
+  @override
+  Future<PublishedSiteReadOutcome> readOutcome({
+    required String siteUrl,
+    required String path,
+    required int maxBytes,
+    String? cacheBuster,
+  }) async {
+    started.add(clock());
+    return const PublishedSiteReadUnreadable();
+  }
+}
+
+/// Holds every read open until the test releases it, counting how many are
+/// in flight at once.
+final class _HoldingReader implements PublishedSiteReadVerifier {
+  _HoldingReader(this.bodies);
+
+  final Map<String, List<int>> bodies;
+  final List<String> started = [];
+  final Map<String, Completer<void>> _gates = {};
+  int active = 0;
+  int maxActive = 0;
+
+  void releaseAll() {
+    for (final gate in _gates.values) {
+      if (!gate.isCompleted) gate.complete();
+    }
+  }
+
+  @override
+  Future<PublishedSiteReadOutcome> readOutcome({
+    required String siteUrl,
+    required String path,
+    required int maxBytes,
+    String? cacheBuster,
+  }) async {
+    started.add(path);
+    active++;
+    if (active > maxActive) maxActive = active;
+    final gate = _gates.putIfAbsent(path, Completer<void>.new);
+    try {
+      await gate.future;
+    } finally {
+      active--;
+    }
+    final body = bodies[path];
+    return body == null
+        ? const PublishedSiteReadUnreadable()
+        : PublishedSiteReadBody(body);
+  }
+}
+
+/// Answers the real bytes only after the test releases each read.
+final class _LateAnswerReader implements PublishedSiteReadVerifier {
+  _LateAnswerReader(this.bodies, {required this.onRead});
+
+  final Map<String, List<int>> bodies;
+  final Future<void> Function() onRead;
+
+  @override
+  Future<PublishedSiteReadOutcome> readOutcome({
+    required String siteUrl,
+    required String path,
+    required int maxBytes,
+    String? cacheBuster,
+  }) async {
+    await onRead();
+    final body = bodies[path];
+    return body == null
+        ? const PublishedSiteReadUnreadable()
+        : PublishedSiteReadBody(body);
   }
 }
 

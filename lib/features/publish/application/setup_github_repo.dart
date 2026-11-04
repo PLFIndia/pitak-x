@@ -228,17 +228,17 @@ final class SetupGitHubRepo {
       token: token,
     );
     if (details == null) return left(_notFound);
-    // Trust the server, not the path we asked for. A same-owner response for
-    // a DIFFERENT repository name is a renamed target: adopting it would
-    // point the user's publishing at a site they did not pick, so it is
-    // refused and nothing is stored (review finding 2).
-    if (details.fullName.toLowerCase() != '$owner/$repo'.toLowerCase()) {
-      return left(_renamed);
-    }
-    // The engine is case-insensitive for logins, but the stored target keeps
-    // the user's spelling.
+    // Trust the server, not the path we asked for: a response for a DIFFERENT
+    // owner is not this account's repository (D1-a).
     if (details.ownerLogin.toLowerCase() != owner.toLowerCase()) {
       return left(_notOwned);
+    }
+    // Same owner, DIFFERENT repository name: the target was renamed since the
+    // list was read. Adopting it would point the user's publishing at a site
+    // they did not pick, so it is refused and nothing is stored (review
+    // finding 2). Case-insensitive, because GitHub names are.
+    if (details.fullName.toLowerCase() != '$owner/$repo'.toLowerCase()) {
+      return left(_renamed);
     }
     if (details.isArchived) return left(_archived);
     if (!details.canPush) return left(_noPush);
