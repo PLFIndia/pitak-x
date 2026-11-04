@@ -6,7 +6,7 @@ part of 'publish_providers.dart';
 // RiverpodGenerator
 // **************************************************************************
 
-String _$gitHubApiHash() => r'e46804aa09de90e1aebe72e6b4f519c0ac18f48a';
+String _$gitHubApiHash() => r'8e681330b5e71f249be870810db31b3472235a0e';
 
 /// GitHub API client for publishing (device flow + git data). Shares the app
 /// HTTP client.
@@ -19,10 +19,20 @@ String _$gitHubApiHash() => r'e46804aa09de90e1aebe72e6b4f519c0ac18f48a';
 ///    catalogue, events, moves, retirements and the availability lane — is
 ///    reported to [gitHubCommitRecorder], so the lane's hourly budget counts
 ///    all of them (ADR 0019 Decision 8, plan AV6).
+/// keepAlive (item 16): `HttpGitHubApi` owns the process-wide
+/// `GitHubBlobPacer` — blob pacing must hold ACROSS commits, including two
+/// publishes driven from different screens, so the API must not be rebuilt
+/// when the last widget stops listening. The controllers `ref.read` this
+/// provider (see [cloudflareApi]'s note): with auto-dispose an in-flight
+/// commit could lose its underlying HTTP client mid-write, and the pacer's
+/// memory would reset with every new screen. Both the shared
+/// [httpClientProvider] and [gitHubUploadJournalStoreProvider] are already
+/// keepAlive; no token or other secret is retained here (tokens are passed
+/// per call).
 ///
 /// Copied from [gitHubApi].
 @ProviderFor(gitHubApi)
-final gitHubApiProvider = AutoDisposeProvider<GitHubApi>.internal(
+final gitHubApiProvider = Provider<GitHubApi>.internal(
   gitHubApi,
   name: r'gitHubApiProvider',
   debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
@@ -34,7 +44,7 @@ final gitHubApiProvider = AutoDisposeProvider<GitHubApi>.internal(
 
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
-typedef GitHubApiRef = AutoDisposeProviderRef<GitHubApi>;
+typedef GitHubApiRef = ProviderRef<GitHubApi>;
 String _$gitHubUploadJournalStoreHash() =>
     r'04a13662ead43e819e4f801977c1f7ba5bedbeee';
 

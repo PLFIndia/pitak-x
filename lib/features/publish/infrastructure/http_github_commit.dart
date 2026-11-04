@@ -23,22 +23,60 @@ import 'package:pitaka/features/publish/domain/github_commit_plan.dart';
 import 'package:pitaka/features/publish/domain/github_content_limit.dart';
 import 'package:pitaka/features/publish/infrastructure/github_http_support.dart';
 
+/// The "when may the next blob start" memory shared by every commit one
+/// `HttpGitHubApi` makes (review item 16).
+///
+/// A writer used to remember its own last blob start, so the pacing restarted
+/// with each commit: back-to-back publishes (catalogue, then events, then the
+/// availability lane) could hammer GitHub's content-creation limit with no
+/// gap BETWEEN commits. This object is the same rule in one place — the last
+/// blob START timestamp, nothing else; no journal write per blob.
+///
+/// Owned by `HttpGitHubApi`, whose provider is keepAlive so the memory is
+/// process-wide. `const`-free by design: it is mutable state, so each API
+/// instance builds exactly one.
+final class GitHubBlobPacer {
+  int? _lastBlobAt;
+
+  /// Waits the remainder of [GitHubContentLimit.blobSpacing] since the last
+  /// blob start, then marks a new start. The first blob of a process never
+  /// waits; a wait is capped at one spacing so a backward wall-clock jump
+  /// cannot stall a publish indefinitely.
+  Future<void> waitForNext(
+    int Function() clock,
+    Future<void> Function(Duration) sleep,
+  ) async {
+    final last = _lastBlobAt;
+    if (last != null) {
+      final spacing = GitHubContentLimit.blobSpacing.inMilliseconds;
+      final wait = last + spacing - clock();
+      if (wait > 0) {
+        await sleep(Duration(milliseconds: wait > spacing ? spacing : wait));
+      }
+    }
+    _lastBlobAt = clock();
+  }
+}
+
 /// Commits a [GitHubCommitPlan] to one branch.
 final class GitHubCommitWriter {
-  /// Creates the writer. [sleep] and [clock] (epoch ms) drive the blob
-  /// pacing; tests pass fakes so no test waits in real time.
+  /// Creates the writer. [sleep] and [clock] (epoch ms) drive the shared
+  /// [pacer]; tests pass fakes so no test waits in real time.
   const GitHubCommitWriter({
     required http.Client client,
     required Uri apiBase,
+    required GitHubBlobPacer pacer,
     required Future<void> Function(Duration) sleep,
     required int Function() clock,
   }) : _client = client,
        _apiBase = apiBase,
+       _pacer = pacer,
        _sleep = sleep,
        _clock = clock;
 
   final http.Client _client;
   final Uri _apiBase;
+  final GitHubBlobPacer _pacer;
   final Future<void> Function(Duration) _sleep;
   final int Function() _clock;
 
@@ -113,18 +151,10 @@ final class GitHubCommitWriter {
     // and PACED: at most one request per `blobSpacing`, so a large publish
     // stays under GitHub's per-minute content limit (plan J8 (b)). Everything
     // else is named by sha in the tree below (ADR 0020 Decision 6).
-    int? lastBlobAt;
     for (final f in plan.uploads) {
-      if (lastBlobAt != null) {
-        final spacing = GitHubContentLimit.blobSpacing.inMilliseconds;
-        final wait = lastBlobAt + spacing - _clock();
-        // Never more than one spacing: a wall clock that jumped back must
-        // not turn the pace into a long stall.
-        if (wait > 0) {
-          await _sleep(Duration(milliseconds: wait > spacing ? spacing : wait));
-        }
-      }
-      lastBlobAt = _clock();
+      // Shared across commits (item 16): the gap applies between this
+      // commit's first blob and the PREVIOUS commit's last one too.
+      await _pacer.waitForNext(_clock, _sleep);
       // Resolve ONE source immediately before this blob's body is built, so
       // only one file's bytes are in memory at a time and a reused/known blob
       // is never opened (review finding 6). The bytes must still be the

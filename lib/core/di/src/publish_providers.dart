@@ -87,7 +87,17 @@ part 'publish_providers.g.dart';
 ///    catalogue, events, moves, retirements and the availability lane — is
 ///    reported to [gitHubCommitRecorder], so the lane's hourly budget counts
 ///    all of them (ADR 0019 Decision 8, plan AV6).
-@riverpod
+/// keepAlive (item 16): `HttpGitHubApi` owns the process-wide
+/// `GitHubBlobPacer` — blob pacing must hold ACROSS commits, including two
+/// publishes driven from different screens, so the API must not be rebuilt
+/// when the last widget stops listening. The controllers `ref.read` this
+/// provider (see [cloudflareApi]'s note): with auto-dispose an in-flight
+/// commit could lose its underlying HTTP client mid-write, and the pacer's
+/// memory would reset with every new screen. Both the shared
+/// [httpClientProvider] and [gitHubUploadJournalStoreProvider] are already
+/// keepAlive; no token or other secret is retained here (tokens are passed
+/// per call).
+@Riverpod(keepAlive: true)
 GitHubApi gitHubApi(GitHubApiRef ref) => CommitRecordingGitHubApi(
   inner: ResumableUploadGitHubApi(
     inner: HttpGitHubApi(client: ref.watch(httpClientProvider)),

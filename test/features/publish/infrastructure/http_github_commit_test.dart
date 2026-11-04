@@ -111,11 +111,54 @@ void main() {
 
     test('one upload, or none, never waits', () async {
       final server = FakeGitHubGitServer();
-      await commit(api(server.client), plan(1), head: server.head);
+      final github = api(server.client);
+      await commit(github, plan(1), head: server.head);
+      // A SECOND API instance is a second pacing domain (process-wide in the
+      // app, because the provider is keepAlive) — its first blob never waits.
       await commit(api(server.client), plan(1), head: server.head);
       expect(sleeps, isEmpty);
       expect(server.blobRequests, 2);
     });
+
+    test('item 16: the second commit of the SAME api object waits the '
+        'remaining second', () async {
+      // Before: each commit built a writer with its own `lastBlobAt`, so two
+      // back-to-back publishes started their blobs with no gap BETWEEN
+      // commits and could trip GitHub's content-creation limit.
+      final server = FakeGitHubGitServer();
+      final github = api(server.client);
+      await commit(github, plan(1), head: server.head);
+      expect(sleeps, isEmpty);
+      expect(server.refMoves, 1);
+
+      await commit(github, plan(1), head: server.head);
+      expect(sleeps, [const Duration(seconds: 1)]);
+      expect(server.refMoves, 2, reason: 'one atomic ref move per commit');
+      expect(server.blobRequests, 2);
+    });
+
+    test('item 16: more than a second between commits needs no wait', () async {
+      final server = FakeGitHubGitServer();
+      final github = api(server.client);
+      await commit(github, plan(1), head: server.head);
+      now += 1500; // the user took their time before the next publish
+      await commit(github, plan(1), head: server.head);
+      expect(sleeps, isEmpty);
+      expect(server.refMoves, 2);
+    });
+
+    test(
+      'item 16: a backward clock between commits waits at most one spacing',
+      () async {
+        final server = FakeGitHubGitServer();
+        final github = api(server.client);
+        await commit(github, plan(1), head: server.head);
+        now -= 60 * 60 * 1000; // the wall clock jumped back an hour
+        await commit(github, plan(1), head: server.head);
+        expect(sleeps, [const Duration(seconds: 1)]);
+        expect(server.refMoves, 2);
+      },
+    );
   });
 
   group('stored blobs are reported (J8 a)', () {

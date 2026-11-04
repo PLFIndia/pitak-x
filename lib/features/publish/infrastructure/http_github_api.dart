@@ -57,6 +57,12 @@ final class HttpGitHubApi implements GitHubApi {
   final Future<void> Function(Duration) _sleep;
   final int Function() _clock;
 
+  /// ONE pacer for every commit this API makes (item 16): each
+  /// [GitHubCommitWriter] is fresh per commit, but the gap between blob
+  /// starts must also hold ACROSS commits (catalogue → events → availability
+  /// lane), which is why it lives here rather than in the writer.
+  final GitHubBlobPacer _pacer = GitHubBlobPacer();
+
   static const String _accept = 'application/vnd.github+json';
 
   /// Git branch names the app will put into a URL path. Git allows far more,
@@ -420,6 +426,7 @@ final class HttpGitHubApi implements GitHubApi {
       GitHubCommitWriter(
         client: _client,
         apiBase: _apiBase,
+        pacer: _pacer,
         sleep: _sleep,
         clock: _clock,
       ).commit(

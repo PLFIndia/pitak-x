@@ -13,6 +13,7 @@ import 'package:pitaka/features/publish/domain/github_upload_journal.dart';
 import 'package:pitaka/features/publish/domain/site/publish_file.dart';
 import 'package:pitaka/features/publish/infrastructure/file_github_upload_journal_store.dart';
 
+import '../../features/publish/support/fake_github_git_server.dart';
 import '../../features/publish/support/github_upload_journal_fakes.dart';
 
 /// Plan J8: the one GitHub API provider resumes uploads and keeps GitHub's
@@ -85,5 +86,76 @@ void main() {
     expect(limited.refusedNow, isFalse);
     expect(limited.wait, const Duration(seconds: 59));
     expect(requests, isEmpty);
+  });
+
+  test('item 16: the provider is keepAlive, so one pacer serves two commits '
+      'even with no listener between them', () async {
+    // Before: gitHubApiProvider was autoDispose, so the second read built a
+    // NEW HttpGitHubApi with a fresh pacer and the second publish's first
+    // blob started immediately after the first publish's last one.
+    final server = FakeGitHubGitServer();
+    final container = ProviderContainer(
+      overrides: [
+        httpClientProvider.overrideWithValue(server.client),
+        gitHubUploadJournalStoreProvider.overrideWithValue(
+          MemoryGitHubUploadJournalStore(),
+        ),
+        // `clockProvider` only feeds the upload journal / commit recorder;
+        // the adapter paces against its own wall clock, so the second
+        // commit's first blob waits a REAL ~1s. That wait is the assertion.
+        clockProvider.overrideWithValue(() => t0),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    GitHubCommitPlan oneFile(int n) {
+      final bytes = utf8.encode('cover $n');
+      return GitHubCommitPlan(
+        files: [
+          PublishFile(
+            path: 'covers/$n.jpg',
+            bytes: bytes,
+            gitSha: GitBlobSha.of(bytes),
+            upload: true,
+          ),
+        ],
+        knownBlobShas: const {},
+      );
+    }
+
+    Future<PublishCommitResult> commit(int n) => container
+        .read(gitHubApiProvider)
+        .commitFiles(
+          owner: 'me',
+          repo: 'lib',
+          branch: 'main',
+          token: 'TKN',
+          plan: oneFile(n),
+          commitMessage: 'test $n',
+          expectedHead: server.head,
+        );
+
+    // Keep the container alive but with no listener on the API: the old
+    // autoDispose element would be collected between these two awaits.
+    final first = await commit(1);
+    expect(first, isA<PublishCommitSuccess>());
+    await container.pump();
+    await Future<void>.delayed(Duration.zero);
+    await container.pump();
+    final sameApi = container.read(gitHubApiProvider);
+    expect(identical(sameApi, container.read(gitHubApiProvider)), isTrue);
+
+    final stopwatch = Stopwatch()..start();
+    final second = await commit(2);
+    stopwatch.stop();
+    expect(second, isA<PublishCommitSuccess>());
+    expect(server.refMoves, 2, reason: 'one atomic ref move per commit');
+    expect(
+      stopwatch.elapsed,
+      greaterThanOrEqualTo(const Duration(milliseconds: 500)),
+      reason:
+          'the shared pacer waits the remaining second between commits '
+          '(a rebuilt API would start immediately)',
+    );
   });
 }
