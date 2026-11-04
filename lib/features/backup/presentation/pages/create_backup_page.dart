@@ -1,9 +1,9 @@
 /// Create-backup screen (presentation layer, AGENTS.md §3.1).
 ///
 /// Builds a full `.pitabak` archive (library + wishlist + the persistent vault
-/// and covers when present) and saves it via the system file picker. All work
+/// and covers when present) and hands it to the system share sheet. All work
 /// happens behind the create-backup use case; this screen only triggers it and
-/// reports success/failure.
+/// reports the hand-off/failure.
 library;
 
 import 'package:flutter/material.dart';
@@ -36,7 +36,7 @@ class _CreateBackupPageState extends ConsumerState<CreateBackupPage> {
   bool get _missingAnything =>
       _missingIdentity || _missingNetwork || _missingPublishState;
 
-  /// The plain-words list of what the last saved backup does NOT carry
+  /// The plain-words list of what the completed backup does NOT carry
   /// ("a", "a and b", "a, b and c").
   String get _missingDescription {
     final missing = [
@@ -100,8 +100,8 @@ class _CreateBackupPageState extends ConsumerState<CreateBackupPage> {
               _busy = false;
               _done = outcome == ShareOutcome.success;
               // §7 S6: the identity/network entries are best-effort — when
-              // one is missing the backup still saved, and the user is told
-              // plainly what is NOT inside.
+              // one is missing the backup still completed, and the user is
+              // told plainly what is NOT inside.
               _missingIdentity = !result.includesIdentity;
               _missingNetwork = !result.includesNetwork;
               _missingPublishState = result.missingPublishState;
@@ -179,7 +179,10 @@ class _CreateBackupPageState extends ConsumerState<CreateBackupPage> {
           ),
           if (_done) ...[
             const SizedBox(height: 16),
-            Text('Backup saved.', style: TextStyle(color: scheme.primary)),
+            Text(
+              'Backup handed to the selected app; confirm it was saved or sent.',
+              style: TextStyle(color: scheme.primary),
+            ),
             if (_missingAnything) ...[
               const SizedBox(height: 4),
               Text(

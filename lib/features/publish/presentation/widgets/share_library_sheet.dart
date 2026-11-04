@@ -16,6 +16,7 @@ library;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pitaka/core/di/providers.dart';
+import 'package:pitaka/core/platform/file_share.dart';
 import 'package:pitaka/features/network/application/my_library_card_controller.dart';
 import 'package:pitaka/features/network/domain/value_objects/library_card_payload.dart';
 import 'package:pitaka/features/publish/application/share_card_style_controller.dart';
@@ -60,17 +61,13 @@ class _ShareLibrarySheetState extends ConsumerState<ShareLibrarySheet> {
     if (_busy) return;
     final messenger = ScaffoldMessenger.maybeOf(context);
     final navigator = Navigator.of(context);
-    final share = ref.read(fileShareServiceProvider);
-    final libraryName =
-        ref.read(settingsControllerProvider).valueOrNull?.libraryName ?? '';
-    // Capture FIRST (the card is painted right now), then show the spinner
-    // — see share_card_capture.dart for why the order matters.
-    final png = await captureBoundaryPng(_cardKey);
-    if (!mounted) return;
-    setState(() => _busy = true);
     try {
+      // Capture FIRST (the card is painted right now), then show the spinner
+      // — see share_card_capture.dart for why the order matters.
+      final png = await captureBoundaryPng(_cardKey);
+      if (!mounted) return;
+      setState(() => _busy = true);
       if (png == null) {
-        // Fixed copy (§5) — never the underlying reason.
         messenger?.showSnackBar(
           const SnackBar(
             content: Text('Could not create the card. Try again.'),
@@ -78,23 +75,69 @@ class _ShareLibrarySheetState extends ConsumerState<ShareLibrarySheet> {
         );
         return;
       }
-      await share.shareBytes(
-        bytes: png,
-        fileName: ShareCardText.fileName(libraryName),
-        mimeType: 'image/png',
-        // The clickable half of the share (see the library doc above).
-        text: widget.url,
-      );
-      if (mounted) navigator.pop();
+      final libraryName =
+          ref.read(settingsControllerProvider).valueOrNull?.libraryName ?? '';
+      final outcome = await ref
+          .read(fileShareServiceProvider)
+          .shareBytes(
+            bytes: png,
+            fileName: ShareCardText.fileName(libraryName),
+            mimeType: 'image/png',
+            // The clickable half of the share (see the library doc above).
+            text: widget.url,
+          );
+      if (!mounted) return;
+      if (outcome == ShareOutcome.success) {
+        navigator.pop();
+      } else if (outcome == ShareOutcome.unavailable) {
+        messenger?.showSnackBar(
+          const SnackBar(
+            content: Text('Sharing is unavailable on this device.'),
+          ),
+        );
+      }
+    } on Object {
+      // Plugin/capture failures get the same fixed copy; retry stays open.
+      if (mounted) {
+        messenger?.showSnackBar(
+          const SnackBar(
+            content: Text('Could not create the card. Try again.'),
+          ),
+        );
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
   }
 
   Future<void> _shareLink() async {
+    if (_busy) return;
+    final messenger = ScaffoldMessenger.maybeOf(context);
     final navigator = Navigator.of(context);
-    await ref.read(fileShareServiceProvider).shareText(widget.url);
-    if (mounted) navigator.pop();
+    setState(() => _busy = true);
+    try {
+      final outcome = await ref
+          .read(fileShareServiceProvider)
+          .shareText(widget.url);
+      if (!mounted) return;
+      if (outcome == ShareOutcome.success) {
+        navigator.pop();
+      } else if (outcome == ShareOutcome.unavailable) {
+        messenger?.showSnackBar(
+          const SnackBar(
+            content: Text('Sharing is unavailable on this device.'),
+          ),
+        );
+      }
+    } on Object {
+      if (mounted) {
+        messenger?.showSnackBar(
+          const SnackBar(content: Text('Could not share the link. Try again.')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   Future<void> _pick(ShareCardStyle style) async {

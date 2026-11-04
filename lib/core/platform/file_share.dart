@@ -20,7 +20,8 @@ import 'package:share_plus/share_plus.dart';
 /// Outcome of a share attempt, mapped off `share_plus`'s result so callers
 /// don't import the package's types.
 enum ShareOutcome {
-  /// The user completed the share (saved/sent).
+  /// The user selected a target. This is a hand-off only, not proof that the
+  /// receiving app saved or sent the bytes.
   success,
 
   /// The user dismissed the sheet without choosing a target.

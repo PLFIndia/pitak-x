@@ -81,13 +81,18 @@ void main() {
         child: const MaterialApp(home: CreateBackupPage()),
       );
 
-  testWidgets('success shows the saved confirmation', (tester) async {
+  testWidgets('success shows the hand-off confirmation', (tester) async {
     await tester.pumpWidget(
       page(useCase: _FakeCreateBackup(right(Uint8List.fromList([1, 2, 3])))),
     );
     await tester.tap(find.widgetWithText(FilledButton, 'Create backup'));
     await tester.pumpAndSettle();
-    expect(find.text('Backup saved.'), findsOneWidget);
+    expect(
+      find.text(
+        'Backup handed to the selected app; confirm it was saved or sent.',
+      ),
+      findsOneWidget,
+    );
   });
 
   testWidgets('plan CV6: the intro says the publishing record is inside', (
@@ -161,6 +166,28 @@ void main() {
     expect(find.text('Sharing is unavailable on this device.'), findsOneWidget);
   });
 
+  testWidgets('dismissed sharing shows no hand-off or error', (tester) async {
+    await tester.pumpWidget(
+      page(
+        useCase: _FakeCreateBackup(right(Uint8List.fromList([1]))),
+        share: _FakeShare(outcome: ShareOutcome.dismissed),
+      ),
+    );
+    await tester.tap(find.widgetWithText(FilledButton, 'Create backup'));
+    await tester.pumpAndSettle();
+    expect(
+      find.text(
+        'Backup handed to the selected app; confirm it was saved or sent.',
+      ),
+      findsNothing,
+    );
+    expect(find.text('Sharing is unavailable on this device.'), findsNothing);
+    expect(
+      tester.widget<FilledButton>(find.byType(FilledButton)).enabled,
+      isTrue,
+    );
+  });
+
   // S5 (L5): a catalogue too large for the format gets its OWN sentence —
   // retrying cannot help, so "please try again" would be a lie.
   testWidgets('S5: a too-large catalogue says nothing was exported', (
@@ -182,7 +209,12 @@ void main() {
       ),
       findsOneWidget,
     );
-    expect(find.text('Backup saved.'), findsNothing);
+    expect(
+      find.text(
+        'Backup handed to the selected app; confirm it was saved or sent.',
+      ),
+      findsNothing,
+    );
   });
 
   testWidgets('N11: a throwing share plugin shows a safe error and frees the '

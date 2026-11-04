@@ -19,6 +19,19 @@ import 'package:shared_preferences/shared_preferences.dart';
 const _url = 'https://user.github.io/my-library/';
 
 class _FakeShare implements FileShareService {
+  _FakeShare({
+    this.bytesOutcome = ShareOutcome.success,
+    this.textOutcome = ShareOutcome.success,
+    this.bytesError,
+    this.textError,
+  });
+
+  final ShareOutcome bytesOutcome;
+  final ShareOutcome textOutcome;
+  final Object? bytesError;
+  final Object? textError;
+  int bytesCalls = 0;
+  int textCalls = 0;
   String? sharedText;
   Uint8List? sharedBytes;
   String? sharedFileName;
@@ -33,8 +46,11 @@ class _FakeShare implements FileShareService {
     String text, {
     Rect? sharePositionOrigin,
   }) async {
+    textCalls++;
     sharedText = text;
-    return ShareOutcome.success;
+    final error = textError;
+    if (error != null) Error.throwWithStackTrace(error, StackTrace.current);
+    return textOutcome;
   }
 
   @override
@@ -45,11 +61,14 @@ class _FakeShare implements FileShareService {
     String? text,
     Rect? sharePositionOrigin,
   }) async {
+    bytesCalls++;
     sharedBytes = bytes;
     sharedFileName = fileName;
     sharedMime = mimeType;
     sharedCaption = text;
-    return ShareOutcome.success;
+    final error = bytesError;
+    if (error != null) Error.throwWithStackTrace(error, StackTrace.current);
+    return bytesOutcome;
   }
 }
 
@@ -231,5 +250,108 @@ void main() {
     expect(share.sharedBytes, isNull);
     expect(share.sharedCaption, isNull);
     expect(find.text('Share your library'), findsNothing);
+  });
+
+  for (final outcome in const [
+    ShareOutcome.dismissed,
+    ShareOutcome.unavailable,
+  ]) {
+    testWidgets('card $outcome leaves the sheet open and retry enabled', (
+      tester,
+    ) async {
+      final share = _FakeShare(bytesOutcome: outcome);
+      await _open(tester, _app(share));
+      await tester.runAsync(() async {
+        await tester.tap(find.text('Share card + link'));
+        await tester.pump();
+        await Future<void>.delayed(const Duration(milliseconds: 500));
+      });
+      await tester.pumpAndSettle();
+
+      expect(share.bytesCalls, 1);
+      expect(find.text('Share your library'), findsOneWidget);
+      expect(
+        find.text('Sharing is unavailable on this device.'),
+        outcome == ShareOutcome.unavailable ? findsOneWidget : findsNothing,
+      );
+      expect(
+        tester
+            .widget<FilledButton>(
+              find.widgetWithText(FilledButton, 'Share card + link'),
+            )
+            .enabled,
+        isTrue,
+      );
+    });
+
+    testWidgets('link $outcome leaves the sheet open and retry enabled', (
+      tester,
+    ) async {
+      final share = _FakeShare(textOutcome: outcome);
+      await _open(tester, _app(share));
+      await tester.tap(find.text('Share link only'));
+      await tester.pumpAndSettle();
+
+      expect(share.textCalls, 1);
+      expect(find.text('Share your library'), findsOneWidget);
+      expect(
+        find.text('Sharing is unavailable on this device.'),
+        outcome == ShareOutcome.unavailable ? findsOneWidget : findsNothing,
+      );
+      expect(
+        tester
+            .widget<TextButton>(
+              find.widgetWithText(TextButton, 'Share link only'),
+            )
+            .enabled,
+        isTrue,
+      );
+    });
+  }
+
+  testWidgets('a throwing card share shows safe copy and leaves retry', (
+    tester,
+  ) async {
+    final share = _FakeShare(bytesError: StateError('plugin exploded'));
+    await _open(tester, _app(share));
+    await tester.runAsync(() async {
+      await tester.tap(find.text('Share card + link'));
+      await tester.pump();
+      await Future<void>.delayed(const Duration(milliseconds: 500));
+    });
+    await tester.pumpAndSettle();
+
+    expect(find.text('Could not create the card. Try again.'), findsOneWidget);
+    expect(find.text('Share your library'), findsOneWidget);
+    expect(
+      tester
+          .widget<FilledButton>(
+            find.widgetWithText(FilledButton, 'Share card + link'),
+          )
+          .enabled,
+      isTrue,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('a throwing link share shows safe copy and leaves retry', (
+    tester,
+  ) async {
+    final share = _FakeShare(textError: StateError('plugin exploded'));
+    await _open(tester, _app(share));
+    await tester.tap(find.text('Share link only'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Could not share the link. Try again.'), findsOneWidget);
+    expect(find.text('Share your library'), findsOneWidget);
+    expect(
+      tester
+          .widget<TextButton>(
+            find.widgetWithText(TextButton, 'Share link only'),
+          )
+          .enabled,
+      isTrue,
+    );
+    expect(tester.takeException(), isNull);
   });
 }
