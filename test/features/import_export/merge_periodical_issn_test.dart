@@ -24,10 +24,10 @@ final class _MatchingNamespace implements LibraryNamespace {
       right(const LibraryIdentity(id: _libraryId, name: 'Local'));
 
   @override
-  Future<Either<Failure, Unit>> adopt({
+  Future<LibraryAdoption> adopt({
     required String id,
     required String name,
-  }) async => right(unit);
+  }) async => (outcome: LibraryAdoptionOutcome.adopted, failure: null);
 }
 
 T _ok<T>(Either<Failure, T> result) =>

@@ -24,6 +24,7 @@ import 'package:pitaka/features/network/application/network_controller.dart';
 import 'package:pitaka/features/publish/application/site/publish_site_status_controller.dart';
 import 'package:pitaka/features/publish/domain/publish_state_adoption.dart';
 import 'package:pitaka/features/settings/application/settings_controller.dart';
+import 'package:pitaka/features/settings/domain/library_namespace.dart';
 import 'package:pitaka/features/vault/application/vault_session_controller.dart';
 import 'package:pitaka/features/wishlist/application/wishlist_controller.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
@@ -178,6 +179,7 @@ class RestoreController extends _$RestoreController {
     RestoreSummary summary,
   ) async {
     var identityAdopted = false;
+    var identityPartiallyAdopted = false;
     final identity = summary.restoredIdentity;
     if (identity != null) {
       try {
@@ -186,8 +188,14 @@ class RestoreController extends _$RestoreController {
         final adopted = await ref
             .read(settingsControllerProvider.notifier)
             .adopt(id: identity.id, name: identity.name);
-        identityAdopted = adopted.isRight();
+        identityAdopted = adopted.outcome == LibraryAdoptionOutcome.adopted;
+        // The ID landed but the name did not: the page must say so instead of
+        // "unchanged" (review finding 4).
+        identityPartiallyAdopted =
+            adopted.outcome == LibraryAdoptionOutcome.partiallyAdopted;
       } on Object {
+        // Nothing was published by a throwing adoption; the last good
+        // identity stands.
         identityAdopted = false;
       }
     }
@@ -212,6 +220,7 @@ class RestoreController extends _$RestoreController {
 
     return summary.withAdoptionResults(
       identityAdopted: identityAdopted,
+      identityPartiallyAdopted: identityPartiallyAdopted,
       networkApplied: networkApplied,
       networkRestored: networkRestored,
       publishStateOutcome: await _adoptPublishState(summary),

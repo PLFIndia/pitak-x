@@ -89,6 +89,20 @@ class _FailedExtrasRestoreController extends RestoreController {
   );
 }
 
+/// Review finding 4 fixture: the backup's ID was saved but its name was not,
+/// and the rollback failed — the page must never say "unchanged".
+class _PartiallyAdoptedRestoreController extends RestoreController {
+  @override
+  RestoreSummary? build() => const RestoreSummary(
+    booksRestored: 1,
+    wishlistRestored: 0,
+    borrowersRestored: 0,
+    loansRestored: 0,
+    restoredIdentity: (id: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', name: 'M'),
+    identityPartiallyAdopted: true,
+  );
+}
+
 /// W2 outcome-copy fixture (ADR 0014): a series restored, one issue link
 /// detached, one kinds row skipped — each named in one sentence.
 class _ItemKindsRestoreController extends RestoreController {
@@ -618,6 +632,34 @@ void main() {
         findsOneWidget,
       );
       expect(find.text('Saved libraries restored: 2'), findsOneWidget);
+    });
+
+    testWidgets('a partial identity adoption is named, not called unchanged', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            restoreControllerProvider.overrideWith(
+              _PartiallyAdoptedRestoreController.new,
+            ),
+          ],
+          child: const MaterialApp(home: RestorePage()),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text(
+          'The backup’s library ID was saved, but its name was not. '
+          'Review this device’s library identity in Settings.',
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining('your current identity is unchanged'),
+        findsNothing,
+      );
     });
 
     testWidgets('dropped network rows are named in one sentence (M9)', (

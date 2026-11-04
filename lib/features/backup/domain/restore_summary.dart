@@ -22,6 +22,7 @@ class RestoreSummary {
     this.identityInvalid = false,
     this.networkInvalid = false,
     this.identityAdopted = false,
+    this.identityPartiallyAdopted = false,
     this.networkApplied = false,
     this.networkRestored = 0,
     this.networkRowsDropped = 0,
@@ -91,10 +92,16 @@ class RestoreSummary {
   final bool networkInvalid;
 
   /// True when [restoredIdentity] was actually adopted through the namespace
-  /// port. Set AFTER the catalogue switch by the restore controller (a Left
-  /// leaves it false — the catalogue restore is never rolled back for this;
-  /// §5.10).
+  /// port. Set AFTER the catalogue switch by the restore controller (a
+  /// non-adopted outcome leaves it false — the catalogue restore is never
+  /// rolled back for this; §5.10).
   final bool identityAdopted;
+
+  /// True when the backup's ID was saved but its name was not and the ID
+  /// could not be rolled back (review finding 4). Both are false when
+  /// nothing was adopted, so the UI's "your current identity is unchanged"
+  /// sentence is only ever used after a successful rollback.
+  final bool identityPartiallyAdopted;
 
   /// True when the `replaceAll` of [restoredNetwork] actually succeeded.
   /// Set together with [identityAdopted] by the restore controller. This is
@@ -177,6 +184,7 @@ class RestoreSummary {
     required bool identityAdopted,
     required bool networkApplied,
     required int networkRestored,
+    bool identityPartiallyAdopted = false,
     PublishStateRestoreOutcome? publishStateOutcome,
   }) {
     return RestoreSummary(
@@ -192,6 +200,7 @@ class RestoreSummary {
       identityInvalid: identityInvalid,
       networkInvalid: networkInvalid,
       identityAdopted: identityAdopted,
+      identityPartiallyAdopted: identityPartiallyAdopted,
       networkApplied: networkApplied,
       networkRestored: networkRestored,
       networkRowsDropped: networkRowsDropped,

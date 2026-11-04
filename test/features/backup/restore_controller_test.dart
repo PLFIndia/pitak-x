@@ -890,6 +890,31 @@ void main() {
       await settleCascade(container);
     });
 
+    test('an identity whose name write AND rollback both fail is reported as '
+        'partially adopted, with the true settings state', () async {
+      TestWidgetsFlutterBinding.ensureInitialized();
+      SharedPreferences.setMockInitialValues({});
+      final settings = _AdoptPartialSettings();
+      final container = makeContainer(settings: settings);
+      pinRestoreController(container);
+
+      await container
+          .read(restoreControllerProvider.notifier)
+          .restore(archiveBytes: identityNetworkArchive());
+
+      final summary = container.read(restoreControllerProvider).value!;
+      expect(summary.identityAdopted, isFalse);
+      expect(summary.identityPartiallyAdopted, isTrue);
+      expect(summary.identityInvalid, isFalse);
+      // Memory must agree with disk: the archived ID, the previous name —
+      // never "unchanged" while the new ID is stored (review finding 4).
+      final loaded = await container.read(settingsControllerProvider.future);
+      expect(loaded.libraryId, archiveId);
+      expect(loaded.libraryName, '');
+      expect(settings.settings.libraryId, archiveId);
+      await settleCascade(container);
+    });
+
     test(
       'an invalid identity.json leaves the current identity untouched',
       () async {
@@ -949,6 +974,26 @@ void main() {
 class _AdoptFailingSettings extends _LogoSettingsRepo {
   @override
   Future<Either<Failure, Unit>> setLibraryId(String id) async =>
+      left(const StorageFailure('prefs read-only'));
+}
+
+/// The archived ID lands, its name write fails, and the rollback of the ID
+/// fails too (review finding 4).
+class _AdoptPartialSettings extends _LogoSettingsRepo {
+  int idWrites = 0;
+
+  @override
+  Future<Either<Failure, Unit>> setLibraryId(String id) async {
+    idWrites++;
+    if (idWrites == 1) {
+      settings = settings.copyWith(libraryId: id);
+      return right(unit);
+    }
+    return left(const StorageFailure('prefs read-only'));
+  }
+
+  @override
+  Future<Either<Failure, Unit>> setLibraryName(String name) async =>
       left(const StorageFailure('prefs read-only'));
 }
 

@@ -197,46 +197,94 @@ class SettingsController extends _$SettingsController
     return loadedSettings.toNullable()?.libraryName ?? _current.libraryName;
   }
 
-  /// Adopts an incoming library ID + name in ONE queued turn (N07). Both
-  /// repository writes happen while the FIFO is held, so no other setter can
-  /// interleave and publish a half-adopted identity; the state is patched
-  /// once, after both succeeded. A failed write leaves memory untouched (the
-  /// caller decides what to tell the user — disk may hold the ID already).
+  /// Adopts an incoming library ID + name in ONE queued turn (N07), with
+  /// rollback when the second write fails (review finding 4).
+  ///
+  /// Why rollback (beginner note): the settings store has no multi-key
+  /// transaction, so "write the ID, then the name" can stop half-way. Before,
+  /// that left the ID on disk while memory still showed the old one, and the
+  /// restore screen said "unchanged". Now:
+  ///  - ID write refused → nothing changed, [LibraryAdoptionOutcome
+  ///    .notAdopted];
+  ///  - blank incoming name → adopt the ID alone (the current name stays);
+  ///  - name write refused (or threw) → put the previous ID back;
+  ///  - that rollback also fails → publish the true partial state (new ID,
+  ///    previous name) and report [LibraryAdoptionOutcome.partiallyAdopted],
+  ///    so no screen can claim the old identity is still in force.
   @override
-  Future<Either<Failure, Unit>> adopt({
+  Future<LibraryAdoption> adopt({
     required String id,
     required String name,
   }) => _serialised(() async {
     final repo = await ref.read(settingsRepositoryProvider.future);
     final trimmedId = id.trim();
     final trimmedName = name.trim();
-    final Either<Failure, Unit> written;
+    // Read BEFORE writing: this is what a rollback must restore.
+    final previous = _current;
+
+    final Either<Failure, Unit> idWritten;
     try {
-      written = await _adoptOnDisk(repo, trimmedId, trimmedName);
+      idWritten = await repo.setLibraryId(trimmedId);
     } on Object catch (e) {
-      return left(StorageFailure('settings write threw: ${e.runtimeType}'));
+      return _notAdopted(_writeThrew(e));
     }
-    if (written.isRight()) {
-      state = AsyncData(
-        _current.copyWith(
-          libraryId: trimmedId,
-          libraryName: trimmedName.isEmpty ? _current.libraryName : trimmedName,
-        ),
-      );
+    if (idWritten case Left(value: final failure)) {
+      return _notAdopted(failure);
     }
-    return written;
+    if (trimmedName.isEmpty) {
+      _publishIdentity(id: trimmedId, name: previous.libraryName);
+      return (outcome: LibraryAdoptionOutcome.adopted, failure: null);
+    }
+
+    final Either<Failure, Unit> nameWritten;
+    try {
+      nameWritten = await repo.setLibraryName(trimmedName);
+    } on Object catch (e) {
+      return _rollBackId(repo, previous, trimmedId, _writeThrew(e));
+    }
+    if (nameWritten case Left(value: final failure)) {
+      return _rollBackId(repo, previous, trimmedId, failure);
+    }
+    _publishIdentity(id: trimmedId, name: trimmedName);
+    return (outcome: LibraryAdoptionOutcome.adopted, failure: null);
   });
 
-  /// The two prefs writes behind [adopt]: ID first (it is the merge gate), name
-  /// only when the incoming file carried one.
-  static Future<Either<Failure, Unit>> _adoptOnDisk(
+  static LibraryAdoption _notAdopted(Failure failure) =>
+      (outcome: LibraryAdoptionOutcome.notAdopted, failure: failure);
+
+  static Failure _writeThrew(Object error) =>
+      StorageFailure('settings write threw: ${error.runtimeType}');
+
+  /// Undoes the ID write after the name write failed.
+  ///
+  /// Successful rollback: disk is back on [previous] and memory never left it
+  /// → `notAdopted` with the ORIGINAL failure (the one the caller can act on).
+  /// Failed rollback: the ID is on disk and cannot be undone, so memory is
+  /// published as the partial truth and the outcome says so.
+  Future<LibraryAdoption> _rollBackId(
     SettingsRepository repo,
-    String id,
-    String name,
+    AppSettings previous,
+    String newId,
+    Failure cause,
   ) async {
-    final idWritten = await repo.setLibraryId(id);
-    if (idWritten.isLeft() || name.isEmpty) return idWritten;
-    return repo.setLibraryName(name);
+    Either<Failure, Unit> rolledBack;
+    try {
+      rolledBack = await repo.setLibraryId(previous.libraryId);
+    } on Object catch (e) {
+      rolledBack = left(_writeThrew(e));
+    }
+    if (rolledBack.isRight()) return _notAdopted(cause);
+    _publishIdentity(id: newId, name: previous.libraryName);
+    return (
+      outcome: LibraryAdoptionOutcome.partiallyAdopted,
+      failure: rolledBack.getLeft().toNullable() ?? cause,
+    );
+  }
+
+  /// Publishes the identity fields only, patching whatever is there NOW (M16:
+  /// never replace the whole snapshot).
+  void _publishIdentity({required String id, required String name}) {
+    state = AsyncData(_current.copyWith(libraryId: id, libraryName: name));
   }
 
   /// Sets the maintainer name (stamped onto newly-added books).

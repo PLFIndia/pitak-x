@@ -324,6 +324,15 @@ class _ResultView extends StatelessWidget {
             style: omissionStyle,
           ),
         ],
+        if (result.namespace == MergeNamespaceOutcome.partiallyAdopted) ...[
+          const SizedBox(height: 8),
+          Text(
+            'The books were ${result.replaced ? 'replaced' : 'added'}, and '
+            'this device saved the other library\u2019s ID \u2014 but not its '
+            'name. Check the library name in Settings.',
+            style: omissionStyle,
+          ),
+        ],
         if (result.skippedRows.isNotEmpty) ...[
           const SizedBox(height: 8),
           Text(

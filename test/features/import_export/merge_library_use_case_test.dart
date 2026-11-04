@@ -185,8 +185,11 @@ class _FakeNamespace implements LibraryNamespace {
   String libraryId;
   String libraryName;
 
-  /// When set, [adopt] fails with it and changes nothing.
+  /// When set, [adopt] answers [adoptOutcome] with it. A
+  /// [LibraryAdoptionOutcome.partiallyAdopted] result keeps the new ID (that
+  /// is what "partial" means) and leaves the name alone.
   Failure? adoptFailure;
+  LibraryAdoptionOutcome adoptOutcome = LibraryAdoptionOutcome.notAdopted;
 
   /// How many times [adopt] was called (any outcome).
   int adoptCalls = 0;
@@ -198,16 +201,21 @@ class _FakeNamespace implements LibraryNamespace {
   }
 
   @override
-  Future<Either<Failure, Unit>> adopt({
+  Future<LibraryAdoption> adopt({
     required String id,
     required String name,
   }) async {
     adoptCalls++;
     final failure = adoptFailure;
-    if (failure != null) return left(failure);
+    if (failure != null) {
+      if (adoptOutcome == LibraryAdoptionOutcome.partiallyAdopted) {
+        libraryId = id; // the ID landed; the name did not
+      }
+      return (outcome: adoptOutcome, failure: failure);
+    }
     libraryId = id;
     if (name.isNotEmpty) libraryName = name;
-    return right(unit);
+    return (outcome: LibraryAdoptionOutcome.adopted, failure: null);
   }
 }
 
@@ -1232,6 +1240,33 @@ void main() {
       expect(result.replaced, isFalse);
       expect(namespace.libraryId, otherId);
       expect(namespace.libraryName, 'Riverside');
+    });
+
+    test('Join: the ID lands but the name does not → partiallyAdopted, so the '
+        'page cannot claim the old identity', () async {
+      final repo = _FakeBooks([]);
+      final namespace =
+          _FakeNamespace(libraryId: matchingId, libraryName: 'Mine')
+            ..adoptFailure = const StorageFailure('rollback failed')
+            ..adoptOutcome = LibraryAdoptionOutcome.partiallyAdopted;
+      final useCase = MergeLibraryUseCase(
+        jsonParser: const PitakaJsonImporter(),
+        bookRepo: repo,
+        periodicalRepo: FakePeriodicals(),
+        namespace: namespace,
+        replacementGuard: FakeReplacementGuard(),
+        planner: planMergeInline,
+      );
+
+      final result = (await useCase.applyJoin(
+        decision,
+      )).getOrElse((f) => fail('join must still succeed: $f'));
+
+      expect(result.added, 1);
+      expect(result.namespace, MergeNamespaceOutcome.partiallyAdopted);
+      expect(result.hasOmissions, isTrue);
+      expect(namespace.libraryId, otherId, reason: 'the new ID landed');
+      expect(namespace.libraryName, 'Mine', reason: 'the name did not');
     });
 
     test('a file with no library ID has nothing to adopt', () async {

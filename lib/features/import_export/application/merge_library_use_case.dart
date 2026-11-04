@@ -321,6 +321,10 @@ final class MergeLibraryUseCase {
   /// A file without an ID has nothing to adopt ([MergeNamespaceOutcome
   /// .unchanged]); a failed write is reported, not thrown, because the books
   /// are already on the device and the user must hear both facts.
+  ///
+  /// The port's three outcomes map one-to-one, so the page can tell "nothing
+  /// was adopted" (the old ID is still in force) from "the ID was saved but
+  /// the name was not" (review finding 4).
   Future<MergeNamespaceOutcome> _adoptNamespace(
     MergeDiffersDecision decision,
   ) async {
@@ -331,10 +335,13 @@ final class MergeLibraryUseCase {
       id: decision.incomingLibraryId,
       name: decision.incomingLibraryName,
     );
-    return adopted.match(
-      (_) => MergeNamespaceOutcome.adoptionFailed,
-      (_) => MergeNamespaceOutcome.adopted,
-    );
+    return switch (adopted.outcome) {
+      LibraryAdoptionOutcome.adopted => MergeNamespaceOutcome.adopted,
+      LibraryAdoptionOutcome.notAdopted =>
+        MergeNamespaceOutcome.adoptionFailed,
+      LibraryAdoptionOutcome.partiallyAdopted =>
+        MergeNamespaceOutcome.partiallyAdopted,
+    };
   }
 
   /// Applies the user's choice for one surfaced conflict / possible-duplicate.

@@ -150,7 +150,14 @@ class RestoreOutcome extends StatelessWidget {
               )
             else if (summary.restoredIdentity != null)
               Text(
-                summary.identityAdopted
+                // Three outcomes, three sentences: "unchanged" is only true
+                // after a rollback, never when the ID was saved and the name
+                // was not (review finding 4).
+                summary.identityPartiallyAdopted
+                    ? 'The backup’s library ID was saved, but its name was '
+                          'not. Review this device’s library identity in '
+                          'Settings.'
+                    : summary.identityAdopted
                     ? 'This device now uses the backup’s library identity.'
                     : 'The library identity in this backup could not be '
                           'adopted; your current identity is unchanged.',

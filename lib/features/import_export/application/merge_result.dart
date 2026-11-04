@@ -16,10 +16,18 @@ enum MergeNamespaceOutcome {
   /// The incoming ID (and name, when present) was adopted.
   adopted,
 
-  /// The books landed but the identity write failed. This device still has
-  /// its OLD ID: the next merge from the same library will ask to Join again
-  /// (every row will then be identical, so only the identity is adopted).
+  /// The books landed but NOTHING of the incoming identity did: the ID write
+  /// was refused, or its name write failed and the ID was rolled back. This
+  /// device still has its OLD ID, so the next merge from the same library
+  /// will ask to Join again (every row will then be identical, so only the
+  /// identity is adopted).
   adoptionFailed,
+
+  /// The books landed and the incoming ID was saved, but its NAME was not and
+  /// the ID could not be rolled back either. Disk and settings both hold the
+  /// new ID with the previous name, so the page must not claim this device
+  /// still has the other library's old identity (review finding 4).
+  partiallyAdopted,
 }
 
 /// Result of an applied merge: the engine union (IDs matched or Join), or a
@@ -92,7 +100,8 @@ class MergeResult {
   bool get hasOmissions =>
       skippedRows.isNotEmpty ||
       adjustments.isNotEmpty ||
-      namespace == MergeNamespaceOutcome.adoptionFailed;
+      namespace == MergeNamespaceOutcome.adoptionFailed ||
+      namespace == MergeNamespaceOutcome.partiallyAdopted;
 
   /// The same result with the identity outcome set.
   MergeResult withNamespace(MergeNamespaceOutcome outcome) => MergeResult(

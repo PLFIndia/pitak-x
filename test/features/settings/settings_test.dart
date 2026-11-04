@@ -7,6 +7,7 @@ import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/settings/application/settings_controller.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
+import 'package:pitaka/features/settings/domain/library_namespace.dart';
 import 'package:pitaka/features/settings/domain/settings_repository.dart';
 import 'package:pitaka/features/settings/infrastructure/prefs_settings_repository.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -165,6 +166,58 @@ class _GatedSettingsRepo implements SettingsRepository {
   @override
   Future<Either<Failure, Unit>> setThemeMode(AppThemeMode mode) =>
       _gate('theme');
+}
+
+/// A settings repo that KEEPS both identity values in memory and can fail one
+/// chosen `setLibraryId` attempt, so a rollback can be told apart from the
+/// write it undoes (review finding 4). `load()` answers what a restarted app
+/// would see.
+final class _RecordingSettingsRepo implements SettingsRepository {
+  _RecordingSettingsRepo({this.id = '', this.name = ''});
+
+  String id;
+  String name;
+
+  /// 1-based `setLibraryId` attempts that answer a typed left.
+  final Set<int> failingIdWrites = {};
+
+  /// Every value passed to `setLibraryId`, in order (the rollback is visible).
+  final List<String> idValues = [];
+
+  bool failNameWrites = false;
+  bool throwOnNameWrite = false;
+  int idWrites = 0;
+  int nameWrites = 0;
+
+  @override
+  Future<AppSettings> load() async =>
+      AppSettings.defaults.copyWith(libraryId: id, libraryName: name);
+
+  @override
+  Future<Either<Failure, Unit>> setLibraryId(String value) async {
+    idWrites++;
+    idValues.add(value.trim());
+    if (failingIdWrites.contains(idWrites)) {
+      return left(const StorageFailure('synthetic id failure'));
+    }
+    id = value.trim();
+    return right(unit);
+  }
+
+  @override
+  Future<Either<Failure, Unit>> setLibraryName(String value) async {
+    nameWrites++;
+    if (throwOnNameWrite) throw StateError('synthetic name throw');
+    if (failNameWrites) {
+      return left(const StorageFailure('synthetic name failure'));
+    }
+    name = value.trim();
+    return right(unit);
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnimplementedError(invocation.memberName.toString());
 }
 
 void main() {
@@ -852,42 +905,50 @@ void main() {
         final adopted = await adopt;
         await theme;
 
-        expect(adopted.isRight(), isTrue);
+        expect(adopted.outcome, LibraryAdoptionOutcome.adopted);
         final s = current();
         expect(s.themeMode, AppThemeMode.dark);
         expect(s.libraryId, 'b' * 32);
         expect(s.libraryName, 'Riverside');
       });
 
-      test('a failed id write returns left and publishes nothing', () async {
+      test('a failed id write adopts nothing and publishes nothing', () async {
         repo.release(
           'setId',
           result: left(const StorageFailure('prefs write failed')),
         );
         final adopted = await controller.adopt(id: 'b' * 32, name: 'Riverside');
 
-        expect(adopted.getLeft().toNullable(), isA<StorageFailure>());
+        expect(adopted.outcome, LibraryAdoptionOutcome.notAdopted);
+        expect(adopted.failure, isA<StorageFailure>());
         expect(current().libraryId, '');
         expect(current().libraryName, '');
         expect(repo.gates.containsKey('name'), isFalse, reason: 'name skipped');
       });
 
-      test('a failed name write (after the id landed) returns left and '
-          'publishes neither', () async {
-        repo
-          ..release('setId')
-          ..release(
-            'name',
-            result: left(const StorageFailure('prefs write failed')),
+      test(
+        'a failed name write rolls the id back and publishes neither',
+        () async {
+          repo
+            ..release('setId')
+            ..release(
+              'name',
+              result: left(const StorageFailure('prefs write failed')),
+            );
+          final adopted = await controller.adopt(
+            id: 'b' * 32,
+            name: 'Riverside',
           );
-        final adopted = await controller.adopt(id: 'b' * 32, name: 'Riverside');
 
-        expect(adopted.isLeft(), isTrue);
-        // Disk may already hold the ID; memory stays on the last good state
-        // (the merge reports the adoption as failed, the next Join retries).
-        expect(current().libraryId, '');
-        expect(current().libraryName, '');
-      });
+          expect(adopted.outcome, LibraryAdoptionOutcome.notAdopted);
+          expect(adopted.failure, isA<StorageFailure>());
+          // The rollback ran too: disk is back on the old (empty) ID, and
+          // memory never showed the new one (review finding 4).
+          expect(current().libraryId, '');
+          expect(current().libraryName, '');
+          expect(controller.current, isNotNull);
+        },
+      );
 
       test(
         'a blank name adopts only the id and keeps the current name',
@@ -895,7 +956,7 @@ void main() {
           repo.release('setId');
           final adopted = await controller.adopt(id: 'b' * 32, name: '   ');
 
-          expect(adopted.isRight(), isTrue);
+          expect(adopted.outcome, LibraryAdoptionOutcome.adopted);
           expect(current().libraryId, 'b' * 32);
           expect(repo.gates.containsKey('name'), isFalse);
         },
@@ -926,7 +987,8 @@ void main() {
         final c = failing.read(settingsControllerProvider.notifier);
 
         final adopted = await c.adopt(id: 'b' * 32, name: 'Riverside');
-        expect(adopted.getLeft().toNullable(), isA<StorageFailure>());
+        expect(adopted.outcome, LibraryAdoptionOutcome.notAdopted);
+        expect(adopted.failure, isA<StorageFailure>());
         expect(
           failing.read(settingsControllerProvider).requireValue.libraryId,
           '',
@@ -963,6 +1025,133 @@ void main() {
           expect(current().libraryId, '');
         },
       );
+    });
+  });
+
+  // Review finding 4: the ID and the name are two preference keys with no
+  // multi-key transaction, so a half-applied adoption must be rolled back (or
+  // reported truthfully when even the rollback fails). `_RecordingSettingsRepo`
+  // keeps both values, so `load()` is what a restarted app would see.
+  group('LibraryNamespace.adopt rollback', () {
+    const oldId = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+    const newId = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+
+    late _RecordingSettingsRepo repo;
+    late ProviderContainer container;
+    late SettingsController controller;
+
+    Future<void> start() async {
+      container = ProviderContainer(
+        overrides: [
+          settingsRepositoryProvider.overrideWith((ref) async => repo),
+        ],
+      );
+      addTearDown(container.dispose);
+      await container.read(settingsControllerProvider.future);
+      controller = container.read(settingsControllerProvider.notifier);
+    }
+
+    AppSettings memory() =>
+        container.read(settingsControllerProvider).requireValue;
+
+    setUp(() {
+      repo = _RecordingSettingsRepo(id: oldId, name: 'Old name');
+    });
+
+    test('a refused ID write changes nothing', () async {
+      repo.failingIdWrites.add(1);
+      await start();
+
+      final result = await controller.adopt(id: newId, name: 'Riverside');
+
+      expect(result.outcome, LibraryAdoptionOutcome.notAdopted);
+      expect(result.failure, isA<StorageFailure>());
+      expect(repo.nameWrites, 0, reason: 'the name write is skipped');
+      expect(memory().libraryId, oldId);
+      expect(memory().libraryName, 'Old name');
+      expect((await repo.load()).libraryId, oldId);
+    });
+
+    test(
+      'a refused name write rolls the ID back on disk and in memory',
+      () async {
+        repo.failNameWrites = true;
+        await start();
+
+        final result = await controller.adopt(id: newId, name: 'Riverside');
+
+        expect(result.outcome, LibraryAdoptionOutcome.notAdopted);
+        expect(result.failure, isA<StorageFailure>());
+        // The rollback wrote the OLD id back (second setId call).
+        expect(repo.idValues, [newId, oldId]);
+        expect(repo.id, oldId);
+        expect(repo.name, 'Old name');
+        expect(memory().libraryId, oldId);
+        expect(memory().libraryName, 'Old name');
+        // A restarted app reads the same identity back.
+        final restarted = await repo.load();
+        expect(restarted.libraryId, oldId);
+        expect(restarted.libraryName, 'Old name');
+      },
+    );
+
+    test('a throwing name write follows the same rollback rule', () async {
+      repo.throwOnNameWrite = true;
+      await start();
+
+      final result = await controller.adopt(id: newId, name: 'Riverside');
+
+      expect(result.outcome, LibraryAdoptionOutcome.notAdopted);
+      expect(result.failure, isA<StorageFailure>());
+      expect(repo.idValues, [newId, oldId]);
+      expect(memory().libraryId, oldId);
+    });
+
+    test('a failed rollback reports partial adoption and publishes the true '
+        'state', () async {
+      repo
+        ..failNameWrites = true
+        ..failingIdWrites.add(2); // the second setId call is the rollback
+      await start();
+
+      final result = await controller.adopt(id: newId, name: 'Riverside');
+
+      expect(result.outcome, LibraryAdoptionOutcome.partiallyAdopted);
+      expect(result.failure, isA<StorageFailure>());
+      // Never the old ID while disk holds the new one: memory says exactly
+      // what a restart would read.
+      expect(memory().libraryId, newId);
+      expect(memory().libraryName, 'Old name');
+      final restarted = await repo.load();
+      expect(restarted.libraryId, newId);
+      expect(restarted.libraryName, 'Old name');
+    });
+
+    test(
+      'a blank name adopts only the ID and keeps the current name',
+      () async {
+        await start();
+
+        final result = await controller.adopt(id: newId, name: '   ');
+
+        expect(result.outcome, LibraryAdoptionOutcome.adopted);
+        expect(repo.nameWrites, 0);
+        expect(memory().libraryId, newId);
+        expect(memory().libraryName, 'Old name');
+        expect(repo.id, newId);
+      },
+    );
+
+    test('a complete adoption writes both keys', () async {
+      await start();
+
+      final result = await controller.adopt(id: newId, name: 'Riverside');
+
+      expect(result.outcome, LibraryAdoptionOutcome.adopted);
+      expect(result.failure, isNull);
+      expect(memory().libraryId, newId);
+      expect(memory().libraryName, 'Riverside');
+      expect((await repo.load()).libraryName, 'Riverside');
     });
   });
 }
