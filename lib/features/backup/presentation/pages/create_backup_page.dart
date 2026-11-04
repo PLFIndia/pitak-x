@@ -180,7 +180,8 @@ class _CreateBackupPageState extends ConsumerState<CreateBackupPage> {
           if (_done) ...[
             const SizedBox(height: 16),
             Text(
-              'Backup handed to the selected app; confirm it was saved or sent.',
+              'Backup handed to the selected app; confirm it was saved or '
+              'sent.',
               style: TextStyle(color: scheme.primary),
             ),
             if (_missingAnything) ...[
