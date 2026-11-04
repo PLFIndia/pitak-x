@@ -8,6 +8,13 @@
 ///    optional field) with a trailing "Edit" button that re-opens editing.
 ///
 /// Commits via `onCommitted` (✓ / submit) so a write happens once per edit.
+/// The commit is AWAITED (review item 14): the field collapses and shows the
+/// new value only when the callback reports success; a failed save keeps the
+/// user's input in the open editor so nothing unsaved is ever displayed as
+/// saved. While a save is in flight a second submit is ignored.
+///
+/// An external change to `initial` (an identity adopted by a restore or a QR
+/// join) is followed while the field is idle; active input is never clobbered.
 /// Starts in the view state so a screen of filled values reads as a clean
 /// summary.
 library;
@@ -35,8 +42,11 @@ class EditableTextField extends StatefulWidget {
   /// Initial value.
   final String initial;
 
-  /// Called with the trimmed value when an edit is committed.
-  final ValueChanged<String> onCommitted;
+  /// Called with the trimmed value when an edit is committed. Resolves to
+  /// true once the value is persisted (the field then collapses) or false
+  /// when it was not (the field stays open with the input intact). Expected
+  /// failures must be folded into `false`, never thrown.
+  final Future<bool> Function(String value) onCommitted;
 
   /// Optional keyboard type.
   final TextInputType? keyboardType;
@@ -49,6 +59,9 @@ class _EditableTextFieldState extends State<EditableTextField> {
   late TextEditingController _controller;
   late FocusNode _focus;
   bool _editing = false;
+
+  /// True from submit until [EditableTextField.onCommitted] resolves.
+  bool _saving = false;
   late String _value;
 
   @override
@@ -57,6 +70,17 @@ class _EditableTextFieldState extends State<EditableTextField> {
     _value = widget.initial.trim();
     _controller = TextEditingController(text: _value);
     _focus = FocusNode();
+  }
+
+  @override
+  void didUpdateWidget(EditableTextField oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Follow an external value only while idle: an open editor or an
+    // in-flight save owns the text, and overwriting it would lose the
+    // user's input or race the result of their own save.
+    if (widget.initial == oldWidget.initial || _editing || _saving) return;
+    _value = widget.initial.trim();
+    _controller.text = _value;
   }
 
   @override
@@ -73,13 +97,23 @@ class _EditableTextFieldState extends State<EditableTextField> {
     WidgetsBinding.instance.addPostFrameCallback((_) => _focus.requestFocus());
   }
 
-  void _commit() {
+  Future<void> _commit() async {
+    if (_saving) return; // duplicate submit while a save is in flight
     final next = _controller.text.trim();
+    setState(() => _saving = true);
+    final bool saved;
+    try {
+      saved = await widget.onCommitted(next);
+    } finally {
+      // `finally` so an unexpected throw (a bug upstream) cannot leave the
+      // field locked; the throw itself still propagates.
+      if (mounted) setState(() => _saving = false);
+    }
+    if (!mounted || !saved) return; // failed: stay editing, input intact
     setState(() {
       _value = next;
       _editing = false;
     });
-    widget.onCommitted(next);
   }
 
   @override
@@ -98,11 +132,22 @@ class _EditableTextFieldState extends State<EditableTextField> {
         labelText: widget.label,
         helperText: widget.hint,
         border: const OutlineInputBorder(),
-        suffixIcon: IconButton(
-          icon: const Icon(Icons.check),
-          tooltip: 'Done',
-          onPressed: _commit,
-        ),
+        // The text stays readable and editable while saving; only the
+        // commit affordance is withdrawn so a double tap cannot double-save.
+        suffixIcon: _saving
+            ? const Padding(
+                padding: EdgeInsets.all(12),
+                child: SizedBox(
+                  height: 20,
+                  width: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              )
+            : IconButton(
+                icon: const Icon(Icons.check),
+                tooltip: 'Done',
+                onPressed: _commit,
+              ),
       ),
     );
   }

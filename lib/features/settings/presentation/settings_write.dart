@@ -15,17 +15,28 @@ import 'package:pitaka/core/error/failure.dart';
 const String settingsSaveFailedMessage =
     'Couldn’t save that setting. Try again.';
 
-/// Awaits [write] and shows the fixed message when it fails.
+/// Awaits [write], shows the fixed message when it fails, and reports
+/// whether the value was persisted (item 14: `EditableTextField` collapses
+/// only on true, so an unsaved value is never displayed as saved).
 ///
-/// Fire-and-forget is safe here: the write itself never throws for expected
-/// failures (the controller folds them into the `Either`).
+/// The write never throws for expected failures (the controller folds them
+/// into the `Either`).
+Future<bool> saveSettingAndReport(
+  BuildContext context,
+  Future<Either<Failure, Unit>> write,
+) async {
+  final result = await write;
+  if (result.isRight()) return true;
+  if (context.mounted) {
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text(settingsSaveFailedMessage)));
+  }
+  return false;
+}
+
+/// Fire-and-forget form of [saveSettingAndReport] for controls that have no
+/// pending state of their own (switches, segmented buttons).
 void saveSetting(BuildContext context, Future<Either<Failure, Unit>> write) {
-  unawaited(
-    write.then((result) {
-      if (result.isRight() || !context.mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text(settingsSaveFailedMessage)));
-    }),
-  );
+  unawaited(saveSettingAndReport(context, write));
 }

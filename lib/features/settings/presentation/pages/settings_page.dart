@@ -128,7 +128,7 @@ class _AppearanceTab extends ConsumerWidget {
           hint: 'Shown as the title (blank uses the app name)',
           initial: settings.libraryName,
           onCommitted: (name) =>
-              saveSetting(context, controller.setLibraryName(name)),
+              saveSettingAndReport(context, controller.setLibraryName(name)),
         ),
         const SizedBox(height: 8),
         EditableTextField(
@@ -136,7 +136,7 @@ class _AppearanceTab extends ConsumerWidget {
           hint: 'Stamped onto books you add (the "added by" field)',
           initial: settings.maintainerName,
           onCommitted: (name) =>
-              saveSetting(context, controller.setMaintainerName(name)),
+              saveSettingAndReport(context, controller.setMaintainerName(name)),
         ),
         const SizedBox(height: 16),
         const _LogoRow(),
