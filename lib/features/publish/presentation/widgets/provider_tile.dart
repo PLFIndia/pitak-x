@@ -8,10 +8,39 @@ library;
 
 import 'package:flutter/material.dart';
 
+/// Brightness-aware status colours shared by the provider tiles (S35, D3;
+/// review item 13).
+///
+/// The light shades are chosen against the ACTUAL light card colour
+/// (`surfaceContainerLow` of the indigo-seeded scheme, not pure white) for
+/// at least 4.5:1 — the small bold status labels count as small text under
+/// WCAG. The dark shades are the long-standing ~300/400 tints, which sit far
+/// above 4.5:1 on the dark card. `test/features/publish/
+/// provider_status_contrast_test.dart` pins every pair in both themes.
+abstract final class ProviderStatusColors {
+  /// Success (configured / signed in / token verified).
+  static Color success(Brightness brightness) => brightness == Brightness.dark
+      ? Colors.green.shade400
+      : Colors.green.shade800;
+
+  /// Warning (partially configured / address not confirmed).
+  static Color warning(Brightness brightness) => brightness == Brightness.dark
+      ? Colors.amber.shade300
+      : Colors.deepOrange.shade900;
+
+  /// Informational (ready to publish, nothing proved yet).
+  static Color info(Brightness brightness) => brightness == Brightness.dark
+      ? Colors.lightBlue.shade300
+      : Colors.blue.shade800;
+
+  /// Error (not configured).
+  static Color error(Brightness brightness) =>
+      brightness == Brightness.dark ? Colors.red.shade300 : Colors.red.shade800;
+}
+
 /// A provider's configuration state shown in its tile header (S35, D3).
 /// The text label is the primary carrier (accessibility); colour + icon
-/// reinforce at a glance. Shades follow the existing brightness-aware green
-/// pattern: ~400 on dark surfaces, ~700+ on light for contrast.
+/// reinforce at a glance. Colours come from [ProviderStatusColors].
 enum ProviderConfig {
   /// Signed in AND target repo set — ready to publish.
   configured('Configured', Icons.check_circle),
@@ -38,20 +67,11 @@ enum ProviderConfig {
 
   /// The brightness-aware status colour.
   Color color(Brightness brightness) => switch (this) {
-    ProviderConfig.configured =>
-      brightness == Brightness.dark
-          ? Colors.green.shade400
-          : Colors.green.shade700,
+    ProviderConfig.configured => ProviderStatusColors.success(brightness),
     ProviderConfig.partial || ProviderConfig.addressNotConfirmed =>
-      brightness == Brightness.dark
-          ? Colors.amber.shade300
-          : Colors.amber.shade800,
-    ProviderConfig.readyToPublish =>
-      brightness == Brightness.dark
-          ? Colors.lightBlue.shade300
-          : Colors.blue.shade700,
-    ProviderConfig.notConfigured =>
-      brightness == Brightness.dark ? Colors.red.shade300 : Colors.red.shade700,
+      ProviderStatusColors.warning(brightness),
+    ProviderConfig.readyToPublish => ProviderStatusColors.info(brightness),
+    ProviderConfig.notConfigured => ProviderStatusColors.error(brightness),
   };
 }
 

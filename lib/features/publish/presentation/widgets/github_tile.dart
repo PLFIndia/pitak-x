@@ -91,16 +91,16 @@ class GitHubTile extends StatelessWidget {
             children: [
               // Success state must read as CONFIRMED at a glance, not
               // as a plain label. Green isn't in the Material scheme,
-              // so pick a brightness-aware shade: 400 on dark surfaces
-              // (700 is too dim there), 700 on light (400 fails
-              // contrast on white). N12: Flexible + ellipsis keep this
-              // row from overflowing at 320px / large text.
+              // so the shared brightness-aware success colour is used
+              // (item 13: measured ≥ 4.5:1 on the real card in both
+              // themes). N12: Flexible + ellipsis keep this row from
+              // overflowing at 320px / large text.
               Expanded(
                 child: Builder(
                   builder: (ctx) {
-                    final green = Theme.of(ctx).brightness == Brightness.dark
-                        ? Colors.green.shade400
-                        : Colors.green.shade700;
+                    final green = ProviderStatusColors.success(
+                      Theme.of(ctx).brightness,
+                    );
                     return Row(
                       children: [
                         Icon(Icons.check_circle, size: 18, color: green),

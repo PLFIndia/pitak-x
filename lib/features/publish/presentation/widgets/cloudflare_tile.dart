@@ -220,9 +220,8 @@ class CloudflareTile extends StatelessWidget {
   );
 
   Widget _verifiedRow(BuildContext context) {
-    final green = Theme.of(context).brightness == Brightness.dark
-        ? Colors.green.shade400
-        : Colors.green.shade700;
+    // Item 13: the shared success colour, measured against the real card.
+    final green = ProviderStatusColors.success(Theme.of(context).brightness);
     return Row(
       children: [
         Icon(Icons.check_circle, size: 18, color: green),
