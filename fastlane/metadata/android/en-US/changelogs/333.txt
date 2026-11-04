@@ -1,4 +1,4 @@
-* Faster publishing: unchanged covers and files are reused, and large GitHub uploads resume after rate limits.
+* Faster publishing
 * Automatic availability updates, with Available now labels and filters for readers.
 * Backups can carry your website publishing record (never tokens) to a phone that has not published.
 * More reliable restores, sharing, QR library joining and settings saves.
