@@ -540,6 +540,69 @@ void main() {
     expect(lastSeen.error, isA<WrongPassphraseFailure>());
   });
 
+  testWidgets('item 11: a terminal result survives pop + reopen and clears '
+      'only when a new archive is chosen', (tester) async {
+    // Before: the controller was autoDispose, so popping Restore after the
+    // run finished forgot the outcome and the reopened page showed IDLE.
+    final restorer = gen.restorer(
+      vault: _FakeVault(),
+      guard: FakeReplacementGuard(
+        failure: const ValidationFailure('Unlock the borrowers vault first.'),
+      ),
+    );
+    final selector = _FakeFileSelector(_archive(withVault: false));
+    FileSelectorPlatform.instance = selector;
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          restoreBackupProvider.overrideWith((ref) async => restorer),
+          vaultStoreProvider.overrideWith((ref) async => gen.store),
+        ],
+        child: MaterialApp(
+          home: Builder(
+            builder: (context) => Scaffold(
+              body: TextButton(
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(builder: (_) => const RestorePage()),
+                ),
+                child: const Text('open restore'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('open restore'));
+    await tester.pumpAndSettle();
+    await pick(tester);
+    await tester.ensureVisible(find.text('Restore'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Restore'));
+    await tester.pumpAndSettle();
+    expect(find.text('Unlock the borrowers vault first.'), findsOneWidget);
+
+    // Pop with the run finished, wait past the old auto-dispose turn, reopen.
+    await tester.tap(find.byType(BackButton));
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(seconds: 1));
+    await tester.tap(find.text('open restore'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('Unlock the borrowers vault first.'),
+      findsOneWidget,
+      reason: 'the reopened page must show the same terminal outcome',
+    );
+    // The page-local file choice is gone, but the outcome is not.
+    expect(find.text('Choose .pitabak file'), findsOneWidget);
+
+    // Choosing a new archive clears it before the new inspection is shown.
+    await pick(tester);
+    expect(selector.picks, 2);
+    expect(find.text('Unlock the borrowers vault first.'), findsNothing);
+    expect(find.textContaining('No borrowers vault'), findsOneWidget);
+  });
+
   group('§5.10 — identity + network copy', () {
     /// An archive that also carries identity.json + network.json.
     Uint8List archiveWithExtras() {

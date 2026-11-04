@@ -762,6 +762,150 @@ void main() {
     });
   });
 
+  group('item 11 — the terminal result is retained until a new archive', () {
+    ProviderContainer gatedContainer({required Completer<void> gate}) {
+      final gen = GenerationFixture(tmp);
+      addTearDown(() async => gen.db.close());
+      final container = ProviderContainer(
+        overrides: [
+          restoreBackupProvider.overrideWith((ref) async {
+            await gate.future;
+            return gen.restorer(
+              vault: _FakeVault(),
+              guard: FakeReplacementGuard(),
+            );
+          }),
+          vaultStoreProvider.overrideWith((ref) async => gen.store),
+          vaultRepositoryProvider.overrideWithValue(_FakeVault()),
+          settingsRepositoryProvider.overrideWith(
+            (ref) async => _LogoSettingsRepo(),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      return container;
+    }
+
+    test('a completed restore survives pop, the old auto-dispose point and '
+        'reopen', () async {
+      // Before: the controller was autoDispose with a per-run keep-alive
+      // link, so the summary vanished one event-loop turn after the run
+      // finished with no listener — reopening Restore showed IDLE.
+      final gate = Completer<void>();
+      final container = gatedContainer(gate: gate);
+
+      final sub = container.listen(restoreControllerProvider, (_, __) {});
+      final future = container
+          .read(restoreControllerProvider.notifier)
+          .restore(
+            archiveBytes: vaultOnlyArchive(),
+            passphrase: SecretBytes(Uint8List.fromList([1, 2, 3])),
+          );
+      sub.close(); // the page is popped: no listener at all
+      await container.pump();
+      gate.complete();
+      await future;
+
+      // Past the old disposal point: the scheduler's `Future(task)` turn
+      // and then some.
+      await Future<void>.delayed(Duration.zero);
+      await container.pump();
+      await pumpEventQueue();
+
+      // Reopen: a fresh listener reads the SAME terminal value.
+      final reopened = container.listen(
+        restoreControllerProvider,
+        (_, __) {},
+        fireImmediately: true,
+      );
+      addTearDown(reopened.close);
+      final state = container.read(restoreControllerProvider);
+      expect(state.hasValue, isTrue);
+      expect(state.value, isNotNull, reason: 'summary must be retained');
+      expect(state.value!.borrowersRestored, 0);
+    });
+
+    test('a terminal failure is retained the same way', () async {
+      final container = makeContainer();
+      await container
+          .read(restoreControllerProvider.notifier)
+          .restore(
+            archiveBytes: Uint8List.fromList([0, 1, 2, 3]),
+            passphrase: SecretBytes(Uint8List.fromList([1])),
+          );
+      await pumpEventQueue();
+      await container.pump();
+      await pumpEventQueue();
+
+      expect(
+        container.read(restoreControllerProvider).error,
+        isA<BackupCorruptFailure>(),
+      );
+    });
+
+    test('clearResult returns to idle after a terminal state', () async {
+      final container = makeContainer();
+      final notifier = container.read(restoreControllerProvider.notifier);
+      await notifier.restore(
+        archiveBytes: Uint8List.fromList([0, 1, 2, 3]),
+        passphrase: SecretBytes(Uint8List.fromList([1])),
+      );
+      expect(container.read(restoreControllerProvider).hasError, isTrue);
+
+      notifier.clearResult();
+
+      final state = container.read(restoreControllerProvider);
+      expect(state.hasError, isFalse);
+      expect(state.isLoading, isFalse);
+      expect(state.value, isNull, reason: 'idle again');
+    });
+
+    test('clearResult is refused while a restore runs', () async {
+      final gate = Completer<void>();
+      final container = gatedContainer(gate: gate);
+      final notifier = container.read(restoreControllerProvider.notifier);
+      final future = notifier.restore(
+        archiveBytes: vaultOnlyArchive(),
+        passphrase: SecretBytes(Uint8List.fromList([1, 2, 3])),
+      );
+      expect(container.read(restoreControllerProvider).isLoading, isTrue);
+
+      notifier.clearResult();
+
+      expect(
+        container.read(restoreControllerProvider).isLoading,
+        isTrue,
+        reason: 'a running restore keeps its loading state',
+      );
+      gate.complete();
+      await future;
+      expect(container.read(restoreControllerProvider).hasValue, isTrue);
+    });
+
+    test('keepAlive changes nothing about duplicate refusal or passphrase '
+        'disposal', () async {
+      final gate = Completer<void>();
+      final container = gatedContainer(gate: gate);
+      final notifier = container.read(restoreControllerProvider.notifier);
+      final firstSecret = SecretBytes(Uint8List.fromList([1]));
+      final first = notifier.restore(
+        archiveBytes: vaultOnlyArchive(),
+        passphrase: firstSecret,
+      );
+      final refusedSecret = SecretBytes(Uint8List.fromList([2]));
+      await notifier.restore(
+        archiveBytes: vaultOnlyArchive(),
+        passphrase: refusedSecret,
+      );
+      expect(() => refusedSecret.use((b) => b), throwsStateError);
+
+      gate.complete();
+      await first;
+      expect(() => firstSecret.use((b) => b), throwsStateError);
+      expect(container.read(restoreControllerProvider).hasValue, isTrue);
+    });
+  });
+
   group('§5.10 — identity + network adoption after the switch', () {
     const archiveId = 'cccccccccccccccccccccccccccccccc';
 

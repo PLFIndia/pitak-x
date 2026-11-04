@@ -72,6 +72,12 @@ class _RestorePageState extends ConsumerState<RestorePage> {
       const group = XTypeGroup(label: 'Pitak backup', extensions: ['pitabak']);
       final file = await openFile(acceptedTypeGroups: [group]);
       if (file == null) return;
+      if (!mounted) return;
+      // Item 11: the controller keeps the last restore's result until a NEW
+      // archive is chosen (reopening this page shows it again). The user has
+      // now chosen one, so the old archive's summary/failure must go before
+      // anything about the new file is shown.
+      ref.read(restoreControllerProvider.notifier).clearResult();
       // M05: read under the archive cap. The extractor re-checks the same
       // cap, but enforcing it here means an oversized pick is never buffered
       // at all.

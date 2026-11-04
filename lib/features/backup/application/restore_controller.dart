@@ -36,15 +36,21 @@ part 'restore_controller.g.dart';
 /// Lifecycle ownership (N11): a restore is an authoritative overwrite that
 /// must FINISH once started, so the run is owned here, not by the page —
 /// modelled on `PublishController`/`ImportController`:
-///  - `ref.keepAlive()` pins this autoDispose element for the run, so
-///    navigating away mid-restore cannot dispose it, swallow the terminal
-///    state, or let a rebuilt page start a SECOND concurrent restore;
+///  - the provider is `keepAlive` (review item 11): navigating away cannot
+///    dispose it mid-restore, swallow the terminal state, or let a rebuilt
+///    page start a SECOND concurrent restore — and the terminal
+///    success/failure stays visible when Restore is reopened until the user
+///    chooses a new archive ([clearResult]) or starts a new restore;
 ///  - `_running` refuses a second call outright;
 ///  - an unexpected throw becomes a typed `AsyncError(UnexpectedFailure)`
 ///    instead of escaping into the page's unawaited future;
 ///  - the post-success list refresh is invalidated HERE (next to the vault
 ///    session invalidation), so it happens even when the page is gone.
-@riverpod
+///
+/// keepAlive is safe here: the controller holds no secret (the passphrase is
+/// wiped in `restore`'s `finally`) and a [RestoreSummary] is only counts and
+/// outcome flags.
+@Riverpod(keepAlive: true)
 class RestoreController extends _$RestoreController {
   /// True while a restore runs — a second call is refused (N11).
   bool _running = false;
@@ -56,6 +62,17 @@ class RestoreController extends _$RestoreController {
   FutureOr<RestoreSummary?> build() {
     ref.onDispose(() => _disposed = true);
     return null; // idle until restore() is run
+  }
+
+  /// Forgets the previous restore's terminal result (back to idle).
+  ///
+  /// The page calls this when the user chooses a NEW archive, so the old
+  /// archive's summary or failure is never shown next to the new one. A
+  /// running restore is never cleared: its terminal state must reach the
+  /// user (the page also disables the picker while loading).
+  void clearResult() {
+    if (_running || _disposed) return;
+    state = const AsyncData(null);
   }
 
   /// Inspects the archive WITHOUT restoring (N13): the Restore screen runs
@@ -86,10 +103,6 @@ class RestoreController extends _$RestoreController {
       return;
     }
     _running = true;
-    // keepAlive for the duration of the run (PublishController pattern):
-    // without it, popping the page mid-restore lets autoDispose destroy this
-    // element while the restorer is still working.
-    final link = ref.keepAlive();
     state = const AsyncLoading();
     try {
       final restorer = await ref.read(restoreBackupProvider.future);
@@ -161,7 +174,6 @@ class RestoreController extends _$RestoreController {
       // archives — nothing to wipe).
       passphrase?.dispose();
       _running = false;
-      link.close();
     }
   }
 
