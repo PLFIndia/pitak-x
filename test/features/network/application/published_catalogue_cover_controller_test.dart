@@ -219,6 +219,70 @@ void main() {
     sub.close();
   });
 
+  test('item 15: a repeat request for a cached cover refreshes its recency '
+      'without a refetch', () async {
+    // Before: dedupe returned before touching `_usedAt`, so a cover that
+    // scrolled back into view was still the next LRU victim.
+    makeContainer();
+    final sub = listen();
+    await container.read(settingsControllerProvider.future);
+    for (var i = 0; i < 100; i++) {
+      coverNotifier().request(coverFor(i));
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+    expect(fetch.calls, hasLength(100));
+
+    // Cover 0 is used again (a cache hit), then cover 100 pushes one out.
+    coverNotifier().request(coverFor(0));
+    coverNotifier().request(coverFor(100));
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+
+    final session = container.read(
+      publishedCatalogueCoverControllerProvider(site),
+    );
+    expect(session.length, PublishedCatalogueCoverController.maxEntries);
+    expect(fetch.calls, hasLength(101), reason: 'cover 0 was not refetched');
+    expect(session.bytesFor(coverFor(0).url), isNotNull, reason: 'kept');
+    expect(
+      session.bytesFor(coverFor(1).url),
+      isNull,
+      reason: 'cover 1 is now the least recently used',
+    );
+    expect(session.bytesFor(coverFor(100).url), isNotNull);
+    sub.close();
+  });
+
+  test(
+    'item 15: a remembered failure gets no recency and no refetch',
+    () async {
+      makeContainer();
+      final sub = listen();
+      await container.read(settingsControllerProvider.future);
+      fetch.failForUrls.add(coverFor(500).url);
+      coverNotifier().request(coverFor(500)); // fails, stays remembered
+      for (var i = 0; i < 100; i++) {
+        coverNotifier().request(coverFor(i));
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      expect(fetch.calls, hasLength(101));
+
+      // Re-requesting the failure is a dedupe no-op: no fetch, and it cannot
+      // shield cover 0 (the true LRU) from eviction.
+      coverNotifier().request(coverFor(500));
+      coverNotifier().request(coverFor(100));
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      final session = container.read(
+        publishedCatalogueCoverControllerProvider(site),
+      );
+      expect(fetch.calls, hasLength(102));
+      expect(session.bytesFor(coverFor(500).url), isNull);
+      expect(session.bytesFor(coverFor(0).url), isNull, reason: 'LRU evicted');
+      expect(session.bytesFor(coverFor(100).url), isNotNull);
+      sub.close();
+    },
+  );
+
   test('the cache evicts by total bytes (16 MiB)', () async {
     final threeMiB = Uint8List(3 * 1024 * 1024)..fillRange(0, 1, 0xFF);
     fetch.bytesOverride = threeMiB;

@@ -127,7 +127,16 @@ class PublishedCatalogueCoverController
     if (settings == null || !settings.loadRemoteCovers) return;
 
     final key = request.url;
-    if (!_remembered.add(key)) return;
+    if (!_remembered.add(key)) {
+      // Item 15: a repeat request for a cover that is STILL cached is a use
+      // (the row scrolled back into view), so it must not be the next LRU
+      // victim. Only an actual cache hit counts: a remembered failure or a
+      // queued-but-not-yet-fetched entry has no `_usedAt` and is left alone.
+      // The state is deliberately not republished for this: the bytes the
+      // UI watches are unchanged.
+      if (_images.containsKey(key)) _usedAt[key] = ++_clock;
+      return;
+    }
     if (_remembered.length > maxRemembered) {
       _remembered.remove(_remembered.first);
     }
