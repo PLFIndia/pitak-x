@@ -298,6 +298,45 @@ void main() {
       expect(r.creds.storedTarget, isNull);
     });
 
+    test('a renamed target (same owner, different name) is refused, nothing '
+        'stored', () async {
+      // The list said `old-name`; GitHub's answer names the repository it
+      // now answers for. Adopting it would publish to a site the user never
+      // picked (review finding 2).
+      const renamed = GitHubRepoDetails(
+        fullName: 'booklover/new-name',
+        ownerLogin: _SetupApi.login,
+        isPrivate: false,
+        isArchived: false,
+        defaultBranch: 'main',
+        canPush: true,
+        canAdmin: true,
+      );
+      final r = await adopt(
+        _SetupApi(details: renamed),
+        fullName: 'booklover/old-name',
+      );
+      expect(r.fail, isA<ValidationFailure>());
+      expect(r.api.pagesSiteCalls, 0, reason: 'refused before Pages');
+      expect(r.creds.storedTarget, isNull);
+    });
+
+    test('the name comparison is case-insensitive and stores the picker '
+        'spelling', () async {
+      const capitalised = GitHubRepoDetails(
+        fullName: 'BookLover/My-Library',
+        ownerLogin: 'booklover',
+        isPrivate: false,
+        isArchived: false,
+        defaultBranch: 'main',
+        canPush: true,
+        canAdmin: true,
+      );
+      final r = await adopt(_SetupApi(details: capitalised));
+      expect(r.fail, isNull);
+      expect(r.creds.storedTarget, 'booklover/my-library');
+    });
+
     test('repo not found (404) → refused, nothing stored', () async {
       final r = await adopt(_SetupApi(details: null));
       expect(r.fail, isA<ValidationFailure>());

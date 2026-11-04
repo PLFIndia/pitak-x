@@ -133,6 +133,20 @@ void main() {
               ? http.Response('read failed', status)
               : null,
         );
+        if (status == 302) {
+          // Review finding 2: a redirect is refused as a transport failure
+          // before its body is read, so it never becomes a commit result.
+          await expectLater(
+            fixture.publish(),
+            throwsA(isA<GitHubApiException>()),
+          );
+          expect(fixture.writes, isEmpty);
+          expect(fixture.calls, [
+            _refRead,
+            if (stage.value == _commitRead) _commitRead,
+          ]);
+          return;
+        }
         final result = await fixture.publish();
         expect(fixture.writes, isEmpty);
         if (status == 429) {

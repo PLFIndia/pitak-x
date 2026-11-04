@@ -105,6 +105,11 @@ final class SetupGitHubRepo {
     'and try again.',
   );
 
+  static const Failure _renamed = ValidationFailure(
+    'GitHub reports that repository under a different name now. Refresh the '
+    'list and pick it again.',
+  );
+
   static const Failure _archived = ValidationFailure(
     'That repository is archived (read-only). Unarchive it on GitHub or '
     'pick another one.',
@@ -181,8 +186,9 @@ final class SetupGitHubRepo {
 
   /// Adopts an EXISTING repository [fullName] ("owner/repo") chosen from the
   /// user's list (N09). Refuses anything not owned by the signed-in account
-  /// (D1-a), archived, unpushable, private, or with a Pages layout the app
-  /// cannot publish to (D2-a). Stores the target only after every check.
+  /// (D1-a), renamed since the list was read, archived, unpushable, private,
+  /// or with a Pages layout the app cannot publish to (D2-a). Stores the
+  /// target only after every check.
   Future<Either<Failure, GitHubSetupResult>> adopt({
     required String token,
     required String fullName,
@@ -208,8 +214,8 @@ final class SetupGitHubRepo {
   }
 
   /// Shared adopt rules for a repo believed to live on [owner]'s account.
-  /// Reads the repository, re-checks ownership from the server's answer,
-  /// verifies Pages, and stores the target LAST. Throws
+  /// Reads the repository, re-checks that the answer is the requested name
+  /// and owner, verifies Pages, and stores the target LAST. Throws
   /// [GitHubApiException] on transport failure (callers map it).
   Future<Either<Failure, GitHubSetupResult>> _adoptOwned({
     required String token,
@@ -222,8 +228,15 @@ final class SetupGitHubRepo {
       token: token,
     );
     if (details == null) return left(_notFound);
-    // Trust the server, not the path we asked for: a redirect (renamed or
-    // transferred repo) can answer for a different owner.
+    // Trust the server, not the path we asked for. A same-owner response for
+    // a DIFFERENT repository name is a renamed target: adopting it would
+    // point the user's publishing at a site they did not pick, so it is
+    // refused and nothing is stored (review finding 2).
+    if (details.fullName.toLowerCase() != '$owner/$repo'.toLowerCase()) {
+      return left(_renamed);
+    }
+    // The engine is case-insensitive for logins, but the stored target keeps
+    // the user's spelling.
     if (details.ownerLogin.toLowerCase() != owner.toLowerCase()) {
       return left(_notOwned);
     }
