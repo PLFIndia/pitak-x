@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fpdart/fpdart.dart';
+import 'package:pitaka/core/app_lock/app_lock_controller.dart';
 import 'package:pitaka/core/app_lock/app_lock_observer.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
@@ -148,6 +149,54 @@ Widget _app(List<Override> overrides) => ProviderScope(
   child: _shell(),
 );
 
+Future<void> _step(WidgetTester tester, AppLifecycleState state) async {
+  tester.binding.handleAppLifecycleStateChanged(state);
+  await tester.pump();
+}
+
+/// Valid OS order: resumed → inactive → hidden → paused, then reverse.
+Future<void> _background(WidgetTester tester) async {
+  await _step(tester, AppLifecycleState.inactive);
+  await _step(tester, AppLifecycleState.hidden);
+  await _step(tester, AppLifecycleState.paused);
+}
+
+Future<void> _foreground(WidgetTester tester) async {
+  await _step(tester, AppLifecycleState.hidden);
+  await _step(tester, AppLifecycleState.inactive);
+  await _step(tester, AppLifecycleState.resumed);
+}
+
+Future<ProviderContainer> _pumpUnlockedGate(
+  WidgetTester tester,
+  _FakeAuth auth,
+) async {
+  SharedPreferences.setMockInitialValues({'app_lock_biometric': true});
+  late ProviderContainer container;
+  await tester.pumpWidget(
+    ProviderScope(
+      overrides: [
+        catalogueItemRepositoryProvider.overrideWith(
+          (ref) async => _EmptyRepo(),
+        ),
+        biometricAuthenticatorProvider.overrideWithValue(auth),
+      ],
+      child: Consumer(
+        builder: (context, ref, _) {
+          container = ProviderScope.containerOf(context);
+          return _shell();
+        },
+      ),
+    ),
+  );
+  await tester.pump();
+  await tester.pump(const Duration(seconds: 2));
+  await tester.pumpAndSettle();
+  expect(find.text('Library'), findsOneWidget);
+  expect(auth.prompts, 1);
+  return container;
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -282,55 +331,15 @@ void main() {
   testWidgets('suppressed background cycle (camera/crop) does NOT re-lock', (
     tester,
   ) async {
-    SharedPreferences.setMockInitialValues({'app_lock_biometric': true});
     final auth = _FakeAuth(result: true);
-    late ProviderContainer container;
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          catalogueItemRepositoryProvider.overrideWith(
-            (ref) async => _EmptyRepo(),
-          ),
-          biometricAuthenticatorProvider.overrideWithValue(auth),
-        ],
-        child: Consumer(
-          builder: (context, ref, _) {
-            container = ProviderScope.containerOf(context);
-            return _shell();
-          },
-        ),
-      ),
-    );
-    await tester.pump(); // splash
-    await tester.pump(const Duration(seconds: 2)); // splash done → unlock
-    await tester.pumpAndSettle();
-    expect(find.text('Library'), findsOneWidget);
-    expect(auth.prompts, 1);
+    final container = await _pumpUnlockedGate(tester, auth);
 
     // Simulate a cover capture: suppression on, app backgrounds for the camera
     // activity, then resumes. The gate must NOT re-lock or re-prompt.
-    // Valid OS order: resumed → inactive → hidden → paused, then reverse.
-    Future<void> step(AppLifecycleState s) async {
-      tester.binding.handleAppLifecycleStateChanged(s);
-      await tester.pump();
-    }
-
-    Future<void> background() async {
-      await step(AppLifecycleState.inactive);
-      await step(AppLifecycleState.hidden);
-      await step(AppLifecycleState.paused);
-    }
-
-    Future<void> foreground() async {
-      await step(AppLifecycleState.hidden);
-      await step(AppLifecycleState.inactive);
-      await step(AppLifecycleState.resumed);
-    }
-
     final suppressor = container.read(lockSuppressorProvider.notifier);
     await suppressor.guard(() async {
-      await background();
-      await foreground();
+      await _background(tester);
+      await _foreground(tester);
     });
     await tester.pumpAndSettle();
 
@@ -339,10 +348,63 @@ void main() {
 
     // After the grace window elapses, a REAL background still locks.
     await tester.pump(const Duration(seconds: 3));
-    await background();
-    await foreground();
+    await _background(tester);
+    await _foreground(tester);
     await tester.pumpAndSettle();
     expect(auth.prompts, 2); // genuine background re-prompted
+  });
+
+  testWidgets('background when picker grace expires locks before resume', (
+    tester,
+  ) async {
+    final auth = _FakeAuth(result: true);
+    final container = await _pumpUnlockedGate(tester, auth);
+    final suppressor = container.read(lockSuppressorProvider.notifier);
+    await suppressor.guard(() async {
+      await _background(tester);
+      await _foreground(tester);
+    });
+
+    // Home again during the two-second grace, then stay away past its end.
+    await _background(tester);
+    await tester.pump(const Duration(seconds: 3));
+    expect(container.read(lockSuppressorProvider), isFalse);
+    expect(
+      container.read(appLockControllerProvider).phase,
+      AppLockPhase.locked,
+    );
+    expect(auth.prompts, 1); // no prompt while still backgrounded
+
+    await _foreground(tester);
+    await tester.pumpAndSettle();
+    expect(auth.prompts, 2);
+    expect(find.text('Library'), findsOneWidget);
+  });
+
+  testWidgets('home and resume inside picker grace stays unlocked', (
+    tester,
+  ) async {
+    final auth = _FakeAuth(result: true);
+    final container = await _pumpUnlockedGate(tester, auth);
+    final suppressor = container.read(lockSuppressorProvider.notifier);
+    await suppressor.guard(() async {
+      await _background(tester);
+      await _foreground(tester);
+    });
+
+    // A short second cycle is still the picker exemption, even after grace
+    // later expires in the foreground.
+    await _background(tester);
+    await _foreground(tester);
+    await tester.pump(const Duration(seconds: 3));
+    expect(find.text('Library'), findsOneWidget);
+    expect(auth.prompts, 1);
+
+    // The next genuine, unsuppressed background is not exempt.
+    await _background(tester);
+    await _foreground(tester);
+    await tester.pumpAndSettle();
+    expect(auth.prompts, 2);
   });
 
   testWidgets('locked screen Unlock button retries the prompt', (tester) async {

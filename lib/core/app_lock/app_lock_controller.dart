@@ -90,9 +90,20 @@ final class AppLockState {
 @Riverpod(keepAlive: true)
 class AppLockController extends _$AppLockController {
   bool _prompting = false;
+  bool _backgroundWhileSuppressed = false;
 
   @override
-  AppLockState build() => const AppLockState(phase: AppLockPhase.splash);
+  AppLockState build() {
+    ref.listen(lockSuppressorProvider, (previous, next) {
+      if (previous != true || next || !_backgroundWhileSuppressed) return;
+      _backgroundWhileSuppressed = false;
+      if (state.phase == AppLockPhase.splash || !_gateEnabled) return;
+      // Grace ended in the background: hide the recents preview now, and let
+      // the later resume use the ordinary locked-phase prompt.
+      state = state.copyWith(phase: AppLockPhase.locked);
+    });
+    return const AppLockState(phase: AppLockPhase.splash);
+  }
 
   /// Called by the splash once its hold elapses.
   ///
@@ -122,13 +133,29 @@ class AppLockController extends _$AppLockController {
   void onAppLifecycleState(AppLifecycleState lifecycle) {
     if (state.phase == AppLockPhase.splash) return; // still booting
     if (!_gateEnabled) return;
-    if (ref.read(lockSuppressorProvider.notifier).isSuppressed) return;
+    final suppressed = ref.read(lockSuppressorProvider.notifier).isSuppressed;
+    if (suppressed) {
+      if (lifecycle == AppLifecycleState.paused ||
+          lifecycle == AppLifecycleState.hidden) {
+        _backgroundWhileSuppressed = true;
+      } else if (lifecycle == AppLifecycleState.resumed) {
+        // The camera/gallery returned while suppression was still active.
+        _backgroundWhileSuppressed = false;
+      }
+      return;
+    }
     if (lifecycle == AppLifecycleState.paused ||
         lifecycle == AppLifecycleState.hidden) {
+      _backgroundWhileSuppressed = false;
       if (state.phase == AppLockPhase.unlocked) {
         state = state.copyWith(phase: AppLockPhase.locked);
       }
     } else if (lifecycle == AppLifecycleState.resumed) {
+      if (_backgroundWhileSuppressed) {
+        // Fail closed even if the suppression-state notification was missed.
+        _backgroundWhileSuppressed = false;
+        state = state.copyWith(phase: AppLockPhase.locked);
+      }
       if (state.phase == AppLockPhase.locked) unlock();
     }
   }
