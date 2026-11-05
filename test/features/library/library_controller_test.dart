@@ -249,6 +249,11 @@ class _FakeSettingsRepo implements SettingsRepository {
   Future<Either<Failure, Unit>> setAutoPublishAvailability({
     required bool enabled,
   }) async => right(unit);
+
+  @override
+  Future<Either<Failure, Unit>> setLookupIsbnAfterScan({
+    required bool enabled,
+  }) async => right(unit);
 }
 
 void main() {

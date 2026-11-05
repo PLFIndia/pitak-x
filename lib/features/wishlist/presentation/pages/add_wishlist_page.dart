@@ -25,6 +25,7 @@ import 'package:pitaka/features/lookup/domain/entities/book_metadata.dart';
 import 'package:pitaka/features/lookup/domain/isbn_format.dart';
 import 'package:pitaka/features/lookup/domain/lookup_result.dart';
 import 'package:pitaka/features/lookup/presentation/pages/scanner_page.dart';
+import 'package:pitaka/features/lookup/presentation/widgets/isbn_lookup_field.dart';
 import 'package:pitaka/features/publish/domain/cover_url_allow_list.dart';
 import 'package:pitaka/features/wishlist/application/add_wishlist_controller.dart';
 import 'package:pitaka/features/wishlist/application/wishlist_controller.dart';
@@ -33,10 +34,13 @@ import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
 /// Form screen to add or edit a wishlist entry.
 class AddWishlistPage extends ConsumerStatefulWidget {
   /// Creates the page. When [book] is non-null the form opens in edit mode.
-  const AddWishlistPage({this.book, super.key});
+  const AddWishlistPage({this.book, this.buildScanner, super.key});
 
   /// The entry to edit, or null to add a new one.
   final WishlistBook? book;
+
+  /// Optional camera replacement for widget tests; production leaves it null.
+  final IsbnScannerBuilder? buildScanner;
 
   @override
   ConsumerState<AddWishlistPage> createState() => _AddWishlistPageState();
@@ -101,18 +105,18 @@ class _AddWishlistPageState extends ConsumerState<AddWishlistPage> {
 
   bool _looking = false;
 
-  /// Opens the barcode scanner; on a successful scan fills ONLY the ISBN field.
-  /// The user then taps Lookup explicitly — scanning never calls the network.
-  Future<void> _scanIsbn() async {
-    final scanned = await Navigator.of(context).push<String>(
-      MaterialPageRoute<String>(builder: (_) => const ScannerPage()),
-    );
-    if (scanned == null || !mounted) return;
-    setState(() => _isbn.text = IsbnFormat.normalize(scanned));
-  }
+  /// Fills a scanned ISBN, then uses the existing lookup only when enabled.
+  Future<void> _scanIsbn() => scanIsbnForForm(
+    context: context,
+    ref: ref,
+    buildScanner: widget.buildScanner,
+    onScanned: (isbn) => setState(() => _isbn.text = isbn),
+    lookup: _lookupIsbn,
+  );
 
   /// Looks up the current ISBN and prefills EMPTY fields from the result.
   Future<void> _lookupIsbn() async {
+    if (_looking) return; // a scan-triggered and manual lookup must not overlap
     final normalized = IsbnFormat.normalize(_isbn.text);
     if (normalized.isEmpty) return;
     if (!IsbnFormat.isValid(normalized)) {
@@ -244,40 +248,11 @@ class _AddWishlistPageState extends ConsumerState<AddWishlistPage> {
           ),
           const SizedBox(height: 12),
           _field(_author, 'Author'),
-          Padding(
-            padding: const EdgeInsets.only(bottom: 12),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _isbn,
-                    decoration: const InputDecoration(
-                      labelText: 'ISBN',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                IconButton.outlined(
-                  tooltip: 'Scan barcode',
-                  icon: const Icon(Icons.qr_code_scanner),
-                  onPressed: _looking ? null : _scanIsbn,
-                ),
-                const SizedBox(width: 4),
-                IconButton.filledTonal(
-                  tooltip: 'Look up details',
-                  icon: _looking
-                      ? const SizedBox(
-                          height: 18,
-                          width: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.search),
-                  onPressed: _looking ? null : _lookupIsbn,
-                ),
-              ],
-            ),
+          IsbnLookupField(
+            controller: _isbn,
+            looking: _looking,
+            onScan: _scanIsbn,
+            onLookup: _lookupIsbn,
           ),
           _field(_publisher, 'Publisher'),
           _field(

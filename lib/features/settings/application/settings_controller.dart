@@ -368,4 +368,13 @@ class SettingsController extends _$SettingsController
     (repo) => repo.setAutoPublishAvailability(enabled: enabled),
     (s) => s.copyWith(autoPublishAvailability: enabled),
   );
+
+  /// Sets whether a successful ISBN scan immediately searches online.
+  /// Default off: the user explicitly taps Lookup instead.
+  Future<Either<Failure, Unit>> setLookupIsbnAfterScan({
+    required bool enabled,
+  }) => _update(
+    (repo) => repo.setLookupIsbnAfterScan(enabled: enabled),
+    (s) => s.copyWith(lookupIsbnAfterScan: enabled),
+  );
 }

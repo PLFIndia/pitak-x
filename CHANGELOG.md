@@ -12,6 +12,18 @@ The release script (`tool/release_build.sh`) refuses to build a version
 that has no heading here, so `Unreleased` entries move under the version
 heading as part of the `chore(release):` commit.
 
+## [Unreleased]
+
+### Added
+- **Optional immediate ISBN lookup after scanning:** Settings → Library gains
+  **Look up ISBN after scanning** (default off). Add book and Add to wishlist
+  keep the current scan-then-Lookup behavior unless it is enabled; the explicit
+  Lookup button remains available for retries and edited ISBNs. Unavailable
+  settings fail closed to manual mode, metadata still fills only empty fields,
+  and scanning never saves an item. Library quick-add routing is unchanged.
+  The shared ISBN row/scan flow and Settings tile are extracted into cohesive
+  presentation files, preserving the file-size ratchet.
+
 ## [1.9.1] - 2026-11 (tag `1.9.1`, versionCode 33)
 
 Release sentinel (`tool/release_build.sh --sentinel`): `GitHubBlobPacer`.

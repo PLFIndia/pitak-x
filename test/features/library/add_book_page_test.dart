@@ -12,6 +12,8 @@ import 'package:pitaka/features/library/presentation/pages/add_book_page.dart';
 import 'package:pitaka/features/lookup/domain/entities/book_metadata.dart';
 import 'package:pitaka/features/lookup/domain/isbn_lookup_service.dart';
 import 'package:pitaka/features/lookup/domain/lookup_result.dart';
+import 'package:pitaka/features/lookup/presentation/pages/scanner_page.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../support/a11y.dart';
 
@@ -19,8 +21,13 @@ import '../../support/a11y.dart';
 class _FakeLookup implements IsbnLookupService {
   _FakeLookup(this._result);
   final LookupResult _result;
+  final List<String> isbns = [];
   @override
-  Future<LookupResult> lookupByIsbn(String isbn) async => _result;
+  Future<LookupResult> lookupByIsbn(String isbn) async {
+    isbns.add(isbn);
+    return _result;
+  }
+
   @override
   Future<SearchResult> searchByTitle(String query, {int limit = 20}) async =>
       const SearchEmpty();
@@ -139,15 +146,38 @@ Future<void> _tapSave(WidgetTester tester) async {
   await tester.pumpAndSettle();
 }
 
-Widget _host(_MemRepo repo, {CatalogueItem? book, LookupResult? lookup}) {
+Widget _host(
+  _MemRepo repo, {
+  CatalogueItem? book,
+  LookupResult? lookup,
+  IsbnLookupService? lookupService,
+  IsbnScannerBuilder? buildScanner,
+}) {
   return ProviderScope(
     overrides: [
       catalogueItemRepositoryProvider.overrideWith((ref) async => repo),
-      if (lookup != null)
+      if (lookupService != null)
+        isbnLookupServiceProvider.overrideWithValue(lookupService)
+      else if (lookup != null)
         isbnLookupServiceProvider.overrideWithValue(_FakeLookup(lookup)),
     ],
-    child: MaterialApp(home: AddBookPage(book: book)),
+    child: MaterialApp(
+      home: AddBookPage(book: book, buildScanner: buildScanner),
+    ),
   );
+}
+
+/// Camera replacement: one button that emits a valid ISBN to ScannerPage.
+Widget _fakeScanner(void Function(String) onText) => ElevatedButton(
+  onPressed: () => onText('9780140449136'),
+  child: const Text('emit-isbn'),
+);
+
+Future<void> _scan(WidgetTester tester) async {
+  await tester.tap(find.byIcon(Icons.qr_code_scanner));
+  await tester.pumpAndSettle();
+  await tester.tap(find.text('emit-isbn'));
+  await tester.pumpAndSettle();
 }
 
 /// The lookup result SnackBar overlays the form bottom for ~4s; expire it.
@@ -213,6 +243,83 @@ void main() {
     expect(repo.books.length, 1);
     expect(repo.books.single.id, existing.id);
     expect(repo.books.single.title, 'Revised');
+  });
+
+  testWidgets('scan defaults to ISBN-only; Lookup remains explicit', (
+    tester,
+  ) async {
+    const meta = BookMetadata(isbn: '9780140449136', title: 'Scanned Title');
+    final lookup = _FakeLookup(const LookupFound(meta));
+    SharedPreferences.setMockInitialValues({});
+    await tester.pumpWidget(
+      _host(_MemRepo(), lookupService: lookup, buildScanner: _fakeScanner),
+    );
+    await tester.pumpAndSettle();
+
+    await _scan(tester);
+
+    expect(lookup.isbns, isEmpty, reason: 'no implicit network lookup');
+    expect(
+      tester
+          .widget<TextField>(find.widgetWithText(TextField, 'ISBN'))
+          .controller!
+          .text,
+      '9780140449136',
+    );
+    expect(find.text('Scanned Title'), findsNothing);
+
+    await tester.tap(find.byTooltip('Look up details'));
+    await tester.pumpAndSettle();
+    expect(lookup.isbns, ['9780140449136']);
+    expect(find.text('Scanned Title'), findsOneWidget);
+  });
+
+  testWidgets('enabled setting looks up after scanning; Lookup can retry', (
+    tester,
+  ) async {
+    const meta = BookMetadata(isbn: '9780140449136', title: 'Scanned Title');
+    final lookup = _FakeLookup(const LookupFound(meta));
+    SharedPreferences.setMockInitialValues({'lookup_isbn_after_scan': true});
+    await tester.pumpWidget(
+      _host(_MemRepo(), lookupService: lookup, buildScanner: _fakeScanner),
+    );
+    await tester.pumpAndSettle();
+
+    await _scan(tester);
+
+    expect(lookup.isbns, ['9780140449136']);
+    expect(find.text('Scanned Title'), findsOneWidget);
+
+    // The explicit button remains available for an edited ISBN or a retry.
+    await tester.tap(find.byTooltip('Look up details'));
+    await tester.pumpAndSettle();
+    expect(lookup.isbns, ['9780140449136', '9780140449136']);
+  });
+
+  testWidgets('unavailable settings fail closed to manual lookup', (
+    tester,
+  ) async {
+    final lookup = _FakeLookup(const LookupNotFound());
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          catalogueItemRepositoryProvider.overrideWith(
+            (ref) async => _MemRepo(),
+          ),
+          isbnLookupServiceProvider.overrideWithValue(lookup),
+          settingsRepositoryProvider.overrideWith(
+            (ref) async => throw StateError('settings unavailable'),
+          ),
+        ],
+        child: const MaterialApp(home: AddBookPage(buildScanner: _fakeScanner)),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await _scan(tester);
+
+    expect(lookup.isbns, isEmpty);
+    expect(find.byTooltip('Look up details'), findsOneWidget);
   });
 
   // N02 regression: lookup covers used to be discarded and needsMetadata

@@ -48,6 +48,10 @@ class _FailingSettingsRepo implements SettingsRepository {
   Future<Either<Failure, Unit>> setLoadRemoteCovers({required bool enabled}) =>
       throw _boom;
   @override
+  Future<Either<Failure, Unit>> setLookupIsbnAfterScan({
+    required bool enabled,
+  }) => throw _boom;
+  @override
   Future<Either<Failure, Unit>> setMaintainerName(String name) => throw _boom;
   @override
   Future<Either<Failure, Unit>> setPublishContact({
@@ -146,6 +150,10 @@ class _GatedSettingsRepo implements SettingsRepository {
   Future<Either<Failure, Unit>> setLoadRemoteCovers({required bool enabled}) =>
       _gate('covers');
   @override
+  Future<Either<Failure, Unit>> setLookupIsbnAfterScan({
+    required bool enabled,
+  }) => _gate('lookupIsbnAfterScan');
+  @override
   Future<Either<Failure, Unit>> setMaintainerName(String name) =>
       _gate('maintainer');
   @override
@@ -236,6 +244,7 @@ void main() {
       expect(s.loadRemoteCovers, false); // privacy default: off (#31)
       expect(s.libraryLogo, '');
       expect(s.appLockBiometric, false); // gate opt-in, default off
+      expect(s.lookupIsbnAfterScan, false); // explicit Lookup by default
     });
 
     test('round-trips each setting', () async {
@@ -250,6 +259,7 @@ void main() {
       await repo.setLoadRemoteCovers(enabled: true);
       await repo.setLibraryLogo('  covers/abc.jpg  ');
       await repo.setAppLockBiometric(enabled: true);
+      await repo.setLookupIsbnAfterScan(enabled: true);
 
       final s = await repo.load();
       expect(s.themeMode, AppThemeMode.dark);
@@ -259,6 +269,7 @@ void main() {
       expect(s.loadRemoteCovers, true);
       expect(s.libraryLogo, 'covers/abc.jpg'); // trimmed
       expect(s.appLockBiometric, true);
+      expect(s.lookupIsbnAfterScan, true);
     });
 
     test(
@@ -743,6 +754,10 @@ void main() {
           isTrue,
         );
         expect((await repo.setLibraryId('c' * 32)).isLeft(), isTrue);
+        expect(
+          (await repo.setLookupIsbnAfterScan(enabled: true)).isLeft(),
+          isTrue,
+        );
       },
     );
 

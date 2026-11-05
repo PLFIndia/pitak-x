@@ -91,4 +91,8 @@ abstract interface class SettingsRepository {
   Future<Either<Failure, Unit>> setAutoPublishAvailability({
     required bool enabled,
   });
+
+  /// Persists whether a successful ISBN scan immediately searches online.
+  /// Non-secret; default false (scan fills the ISBN only).
+  Future<Either<Failure, Unit>> setLookupIsbnAfterScan({required bool enabled});
 }

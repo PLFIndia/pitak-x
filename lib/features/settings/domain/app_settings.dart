@@ -115,6 +115,7 @@ class AppSettings {
     this.libraryLogo = '',
     this.appLockBiometric = false,
     this.autoPublishAvailability = true,
+    this.lookupIsbnAfterScan = false,
   });
 
   /// Sensible first-run defaults.
@@ -198,6 +199,11 @@ class AppSettings {
   /// `books.json` instead of a file that silently stopped updating.
   final bool autoPublishAvailability;
 
+  /// Whether a successful ISBN scan immediately searches online for metadata.
+  /// Default false: scanning only fills the ISBN and the user taps Lookup, so
+  /// no lookup request leaves the device until that explicit action.
+  final bool lookupIsbnAfterScan;
+
   /// Returns a copy with the given fields replaced.
   AppSettings copyWith({
     AppThemeMode? themeMode,
@@ -215,6 +221,7 @@ class AppSettings {
     String? libraryLogo,
     bool? appLockBiometric,
     bool? autoPublishAvailability,
+    bool? lookupIsbnAfterScan,
   }) {
     return AppSettings(
       themeMode: themeMode ?? this.themeMode,
@@ -236,6 +243,7 @@ class AppSettings {
       appLockBiometric: appLockBiometric ?? this.appLockBiometric,
       autoPublishAvailability:
           autoPublishAvailability ?? this.autoPublishAvailability,
+      lookupIsbnAfterScan: lookupIsbnAfterScan ?? this.lookupIsbnAfterScan,
     );
   }
 }

@@ -30,6 +30,7 @@ import 'package:pitaka/features/settings/domain/app_settings.dart';
 import 'package:pitaka/features/settings/presentation/settings_write.dart';
 import 'package:pitaka/features/settings/presentation/widgets/community_library_section.dart';
 import 'package:pitaka/features/settings/presentation/widgets/google_books_key_tile.dart';
+import 'package:pitaka/features/settings/presentation/widgets/isbn_lookup_settings_tile.dart';
 import 'package:pitaka/features/settings/presentation/widgets/publishing_settings_group.dart';
 import 'package:pitaka/features/vault/domain/biometric_unlock.dart';
 import 'package:pitaka/features/vault/presentation/pages/biometric_settings_page.dart';
@@ -138,6 +139,8 @@ class _AppearanceTab extends ConsumerWidget {
           onCommitted: (name) =>
               saveSettingAndReport(context, controller.setMaintainerName(name)),
         ),
+        const SizedBox(height: 8),
+        const IsbnLookupSettingsTile(),
         const SizedBox(height: 16),
         const _LogoRow(),
         const SizedBox(height: 24),

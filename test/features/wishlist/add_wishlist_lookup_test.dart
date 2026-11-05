@@ -7,16 +7,23 @@ import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/lookup/domain/entities/book_metadata.dart';
 import 'package:pitaka/features/lookup/domain/isbn_lookup_service.dart';
 import 'package:pitaka/features/lookup/domain/lookup_result.dart';
+import 'package:pitaka/features/lookup/presentation/pages/scanner_page.dart';
 import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
 import 'package:pitaka/features/wishlist/domain/repositories/wishlist_repository.dart';
 import 'package:pitaka/features/wishlist/presentation/pages/add_wishlist_page.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 /// Lookup stub: returns scripted metadata for any ISBN.
 class _FakeLookup implements IsbnLookupService {
   _FakeLookup(this._result);
   final LookupResult _result;
+  final List<String> isbns = [];
   @override
-  Future<LookupResult> lookupByIsbn(String isbn) async => _result;
+  Future<LookupResult> lookupByIsbn(String isbn) async {
+    isbns.add(isbn);
+    return _result;
+  }
+
   @override
   Future<SearchResult> searchByTitle(String query, {int limit = 20}) async =>
       const SearchEmpty();
@@ -53,13 +60,33 @@ class _NoopWishlistRepo implements WishlistRepository {
   Future<Either<Failure, Unit>> delete(int id) async => right(unit);
 }
 
-Widget _app(LookupResult result, _NoopWishlistRepo repo) => ProviderScope(
+Widget _app(
+  LookupResult result,
+  _NoopWishlistRepo repo, {
+  IsbnLookupService? lookupService,
+  IsbnScannerBuilder? buildScanner,
+}) => ProviderScope(
   overrides: [
-    isbnLookupServiceProvider.overrideWithValue(_FakeLookup(result)),
+    isbnLookupServiceProvider.overrideWithValue(
+      lookupService ?? _FakeLookup(result),
+    ),
     wishlistRepositoryProvider.overrideWith((ref) async => repo),
   ],
-  child: const MaterialApp(home: AddWishlistPage()),
+  child: MaterialApp(home: AddWishlistPage(buildScanner: buildScanner)),
 );
+
+/// Camera replacement: one button that emits a valid ISBN to ScannerPage.
+Widget _fakeScanner(void Function(String) onText) => ElevatedButton(
+  onPressed: () => onText('9780140449136'),
+  child: const Text('emit-isbn'),
+);
+
+Future<void> _scan(WidgetTester tester) async {
+  await tester.tap(find.byIcon(Icons.qr_code_scanner));
+  await tester.pumpAndSettle();
+  await tester.tap(find.text('emit-isbn'));
+  await tester.pumpAndSettle();
+}
 
 /// Scrolls the lazy form ListView until [finder] is visible, then taps it.
 Future<void> _scrollAndTap(WidgetTester tester, Finder finder) async {
@@ -87,6 +114,65 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byIcon(Icons.qr_code_scanner), findsOneWidget);
     expect(find.byIcon(Icons.search), findsOneWidget);
+  });
+
+  testWidgets('scan defaults to ISBN-only; Lookup remains explicit', (
+    tester,
+  ) async {
+    const meta = BookMetadata(
+      isbn: '9780140449136',
+      title: 'Scanned Wishlist Title',
+    );
+    final lookup = _FakeLookup(const LookupFound(meta));
+    SharedPreferences.setMockInitialValues({});
+    await tester.pumpWidget(
+      _app(
+        const LookupFound(meta),
+        _NoopWishlistRepo(),
+        lookupService: lookup,
+        buildScanner: _fakeScanner,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await _scan(tester);
+
+    expect(lookup.isbns, isEmpty, reason: 'no implicit network lookup');
+    expect(find.text('Scanned Wishlist Title'), findsNothing);
+
+    await tester.tap(find.byIcon(Icons.search));
+    await tester.pumpAndSettle();
+    expect(lookup.isbns, ['9780140449136']);
+    expect(find.text('Scanned Wishlist Title'), findsOneWidget);
+  });
+
+  testWidgets('enabled setting looks up after scanning; Lookup can retry', (
+    tester,
+  ) async {
+    const meta = BookMetadata(
+      isbn: '9780140449136',
+      title: 'Scanned Wishlist Title',
+    );
+    final lookup = _FakeLookup(const LookupFound(meta));
+    SharedPreferences.setMockInitialValues({'lookup_isbn_after_scan': true});
+    await tester.pumpWidget(
+      _app(
+        const LookupFound(meta),
+        _NoopWishlistRepo(),
+        lookupService: lookup,
+        buildScanner: _fakeScanner,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await _scan(tester);
+
+    expect(lookup.isbns, ['9780140449136']);
+    expect(find.text('Scanned Wishlist Title'), findsOneWidget);
+
+    await tester.tap(find.byIcon(Icons.search));
+    await tester.pumpAndSettle();
+    expect(lookup.isbns, ['9780140449136', '9780140449136']);
   });
 
   testWidgets('a successful lookup fills empty title/author/publisher/year', (

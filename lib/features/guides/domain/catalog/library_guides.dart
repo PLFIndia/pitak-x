@@ -135,8 +135,9 @@ const Guide wishlistGuide = Guide(
         'to your catalogue.',
     'A book whose ISBN is already in your library is not added twice — Pitak '
         'only marks the wish as purchased.',
-    'Scanning only reads the barcode. Pitak goes online only when you tap '
-        '**Look up details**.',
+    'By default, scanning only reads the barcode; Pitak goes online when you '
+        'tap **Look up details**. To search immediately after scanning, turn '
+        'on **Settings → Library → Look up ISBN after scanning**.',
   ],
   destination: GuideDestination.wishlist,
   destinationLabel: 'Open Wishlist',

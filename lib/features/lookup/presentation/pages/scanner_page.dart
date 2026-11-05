@@ -11,10 +11,17 @@ import 'package:flutter/material.dart';
 import 'package:flutter_zxing/flutter_zxing.dart';
 import 'package:pitaka/features/lookup/domain/isbn_format.dart';
 
+/// Replaces the camera widget in tests, using the same injectable-seam style
+/// as `QrScanPage.buildScanner`. Production leaves it null.
+typedef IsbnScannerBuilder = Widget Function(void Function(String raw) onText);
+
 /// Full-screen barcode scanner. Pops a normalised ISBN string on success.
 class ScannerPage extends StatefulWidget {
   /// Creates the scanner page.
-  const ScannerPage({super.key});
+  const ScannerPage({this.buildScanner, super.key});
+
+  /// Optional camera replacement used by widget tests.
+  final IsbnScannerBuilder? buildScanner;
 
   @override
   State<ScannerPage> createState() => _ScannerPageState();
@@ -23,10 +30,8 @@ class ScannerPage extends StatefulWidget {
 class _ScannerPageState extends State<ScannerPage> {
   bool _handled = false;
 
-  void _onScan(Code code) {
+  void _onRaw(String raw) {
     if (_handled) return;
-    final raw = code.text;
-    if (raw == null || !code.isValid) return;
     final normalized = IsbnFormat.normalize(raw);
     if (IsbnFormat.isValid(normalized)) {
       _handled = true;
@@ -34,32 +39,43 @@ class _ScannerPageState extends State<ScannerPage> {
     }
   }
 
+  void _onScan(Code code) {
+    final raw = code.text;
+    if (raw == null || !code.isValid) return;
+    _onRaw(raw);
+  }
+
   @override
   Widget build(BuildContext context) {
+    final scanner = widget.buildScanner;
     return Scaffold(
       appBar: AppBar(title: const Text('Scan ISBN barcode')),
-      body: ReaderWidget(
-        // ISBN barcodes are EAN-13 (with EAN-8 as a fallback).
-        codeFormat: Format.ean13 | Format.ean8,
-        onScan: _onScan,
-        showGallery: false,
-        scanDelaySuccess: const Duration(milliseconds: 500),
-        // Detection tuning. flutter_zxing decodes only a centred SQUARE crop
-        // of the camera frame (side = min(w,h) * cropPercent; default 0.5).
-        // An EAN-13 book barcode is wide and short, so at the default it must
-        // be framed almost perfectly to land inside the crop — on-device this
-        // made detection rare (Pixel 8a, 2026-07-09). Widen the crop to 90%
-        // and enable zxing-cpp's robustness passes (tryHarder = slower but
-        // thorough scan, tryInverted = light-on-dark barcodes, tryDownscale =
-        // extra pyramid pass for blurry/high-res frames). A 300ms retry cadence
-        // (default 1000ms) makes the scanner feel responsive. Mirrors the
-        // upstream guidance in khoren93/flutter_zxing issues #185/#197.
-        cropPercent: 0.9,
-        tryHarder: true,
-        tryInverted: true,
-        tryDownscale: true,
-        scanDelay: const Duration(milliseconds: 300),
-      ),
+      body: scanner != null
+          ? scanner(_onRaw)
+          : ReaderWidget(
+              // ISBN barcodes are EAN-13 (with EAN-8 as a fallback).
+              codeFormat: Format.ean13 | Format.ean8,
+              onScan: _onScan,
+              showGallery: false,
+              scanDelaySuccess: const Duration(milliseconds: 500),
+              // Detection tuning. flutter_zxing decodes only a centred
+              // SQUARE crop of the camera frame (side = min(w,h) *
+              // cropPercent; default 0.5). An EAN-13 book barcode is wide
+              // and short, so at the default it must be framed almost
+              // perfectly to land inside the crop — on-device this made
+              // detection rare (Pixel 8a, 2026-07-09). Widen the crop to 90%
+              // and enable zxing-cpp's robustness passes (tryHarder = slower
+              // but thorough scan, tryInverted = light-on-dark barcodes,
+              // tryDownscale = extra pyramid pass for blurry/high-res
+              // frames). A 300ms retry cadence (default 1000ms) makes the
+              // scanner feel responsive. Mirrors the upstream guidance in
+              // khoren93/flutter_zxing issues #185/#197.
+              cropPercent: 0.9,
+              tryHarder: true,
+              tryInverted: true,
+              tryDownscale: true,
+              scanDelay: const Duration(milliseconds: 300),
+            ),
     );
   }
 }

@@ -45,6 +45,9 @@ class PrefsSettingsRepository implements SettingsRepository {
   // Automatic availability updates (ADR 0019, plan P3). Absent ⇒ true: the
   // product default is ON, also for installs from before the switch existed.
   static const _autoPublishAvailabilityKey = 'auto_publish_availability';
+  // Immediate online lookup after an ISBN scan. Absent ⇒ false: preserve the
+  // explicit-Lookup behavior and never add an unexpected network request.
+  static const _lookupIsbnAfterScanKey = 'lookup_isbn_after_scan';
 
   @override
   Future<AppSettings> load() async {
@@ -66,6 +69,7 @@ class PrefsSettingsRepository implements SettingsRepository {
       appLockBiometric: _prefs.getBool(_appLockBiometricKey) ?? false,
       autoPublishAvailability:
           _prefs.getBool(_autoPublishAvailabilityKey) ?? true,
+      lookupIsbnAfterScan: _prefs.getBool(_lookupIsbnAfterScanKey) ?? false,
     );
   }
 
@@ -228,4 +232,9 @@ class PrefsSettingsRepository implements SettingsRepository {
   Future<Either<Failure, Unit>> setAutoPublishAvailability({
     required bool enabled,
   }) => _writeBool(_autoPublishAvailabilityKey, enabled);
+
+  @override
+  Future<Either<Failure, Unit>> setLookupIsbnAfterScan({
+    required bool enabled,
+  }) => _writeBool(_lookupIsbnAfterScanKey, enabled);
 }

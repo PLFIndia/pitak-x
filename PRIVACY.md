@@ -2,6 +2,10 @@
 
 _Effective date: 2026-11-04 · Publisher: Parallel Line Foundation_
 
+_Changed 2026-11-04 — a new optional Settings → Library switch can start an
+ISBN lookup immediately after scanning. It is off by default; the ISBN goes
+only to the same lookup services as a manual Lookup (item 1)._
+
 _Changed 2026-11-04 — wording only: the site-check paragraph now distinguishes
 Cloudflare's read-back from GitHub Pages' deferred proof. No new data is
 collected, stored or sent._
@@ -89,7 +93,8 @@ available* tags up to date by itself (item 3; on by default, switch in
 Settings → Data), and the passive update check of Google Play builds
 (item 8):
 
-1. **ISBN lookup.** When you scan or type an ISBN and tap Lookup, that ISBN
+1. **ISBN lookup.** When you type an ISBN and tap Lookup — or scan one after
+   enabling **Settings → Library → Look up ISBN after scanning** — that ISBN
    (and, if the first attempt finds nothing, its equivalent ISBN-10/ISBN-13
    form) is sent to Open Library (openlibrary.org), falling back to Google
    Books (googleapis.com), to fetch book metadata. Like every app, Pitak
