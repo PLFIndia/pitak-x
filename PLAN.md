@@ -1,4 +1,267 @@
-# Phase 5 — remaining Low items and nits (L1, L6, L9–L11, L13–L15, L17, RH2, N17)
+# Active plan — optional ISBN lookup after scanning
+
+## Understanding
+
+Add a persisted Settings → Library switch that lets Add book and Add to
+wishlist look up a scanned ISBN immediately. Default off preserves the current
+behavior: scan fills only the ISBN and the user taps Lookup. Library quick-add
+is a different routing flow and stays unchanged.
+
+## Privacy & threat notes
+
+- Immediate mode sends the scanned ISBN to the existing lookup services; the
+  switch subtitle says so. Default off and unavailable settings fail closed to
+  manual mode, so no new implicit network request occurs.
+- Keep the existing ISBN validation, fixed safe lookup messages, empty-field-
+  only metadata filling and explicit save. No credentials or new telemetry.
+- Tests use fake scanners and lookup services; no camera or live service.
+
+## Proposed approach
+
+1. Add `lookupIsbnAfterScan` to the immutable settings snapshot, prefs
+   repository and serialised controller setter; render the switch with the
+   existing fixed-failure settings helper.
+2. After a successful scan, each form reads the latest setting and calls its
+   existing `_lookupIsbn` only when enabled. Reuse the existing scanner test-
+   seam style so widget tests can emit synthetic ISBNs.
+3. Test default-off, enabled immediate lookup, manual lookup in both modes,
+   settings persistence/failure and unchanged quick-add routing.
+
+## Steps
+
+- [x] Baseline focused tests: 77 passed.
+- [x] Persist and expose the setting; add the Settings switch.
+- [x] Wire both scan flows without changing quick-add.
+- [x] Add focused repository, controller and widget tests.
+- [x] Run formatting, analysis and affected suites.
+
+## Out of scope
+
+- Changing lookup providers, metadata mapping, quick-add routing or save
+  behavior; adding dependencies; live network/camera tests.
+
+## Result
+
+Implemented on `improvements`. `lookupIsbnAfterScan` persists in
+SharedPreferences (default false) through the existing serialised settings
+controller. Settings → Library has the new switch with explicit online-lookup
+copy and fixed save-failure handling. The shared `IsbnLookupField` and
+`scanIsbnForForm` keep both forms identical; enabled scans call the existing
+lookup, manual Lookup remains available, settings load failure stays manual,
+and a re-entrancy guard prevents overlapping automatic/manual lookups.
+Quick-add is untouched. The scanner uses the established injectable camera
+seam for tests. Guide, privacy policy and Unreleased changelog are updated.
+
+Verification: 84 focused tests, then 1,124 affected tests, and finally the
+complete non-golden suite: 5,860 passed. `flutter analyze lib test
+integration_test`, formatting, architecture file-size ratchets and
+`git diff --check` are clean. No live lookup, camera or production service was
+used. Golden tests and device/camera validation were not run.
+
+---
+
+# Historical: `opt-fixes.md` remediation
+
+## Understanding
+
+Continue the `publishOptimisation` remediation from `HANDOFF.md`. Items 1–5 are
+committed and green. Finish item 6's eight failing tests without weakening the
+spooling invariant, then implement items 7–16 one finding at a time with focused
+tests and the final hermetic verification gates.
+
+## Privacy & threat notes
+
+- Use only fake APIs, synthetic secrets, temporary directories and hermetic
+  fixtures; never contact production services or open real user archives.
+- Preserve fixed safe UI/log messages, complete snapshot proofs, exact owned
+  deletions, expected-head compare-and-swap and artifact cleanup on every path.
+- Native secret buffers must be wiped on success, validation failure and
+  cancellation; tests must never print secret contents.
+
+## Investigation notes
+
+- The baseline focused run reproduces exactly eight failures: seven controller
+  tests read cleared `DesiredFile.bytes`, and one use-case test expects a spool
+  to exist even though a failed read correctly precedes lazy store creation.
+- Item 6 production code and its other focused suites are already present in the
+  working tree. `HANDOFF.md` and `opt-fixes.md` are untracked owner documents.
+
+## Proposed approach
+
+1. Resolve committed bodies in the controller fake exactly as the real writer
+   does; assert zero disposals for pre-spool read failure and add a post-spool
+   typed-failure disposal test.
+2. Run the two focused files and then all publish tests; inspect generated and
+   formatting diffs before requesting the separate item-6 commit approval.
+3. Implement items 7–16 in guide order, keeping item 8 native work isolated and
+   regenerating Riverpod output only after provider changes.
+4. Run the focused suites after each finding, then the guide's final checks.
+
+## Decision points
+
+- The user's “go ahead” authorizes end-to-end implementation. Git mutations and
+  other §6 actions still require their exact-command approval at the point of use.
+- Fold the two pre-existing formatting-only diffs into item 6, as the handoff
+  explicitly permits; keep `PLAN.md`, `HANDOFF.md` and `opt-fixes.md` out of it.
+
+## Steps
+
+- [x] Item 6: repair test doubles, add post-spool failure coverage, all publish tests green.
+- [x] Item 7: lifecycle re-lock after picker suppression.
+- [x] Item 8: Rust and Kotlin secret-buffer cleanup with native tests.
+- [x] Item 9: web availability status handling and streamed byte cap.
+- [x] Item 10: truthful sharing outcomes and unavailable/exception handling.
+- [x] Item 11: retain restore terminal result until a new archive is chosen.
+- [x] Item 12: gate QR join success on persisted identity.
+- [x] Item 13: accessible provider-status contrast in both themes.
+- [x] Item 14: await editable-field saves and follow external values safely.
+- [x] Item 15: touch published-cover recency only on cache hits.
+- [x] Item 16: share GitHub blob pacing across commits.
+- [x] Final regeneration, analysis, formatting, focused suites and Rust checks.
+
+## Out of scope
+
+J11–J15, J17 and J19–J23; production-service checks; real credentials/archives;
+Linux golden regeneration on macOS; device, TalkBack, biometric-prompt, native
+heap-inspection and large-device performance validation.
+
+Pre-existing lint from `e75410b` (item 10):
+`lib/features/backup/presentation/pages/create_backup_page.dart:183` exceeded
+the 80-character lint limit and failed `flutter analyze`. Fixed as the
+one-line string split `e5e0179` (no copy change), because the final gate
+required a clean analysis.
+
+## Result
+
+Item 6 is implemented and verified: the fakes resolve spooled upload bodies,
+pre-read failure creates no store, post-spool typed failure and exceptions clean
+up, and events preserve stored size through the shared artifact writer. The
+full publish suite (2,339 tests), architecture suite, analysis, generated-code
+regeneration, formatting and `git diff --check` are green; committed as
+`ce452f4`.
+
+Item 7 is implemented and verified. The grace-expiry regression failed before
+the controller fix, then all 10 app-gate tests passed. Analysis, formatting and
+`git diff --check` are clean; committed as `261dad2`.
+
+Item 8 is implemented and verified. Every public Rust secret input now has a
+`Zeroizing` owner before validation; Kotlin wipes rejected/cancelled inputs and
+returned plaintext. Rust: 36 passed plus 2 ignored real-archive tests. Kotlin:
+6 passed. Vault: 271 passed. Clippy, Rust formatting and `git diff --check` are
+clean; committed as `e4c8b8d`.
+
+Item 9 is implemented and verified. Only 404 or refused content now restores
+inline tags; other HTTP/network failures retain the last accepted file. Actual
+streamed bytes and declared length are capped at 1 MiB, over-cap streams are
+cancelled before parsing, and no `arrayBuffer()` fallback remains. The real
+viewer harness, 61 contract checks and all 2,339 publish tests pass; committed
+as `81faa7c`.
+
+Item 10 is implemented and verified. Backup success is described as a hand-off,
+not proof of saving. Card/link shares close only on success; dismissed and
+unavailable outcomes stay open, exceptions use fixed safe copy, and both
+actions reset busy in `finally`. All 23 focused tests and all 2,588
+backup-plus-publish tests pass, with clean analysis, formatting and
+`git diff --check`; committed as `e75410b`.
+
+Item 12 is implemented and verified (`4c649e0`). `CommunityLibrarySection`
+passes `buildScanner` through to `QrScanPage` (existing camera test seam) and
+shows "Joined library — now merge their file." only on a `Right` from
+`setLibraryId`; a `StorageFailure` shows fixed save-failure/retry copy, keeps
+the old identity and starts no merge. Three widget tests cover success,
+failure and cancel; settings + architecture + QR suites: 119 passed.
+
+Item 13 is implemented and verified (`b616fc0`). New `ProviderStatusColors`
+in `provider_tile.dart` is the single source for success/warning/info/error;
+light theme now uses green 800, deepOrange 900, blue 800 and red 800 (dark
+shades untouched), used by the GitHub "Signed in" and Cloudflare "Token
+verified" rows. Measured on the REAL indigo-scheme card (`#f5f2fa`), not
+white: green 800 = 4.63, deepOrange 900 = 5.06, blue 800 = 5.19, red 800 =
+5.08; dark pairs 5.74–12.15. `test/support/a11y.dart` gained `contrastRatio`
+and `expectMeetsTextContrast`; 39 new tests pin every `ProviderConfig` in both
+themes, expanded and collapsed, plus a pumped-card colour check. Reverting the
+shades locally reproduced exactly six light-theme failures. Publish +
+architecture: 2,422 passed.
+
+Item 14 is implemented and verified (`5cc80bc`). `EditableTextField.onCommitted`
+is now `Future<bool>` with a `_saving` guard: it collapses only on true, keeps
+failed input in the editor, shows a spinner instead of the check while saving
+(text stays editable) and follows external `initial` changes via
+`didUpdateWidget` only when neither editing nor saving. `settings_write.dart`
+exposes awaitable `saveSettingAndReport`; the fire-and-forget `saveSetting`
+delegates to it and both Settings name fields use the awaitable form. Eight
+widget tests plus two Settings-page tests; settings + core/widgets +
+architecture: 165 passed.
+
+Item 15 is implemented and verified (`c3ddcfe`). A repeat request whose cover
+is still cached now updates `_usedAt` before the dedupe return; remembered
+failures, queued misses, disabled consent and disposed sessions do not. No
+Riverpod state is republished for recency. Two new tests (100-entry LRU with
+cover 0 surviving without a refetch, failure-only dedupe not shielding the true
+LRU); the LRU test fails on the pre-fix code. Network + architecture: 1,058
+passed.
+
+Item 16 is implemented and verified (`a228ec2`). `GitHubBlobPacer` in
+`http_github_commit.dart` owns only the last blob-start timestamp and the
+capped-backward-clock rule; `HttpGitHubApi` owns one and hands it to every
+fresh `GitHubCommitWriter`. `gitHubApiProvider` is keepAlive with the
+process-wide pacing justification and regenerated (`Provider<GitHubApi>`).
+Tests: second commit waits the remaining second, >1s elapsed and a backward
+clock behave, exactly one ref move per commit, and a DI test proves the
+provider retains one pacer with no listener between commits. Publish + core/di
++ architecture: 2,473 passed.
+
+Final hermetic gates (all green):
+- `build_runner --delete-conflicting-outputs`: no generated drift.
+- `flutter analyze lib test integration_test`: no issues.
+- `dart format --set-exit-if-changed lib test integration_test`: clean.
+- publish + network + architecture: 3,445 passed.
+- backup + vault + settings + core/storage + core/widgets: 679 passed.
+- viewer availability harness + availability parity contract: 61 passed;
+  `node --check` clean on both JavaScript harnesses.
+- Touched widget suites (cloudflare tile, QR join, editable fields, name
+  fields, app-lock, backup copy truth, published cover/catalogue): 118 passed.
+- Rust: `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`,
+  `cargo test --release` → 36 passed, 2 ignored real-archive tests.
+- `git diff --check` clean. No production service contacted, no real
+  credential/archive/biometric used, no Linux goldens regenerated.
+
+Still unclaimed: the full repository test run, golden tests, `cargo deny`,
+device/TalkBack, real biometric prompts, native heap inspection, large-device
+performance and the F-Droid runtime-classpath check.
+
+Item 11 is implemented and verified. `RestoreController` is
+`@Riverpod(keepAlive: true)` (the per-run `ref.keepAlive()` link is gone);
+`clearResult()` returns to idle only while no restore runs; the page calls it
+as soon as a new archive is picked. The page regression (pop after completion,
+reopen, same failure shown; new pick clears it) failed on the pre-fix code and
+passes now. Controller tests cover retained success/failure past the old
+auto-dispose turn, `clearResult` idle/refused-while-running, duplicate refusal
+and passphrase wiping. Backup suite + architecture: 287 passed; formatting and
+`git diff --check` clean. Generated provider diff inspected
+(`AutoDisposeAsyncNotifierProvider` → `AsyncNotifierProvider`).
+
+Release 1.9.1+33: version metadata, README, CI changelog gate and developer
+changelog moved from Unreleased. Changelogs 33/331/332 are 432 characters and
+333 is 341 after the owner's edit; all pass
+`tool/check_fastlane_changelog_chars.py 33` plus its six unit tests. `tool/release_build.sh --sentinel 'GitHubBlobPacer'` ran
+its own `flutter clean` and completed in 221 seconds; the signed Play AAB is
+`build/app/outputs/bundle/playRelease/app-play-release.aab`, package
+`dev.khoj.pitaka`, versionName 1.9.1, versionCode 33, sha256
+`f6250cf4082179205c899767d78f0b1cceb278b917e271bbe2ba51fbbaeb8e6c`.
+Signature, package/version and fresh-Dart sentinel verification passed.
+
+F-Droid housekeeping: the local recipe mirror was re-synced byte-for-byte with
+upstream fdroiddata (1.8.0/313) in `8e9b8cf`; no manual 1.9.1 build blocks are
+needed because the bot generates 331/332/333. The fdroid release runtime
+classpath and a freshly built arm64 APK's DEX both have no
+Google/Firebase/MLKit hits. Signed annotated tag `1.9.1` was verified against
+the AAB and pushed together with the fast-forward of `origin/main` to
+`8e9b8cf385a06b1e780449113758e95b39b4d74c`; remote tag dereference matches.
+
+---
+
+# Historical: Phase 5 — remaining Low items and nits (L1, L6, L9–L11, L13–L15, L17, RH2, N17)
 
 ## Understanding
 
