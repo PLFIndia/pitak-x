@@ -323,6 +323,15 @@ void main() {
       tester.getTopLeft(mapButton).dx,
       lessThan(tester.getTopLeft(scanButton).dx),
     );
+    final scheme = Theme.of(tester.element(mapButton)).colorScheme;
+    final mapIcon = tester.widget<Icon>(
+      find.descendant(of: mapButton, matching: find.byIcon(Icons.map_rounded)),
+    );
+    final pinIcon = tester.widget<Icon>(
+      find.descendant(of: mapButton, matching: find.byIcon(Icons.location_on)),
+    );
+    expect(mapIcon.color, scheme.primary);
+    expect(pinIcon.color, scheme.tertiary);
 
     await tester.tap(mapButton);
     await tester.pumpAndSettle();

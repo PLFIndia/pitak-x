@@ -9,6 +9,13 @@ import 'package:pitaka/features/lookup/domain/isbn_format.dart';
 import 'package:pitaka/features/lookup/presentation/pages/scanner_page.dart';
 import 'package:pitaka/features/settings/application/settings_controller.dart';
 
+/// Reads the shared opt-in once. Unavailable settings fail closed to manual
+/// lookup, so a scan can never cause an unexpected network request.
+Future<bool> shouldLookupIsbnAfterScan(WidgetRef ref) async {
+  final settings = await ref.read(settingsControllerProvider.notifier).loaded();
+  return settings.fold((_) => false, (s) => s.lookupIsbnAfterScan);
+}
+
 /// Opens the ISBN scanner, normalizes the result into [onScanned], and calls
 /// [lookup] only when the user enabled "Look up ISBN after scanning".
 ///
@@ -29,12 +36,8 @@ Future<void> scanIsbnForForm({
   );
   if (scanned == null || !context.mounted) return;
   onScanned(IsbnFormat.normalize(scanned));
-  final settings = await ref.read(settingsControllerProvider.notifier).loaded();
+  final lookupAfterScan = await shouldLookupIsbnAfterScan(ref);
   if (!context.mounted) return;
-  final lookupAfterScan = settings.fold(
-    (_) => false, // unavailable settings fail closed to manual lookup
-    (s) => s.lookupIsbnAfterScan,
-  );
   if (lookupAfterScan) await lookup();
 }
 

@@ -9,9 +9,9 @@ with event posters, and link up with other Pitak libraries in
 a **library network** (pins on a map, hub/member cards).
 
 > **Status:** published on **F-Droid** (`dev.khoj.pitaka.fdroid`) and
-> **Google Play** (`dev.khoj.pitaka`). Current source version is **1.9.1+33**
-> (`pubspec.yaml`). The 1.9.1 Play bundle is built and verified; the signed
-> 1.9.1 tag, Play upload and F-Droid follow-up remain maintainer-owned.
+> **Google Play** (`dev.khoj.pitaka`). Current source version is **1.9.2+34**
+> (`pubspec.yaml`). The 1.9.2 Play bundle is built and verified; the signed
+> 1.9.2 tag, Play upload and F-Droid follow-up remain maintainer-owned.
 > F-Droid builds from signed tags on its own schedule, so its index may lag.
 > Manual device/TalkBack and store-rollout follow-up remain maintainer-owned.
 >

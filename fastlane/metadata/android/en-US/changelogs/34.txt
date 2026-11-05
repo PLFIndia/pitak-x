@@ -1,0 +1,3 @@
+* Optional ISBN lookup immediately after scanning in Add book and Add to wishlist.
+* Turn it on in Settings → Library; it is off by default, so scanning otherwise stays offline until you tap Look up details.
+* Lookup still fills only empty fields, and scanning never saves an item automatically.

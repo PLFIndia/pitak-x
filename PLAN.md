@@ -1,4 +1,82 @@
-# Active plan — optional ISBN lookup after scanning
+# Active plan — home quick-add lookup and clearer map icon
+
+## Understanding
+
+Home → Scan to add currently pre-fills Add book but never consults the
+`lookupIsbnAfterScan` setting. Make that entry point behave like scans inside
+Add book and Add to wishlist. Also explore a more recognizable, coloured
+Network map app-bar icon. The owner must approve an HTML mockup before any
+Flutter implementation.
+
+## Privacy & threat notes
+
+Home quick-add must opt in to the existing online lookup only when the same
+setting is enabled; default-off and settings-load failure remain manual.
+Existing catalogued-item and magazine routes must not trigger an ISBN lookup.
+The mockup is local standalone HTML with no external assets, fonts, scripts,
+network calls or telemetry.
+
+## Investigation notes
+
+- `LibraryPage._quickAddByScan` routes a new ISBN to
+  `AddBookPage(initialIsbn: isbn)`; `AddBookPage.initState` only pre-fills.
+- The current map action uses monochrome `Icons.map_outlined`; tooltip and
+  navigation already have widget coverage in `library_page_test.dart`.
+
+## Proposed approach
+
+1. Present current and coloured map-icon choices plus the home-scan lookup
+   flow in `docs/mockups/home_scan_and_map_icon.html`.
+2. After mockup approval, trigger the existing Add book lookup once for an
+   `initialIsbn` only when the persisted setting is enabled. Keep explicit
+   Lookup available and prevent duplicate automatic/manual requests.
+3. Use existing Material icons and theme colours for the approved map icon;
+   no dependency or asset is needed.
+4. Add regression tests for enabled, default-off, settings-failure and
+   non-book/already-catalogued routes, plus the approved icon's semantics.
+
+## Decision point
+
+Pause for the owner's mockup approval and icon choice before changing Dart.
+
+## Steps
+
+- [x] Create and validate the standalone HTML mockup.
+- [x] Owner approves the flow and selects Option B (map + location pin).
+- [x] Implement home quick-add auto lookup and the approved icon.
+- [x] Run focused and full automated gates; rebuild only if requested.
+
+## Out of scope
+
+Changing lookup providers, catalogue routing, map behaviour or the 1.9.2 AAB.
+A later implementation will require a new release build; the already-built
+1.9.2 artefact remains unchanged and does not contain this follow-up.
+
+## Result
+
+Created and approved `docs/mockups/home_scan_and_map_icon.html` with Option B.
+`AddBookPage` now consumes a home-supplied `initialIsbn` through the shared
+`shouldLookupIsbnAfterScan` gate after the first frame. Default-off and
+settings failure make no request; a manual lookup consumes the pending
+automatic request and `_looking` prevents an in-flight duplicate. Existing
+item/magazine routing and explicit retry behaviour are unchanged.
+
+`NetworkMapIcon` uses a primary-colour filled map and tertiary location pin
+with a surface halo, retaining the existing tooltip and Map-tab destination.
+No dependency, secret, telemetry or new data flow was added. Unreleased
+changelog notes are updated.
+
+Verification: 75 focused tests passed, then all 5,864 non-golden tests passed.
+`flutter analyze lib test integration_test`, formatting, architecture/file-
+size checks and `git diff --check` are clean. The deterministic in-flight
+test replaced an initial racy test that had allowed a valid manual retry.
+Linux golden images were not regenerated on macOS and may need the normal
+update-goldens workflow. No device/camera test, commit or AAB rebuild was
+requested; the 1.9.2 AAB does not contain these follow-up changes.
+
+---
+
+# Historical: optional ISBN lookup after scanning
 
 ## Understanding
 
@@ -57,6 +135,59 @@ complete non-golden suite: 5,860 passed. `flutter analyze lib test
 integration_test`, formatting, architecture file-size ratchets and
 `git diff --check` are clean. No live lookup, camera or production service was
 used. Golden tests and device/camera validation were not run.
+
+---
+
+# Release 1.9.2+34 — clean signed Play bundle
+
+## Understanding
+
+Ship the optional ISBN lookup after scanning as `1.9.2+34`. Use the repository's
+release script so the pinned Flutter SDK, locked dependencies, upload-key
+signing, package/version and a fresh compiled-Dart sentinel are all verified.
+Do not commit, tag, push or upload.
+
+## Privacy & threat notes
+
+The feature's default remains off; immediate online lookup is opt-in and
+unavailable settings fail closed to manual lookup. The build uses the existing
+upload keystore through git-ignored `android/key.properties`; no password or
+keystore contents may be printed. Only the public certificate fingerprint and
+artefact hash are recorded.
+
+## Steps
+
+- [x] Bump `pubspec.yaml` to `1.9.2+34` and move Unreleased notes to `1.9.2`.
+- [x] Add Play/F-Droid changelogs 34/341/342/343 and update the README version.
+- [x] Validate release metadata and run automated quality gates.
+- [x] Run `tool/release_build.sh --sentinel 'IsbnLookupField'`; it performs
+  `flutter clean`, rebuilds all release inputs and verifies the signed AAB.
+- [x] Record the AAB SHA-256 and verification result.
+
+## Out of scope
+
+Committing, tagging, pushing, Play upload/rollout, manual device/TalkBack tests
+and production publishing-service checks remain maintainer-owned. The build
+also emitted non-blocking future-Flutter Kotlin Gradle Plugin migration and
+Java 8 obsolescence warnings; those toolchain migrations are not part of this
+release task.
+
+## Result
+
+Prepared `1.9.2+34` with Play/F-Droid changelogs 34/341/342/343 (295 characters
+each). Generated-code, analysis and formatting gates passed; all 5,860
+non-golden Flutter tests passed. Rust formatting, Clippy and `cargo deny`
+passed, with 36 tests passed and two real-archive tests environment-gated.
+The F-Droid runtime-classpath scan had no forbidden dependency hits.
+
+`tool/release_build.sh --sentinel 'IsbnLookupField'` completed in 216 seconds
+after its own `flutter clean`. The 99,065,380-byte Play AAB is
+`build/app/outputs/bundle/playRelease/app-play-release.aab`, package
+`dev.khoj.pitaka`, versionName `1.9.2`, versionCode `34`, SHA-256
+`5da0faccbea67357e14cbc3f8412357456287b83ddb46df0d3fabf06d779ea7a`.
+Signature/upload-certificate, package/version and fresh arm64 Dart-sentinel
+checks passed; all three ABI snapshots are present. No commit, tag, push,
+upload, manual device/TalkBack test or production publishing check was done.
 
 ---
 

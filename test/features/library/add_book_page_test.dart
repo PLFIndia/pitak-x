@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -19,12 +21,14 @@ import '../../support/a11y.dart';
 
 /// Lookup stub returning a scripted result (N02 cover/flag tests).
 class _FakeLookup implements IsbnLookupService {
-  _FakeLookup(this._result);
+  _FakeLookup(this._result, {this.wait});
   final LookupResult _result;
+  final Future<void> Function()? wait;
   final List<String> isbns = [];
   @override
   Future<LookupResult> lookupByIsbn(String isbn) async {
     isbns.add(isbn);
+    if (wait != null) await wait!();
     return _result;
   }
 
@@ -152,6 +156,7 @@ Widget _host(
   LookupResult? lookup,
   IsbnLookupService? lookupService,
   IsbnScannerBuilder? buildScanner,
+  String? initialIsbn,
 }) {
   return ProviderScope(
     overrides: [
@@ -162,7 +167,11 @@ Widget _host(
         isbnLookupServiceProvider.overrideWithValue(_FakeLookup(lookup)),
     ],
     child: MaterialApp(
-      home: AddBookPage(book: book, buildScanner: buildScanner),
+      home: AddBookPage(
+        book: book,
+        buildScanner: buildScanner,
+        initialIsbn: initialIsbn,
+      ),
     ),
   );
 }
@@ -294,6 +303,93 @@ void main() {
     await tester.tap(find.byTooltip('Look up details'));
     await tester.pumpAndSettle();
     expect(lookup.isbns, ['9780140449136', '9780140449136']);
+  });
+
+  testWidgets('home quick-add looks up its initial ISBN when enabled', (
+    tester,
+  ) async {
+    const meta = BookMetadata(isbn: '9780140449136', title: 'Home Scan Title');
+    final lookup = _FakeLookup(const LookupFound(meta));
+    SharedPreferences.setMockInitialValues({'lookup_isbn_after_scan': true});
+    await tester.pumpWidget(
+      _host(_MemRepo(), lookupService: lookup, initialIsbn: '9780140449136'),
+    );
+    await tester.pumpAndSettle();
+
+    expect(lookup.isbns, ['9780140449136']);
+    expect(find.text('Home Scan Title'), findsOneWidget);
+  });
+
+  testWidgets('home quick-add defaults to pre-fill and explicit Lookup', (
+    tester,
+  ) async {
+    const meta = BookMetadata(isbn: '9780140449136', title: 'Manual Title');
+    final lookup = _FakeLookup(const LookupFound(meta));
+    SharedPreferences.setMockInitialValues({});
+    await tester.pumpWidget(
+      _host(_MemRepo(), lookupService: lookup, initialIsbn: '9780140449136'),
+    );
+    await tester.pumpAndSettle();
+
+    expect(lookup.isbns, isEmpty);
+    expect(find.text('Manual Title'), findsNothing);
+    await tester.tap(find.byTooltip('Look up details'));
+    await tester.pumpAndSettle();
+    expect(lookup.isbns, ['9780140449136']);
+  });
+
+  testWidgets('manual Lookup cannot duplicate an in-flight home lookup', (
+    tester,
+  ) async {
+    const meta = BookMetadata(isbn: '9780140449136', title: 'One Lookup');
+    final gate = Completer<void>();
+    final lookup = _FakeLookup(
+      const LookupFound(meta),
+      wait: () => gate.future,
+    );
+    SharedPreferences.setMockInitialValues({'lookup_isbn_after_scan': true});
+    await tester.pumpWidget(
+      _host(_MemRepo(), lookupService: lookup, initialIsbn: '9780140449136'),
+    );
+    for (var i = 0; i < 10 && lookup.isbns.isEmpty; i++) {
+      await tester.pump();
+    }
+    expect(lookup.isbns, ['9780140449136']);
+
+    // The first request is still pending, so the button tap must not start
+    // another one. Release it only after the tap has been handled.
+    await tester.tap(find.byTooltip('Look up details'));
+    await tester.pump();
+    gate.complete();
+    await tester.pumpAndSettle();
+
+    expect(lookup.isbns, ['9780140449136']);
+  });
+
+  testWidgets('home quick-add settings failure stays manual', (tester) async {
+    final lookup = _FakeLookup(const LookupNotFound());
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          catalogueItemRepositoryProvider.overrideWith(
+            (ref) async => _MemRepo(),
+          ),
+          isbnLookupServiceProvider.overrideWithValue(lookup),
+          settingsRepositoryProvider.overrideWith(
+            (ref) async => throw StateError('settings unavailable'),
+          ),
+        ],
+        child: const MaterialApp(
+          home: AddBookPage(initialIsbn: '9780140449136'),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(lookup.isbns, isEmpty);
+    await tester.tap(find.byTooltip('Look up details'));
+    await tester.pumpAndSettle();
+    expect(lookup.isbns, ['9780140449136']);
   });
 
   testWidgets('unavailable settings fail closed to manual lookup', (
