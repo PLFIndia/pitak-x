@@ -302,12 +302,14 @@ final class ImportLibraryUseCase {
           if (prepared.isLeft()) {
             return prepared.map((_) => const ImportSummary(format: null));
           }
-          final updated = await _bookRepo.update(
-            mergeImportedCatalogueItem(
-              existing: existing,
-              incoming: prepared.toNullable()!,
-            ),
+          final merged = mergeImportedCatalogueItem(
+            existing: existing,
+            incoming: prepared.toNullable()!,
           );
+          if (merged.isLeft()) {
+            return merged.map((_) => const ImportSummary(format: null));
+          }
+          final updated = await _bookRepo.update(merged.toNullable()!);
           if (updated.isLeft()) {
             return updated.map((_) => const ImportSummary(format: null));
           }

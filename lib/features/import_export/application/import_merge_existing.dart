@@ -1,6 +1,8 @@
 /// Same-UID update semantics shared by the import orchestrator.
 library;
 
+import 'package:fpdart/fpdart.dart';
+import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/library/domain/cover_precedence.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 
@@ -8,7 +10,7 @@ import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 ///
 /// Vault loans reference the local id. Cover precedence keeps a local photo
 /// over a remote URL, and a file with no cover does not erase the local one.
-CatalogueItem mergeImportedCatalogueItem({
+Either<Failure, CatalogueItem> mergeImportedCatalogueItem({
   required CatalogueItem existing,
   required CatalogueItem incoming,
 }) {
@@ -47,5 +49,11 @@ CatalogueItem mergeImportedCatalogueItem({
     details: incoming.details,
   );
   // Defence in depth: even the update path revalidates its constructed row.
-  return CatalogueItem.validate(merged).toNullable()!;
+  // Return a typed failure so the caller can abort the transaction normally.
+  return CatalogueItem.validate(merged).mapLeft(
+    (errors) => ValidationFailure(
+      'An imported book failed validation after merging: '
+      '${errors.map((e) => '${e.field} ${e.problem}').join('; ')}.',
+    ),
+  );
 }
