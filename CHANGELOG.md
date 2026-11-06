@@ -19,6 +19,14 @@ heading as part of the `chore(release):` commit.
 Release sentinel (`tool/release_build.sh --sentinel`):
 `RestoreFromPublishedSiteUseCase`.
 
+AAB sha256: `beb90691e779e58b577db6c537648de07e7bd43f166c993310006bd0920b2541`.
+The 186-second `tool/release_build.sh` build (its own `flutter clean`, locked
+dependencies, Rust for three ABIs and Dart AOT) passed upload-signature,
+package/version and fresh arm64 Dart-sentinel verification. Built from
+`remoteImport` at HEAD `655d810`; `pubspec.lock` was unchanged. Every 64-bit
+native `LOAD` alignment was at least 16 KiB; native libraries are uncompressed
+and `extractNativeLibs=false`.
+
 ### Added
 - **Restore from your own published site (ADR 0021):** Publish → Connection
   can restore public catalogue fields and same-site covers from the active

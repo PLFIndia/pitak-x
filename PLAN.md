@@ -55,9 +55,9 @@ tag or Play upload.
 - [x] Inspect release conventions and choose a compliant version/sentinel.
 - [x] Prepare release metadata and fastlane files.
 - [x] Run metadata and Dart checks.
-- [ ] Commit release preparation.
-- [ ] Clean-build and verify the Play AAB.
-- [ ] Record bundle evidence and report the artifact.
+- [x] Commit release preparation.
+- [x] Clean-build and verify the Play AAB.
+- [x] Record bundle evidence and report the artifact.
 
 ## Out-of-scope observations
 
@@ -67,4 +67,14 @@ tag or Play upload.
 
 ## Result
 
-Pending.
+Built and verified `build/app/outputs/bundle/playRelease/app-play-release.aab`.
+
+- Version: `dev.khoj.pitaka` 1.9.4, versionCode 36.
+- SHA-256: `beb90691e779e58b577db6c537648de07e7bd43f166c993310006bd0920b2541`.
+- Clean build: 186 seconds with pinned Flutter 3.44.2 and locked dependencies.
+- Upload signature, package/version, and arm64 sentinel verification passed
+  twice (build and `--verify`).
+- All 64-bit native `LOAD` alignments are at least 16 KiB; native libraries
+  are uncompressed and `extractNativeLibs=false`.
+- No tag or Play upload was created. Device/TalkBack and live-host smoke tests
+  remain maintainer-owned follow-up.
