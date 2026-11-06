@@ -37,6 +37,7 @@ void main() {
   late LaneMemManifest gitHubRecord;
   late InMemoryCloudflareManifestStore cloudflareRecord;
   late bool throwOnPublish;
+  Future<Either<Failure, Unit>> Function(PublishTarget target)? checkTarget;
 
   setUp(() {
     queue = SerialOpQueue();
@@ -46,6 +47,7 @@ void main() {
     gitHubRecord = LaneMemManifest();
     cloudflareRecord = InMemoryCloudflareManifestStore();
     throwOnPublish = false;
+    checkTarget = null;
   });
 
   Future<AvailabilityPublishResult> answer(
@@ -67,6 +69,7 @@ void main() {
         answer('cloudflare', update),
     gitHubRecord: gitHubRecord,
     cloudflareRecord: cloudflareRecord,
+    checkTarget: checkTarget,
   );
 
   test("runs the active host's publish and reports its target", () async {
@@ -188,6 +191,36 @@ void main() {
     expect(run.removal, isNull);
     expect(calls, hasLength(1));
   });
+
+  test(
+    'a refused target check blocks both gateways and a later run retries',
+    () async {
+      var checks = 0;
+      checkTarget = (_) async {
+        checks++;
+        return left(const ValidationFailure('recovery pending'));
+      };
+
+      final blocked = await runner()(AvailabilityWrite(set));
+
+      expect(blocked, isA<AvailabilityRunBlocked>());
+      expect((blocked as AvailabilityRunBlocked).reason, 'recovery pending');
+      expect(calls, isEmpty);
+      expect(gitHubRecord.saves, isEmpty);
+      expect(cloudflareRecord.saves, isEmpty);
+
+      checkTarget = (_) async {
+        checks++;
+        return right(unit);
+      };
+      results.add(const AvailabilityLive(acceptedAt: 1));
+      final retried = await runner()(AvailabilityWrite(set));
+
+      expect(retried, isA<AvailabilityRunFinished>());
+      expect(calls.single.$1, 'github');
+      expect(checks, 2);
+    },
+  );
 
   test('a throwing use case becomes a pending result, never a crash', () async {
     throwOnPublish = true;

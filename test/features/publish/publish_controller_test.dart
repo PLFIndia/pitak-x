@@ -49,12 +49,71 @@ import 'package:pitaka/features/settings/domain/settings_repository.dart';
 import 'support/cloudflare_fakes.dart';
 import 'support/going_live_fakes.dart';
 import 'support/in_memory_github_artifact_store.dart';
+import 'support/pre_restore_lane_harness.dart';
 
 const _safeReadFailure =
     'Could not read the library. Nothing was published. '
     'Please try again.';
 
 void main() {
+  for (final useCloudflare in [false, true]) {
+    test(
+      'pre-restore remote guard refuses '
+      '${useCloudflare ? 'Cloudflare' : 'GitHub'} publish with zero writes',
+      () async {
+        final h = PreRestoreLaneHarness(useCloudflare: useCloudflare);
+        addTearDown(h.dispose);
+        h.remoteHasRecoveryData();
+
+        final result = await h.container
+            .read(publishControllerProvider.notifier)
+            .publish();
+
+        expect(result, isA<PublishFailure>());
+        expect(
+          (result as PublishFailure).reason,
+          PreRestorePublishGuard.recoveryMessage,
+        );
+        expect(h.gitHub.commitRequests, 0);
+        expect(h.cloudflareApi.deployCalls, 0);
+        expect(h.manifest.saves, isEmpty);
+        expect(h.cloudflareManifest.saves, isEmpty);
+        expect(h.cloudflareManifest.pendingSaves, isEmpty);
+        expect(h.restore.journal.saveCalls, 0);
+        expect(h.restore.journal.clearCalls, 0);
+      },
+    );
+
+    test(
+      'pending journal refuses '
+      '${useCloudflare ? 'Cloudflare' : 'GitHub'} publish with zero writes',
+      () async {
+        final h = PreRestoreLaneHarness(useCloudflare: useCloudflare);
+        addTearDown(h.dispose);
+        h.pendingJournal();
+
+        final result = await h.container
+            .read(publishControllerProvider.notifier)
+            .publish();
+
+        expect(result, isA<PublishFailure>());
+        final failure = result as PublishFailure;
+        expect(
+          failure.reason,
+          contains('Finish restoring your published identity'),
+        );
+        expect(failure.reason, contains('Finish identity recovery'));
+        expect(h.gitHub.commitRequests, 0);
+        expect(h.cloudflareApi.deployCalls, 0);
+        expect(h.manifest.saves, isEmpty);
+        expect(h.cloudflareManifest.saves, isEmpty);
+        expect(h.cloudflareManifest.pendingSaves, isEmpty);
+        expect(h.restore.journal.saveCalls, 0);
+        expect(h.restore.journal.clearCalls, 0);
+      },
+    );
+  }
+
   testWidgets('M10: failed catalogue read must not publish an empty library', (
     tester,
   ) async {

@@ -1,5 +1,11 @@
 # Active plan — restore a catalogue from the user's own published site
 
+> **Plan-file deviation (2026-11-06):** `PLAN.md` was retired with the
+> completed earlier work; this file is the active plan for the restore feature
+> and its review follow-ups. The review findings are in
+> `remoteImport-issues.md` (untracked review input, not part of the feature
+> tree).
+
 ## Understanding
 
 The maintainers using this app are not technical. Some will lose the app with
@@ -541,10 +547,17 @@ All decided 2026-11-05; recorded here so the ADR can cite them.
   after bundle validation. Synthetic leaves are `.jpg` and a janitor test
   covers crash cleanup.
 - A target-bound preferences journal distinguishes pre-commit from
-  post-commit interruption. Startup and identity-only recovery finish the
-  fingerprint write. Publish, events and availability writes refuse while it
-  is pending or while an empty local catalogue could overwrite a
-  non-empty/unreadable remote recovery copy.
+  post-commit interruption using the restore's single `addedDate` stamp:
+  recovery adopts the fingerprint only when an item or periodical carries
+  that exact stamp; unrelated rows and empty tables discard the journal.
+  Startup and identity-only recovery finish the fingerprint write. Publish,
+  events and availability writes refuse while it is pending or while an empty
+  local catalogue could overwrite a non-empty/unreadable remote recovery copy.
+- The same-UID merge helper was extracted from `import_library_use_case.dart`
+  to keep that file below the 500-line architecture ratchet after the empty
+  precondition was added. It returns `Either<Failure, CatalogueItem>` so a
+  merged-row validation failure aborts normally instead of throwing through
+  the transaction.
 - Cloudflare recovery uses authenticated Worker presence plus an
   API-confirmed account subdomain, with zero deployments. Destructive manual
   verification is refused while the catalogue is empty.
@@ -620,6 +633,21 @@ All decided 2026-11-05; recorded here so the ADR can cite them.
       > SDK mismatch. These results verify existing behavior, not the proposed
       > restore feature or the full CI gates. No implementation was changed.
 
+## Review follow-up steps (2026-11-06)
+
+- [x] Split the original feature commit into lookup, library-icon, release and
+      restore commits; the resulting tree is identical to `4d2f7ad`.
+- [x] Major: make pending identity recovery explicit and restart-safe; remove
+      hidden recovery from restore and update copy/tests.
+- [x] Minor: bind recovery to the restore `addedDate` journal stamp.
+- [x] Minor: return `Either` from extracted merge validation and document the
+      extraction.
+- [x] Minor: consolidate restore journal/guard DI construction.
+- [x] Major: add lane-level zero-write guard tests for publish, events and
+      availability.
+- [x] Nit: add terminal-result dismissal and disjoint cover-summary counts.
+- [x] Run all required gates and record the results below.
+
 ## Out of scope
 
 Wishlist; loans, borrowers and the vault; events and posters; notes,
@@ -636,13 +664,14 @@ Implemented on branch `remoteImport`.
 Verification:
 - `dart analyze lib test`: clean.
 - `dart format --set-exit-if-changed lib test`: clean.
-- build_runner: repeated build produced no further changes.
-- Full non-golden suite: **5,922 tests passed** (`flutter test --coverage
+- build_runner: repeated build produced **0 outputs** and no generated diff
+  changes.
+- Full non-golden suite: **5,939 tests passed** (`flutter test --coverage
   --exclude-tags golden`).
-- `test/golden/key_screens_test.dart`: the feature's publish-connection
-  golden was updated deliberately and passes. Nine diffs remain in unrelated
-  screens (library, published catalogue, vault, network tiles, periodicals
-  and backup restore); those files were not changed.
+- Targeted `publish connection tab` golden passed. The full golden suite was
+  not rerun; the previously documented macOS rasterisation differences remain
+  outside this change.
+- `git diff --check`: clean.
 - Root `dart analyze` still reports the pre-existing `rust_builder/cargokit`
   package-resolution errors and existing pubspec ordering infos. The app and
   test sources are clean.
