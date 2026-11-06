@@ -106,6 +106,7 @@ class RestoreFromPublishedSiteController
     } finally {
       _abort = null;
       _running = false;
+      if (!_disposed) ref.invalidate(pendingRestoreIdentityProvider);
     }
   }
 
@@ -135,14 +136,23 @@ class RestoreFromPublishedSiteController
         );
         return;
       }
-      if (result.toNullable() != PublishedIdentityRecoveryOutcome.recovered) {
-        state = const RestoreFromPublishedSiteState(
+      final outcome = result.toNullable();
+      if (outcome == PublishedIdentityRecoveryOutcome.pending) {
+        state = RestoreFromPublishedSiteState(
           status: RestoreFromPublishedSiteStatus.error,
-          failure: ValidationFailure(
+          summary: state.summary,
+          failure: const ValidationFailure(
             'Reconnect the same hosting account and site, then try identity '
             'recovery again.',
           ),
         );
+        return;
+      }
+      if (outcome == PublishedIdentityRecoveryOutcome.discarded ||
+          outcome == PublishedIdentityRecoveryOutcome.none) {
+        // A pre-commit journal can be discarded safely; either way there is
+        // no pending action left and Restore may be offered again.
+        state = const RestoreFromPublishedSiteState.idle();
         return;
       }
       final summary = state.summary;
@@ -162,6 +172,7 @@ class RestoreFromPublishedSiteController
       }
     } finally {
       _running = false;
+      if (!_disposed) ref.invalidate(pendingRestoreIdentityProvider);
     }
   }
 

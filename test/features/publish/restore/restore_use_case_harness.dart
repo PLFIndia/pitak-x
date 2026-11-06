@@ -28,6 +28,9 @@ import '../support/cloudflare_fakes.dart';
 
 final class FakeRestoreJournal implements RestoreIdentityJournalStore {
   RestoreIdentityJournal? value;
+  RestoreIdentityJournal? lastSaved;
+  int saveCalls = 0;
+  int clearCalls = 0;
   Failure? writeFailure;
 
   @override
@@ -35,14 +38,17 @@ final class FakeRestoreJournal implements RestoreIdentityJournalStore {
 
   @override
   Future<Either<Failure, Unit>> save(RestoreIdentityJournal journal) async {
+    saveCalls++;
     final failure = writeFailure;
     if (failure != null) return left(failure);
     value = journal;
+    lastSaved = journal;
     return right(unit);
   }
 
   @override
   Future<Either<Failure, Unit>> clear() async {
+    clearCalls++;
     value = null;
     return right(unit);
   }

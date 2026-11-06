@@ -10,12 +10,14 @@ void main() {
     final store = PrefsRestoreIdentityJournalStore(prefs);
     final journal = RestoreIdentityJournal(
       siteUrl: 'https://me.github.io/lib/',
+      addedDate: 100,
       fingerprint: 'a' * 64,
     );
 
     expect((await store.save(journal)).isRight(), isTrue);
     final loaded = (await store.load()).toNullable();
     expect(loaded?.siteUrl, journal.siteUrl);
+    expect(loaded?.addedDate, journal.addedDate);
     expect(loaded?.fingerprint, journal.fingerprint);
     expect((await store.clear()).isRight(), isTrue);
     expect((await store.load()).toNullable(), isNull);
@@ -32,7 +34,14 @@ void main() {
     await prefs.setString(
       'publish_restore_identity_journal',
       '{"schemaVersion":1,"siteUrl":"https://me.github.io/lib/",'
-          '"fingerprint":"NOT-HEX"}',
+          '"addedDate":100,"fingerprint":"NOT-HEX"}',
+    );
+    expect((await store.load()).isLeft(), isTrue);
+
+    await prefs.setString(
+      'publish_restore_identity_journal',
+      '{"schemaVersion":1,"siteUrl":"https://me.github.io/lib/",'
+          '"addedDate":0,"fingerprint":null}',
     );
     expect((await store.load()).isLeft(), isTrue);
   });

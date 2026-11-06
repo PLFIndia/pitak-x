@@ -12,20 +12,16 @@
 library;
 
 import 'package:pitaka/core/di/src/cloudflare_publish_providers.dart';
-import 'package:pitaka/core/di/src/database_providers.dart';
-import 'package:pitaka/core/di/src/library_providers.dart';
-import 'package:pitaka/core/di/src/network_providers.dart';
 import 'package:pitaka/core/di/src/platform_providers.dart';
 import 'package:pitaka/core/di/src/publish_providers.dart';
+import 'package:pitaka/core/di/src/restore_providers.dart';
 import 'package:pitaka/features/publish/application/availability/availability_publish_runner.dart';
 import 'package:pitaka/features/publish/application/availability/catalogue_ids_changes.dart';
 import 'package:pitaka/features/publish/application/availability/catalogue_keys_reset.dart';
 import 'package:pitaka/features/publish/application/cloudflare/publish_availability_to_cloudflare_use_case.dart';
 import 'package:pitaka/features/publish/application/publish_availability_use_case.dart';
-import 'package:pitaka/features/publish/application/restore/pre_restore_publish_guard.dart';
 import 'package:pitaka/features/publish/application/site/publish_host_state_repository.dart';
 import 'package:pitaka/features/publish/domain/publish_item_keys.dart';
-import 'package:pitaka/features/publish/infrastructure/prefs_restore_identity_journal_store.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 part 'availability_providers.g.dart';
@@ -94,20 +90,6 @@ publishAvailabilityToCloudflareUseCase(
   verifiedCommit: await ref.watch(cloudflareVerifiedStateCommitProvider.future),
   clock: ref.watch(clockProvider),
   timingSink: ref.watch(publishTimingSinkProvider),
-);
-
-/// Shared pre-write recovery guard, also used by catalogue/events controllers.
-@riverpod
-Future<PreRestorePublishGuard> preRestorePublishGuard(
-  PreRestorePublishGuardRef ref,
-) async => PreRestorePublishGuard(
-  items: await ref.watch(catalogueItemRepositoryProvider.future),
-  periodicals: await ref.watch(periodicalRepositoryProvider.future),
-  journal: PrefsRestoreIdentityJournalStore(
-    await ref.watch(sharedPreferencesProvider.future),
-  ),
-  reader: ref.watch(publishedSiteReadVerifierProvider),
-  decode: ref.watch(publishedCatalogueDecoderProvider),
 );
 
 /// Runs one lane publish inside the publish queue, for the active host.

@@ -50,12 +50,13 @@ verification can itself replace an existing Worker before Restore is offered.
    validation rejects malformed values but cannot prove that a valid label
    belongs to the user, so backup files remain trust-sensitive.
 5. **Identity completion is durable and target-bound.** A non-secret journal
-   naming the canonical site and fingerprint is saved before import. Empty
-   tables after interruption mean no commit and discard it; non-empty tables
-   mean the catalogue committed and startup or identity-only recovery retries
-   the settings write. Publishing, events and availability writes refuse while
-   recovery is pending. A missing descriptor is reported honestly; an
-   unreadable one aborts before import.
+   naming the canonical site, fingerprint and one restore `addedDate` stamp is
+   saved before import. After interruption, only an item or periodical with
+   that exact stamp proves the catalogue committed; empty tables or unrelated
+   rows discard the journal without adopting the identity. Startup and
+   identity-only recovery retry the settings write. Publishing, events and
+   availability writes refuse while recovery is pending. A missing descriptor
+   is reported honestly; an unreadable one aborts before import.
 6. **A fresh install cannot publish over recovery data.** With an empty local
    catalogue, every publish lane first reads `books.json`. A non-empty or
    unreadable remote catalogue refuses and points to Restore; only actual 404
@@ -84,9 +85,13 @@ verification can itself replace an existing Worker before Restore is offered.
 
 - ADR 0015 decision 2 is scoped, not reversed: other libraries' published
   payloads remain read-only and can never enter this path.
-- `import_export` gains only the optional transactional empty precondition;
-  bundle validation, one-transaction writes and staged-file rollback are
-  reused rather than duplicated.
+- `import_export` gains the optional transactional empty precondition and an
+  extracted same-UID merge helper. The extraction keeps
+  `import_library_use_case.dart` below the 500-line architecture ratchet; its
+  `Either<Failure, CatalogueItem>` result propagates merged-row validation
+  failures without a null-assertion exception. Bundle validation,
+  one-transaction writes and staged-file rollback are reused rather than
+  duplicated.
 - No package, plugin, schema or telemetry is added. Network traffic goes only
   to the active site except for the existing authenticated setup discovery.
 - Real-Drift tests cover commit/race/recovery behavior; pure tests cover

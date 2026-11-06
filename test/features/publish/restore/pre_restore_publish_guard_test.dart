@@ -31,6 +31,7 @@ void main() {
   test('pending identity recovery blocks every publish', () async {
     h.journal.value = RestoreIdentityJournal(
       siteUrl: h.siteUrl,
+      addedDate: h.now,
       fingerprint: h.fingerprint,
     );
 

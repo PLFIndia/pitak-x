@@ -75,10 +75,20 @@ final class RestoreFromPublishedSiteUseCase {
         RestoreFromPublishedSitePhase.reading,
       ),
     );
-    // Finish an earlier committed handoff before applying the empty-only rule.
-    final earlier = await _recoverIdentity.call();
-    final earlierFailure = earlier.swap().toNullable();
-    if (earlierFailure != null) return left(earlierFailure);
+    // A pending handoff is an explicit user action, never a hidden side
+    // effect of Restore. This also keeps the empty-only rule from masking the
+    // recovery button after a process restart.
+    final earlier = await _journal.load();
+    final pendingJournalFailure = earlier.swap().toNullable();
+    if (pendingJournalFailure != null) return left(pendingJournalFailure);
+    if (earlier.toNullable() != null) {
+      return left(
+        const ValidationFailure(
+          'Finish identity recovery first (Publish to web → Connection → '
+          'Finish identity recovery).',
+        ),
+      );
+    }
     final notEmpty = await _nonEmptyMessage();
     if (notEmpty != null) return left(notEmpty);
 
@@ -137,9 +147,12 @@ final class RestoreFromPublishedSiteUseCase {
     if (isCancelled?.call() ?? false) {
       return right(const RestoreFromPublishedSiteCancelled());
     }
+    // One stamp links the durable journal to exactly the rows this restore
+    // commits; recovery must not adopt an identity for unrelated rows.
+    final addedDate = _clock();
     final mappedResult = mapPublishedCatalogueForRestore(
       catalogue,
-      addedDate: _clock(),
+      addedDate: addedDate,
     );
     final mapFailure = mappedResult.swap().toNullable();
     if (mapFailure != null) return left(mapFailure);
@@ -158,6 +171,7 @@ final class RestoreFromPublishedSiteUseCase {
     }
     mapped = retainPublishedCovers(mapped, downloaded.covers.keys.toSet());
     final coverCount = downloaded.covers.length;
+    final skippedCoverCount = mapped.coverSources.length - coverCount;
     final validated = ImportBundle.validate(mapped.payload, downloaded.covers);
     // Validation owns defensive copies now. Release the originals before DB
     // and file work instead of keeping two retained cover sets alive.
@@ -166,9 +180,13 @@ final class RestoreFromPublishedSiteUseCase {
     if (bundleFailure != null) return left(bundleFailure);
 
     // Durable BEFORE the DB transaction: startup can tell a pre-commit crash
-    // (catalogue still empty) from a post-commit one (catalogue non-empty).
+    // (no row with this stamp) from a post-commit one (a matching row).
     final journaled = await _journal.save(
-      RestoreIdentityJournal(siteUrl: siteUrl, fingerprint: fingerprint),
+      RestoreIdentityJournal(
+        siteUrl: siteUrl,
+        addedDate: addedDate,
+        fingerprint: fingerprint,
+      ),
     );
     final journalFailure = journaled.swap().toNullable();
     if (journalFailure != null) return left(journalFailure);
@@ -202,8 +220,11 @@ final class RestoreFromPublishedSiteUseCase {
           droppedFields: mapped.droppedFields,
           issuesFiledAsBooks: mapped.issuesFiledAsBooks,
           coversRestored: coverCount,
-          coversSkipped: mapped.coverSources.length - coverCount,
+          coversFailed: downloadCovers
+              ? skippedCoverCount - downloaded.skippedByBudget
+              : 0,
           coversSkippedByBudget: downloaded.skippedByBudget,
+          coversNotDownloaded: downloadCovers ? 0 : skippedCoverCount,
           thirdPartyCoverLinks: mapped.thirdPartyCoverLinks,
           downloadCovers: downloadCovers,
           identityMissing: identityMissing,

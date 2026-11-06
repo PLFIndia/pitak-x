@@ -7,6 +7,7 @@ import 'package:pitaka/features/network/domain/entities/published_catalogue.dart
 import 'package:pitaka/features/network/domain/published_cover_fetcher.dart';
 import 'package:pitaka/features/publish/application/restore/recover_published_identity.dart';
 import 'package:pitaka/features/publish/application/restore/restore_from_published_site_result.dart';
+import 'package:pitaka/features/publish/domain/restore/restore_identity_journal.dart';
 import 'package:pitaka/features/publish/domain/site/published_site_verifier.dart';
 
 import 'restore_use_case_harness.dart';
@@ -39,6 +40,8 @@ void main() {
       expect(rows.single.itemUid, isNotNull);
       expect(rows.single.coverUrl, endsWith('.jpg'));
       expect(rows.single.coverUrl, isNot('covers/source.png'));
+      expect(rows.single.addedDate, h.now);
+      expect(h.journal.lastSaved?.addedDate, h.now);
       expect(h.fixture.images, hasLength(1));
       expect(h.writtenFingerprint, h.fingerprint);
       expect(h.fingerprintWrites, 1);
@@ -60,6 +63,30 @@ void main() {
         (await h.fixture.books.getAll()).toNullable()!.single.title,
         'Existing',
       );
+    },
+  );
+
+  test(
+    'pending journal refuses restore without a hidden identity write',
+    () async {
+      h.journal.value = RestoreIdentityJournal(
+        siteUrl: h.siteUrl,
+        addedDate: h.now,
+        fingerprint: h.fingerprint,
+      );
+
+      final result = await h.useCase.call(h.siteUrl);
+
+      final failure = result.swap().toNullable();
+      expect(failure, isA<ValidationFailure>());
+      expect(
+        (failure! as ValidationFailure).message,
+        contains('Finish identity recovery first'),
+      );
+      expect(h.catalogueCalls, 0);
+      expect(h.fingerprintWrites, 0);
+      expect(h.journal.value, isNotNull);
+      expect((await h.fixture.books.getAll()).toNullable(), isEmpty);
     },
   );
 
@@ -114,7 +141,9 @@ void main() {
 
       final summary = await _success(h);
 
-      expect(summary.coversSkipped, 1);
+      expect(summary.coversFailed, 1);
+      expect(summary.coversSkippedByBudget, 0);
+      expect(summary.coversNotDownloaded, 0);
       final rows = (await h.fixture.books.getAll()).toNullable()!;
       expect(rows.single.coverUrl, isNull);
     },
@@ -124,7 +153,9 @@ void main() {
     final summary = await _success(h, covers: false);
 
     expect(h.coverCalls, 0);
-    expect(summary.coversSkipped, 1);
+    expect(summary.coversFailed, 0);
+    expect(summary.coversSkippedByBudget, 0);
+    expect(summary.coversNotDownloaded, 1);
     expect(summary.downloadCovers, isFalse);
     expect(
       (await h.fixture.books.getAll()).toNullable()!.single.coverUrl,

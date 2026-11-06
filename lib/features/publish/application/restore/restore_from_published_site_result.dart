@@ -35,8 +35,9 @@ final class RestoreFromPublishedSiteSummary {
     required this.droppedFields,
     required this.issuesFiledAsBooks,
     required this.coversRestored,
-    required this.coversSkipped,
+    required this.coversFailed,
     required this.coversSkippedByBudget,
+    required this.coversNotDownloaded,
     required this.thirdPartyCoverLinks,
     required this.downloadCovers,
     required this.identityMissing,
@@ -58,11 +59,15 @@ final class RestoreFromPublishedSiteSummary {
   /// Distinct same-site cover files restored.
   final int coversRestored;
 
-  /// Distinct same-site cover references left empty.
-  final int coversSkipped;
+  /// Same-site covers that failed or were unavailable with consent given,
+  /// excluding the budget-limited category below.
+  final int coversFailed;
 
-  /// Subset of [coversSkipped] caused by a safety budget.
+  /// Same-site covers skipped because a safety budget was reached.
   final int coversSkippedByBudget;
+
+  /// Same-site covers not requested because cover consent was off.
+  final int coversNotDownloaded;
 
   /// Distinct third-party links retained but not fetched.
   final int thirdPartyCoverLinks;
@@ -90,8 +95,9 @@ final class RestoreFromPublishedSiteSummary {
         droppedFields: droppedFields,
         issuesFiledAsBooks: issuesFiledAsBooks,
         coversRestored: coversRestored,
-        coversSkipped: coversSkipped,
+        coversFailed: coversFailed,
         coversSkippedByBudget: coversSkippedByBudget,
+        coversNotDownloaded: coversNotDownloaded,
         thirdPartyCoverLinks: thirdPartyCoverLinks,
         downloadCovers: downloadCovers,
         identityMissing: identityMissing,

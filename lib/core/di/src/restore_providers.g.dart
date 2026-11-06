@@ -28,6 +28,50 @@ final restoreIdentityJournalStoreProvider =
 // ignore: unused_element
 typedef RestoreIdentityJournalStoreRef =
     AutoDisposeFutureProviderRef<RestoreIdentityJournalStore>;
+String _$pendingRestoreIdentityHash() =>
+    r'7a6a1e944a6338bd1ce9eb2f9db3cfa7fee41a15';
+
+/// The durable pending handoff, watched by the connection UI after restarts.
+///
+/// Copied from [pendingRestoreIdentity].
+@ProviderFor(pendingRestoreIdentity)
+final pendingRestoreIdentityProvider =
+    AutoDisposeFutureProvider<RestoreIdentityJournal?>.internal(
+      pendingRestoreIdentity,
+      name: r'pendingRestoreIdentityProvider',
+      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+          ? null
+          : _$pendingRestoreIdentityHash,
+      dependencies: null,
+      allTransitiveDependencies: null,
+    );
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef PendingRestoreIdentityRef =
+    AutoDisposeFutureProviderRef<RestoreIdentityJournal?>;
+String _$preRestorePublishGuardHash() =>
+    r'a9ec3f48e01d1747a8fb5c44652bd774def07303';
+
+/// Shared pre-write recovery guard for catalogue, events and availability.
+///
+/// Copied from [preRestorePublishGuard].
+@ProviderFor(preRestorePublishGuard)
+final preRestorePublishGuardProvider =
+    AutoDisposeFutureProvider<PreRestorePublishGuard>.internal(
+      preRestorePublishGuard,
+      name: r'preRestorePublishGuardProvider',
+      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+          ? null
+          : _$preRestorePublishGuardHash,
+      dependencies: null,
+      allTransitiveDependencies: null,
+    );
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef PreRestorePublishGuardRef =
+    AutoDisposeFutureProviderRef<PreRestorePublishGuard>;
 String _$recoverPublishedIdentityHash() =>
     r'4423e00b9f8e143791187e739ac2af292eb5f227';
 

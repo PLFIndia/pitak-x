@@ -4,9 +4,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/core/async/serial_op_queue.dart';
 import 'package:pitaka/core/di/providers.dart';
+import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/publish/application/restore/restore_from_published_site_controller.dart';
 import 'package:pitaka/features/publish/application/restore/restore_from_published_site_progress.dart';
 import 'package:pitaka/features/publish/application/restore/restore_from_published_site_state.dart';
+import 'package:pitaka/features/publish/domain/restore/restore_identity_journal.dart';
 
 import 'restore_use_case_harness.dart';
 
@@ -54,6 +56,36 @@ void main() {
       RestoreFromPublishedSiteStatus.idle,
     );
   });
+
+  test(
+    'pending journal refuses restore and explicit recovery can discard it',
+    () async {
+      h.journal.value = RestoreIdentityJournal(
+        siteUrl: h.siteUrl,
+        addedDate: h.now,
+        fingerprint: h.fingerprint,
+      );
+
+      await controller().restore(downloadCovers: true);
+
+      final refused = container.read(
+        restoreFromPublishedSiteControllerProvider,
+      );
+      expect(refused.status, RestoreFromPublishedSiteStatus.error);
+      expect(refused.failure, isA<ValidationFailure>());
+      expect(h.fingerprintWrites, 0);
+      expect(h.catalogueCalls, 0);
+
+      await controller().finishIdentityRecovery();
+
+      expect(
+        container.read(restoreFromPublishedSiteControllerProvider).status,
+        RestoreFromPublishedSiteStatus.idle,
+      );
+      expect(h.journal.value, isNull);
+      expect(h.fingerprintWrites, 0);
+    },
+  );
 
   test('a second submit while running is refused', () async {
     final gate = Completer<void>();

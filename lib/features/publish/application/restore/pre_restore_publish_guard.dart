@@ -48,7 +48,8 @@ final class PreRestorePublishGuard {
       return left(
         const ValidationFailure(
           'Finish restoring your published identity before publishing. Open '
-          'Publish to web → Restore from this site. Nothing was published.',
+          'Publish to web → Connection → Finish identity recovery. Nothing '
+          'was published.',
         ),
       );
     }

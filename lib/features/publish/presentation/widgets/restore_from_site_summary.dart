@@ -10,6 +10,7 @@ class RestoreFromSiteSummary extends StatelessWidget {
   const RestoreFromSiteSummary({
     required this.summary,
     required this.onRecoverIdentity,
+    this.showIdentityRecoveryAction = true,
     super.key,
   });
 
@@ -18,6 +19,10 @@ class RestoreFromSiteSummary extends StatelessWidget {
 
   /// Starts identity-only recovery when a handoff is pending.
   final VoidCallback onRecoverIdentity;
+
+  /// Whether this widget owns the recovery button. The section can disable it
+  /// when its journal-backed pending block provides the single action.
+  final bool showIdentityRecoveryAction;
 
   @override
   Widget build(BuildContext context) {
@@ -53,16 +58,15 @@ class RestoreFromSiteSummary extends StatelessWidget {
             '${summary.issuesFiledAsBooks} issue(s) were added as books '
             'because their magazine title was not on the site.',
           ),
-        if (!summary.downloadCovers)
+        if (summary.coversNotDownloaded > 0)
           Text(
-            'Same-site covers not downloaded: ${summary.coversSkipped}. '
+            'Same-site covers not downloaded: ${summary.coversNotDownloaded}. '
             'Their references were left empty.',
-          )
-        else ...[
+          ),
+        if (summary.coversRestored > 0)
           Text('Covers restored: ${summary.coversRestored}'),
-          if (summary.coversSkipped > 0)
-            Text('Covers skipped or failed: ${summary.coversSkipped}'),
-        ],
+        if (summary.coversFailed > 0)
+          Text('Covers skipped or failed: ${summary.coversFailed}'),
         if (summary.coversSkippedByBudget > 0)
           Text(
             '${summary.coversSkippedByBudget} cover(s) were skipped because a '
@@ -88,10 +92,11 @@ class RestoreFromSiteSummary extends StatelessWidget {
             'preserve this site identity.',
           ),
           const SizedBox(height: 8),
-          OutlinedButton(
-            onPressed: onRecoverIdentity,
-            child: const Text('Finish identity recovery'),
-          ),
+          if (showIdentityRecoveryAction)
+            OutlinedButton(
+              onPressed: onRecoverIdentity,
+              child: const Text('Finish identity recovery'),
+            ),
         ] else if (!summary.identityMissing) ...[
           const Text(
             'The published fingerprint was preserved, so readers do not need '

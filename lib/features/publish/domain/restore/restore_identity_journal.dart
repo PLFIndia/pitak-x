@@ -7,10 +7,17 @@ import 'package:pitaka/core/error/failure.dart';
 /// Target-bound public identity awaiting durable completion.
 final class RestoreIdentityJournal {
   /// Creates a pending handoff.
-  const RestoreIdentityJournal({required this.siteUrl, this.fingerprint});
+  const RestoreIdentityJournal({
+    required this.siteUrl,
+    required this.addedDate,
+    this.fingerprint,
+  });
 
   /// Canonical active-target site this recovery is allowed to use.
   final String siteUrl;
+
+  /// The one insert timestamp shared by every row in this restore.
+  final int addedDate;
 
   /// Public identity read from that site; null means it had no descriptor.
   final String? fingerprint;

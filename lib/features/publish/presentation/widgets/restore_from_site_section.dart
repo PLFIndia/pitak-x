@@ -5,11 +5,13 @@ import 'dart:async' show unawaited;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/publish/application/restore/restore_from_published_site_controller.dart';
 import 'package:pitaka/features/publish/application/restore/restore_from_published_site_progress.dart';
 import 'package:pitaka/features/publish/application/restore/restore_from_published_site_state.dart';
 import 'package:pitaka/features/publish/application/site/publish_site_status_controller.dart';
+import 'package:pitaka/features/publish/domain/restore/restore_identity_journal.dart';
 import 'package:pitaka/features/publish/presentation/widgets/restore_from_site_dialog.dart';
 import 'package:pitaka/features/publish/presentation/widgets/restore_from_site_summary.dart';
 import 'package:pitaka/features/publish/presentation/widgets/section_card.dart';
@@ -25,6 +27,7 @@ class RestoreFromSiteSection extends ConsumerWidget {
     final target = site?.target;
     if (target == null) return const SizedBox.shrink();
     final state = ref.watch(restoreFromPublishedSiteControllerProvider);
+    final pending = ref.watch(pendingRestoreIdentityProvider);
     final controller = ref.read(
       restoreFromPublishedSiteControllerProvider.notifier,
     );
@@ -50,6 +53,7 @@ class RestoreFromSiteSection extends ConsumerWidget {
                 summary: summary,
                 onRecoverIdentity: () =>
                     unawaited(controller.finishIdentityRecovery()),
+                showIdentityRecoveryAction: pending.valueOrNull == null,
               ),
             if (state.status == RestoreFromPublishedSiteStatus.cancelled)
               const Text('Restore cancelled. Nothing was imported.'),
@@ -60,17 +64,50 @@ class RestoreFromSiteSection extends ConsumerWidget {
                 style: TextStyle(color: Theme.of(context).colorScheme.error),
               ),
             ],
-            if (state.summary == null) ...[
-              const Text(
-                'Reconnect your own hosting account, then put the public '
-                'catalogue back into an empty app.',
+            pending.when(
+              loading: () => const Padding(
+                padding: EdgeInsets.symmetric(vertical: 8),
+                child: Text('Checking recovery status…'),
               ),
+              error: (_, _) => const Text(
+                'Recovery status could not be read. Restore is unavailable '
+                'until the app can read its recovery state.',
+              ),
+              data: (journal) {
+                if (journal != null) {
+                  return _PendingIdentityRecovery(
+                    journal: journal,
+                    onRecover: () =>
+                        unawaited(controller.finishIdentityRecovery()),
+                  );
+                }
+                if (state.summary != null) return const SizedBox.shrink();
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Reconnect your own hosting account, then put the public '
+                      'catalogue back into an empty app.',
+                    ),
+                    const SizedBox(height: 8),
+                    OutlinedButton.icon(
+                      onPressed: () => unawaited(
+                        _confirmAndRestore(context, ref, target.siteUrl),
+                      ),
+                      icon: const Icon(Icons.restore),
+                      label: const Text('Restore from this site'),
+                    ),
+                  ],
+                );
+              },
+            ),
+            if (state.status == RestoreFromPublishedSiteStatus.success ||
+                state.status == RestoreFromPublishedSiteStatus.error ||
+                state.status == RestoreFromPublishedSiteStatus.cancelled) ...[
               const SizedBox(height: 8),
-              OutlinedButton.icon(
-                onPressed: () =>
-                    unawaited(_confirmAndRestore(context, ref, target.siteUrl)),
-                icon: const Icon(Icons.restore),
-                label: const Text('Restore from this site'),
+              TextButton(
+                onPressed: controller.clearResult,
+                child: const Text('Done'),
               ),
             ],
           ],
@@ -108,4 +145,39 @@ class RestoreFromSiteSection extends ConsumerWidget {
       'Pitak could not save the restored data or identity. Please try again.',
     _ => 'Restore failed. Please try again.',
   };
+}
+
+/// Journal-backed action shown even when no controller summary survived a
+/// process restart. The bound address explains which site must be reconnected.
+class _PendingIdentityRecovery extends StatelessWidget {
+  const _PendingIdentityRecovery({
+    required this.journal,
+    required this.onRecover,
+  });
+
+  final RestoreIdentityJournal journal;
+  final VoidCallback onRecover;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Published identity recovery pending',
+          style: Theme.of(context).textTheme.titleSmall,
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'Finish saving the published identity for ${journal.siteUrl}. '
+          'Reconnect that same site if it is not connected.',
+        ),
+        const SizedBox(height: 8),
+        OutlinedButton(
+          onPressed: onRecover,
+          child: const Text('Finish identity recovery'),
+        ),
+      ],
+    );
+  }
 }

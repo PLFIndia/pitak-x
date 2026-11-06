@@ -32,10 +32,12 @@ final class PrefsRestoreIdentityJournalStore
         return left(_corrupt);
       }
       final site = decoded['siteUrl'];
+      final addedDate = decoded['addedDate'];
       final fingerprint = decoded['fingerprint'];
       if (site is! String || BookmarkUrl.normalize(site) != site) {
         return left(_corrupt);
       }
+      if (addedDate is! int || addedDate <= 0) return left(_corrupt);
       if (fingerprint != null &&
           (fingerprint is! String ||
               !LibraryFingerprint.isValid(fingerprint))) {
@@ -44,6 +46,7 @@ final class PrefsRestoreIdentityJournalStore
       return right(
         RestoreIdentityJournal(
           siteUrl: site,
+          addedDate: addedDate,
           fingerprint: fingerprint as String?,
         ),
       );
@@ -57,6 +60,7 @@ final class PrefsRestoreIdentityJournalStore
     final encoded = jsonEncode({
       'schemaVersion': 1,
       'siteUrl': journal.siteUrl,
+      'addedDate': journal.addedDate,
       'fingerprint': journal.fingerprint,
     });
     return writePrefsString(_prefs, _key, encoded, what: 'restore journal');

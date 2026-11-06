@@ -67,11 +67,16 @@ final class RecoverPublishedIdentity {
     final titlesFailure = titles.swap().toNullable();
     if (titlesFailure != null) return left(titlesFailure);
     final committed =
-        items.toNullable()!.isNotEmpty || titles.toNullable()!.isNotEmpty;
+        items.toNullable()!.any(
+          (item) => item.addedDate == pending.addedDate,
+        ) ||
+        titles.toNullable()!.any(
+          (summary) => summary.periodical.addedDate == pending.addedDate,
+        );
     if (!committed) {
-      // The journal is written BEFORE import. Empty tables prove the crash
-      // happened before commit (empty site restores are refused), so no
-      // identity may be adopted from an import that never happened.
+      // The journal is written BEFORE import. Only a row carrying its exact
+      // restore stamp proves commit; an unrelated row added after a crash
+      // must not cause this site's identity to be adopted.
       return (await _journal.clear()).map(
         (_) => PublishedIdentityRecoveryOutcome.discarded,
       );
