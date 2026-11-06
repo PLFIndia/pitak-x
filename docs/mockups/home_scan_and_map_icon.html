@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pitak — home scan and Network map icon mockup</title>
+<style>
+  :root {
+    --primary:#4355b9; --primary-container:#dee0ff; --on-primary-container:#00105c;
+    --surface:#fbf8ff; --surface-low:#f5f2fa; --surface-high:#e9e7ef;
+    --on-surface:#1b1b21; --on-variant:#46464f; --outline:#767680;
+    --outline-variant:#c7c5d0; --pin:#a93845; --success:#216e39;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:#ece9f1; color:var(--on-surface); font-family:Roboto,"Segoe UI",system-ui,sans-serif; }
+  button,input { font:inherit; }
+  button { cursor:pointer; }
+  .intro { max-width:1180px; margin:0 auto; padding:28px 24px 8px; }
+  h1 { margin:0 0 8px; font-size:28px; font-weight:500; }
+  .intro p { max-width:850px; margin:8px 0; color:var(--on-variant); line-height:1.5; }
+  .controls { display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin-top:18px; }
+  .control { min-height:42px; padding:9px 15px; border:1px solid var(--outline); border-radius:22px; background:var(--surface); color:var(--primary); }
+  .control.active { border-color:var(--primary); background:var(--primary-container); color:var(--on-primary-container); font-weight:600; }
+  .setting { display:inline-flex; align-items:center; gap:9px; min-height:42px; padding:8px 14px; border-radius:12px; background:var(--surface); }
+  .setting input { width:20px; height:20px; accent-color:var(--primary); }
+  .stage { display:flex; justify-content:center; align-items:flex-start; flex-wrap:wrap; gap:28px; padding:20px 24px 36px; }
+  .example { width:370px; flex:none; }
+  .example h2 { min-height:52px; margin:0 0 10px; font-size:18px; font-weight:500; }
+  .example h2 span { display:block; margin-top:4px; color:var(--on-variant); font-size:13px; font-weight:400; line-height:1.4; }
+  .phone { position:relative; height:720px; overflow:hidden; border:9px solid #15151a; border-radius:40px; background:var(--surface); box-shadow:0 16px 42px #0003; }
+  .appbar { height:64px; display:flex; align-items:center; gap:1px; padding:0 5px; }
+  .appbar h3 { flex:1; margin:0 0 0 5px; overflow:hidden; font-size:21px; font-weight:400; white-space:nowrap; }
+  .icon { position:relative; width:43px; height:48px; display:grid; place-items:center; flex:none; border:0; border-radius:24px; background:none; color:var(--on-variant); }
+  .icon svg { width:24px; height:24px; fill:none; stroke:currentColor; stroke-width:1.9; stroke-linecap:round; stroke-linejoin:round; }
+  .icon.map-a { color:var(--primary); }
+  .icon.map-a .map-shape,.icon.map-b .map-shape { fill:currentColor; stroke:currentColor; }
+  .icon.map-a .map-fold,.icon.map-b .map-fold { stroke:var(--surface); }
+  .icon.map-b { color:var(--primary); }
+  .icon .pin { position:absolute; right:3px; bottom:5px; width:17px; height:17px; padding:2px; border-radius:50%; background:var(--surface); color:var(--pin); fill:currentColor; stroke:var(--surface); }
+  .logo { width:31px; height:31px; display:grid; place-items:center; border-radius:8px; background:var(--primary); color:white; font-weight:700; }
+  .search { height:48px; display:flex; align-items:center; gap:12px; margin:8px 14px; padding:0 13px; border:1px solid var(--outline); border-radius:6px; color:var(--on-variant); font-size:13px; }
+  .chips { display:flex; gap:7px; padding:5px 14px 12px; overflow:hidden; }
+  .chip { padding:7px 10px; border:1px solid var(--outline-variant); border-radius:9px; color:var(--on-variant); font-size:12px; white-space:nowrap; }
+</style>
+<style>
+  .book { display:flex; align-items:center; gap:12px; padding:11px 15px; }
+  .cover { width:42px; height:58px; flex:none; border-radius:4px; background:linear-gradient(135deg,#c5cae9,#7986cb); box-shadow:0 1px 3px #0003; }
+  .book:nth-child(2n) .cover { background:linear-gradient(135deg,#ffe0b2,#ef8f32); }
+  .book:nth-child(3n) .cover { background:linear-gradient(135deg,#c8e6c9,#43a047); }
+  .book-title { font-size:15px; }
+  .author { margin-top:3px; color:var(--on-variant); font-size:13px; }
+  .fab { position:absolute; right:17px; bottom:18px; width:56px; height:56px; border:0; border-radius:16px; background:var(--primary-container); color:var(--on-primary-container); box-shadow:0 4px 10px #0003; font-size:29px; }
+  .note { margin:14px 2px 0; padding:12px 14px; border-radius:12px; background:var(--surface-low); color:var(--on-variant); font-size:13px; line-height:1.45; }
+  .form { padding:12px 17px; }
+  .field { margin-bottom:13px; }
+  .field label { display:block; margin:0 0 4px 3px; color:var(--on-variant); font-size:12px; }
+  .value { min-height:45px; display:flex; align-items:center; padding:10px 12px; border:1px solid var(--outline); border-radius:6px; background:var(--surface); font-size:14px; }
+  .value.filled { border-color:var(--primary); background:#f4f3ff; }
+  .isbn-row { display:flex; gap:7px; }
+  .isbn-row .value { flex:1; }
+  .mini { width:43px; height:45px; display:grid; place-items:center; border:1px solid var(--outline); border-radius:22px; background:none; color:var(--primary); }
+  .mini.tonal { border:0; background:var(--primary-container); }
+  .mini svg { width:21px; height:21px; fill:none; stroke:currentColor; stroke-width:2; }
+  .status { display:flex; align-items:center; gap:9px; min-height:44px; margin:3px 0 15px; padding:10px 12px; border-radius:9px; background:var(--surface-high); color:var(--on-variant); font-size:13px; line-height:1.35; }
+  .status.success { background:#dff2e3; color:var(--success); }
+  .spinner { width:17px; height:17px; flex:none; border:2px solid #4355b944; border-top-color:var(--primary); border-radius:50%; animation:spin .8s linear infinite; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  .legend { max-width:1120px; margin:0 auto 30px; padding:0 24px; color:var(--on-variant); font-size:13px; line-height:1.5; }
+  .legend strong { color:var(--on-surface); }
+  .hidden { display:none; }
+  @media (max-width:800px) { .stage { padding-inline:12px; } .intro { padding-inline:18px; } }
+  @media (prefers-reduced-motion:reduce) { .spinner { animation:none; } }
+</style>
+</head>
+<body>
+<svg width="0" height="0" aria-hidden="true" style="position:absolute">
+  <symbol id="map" viewBox="0 0 24 24"><path class="map-shape" d="M9 3 3 6v15l6-3 6 3 6-3V3l-6 3-6-3Z"/><path class="map-fold" d="M9 3v15M15 6v15"/></symbol>
+  <symbol id="pin" viewBox="0 0 24 24"><path d="M12 21s7-6.1 7-12A7 7 0 1 0 5 9c0 5.9 7 12 7 12Z"/><circle cx="12" cy="9" r="2.3" fill="white" stroke="none"/></symbol>
+  <symbol id="scan" viewBox="0 0 24 24"><path d="M4 8V4h4M16 4h4v4M20 16v4h-4M8 20H4v-4M7 12h10"/></symbol>
+  <symbol id="events" viewBox="0 0 24 24"><path d="m4 10 16-6-6 16-2-7-8-3Z"/></symbol>
+  <symbol id="search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4 4"/></symbol>
+  <symbol id="back" viewBox="0 0 24 24"><path d="M19 12H5m7-7-7 7 7 7"/></symbol>
+</svg>
+<header class="intro">
+  <h1>Home scan + Network map icon</h1>
+  <p>Local interaction mockup — no camera or network request. Compare the existing monochrome map with two theme-coloured alternatives, then simulate a home-screen ISBN scan.</p>
+  <div class="controls" aria-label="Map icon choices">
+    <button class="control" id="choose-a" type="button">Option A · filled indigo map</button>
+    <button class="control active" id="choose-b" type="button">Option B · map + location pin</button>
+    <label class="setting"><input id="lookup-setting" type="checkbox" checked> Look up ISBN after scanning</label>
+    <button class="control" id="simulate" type="button">Simulate Scan to add</button>
+  </div>
+</header>
+<main class="stage">
+  <section class="example">
+    <h2>Current home<span>Monochrome outline map; the scan opens a pre-filled form without searching.</span></h2>
+    <div class="phone">
+      <header class="appbar">
+        <div class="icon"><div class="logo">P</div></div><h3>Kadugodi Library</h3>
+        <button class="icon" title="Network map"><svg><use href="#map"/></svg></button>
+        <button class="icon" title="Scan to add"><svg><use href="#scan"/></svg></button>
+        <button class="icon" title="Events"><svg><use href="#events"/></svg></button>
+        <button class="icon" title="More options">⋮</button>
+      </header>
+      <div class="search"><svg width="20" height="20"><use href="#search"/></svg>Search title, author, ISBN, notes…</div>
+      <div class="chips"><span class="chip">⇅ Date added</span><span class="chip">Books</span><span class="chip">Magazines</span><span class="chip">Others</span></div>
+      <div class="book"><div class="cover"></div><div><div class="book-title">The God of Small Things</div><div class="author">Arundhati Roy</div></div></div>
+      <div class="book"><div class="cover"></div><div><div class="book-title">Malgudi Days</div><div class="author">R. K. Narayan</div></div></div>
+      <div class="book"><div class="cover"></div><div><div class="book-title">Wings of Fire</div><div class="author">A. P. J. Abdul Kalam</div></div></div>
+      <div class="book"><div class="cover"></div><div><div class="book-title">Train to Pakistan</div><div class="author">Khushwant Singh</div></div></div>
+      <button class="fab" title="Add to library">+</button>
+    </div>
+    <p class="note">The outline shape remains recognizable, but it has the same visual weight as every other app-bar action.</p>
+  </section>
+
+  <section class="example">
+    <h2>Proposed home<span id="option-description">Option B (recommended): filled indigo map with a small location pin.</span></h2>
+    <div class="phone">
+      <header class="appbar">
+        <div class="icon"><div class="logo">P</div></div><h3>Kadugodi Library</h3>
+        <button class="icon map-b" id="proposed-map" title="Network map" aria-label="Network map">
+          <svg><use href="#map"/></svg><svg class="pin" id="map-pin"><use href="#pin"/></svg>
+        </button>
+        <button class="icon" title="Scan to add"><svg><use href="#scan"/></svg></button>
+        <button class="icon" title="Events"><svg><use href="#events"/></svg></button>
+        <button class="icon" title="More options">⋮</button>
+      </header>
+      <div class="search"><svg width="20" height="20"><use href="#search"/></svg>Search title, author, ISBN, notes…</div>
+      <div class="chips"><span class="chip">⇅ Date added</span><span class="chip">Books</span><span class="chip">Magazines</span><span class="chip">Others</span></div>
+      <div class="book"><div class="cover"></div><div><div class="book-title">The God of Small Things</div><div class="author">Arundhati Roy</div></div></div>
+      <div class="book"><div class="cover"></div><div><div class="book-title">Malgudi Days</div><div class="author">R. K. Narayan</div></div></div>
+      <div class="book"><div class="cover"></div><div><div class="book-title">Wings of Fire</div><div class="author">A. P. J. Abdul Kalam</div></div></div>
+      <div class="book"><div class="cover"></div><div><div class="book-title">Train to Pakistan</div><div class="author">Khushwant Singh</div></div></div>
+      <button class="fab" title="Add to library">+</button>
+    </div>
+    <p class="note">Colour reinforces the destination, while the map silhouette and existing <strong>Network map</strong> tooltip keep meaning independent of colour.</p>
+  </section>
+  <section class="example">
+    <h2>After home Scan to add<span>The scanned ISBN arrives first; the existing setting controls what happens next.</span></h2>
+    <div class="phone">
+      <header class="appbar">
+        <button class="icon" title="Back"><svg><use href="#back"/></svg></button><h3>Add book</h3>
+      </header>
+      <div class="form">
+        <div class="status" id="lookup-status">Ready — choose a setting above, then select <strong>Simulate Scan to add</strong>.</div>
+        <div class="field"><label>Title</label><div class="value" id="title"></div></div>
+        <div class="field"><label>Title (transliteration)</label><div class="value"></div></div>
+        <div class="field"><label>Author</label><div class="value" id="author"></div></div>
+        <div class="field"><label>ISBN</label><div class="isbn-row"><div class="value" id="isbn"></div><button class="mini" title="Scan barcode"><svg><use href="#scan"/></svg></button><button class="mini tonal" title="Look up details"><svg><use href="#search"/></svg></button></div></div>
+        <div class="field"><label>Publisher</label><div class="value" id="publisher"></div></div>
+        <div class="field"><label>Published year</label><div class="value" id="year"></div></div>
+        <div class="field"><label>Language</label><div class="value" id="language"></div></div>
+      </div>
+    </div>
+    <p class="note" id="flow-note"><strong>Setting on:</strong> one automatic lookup runs after the new-ISBN route opens Add book. Existing items and magazine scans keep their current routes and never trigger this lookup.</p>
+  </section>
+</main>
+<footer class="legend">
+  <strong>Implementation intent after approval:</strong> preserve default-off privacy, fail closed to manual lookup if settings cannot load, prevent duplicate manual/automatic requests, and keep explicit <strong>Look up details</strong> available. Option B uses only existing Material map/location shapes and theme colours; no new asset or dependency.
+</footer>
+<script>
+  const mapButton = document.getElementById('proposed-map');
+  const mapPin = document.getElementById('map-pin');
+  const optionA = document.getElementById('choose-a');
+  const optionB = document.getElementById('choose-b');
+  const description = document.getElementById('option-description');
+  const setting = document.getElementById('lookup-setting');
+  const status = document.getElementById('lookup-status');
+  const fields = {
+    title: document.getElementById('title'), author: document.getElementById('author'),
+    isbn: document.getElementById('isbn'), publisher: document.getElementById('publisher'),
+    year: document.getElementById('year'), language: document.getElementById('language')
+  };
+  let run = 0;
+  function choose(option) {
+    mapButton.className = `icon map-${option}`;
+    mapPin.classList.toggle('hidden', option === 'a');
+    optionA.classList.toggle('active', option === 'a');
+    optionB.classList.toggle('active', option === 'b');
+    description.textContent = option === 'a'
+      ? 'Option A: a simpler filled indigo map, without an overlay.'
+      : 'Option B (recommended): filled indigo map with a small location pin.';
+  }
+  function fill(id, value) {
+    fields[id].textContent = value;
+    fields[id].classList.toggle('filled', Boolean(value));
+  }
+  optionA.addEventListener('click', () => choose('a'));
+  optionB.addEventListener('click', () => choose('b'));
+  document.getElementById('simulate').addEventListener('click', async () => {
+    const thisRun = ++run;
+    for (const id of Object.keys(fields)) fill(id, '');
+    fill('isbn', '9780143419856');
+    status.className = 'status';
+    if (!setting.checked) {
+      status.textContent = 'ISBN pre-filled. Automatic lookup is off — tap Look up details to search.';
+      return;
+    }
+    status.innerHTML = '<span class="spinner" aria-hidden="true"></span>Looking up the scanned ISBN…';
+    await new Promise(resolve => setTimeout(resolve, 900));
+    if (thisRun !== run) return;
+    fill('title', 'The God of Small Things'); fill('author', 'Arundhati Roy');
+    fill('publisher', 'Penguin Books'); fill('year', '2002'); fill('language', 'English');
+    status.className = 'status success';
+    status.textContent = 'Details filled in from the lookup. Nothing is saved until you tap Add.';
+  });
+</script>
+</body>
+</html>

@@ -36,6 +36,7 @@ import 'package:pitaka/features/library/presentation/widgets/catalogue_item_row.
 import 'package:pitaka/features/library/presentation/widgets/empty_library_state.dart';
 import 'package:pitaka/features/library/presentation/widgets/library_controls_row.dart';
 import 'package:pitaka/features/library/presentation/widgets/library_menu_button.dart';
+import 'package:pitaka/features/library/presentation/widgets/network_map_icon.dart';
 import 'package:pitaka/features/lookup/presentation/pages/scanner_page.dart';
 import 'package:pitaka/features/network/presentation/pages/network_page.dart';
 import 'package:pitaka/features/periodicals/presentation/pages/add_issue_page.dart';
@@ -137,7 +138,7 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
           // Shortcut to the network map (the Map tab is consent-gated — it
           // asks there, not here).
           IconButton(
-            icon: const Icon(Icons.map_outlined),
+            icon: const NetworkMapIcon(),
             tooltip: 'Network map',
             onPressed: () => Navigator.of(context).push(
               MaterialPageRoute<void>(
