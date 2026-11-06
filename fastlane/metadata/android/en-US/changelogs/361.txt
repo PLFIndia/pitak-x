@@ -1,0 +1,3 @@
+* Restore your catalogue and covers from your own published website after reinstalling.
+* Keeps your published library identity and protects the recovery copy from accidental publishing.
+* Restore works into an empty catalogue; private notes, locations and loans are not restored.

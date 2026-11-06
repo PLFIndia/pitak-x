@@ -14,6 +14,11 @@ heading as part of the `chore(release):` commit.
 
 ## [Unreleased]
 
+## [1.9.4] - 2026-11 (tag `1.9.4`, versionCode 36)
+
+Release sentinel (`tool/release_build.sh --sentinel`):
+`RestoreFromPublishedSiteUseCase`.
+
 ### Added
 - **Restore from your own published site (ADR 0021):** Publish → Connection
   can restore public catalogue fields and same-site covers from the active
