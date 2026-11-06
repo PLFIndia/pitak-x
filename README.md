@@ -40,6 +40,14 @@ a **library network** (pins on a map, hub/member cards).
   bound to an Android Keystore key that requires a fresh strong-biometric
   authentication per use (see security notes). The vault key never crosses the
   Dart/Rust FFI boundary.
+- **Borrowed Items** — catalogue-style cards for every active loan, with
+  overdue/due-soon/open-ended filters, borrower Call actions, reusable Unicode
+  message templates, maintainer-reviewed cover-plus-caption sharing through
+  the OS share sheet, and direct WhatsApp text with the borrower's phone number
+  prefilled when available. Titles and due dates use WhatsApp bold markers,
+  and user-visible dates use unambiguous full month names. Nothing is sent
+  automatically and remote covers are not downloaded merely to prepare a
+  reminder.
 - **Wishlist** — track books to acquire; move to the library on purchase.
 - **Import / Export** — JSON, CSV (incl. Goodreads import), and **PDF** (a
   paginated A4 library list with Indic-script support via shaped-image text).
@@ -49,7 +57,9 @@ a **library network** (pins on a map, hub/member cards).
   the archive is *not* fully encrypted — the catalogue (every kind, including
   full magazine-series and issue records), wishlist, covers and item-kind
   mappings are stored plainly inside it; only the borrowers vault and its
-  wrapped key blob stay encrypted.
+  wrapped key blob stay encrypted. Reminder message templates are **not in the
+  current backup**: they are device-local plaintext preferences and must be
+  recreated after a restore.
   The archive also carries your **library identity (name + ID) and your
   saved-libraries list as plain, unencrypted JSON**, so a restored phone keeps
   the ID your hubs know. If you publish a website, it also carries the
@@ -277,8 +287,11 @@ Git does not enable tracked hooks automatically, hence the one-time
 
 ```bash
 flutter run -d <device-id> --flavor fdroid            # debug, with hot reload
-flutter build apk --release --flavor fdroid           # universal APK (large: bundled Noto fonts + 4 Rust ABIs)
-flutter install -d <device-id> --release --flavor fdroid
+fvm flutter build apk --release --flavor fdroid       # universal APK (large: bundled Noto fonts + 4 Rust ABIs)
+adb install -r build/app/outputs/flutter-apk/app-fdroid-release.apk
+
+# For every test install, use the F-Droid flavor and `adb install -r`.
+# Do not use `flutter install`: it may uninstall the existing package first.
 ```
 
 `flutter devices` lists ids. The app ships per-store flavors — `fdroid`

@@ -178,9 +178,9 @@ void main() {
     expect(find.text('Volume'), findsOneWidget);
     expect(find.text('248'), findsOneWidget);
     expect(find.text('First issue'), findsOneWidget);
-    expect(find.text('2025-01-01'), findsOneWidget);
+    expect(find.text('1 January 2025'), findsOneWidget);
     expect(find.text('Last issue'), findsOneWidget);
-    expect(find.text('2025-12-31'), findsOneWidget);
+    expect(find.text('31 December 2025'), findsOneWidget);
   });
 
   testWidgets('meets accessibility guidelines', (tester) async {

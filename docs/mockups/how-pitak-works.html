@@ -318,7 +318,7 @@
 
       <h2>Backup — what is inside</h2>
       <p>Your whole catalogue — books, magazine titles and issues, other items — plus wishlist, cover images, library identity and saved-libraries list, and the borrowers vault if you have one (it stays encrypted and opens with the same passphrase).</p>
-      <p><b>Not inside:</b> events and posters, logo, contact details, publishing setup, app settings — set those up again after a restore.</p>
+      <p><b>Not inside:</b> events and posters, logo, contact details, publishing setup, app settings, reminder message templates — set those up again after a restore.</p>
       <p>Keep the file somewhere private (your Drive, a computer) — it is your data in plain form, except the vault.</p>
 
       <h2>Make a backup</h2>
@@ -373,6 +373,9 @@
         <li><b>☰ → Borrowers vault</b>, tap the borrower, tap <b>Edit</b> → <b>Return</b> next to the item.</li>
         <li>The bell icon (<b>Pending</b>) on the vault screen lists overdue loans, loans due soon, and items missing details.</li>
         <li>Add a phone or email on a borrower's page and you get <b>Call</b>, <b>WhatsApp</b> and <b>Email</b> buttons there.</li>
+        <li><b>☰ → Borrowed Items</b> shows every active loan with cover, title, borrower and due status, with All / Overdue / Due soon (72 hours) / No due date filters and Call when a phone is available.</li>
+        <li>The generic share action prepares the selected template and local cover in the OS share flow. You choose WhatsApp and the conversation, review, then tap Send yourself. The separate WhatsApp icon opens the borrower's conversation with only text prefilled when a phone is available, without reading the cover. Titles and due dates use WhatsApp bold markers, and user-visible dates use full month names. Neither action sends automatically. Blank or remote covers offer text only; a broken local cover blocks image sharing.</li>
+        <li><b>Message templates</b> opens named templates in any language, with separate overdue, upcoming and no-due-date messages. Templates are plaintext on this device and are not in the current backup, so do not include private details.</li>
       </ul>
 
       <div class="callout"><h3>Good to know</h3><ul>
@@ -522,6 +525,7 @@
     <div class="divider"></div>
     <div class="dlist">
       <div class="tile" onclick="drawerGo('v-vault')"><span class="glyph">🔒</span><div class="t">Borrowers vault</div></div>
+      <div class="tile" onclick="closeDrawer();toast('Borrowed Items — active loans and maintainer-reviewed reminders')"><span class="glyph">↩</span><div class="t">Borrowed Items</div></div>
       <div class="tile" onclick="drawerGo('v-publish')"><span class="glyph">☁️</span><div class="t">Publish to web</div></div>
       <div class="tile" onclick="closeDrawer();toast('Wishlist — exists in the app')"><span class="glyph">🔖</span><div class="t">Wishlist</div></div>
       <div class="tile" onclick="drawerGo('v-magazines')"><span class="glyph">📰</span><div class="t">Magazines</div></div>

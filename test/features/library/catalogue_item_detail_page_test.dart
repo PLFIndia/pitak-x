@@ -576,7 +576,7 @@ void main() {
       expect(find.text('Volume'), findsOneWidget);
       expect(find.text('Issue number'), findsOneWidget);
       expect(find.text('Cover date'), findsOneWidget);
-      expect(find.text('2026-10-01'), findsOneWidget);
+      expect(find.text('1 October 2026'), findsOneWidget);
       expect(find.text('Festive number'), findsOneWidget);
 
       await tester.tap(find.text('Open series'));
@@ -608,8 +608,8 @@ void main() {
       expect(find.text('Bound volume'), findsOneWidget);
       expect(find.text('Issues from'), findsOneWidget);
       expect(find.text('Issues to'), findsOneWidget);
-      expect(find.text('2025-07-01'), findsOneWidget);
-      expect(find.text('2025-12-31'), findsOneWidget);
+      expect(find.text('1 July 2025'), findsOneWidget);
+      expect(find.text('31 December 2025'), findsOneWidget);
       expect(find.text('Cover date'), findsNothing);
     });
 

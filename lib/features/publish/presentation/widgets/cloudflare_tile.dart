@@ -2,6 +2,7 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:pitaka/core/text/display_date.dart';
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_connection_ui.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_connection.dart';
 import 'package:pitaka/features/publish/domain/site/publish_host.dart';
@@ -236,6 +237,5 @@ class CloudflareTile extends StatelessWidget {
     );
   }
 
-  static String _date(DateTime value) =>
-      value.toLocal().toIso8601String().substring(0, 10);
+  static String _date(DateTime value) => formatDisplayDateTime(value.toLocal());
 }

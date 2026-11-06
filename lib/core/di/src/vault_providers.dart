@@ -12,24 +12,32 @@
 library;
 
 import 'package:path/path.dart' as p;
+import 'package:pitaka/core/di/src/database_providers.dart';
 import 'package:pitaka/core/di/src/library_providers.dart';
 import 'package:pitaka/core/di/src/platform_providers.dart';
 import 'package:pitaka/core/platform/screen_security.dart';
 import 'package:pitaka/core/storage/active_data_generation.dart';
 import 'package:pitaka/features/library/application/library_controller.dart';
+import 'package:pitaka/features/library/infrastructure/local_cover_reader.dart';
+import 'package:pitaka/features/periodicals/application/periodicals_controller.dart';
+import 'package:pitaka/features/vault/application/build_borrowed_items_snapshot.dart';
 import 'package:pitaka/features/vault/application/lend_book_use_case.dart';
+import 'package:pitaka/features/vault/application/prepare_loan_reminder_use_case.dart';
 import 'package:pitaka/features/vault/application/vault_session_controller.dart';
 import 'package:pitaka/features/vault/domain/availability.dart';
 import 'package:pitaka/features/vault/domain/biometric_unlock.dart';
+import 'package:pitaka/features/vault/domain/borrowed_items.dart';
 import 'package:pitaka/features/vault/domain/borrower_profile.dart';
 import 'package:pitaka/features/vault/domain/entities/borrower.dart';
 import 'package:pitaka/features/vault/domain/entities/vault_session_state.dart';
 import 'package:pitaka/features/vault/domain/pending_snapshot.dart';
+import 'package:pitaka/features/vault/domain/reminder_template_store.dart';
 import 'package:pitaka/features/vault/domain/repositories/vault_repository.dart';
 import 'package:pitaka/features/vault/infrastructure/ffi_vault_repository.dart';
 import 'package:pitaka/features/vault/infrastructure/keystore_biometric_secret_vault.dart';
 import 'package:pitaka/features/vault/infrastructure/local_auth_biometric_authenticator.dart';
 import 'package:pitaka/features/vault/infrastructure/open_vault_from_archive.dart';
+import 'package:pitaka/features/vault/infrastructure/prefs_reminder_template_store.dart';
 import 'package:pitaka/features/vault/infrastructure/vault_store.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
@@ -144,6 +152,63 @@ Future<PendingSnapshot?> pendingSnapshot(PendingSnapshotRef ref) async {
     loans: session.data.loans,
     books: books,
     now: now,
+  );
+}
+
+/// Plaintext, device-local reminder template persistence (never vault secrets).
+@riverpod
+Future<ReminderTemplateStore> reminderTemplateStore(
+  ReminderTemplateStoreRef ref,
+) async => PrefsReminderTemplateStore(
+  await ref.watch(sharedPreferencesProvider.future),
+);
+
+/// Builds the strict active-loan read model over the two catalogue ports.
+@riverpod
+Future<BuildBorrowedItemsSnapshot> buildBorrowedItemsSnapshot(
+  BuildBorrowedItemsSnapshotRef ref,
+) async {
+  final items = await ref.watch(catalogueItemRepositoryProvider.future);
+  final periodicals = await ref.watch(periodicalRepositoryProvider.future);
+  return BuildBorrowedItemsSnapshot(items: items, periodicals: periodicals);
+}
+
+/// Prepares reminder captions and sanitized local covers without network IO.
+@riverpod
+Future<PrepareLoanReminderUseCase> prepareLoanReminderUseCase(
+  PrepareLoanReminderUseCaseRef ref,
+) async {
+  final coversDir = await ref.watch(coversDirProvider.future);
+  return PrepareLoanReminderUseCase(
+    coverReader: LocalCoverReader(coversDir: coversDir).call,
+    clock: ref.watch(clockProvider),
+  );
+}
+
+/// Borrowed Items is null while locked/uninitialized. Repository failures stay
+/// AsyncError; they are never converted to an empty list or missing covers.
+@riverpod
+Future<BorrowedItemsSnapshot?> borrowedItemsSnapshot(
+  BorrowedItemsSnapshotRef ref,
+) async {
+  final session = ref.watch(vaultSessionControllerProvider).valueOrNull;
+  if (session is! VaultUnlocked) return null;
+  if (session.data.loans.every((loan) => loan.isReturned)) {
+    return BorrowedItemsSnapshot.empty;
+  }
+  ref
+    ..watch(libraryControllerProvider)
+    ..watch(periodicalsControllerProvider)
+    ..watch(nowTickProvider);
+  final useCase = await ref.watch(buildBorrowedItemsSnapshotProvider.future);
+  final result = await useCase(
+    data: session.data,
+    now: ref.watch(clockProvider)(),
+  );
+  return result.fold(
+    // ignore: only_throw_errors, Riverpod surfaces typed errors via throw
+    (failure) => throw failure,
+    (snapshot) => snapshot,
   );
 }
 

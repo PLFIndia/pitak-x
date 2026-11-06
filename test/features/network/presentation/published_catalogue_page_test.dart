@@ -8,6 +8,7 @@ import 'package:fpdart/fpdart.dart';
 import 'package:image/image.dart' as img;
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/core/text/display_date.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/network/application/published_catalogue_cover_controller.dart';
 import 'package:pitaka/features/network/application/published_catalogue_query_controller.dart';
@@ -1341,7 +1342,12 @@ void main() {
       final text = noteFor(PublishedFileProblem.unreachable);
       final local = DateTime.fromMillisecondsSinceEpoch(checkedAt);
       final minutes = local.minute.toString().padLeft(2, '0');
-      expect(text, startsWith('Showing your saved copy from ${local.year}-'));
+      expect(
+        text,
+        startsWith(
+          'Showing your saved copy from ${formatDisplayDateTime(local)},',
+        ),
+      );
       expect(text, contains(':$minutes.'));
       expect(text, isNot(contains('http')));
     });

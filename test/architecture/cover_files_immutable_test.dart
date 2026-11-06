@@ -85,6 +85,7 @@ void main() {
     'lib/core/di/src/import_export_providers.dart',
     'lib/core/di/src/library_providers.dart',
     'lib/core/di/src/publish_providers.dart',
+    'lib/core/di/src/vault_providers.dart',
     'lib/core/widgets/item_cover.dart',
     'lib/core/widgets/library_logo.dart',
     // Reads covers INTO the backup archive; writes only the archive.
@@ -92,6 +93,8 @@ void main() {
     'lib/features/backup/infrastructure/restore_backup.dart',
     'lib/features/import_export/domain/cover_paths.dart',
     'lib/features/import_export/infrastructure/logo_file_reader.dart',
+    // Shared bounded reader used by reminders and the publish adapter.
+    'lib/features/library/infrastructure/local_cover_reader.dart',
     'lib/features/publish/infrastructure/local_cover_reader.dart',
   };
 

@@ -12,6 +12,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/core/text/display_date.dart';
 import 'package:pitaka/features/vault/application/vault_session_controller.dart';
 import 'package:pitaka/features/vault/domain/borrower_profile.dart';
 import 'package:pitaka/features/vault/domain/entities/borrower.dart';
@@ -95,13 +96,8 @@ class BorrowerProfilePage extends ConsumerWidget {
   }
 
   /// YYYY-MM-DD for epoch millis (shared with the loan tiles, N06).
-  static String formatDate(int? epochMillis) {
-    if (epochMillis == null) return '—';
-    final d = DateTime.fromMillisecondsSinceEpoch(epochMillis);
-    final m = d.month.toString().padLeft(2, '0');
-    final day = d.day.toString().padLeft(2, '0');
-    return '${d.year}-$m-$day';
-  }
+  static String formatDate(int? epochMillis) =>
+      formatDisplayDateOrNull(epochMillis) ?? '—';
 }
 
 /// Resolves a loan's book title through the [bookTitleProvider] read model

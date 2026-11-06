@@ -123,7 +123,10 @@ jobs:
             test/features/periodicals/application/add_issue_use_case_test.dart \
             test/features/network/infrastructure/published_catalogue_codec_test.dart \
             test/features/network/presentation/published_catalogue_item_page_test.dart \
-            test/features/publish/published_catalogue_contract_test.dart"
+            test/features/publish/published_catalogue_contract_test.dart \
+            test/features/vault/loan_status_test.dart \
+            test/features/vault/reminder_template_test.dart \
+            test/features/vault/prepare_loan_reminder_use_case_test.dart"
           TZ=Asia/Calcutta flutter test $TZ_TARGETS
           TZ=America/New_York flutter test $TZ_TARGETS
       # N14: coverage RATCHET — total line coverage must not regress below

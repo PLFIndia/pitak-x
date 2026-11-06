@@ -20,6 +20,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pitaka/core/di/providers.dart';
+import 'package:pitaka/core/text/display_date.dart';
 import 'package:pitaka/features/library/application/add_book_controller.dart';
 import 'package:pitaka/features/library/application/library_controller.dart';
 import 'package:pitaka/features/library/domain/catalogue_rules.dart';
@@ -507,12 +508,6 @@ class _AddBookPageState extends ConsumerState<AddBookPage> {
     AgeGroup.advanced => 'Advanced',
   };
 
-  static String _formatDate(int epochMillis) {
-    // M15: out-of-range legacy values render as no date instead of throwing.
-    final d = CatalogueRules.dateFromMillisOrNull(epochMillis)?.toLocal();
-    if (d == null) return '';
-    final mm = d.month.toString().padLeft(2, '0');
-    final dd = d.day.toString().padLeft(2, '0');
-    return '${d.year}-$mm-$dd';
-  }
+  static String _formatDate(int epochMillis) =>
+      formatDisplayDateOrNull(epochMillis) ?? '';
 }

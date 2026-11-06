@@ -91,7 +91,7 @@ void main() {
     expect(find.text('Lapsed'), findsOneWidget);
 
     // Summary line: count + newest issue month.
-    expect(find.text('2 issues · latest 2026-09'), findsOneWidget);
+    expect(find.text('2 issues · latest 1 September 2026'), findsOneWidget);
     expect(find.text('0 issues'), findsNWidgets(3));
   });
 

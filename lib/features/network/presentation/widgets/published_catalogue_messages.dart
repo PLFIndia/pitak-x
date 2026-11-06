@@ -9,6 +9,7 @@ library;
 
 import 'package:flutter/material.dart';
 import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/core/text/display_date.dart';
 import 'package:pitaka/features/network/domain/entities/published_content.dart';
 import 'package:pitaka/features/network/domain/published_file_fetch.dart';
 
@@ -170,10 +171,8 @@ String savedCopyMessage(SavedCopyNotice notice) {
 
 /// `YYYY-MM-DD HH:MM` in the device's local time.
 String formatSavedCopyTime(int epochMillis) {
-  final t = DateTime.fromMillisecondsSinceEpoch(epochMillis);
-  String two(int value) => value.toString().padLeft(2, '0');
-  return '${t.year}-${two(t.month)}-${two(t.day)} '
-      '${two(t.hour)}:${two(t.minute)}';
+  final date = DateTime.fromMillisecondsSinceEpoch(epochMillis);
+  return formatDisplayDateTimeWithTime(date);
 }
 
 /// A result-area message with optional actions (empty, no matches, …).

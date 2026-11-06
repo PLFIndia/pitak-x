@@ -14,6 +14,9 @@ import 'package:pitaka/features/periodicals/presentation/pages/periodicals_page.
 import 'package:pitaka/features/publish/presentation/widgets/library_share_card.dart';
 import 'package:pitaka/features/publish/presentation/widgets/share_library_sheet.dart';
 import 'package:pitaka/features/share_apps/presentation/widgets/share_apps_sheet.dart';
+import 'package:pitaka/features/vault/application/vault_session_controller.dart';
+import 'package:pitaka/features/vault/domain/entities/vault_session_state.dart';
+import 'package:pitaka/features/vault/presentation/pages/borrowed_items_page.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../features/periodicals/application/periodical_fakes.dart';
@@ -39,6 +42,11 @@ class _FakeShare implements FileShareService {
     String? text,
     Rect? sharePositionOrigin,
   }) => throw UnimplementedError();
+}
+
+class _LockedVaultSession extends VaultSessionController {
+  @override
+  Future<VaultSessionState> build() async => const VaultLocked();
 }
 
 class _EmptyNetworkRepository implements NetworkRepository {
@@ -130,6 +138,42 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('Add member'), findsNothing);
+  });
+
+  testWidgets('Borrowed Items sits below Borrowers vault and opens its page', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          publishedSiteUrlProvider.overrideWith((ref) async => null),
+          vaultSessionControllerProvider.overrideWith(_LockedVaultSession.new),
+        ],
+        child: const MaterialApp(
+          home: Scaffold(drawer: AppDrawer(), body: SizedBox()),
+        ),
+      ),
+    );
+    tester.firstState<ScaffoldState>(find.byType(Scaffold)).openDrawer();
+    await tester.pumpAndSettle();
+
+    final borrowedY = tester.getTopLeft(find.text('Borrowed Items')).dy;
+    expect(
+      tester.getTopLeft(find.text('Borrowers vault')).dy,
+      lessThan(borrowedY),
+    );
+    expect(
+      tester.getTopLeft(find.text('Publish to web')).dy,
+      greaterThan(borrowedY),
+    );
+    await tester.tap(find.text('Borrowed Items'));
+    await tester.pumpAndSettle();
+    expect(find.byType(BorrowedItemsPage), findsOneWidget);
+    expect(
+      find.text('Unlock the vault to see borrowed items.'),
+      findsOneWidget,
+    );
   });
 
   testWidgets('Magazines sits between Wishlist and Library network and opens '
@@ -320,6 +364,11 @@ void main() {
       await _app(publishedUrl: 'https://user.github.io/my-library/'),
     );
     tester.firstState<ScaffoldState>(find.byType(Scaffold)).openDrawer();
+    await tester.pumpAndSettle();
+
+    // The added Borrowed Items destination can place Guides below the first
+    // viewport; scroll the lazy drawer list until it is built and visible.
+    await tester.scrollUntilVisible(find.text('How Pitak works'), 200);
     await tester.pumpAndSettle();
 
     // Position: below Share, above the pinned Settings.

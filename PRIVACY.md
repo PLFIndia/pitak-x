@@ -2,6 +2,12 @@
 
 _Effective date: 2026-11-06 · Publisher: Parallel Line Foundation_
 
+_Changed 2026-11-06 — **Borrowed Items** adds maintainer-reviewed loan
+reminders. Template text is plaintext on this device and is not in the current
+backup. A reminder's title, due message and sanitized cover leave the device
+only when you tap the share action and choose a target in the OS share flow.
+Nothing is sent automatically (item 9)._
+
 _Changed 2026-11-06 — **Restore from this site** can recover public catalogue
 fields and covers from your own active hosting target into an empty catalogue.
 It also restores the public fingerprint when available and carries it in later
@@ -60,6 +66,11 @@ analytics, no advertising, and no tracking of any kind.**
 - **Settings** (theme, library name, sort preferences, and — if you fill them
   in — the contact details you choose to publish) in the app's private
   preferences store.
+- **Reminder message templates** (your custom labels and three message bodies,
+  plus the selected template ID) in that same private preferences store. They
+  are **plaintext, not encrypted**, are not in the current `.pitabak` backup,
+  and can contain anything you type, so do not include private details. Rendered
+  reminders, recipients and share history are not stored.
 - **A GitHub access token**, only if you use the Publish feature to publish to
   GitHub Pages, stored in platform secure storage (never in plain
   preferences).
@@ -330,6 +341,22 @@ Settings → Data), and the passive update check of Google Play builds
    nothing: no catalogue data, no identifiers, no server of its own is
    involved. The F-Droid flavor has no Play Core/update library, so the check
    cannot run there (F-Droid's own client handles updates).
+9. **Loan reminders.** On Borrowed Items, tapping the WhatsApp/reminder action
+   prepares the item title, due message and a sanitized local cover, then opens
+   the generic OS share flow. You choose WhatsApp or another target and the
+   conversation, review or edit the content, and decide whether to send it.
+   Pitak does not select a recipient for the generic share, detect WhatsApp,
+   send automatically, or treat a share hand-off as delivery. A separate
+   WhatsApp icon appears when a phone number is available: it opens the
+   borrower's `wa.me` conversation with only the rendered text prefilled,
+   without reading the cover. You still tap Send in WhatsApp. Blank or
+   remote-only covers lead to an optional text-only share; Pitak does not
+   download a cover just for a reminder. Local images are re-encoded to strip EXIF/GPS metadata, and a
+   missing, unsafe, oversized or corrupt local file blocks image sharing rather
+   than silently sending raw bytes. The `share_plus` plugin writes a temporary
+   cover file in its app-cache directory during sharing; the OS/plugin or a
+   later Android share removes it. Pitak keeps no reminder history or
+   app-owned persistent reminder copy.
 
 ## What Pitak does NOT do
 

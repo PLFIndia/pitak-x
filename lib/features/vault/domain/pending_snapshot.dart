@@ -19,6 +19,7 @@ library;
 
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/vault/domain/entities/borrower.dart';
+import 'package:pitaka/features/vault/domain/loan_status.dart';
 
 /// Default window (days) for the "due soon" bucket (Kotlin default = 3).
 const int kDueSoonWithinDays = 3;
@@ -62,17 +63,18 @@ PendingSnapshot buildPendingSnapshot({
   int dueSoonWithinDays = kDueSoonWithinDays,
 }) {
   final withinMs = dueSoonWithinDays * 24 * 60 * 60 * 1000;
-  final soonCutoff = now + withinMs;
-
   final overdue = <Loan>[];
   final dueSoon = <Loan>[];
   for (final loan in loans) {
-    if (loan.isReturned || loan.dueDate == null) continue;
-    final due = loan.dueDate!;
-    if (now > due) {
-      overdue.add(loan);
-    } else if (due <= soonCutoff) {
-      dueSoon.add(loan);
+    if (loan.isReturned) continue;
+    switch (loanUrgency(loan, now, dueSoonWithinMillis: withinMs)) {
+      case LoanUrgency.overdue:
+        overdue.add(loan);
+      case LoanUrgency.dueSoon:
+        dueSoon.add(loan);
+      case LoanUrgency.dueLater:
+      case LoanUrgency.noDueDate:
+        break;
     }
   }
   overdue.sort((a, b) => a.dueDate!.compareTo(b.dueDate!));

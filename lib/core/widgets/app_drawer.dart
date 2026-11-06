@@ -22,6 +22,7 @@ import 'package:pitaka/features/publish/presentation/widgets/share_library_sheet
 import 'package:pitaka/features/settings/application/settings_controller.dart';
 import 'package:pitaka/features/settings/presentation/pages/settings_page.dart';
 import 'package:pitaka/features/share_apps/presentation/widgets/share_apps_sheet.dart';
+import 'package:pitaka/features/vault/presentation/pages/borrowed_items_page.dart';
 import 'package:pitaka/features/vault/presentation/pages/vault_page.dart';
 import 'package:pitaka/features/wishlist/presentation/pages/wishlist_page.dart';
 
@@ -80,6 +81,11 @@ class AppDrawer extends ConsumerWidget {
                     leading: const Icon(Icons.lock_outline),
                     title: const Text('Borrowers vault'),
                     onTap: () => _go(context, const VaultPage()),
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.assignment_return_outlined),
+                    title: const Text('Borrowed Items'),
+                    onTap: () => _go(context, const BorrowedItemsPage()),
                   ),
                   ListTile(
                     leading: const Icon(Icons.cloud_upload_outlined),

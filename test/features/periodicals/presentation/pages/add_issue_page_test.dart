@@ -184,7 +184,7 @@ void main() {
       reason: 'next issue number suggested',
     );
     expect(
-      find.textContaining('2026-09-15'),
+      find.textContaining('15 September 2026'),
       findsOneWidget,
       reason: 'one monthly step after the latest cover date',
     );
@@ -540,14 +540,14 @@ void main() {
     periodicals.issues[uid] = [existing];
     await openForm(tester, edit: existing);
 
-    expect(find.textContaining('Cover date: 2026-01-15'), findsOneWidget);
+    expect(find.textContaining('Cover date: 15 January 2026'), findsOneWidget);
 
     await scrollTap(tester, find.text('Change'));
     await tester.tap(find.text('20').last);
     await tester.pump();
     await tester.tap(find.text('OK'));
     await tester.pumpAndSettle();
-    expect(find.textContaining('Cover date: 2026-01-20'), findsOneWidget);
+    expect(find.textContaining('Cover date: 20 January 2026'), findsOneWidget);
 
     await save(tester);
 

@@ -24,6 +24,7 @@ library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:pitaka/core/text/display_date.dart';
 import 'package:pitaka/features/network/application/published_availability_controller.dart';
 import 'package:pitaka/features/network/application/published_catalogue_controller.dart';
 import 'package:pitaka/features/network/application/published_catalogue_cover_controller.dart';
@@ -432,11 +433,5 @@ class _PublishedCataloguePageState
   }
 
   /// A local date for the publish instant, or null when absent.
-  static String? _formatInstant(int? millis) {
-    if (millis == null) return null;
-    final date = DateTime.fromMillisecondsSinceEpoch(millis).toLocal();
-    final month = date.month.toString().padLeft(2, '0');
-    final day = date.day.toString().padLeft(2, '0');
-    return '${date.year}-$month-$day';
-  }
+  static String? _formatInstant(int? millis) => formatDisplayDateOrNull(millis);
 }

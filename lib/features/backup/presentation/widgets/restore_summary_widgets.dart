@@ -10,6 +10,7 @@ library;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/core/text/display_date.dart';
 import 'package:pitaka/features/backup/domain/archive_inspection.dart';
 import 'package:pitaka/features/backup/domain/restore_summary.dart';
 import 'package:pitaka/features/library/domain/catalogue_rules.dart';
@@ -32,11 +33,7 @@ class RestoreManifestSummary extends StatelessWidget {
     // 0 (unset) AND for a value outside DateTime's range, where
     // `DateTime.fromMillisecondsSinceEpoch` would throw inside build().
     final exported = CatalogueRules.dateFromMillisOrNull(manifest.exportedAt);
-    final date = exported == null
-        ? null
-        : '${exported.year}-'
-              '${exported.month.toString().padLeft(2, '0')}-'
-              '${exported.day.toString().padLeft(2, '0')}';
+    final date = exported == null ? null : formatDisplayDateTime(exported);
     // §5.10 copy: name the identity when the entry parsed; when the manifest
     // announces one that did NOT parse, say so instead of promising it.
     final identity = inspection.identity;

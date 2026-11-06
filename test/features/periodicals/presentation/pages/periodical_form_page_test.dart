@@ -372,10 +372,13 @@ void main() {
     await openForm(tester, edit: existing);
 
     expect(
-      find.textContaining('Subscription start: 2026-01-15'),
+      find.textContaining('Subscription start: 15 January 2026'),
       findsOneWidget,
     );
-    expect(find.textContaining('Subscription end: 2026-02-15'), findsOneWidget);
+    expect(
+      find.textContaining('Subscription end: 15 February 2026'),
+      findsOneWidget,
+    );
 
     await scrollTap(tester, find.text('Change').first);
     await tester.tap(find.text('20').last);
@@ -383,7 +386,7 @@ void main() {
     await tester.tap(find.text('OK'));
     await tester.pumpAndSettle();
     expect(
-      find.textContaining('Subscription start: 2026-01-20'),
+      find.textContaining('Subscription start: 20 January 2026'),
       findsOneWidget,
     );
 

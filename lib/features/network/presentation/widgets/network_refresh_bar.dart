@@ -10,6 +10,7 @@ library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:pitaka/core/text/display_date.dart';
 import 'package:pitaka/features/network/application/network_controller.dart';
 import 'package:pitaka/features/network/application/network_refresh_controller.dart';
 import 'package:pitaka/features/network/domain/usecases/refresh_network_use_case.dart';
@@ -34,11 +35,7 @@ class NetworkRefreshBar extends ConsumerWidget {
         stamp.year == today.year &&
         stamp.month == today.month &&
         stamp.day == today.day;
-    final date = sameDay
-        ? ''
-        : '${stamp.year}-'
-              '${stamp.month.toString().padLeft(2, '0')}-'
-              '${stamp.day.toString().padLeft(2, '0')} ';
+    final date = sameDay ? '' : '${formatDisplayDateTime(stamp)} ';
     return 'Last refreshed $date$hh:$mm';
   }
 

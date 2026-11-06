@@ -8,6 +8,7 @@ library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:pitaka/core/text/display_date.dart';
 import 'package:pitaka/features/library/domain/catalogue_rules.dart';
 import 'package:pitaka/features/library/domain/value_objects/calendar_date.dart';
 
@@ -45,7 +46,7 @@ Future<int?> pickFormDate(
 /// Formats a canonical calendar day as `YYYY-MM-DD`, or null when unset or
 /// unrepresentable. UTC fields keep the displayed day stable across zones.
 String? formatFormDate(int? epochMillis) =>
-    CalendarDate.fromEpochMillisOrNull(epochMillis)?.toString();
+    formatDisplayDateOrNull(epochMillis, utc: true);
 
 /// Opens the same picker for an `addedDate` INSTANT, preserving the legacy
 /// behavior of storing the chosen local midnight. This deliberately separate
@@ -79,11 +80,7 @@ Future<int?> pickInstantFormDate(
 /// unchanged. Use [formatFormDate] for issue/subscription calendar days.
 String? formatInstantFormDate(int? epochMillis) {
   if (epochMillis == null) return null;
-  final d = CatalogueRules.dateFromMillisOrNull(epochMillis)?.toLocal();
-  if (d == null) return null;
-  final mm = d.month.toString().padLeft(2, '0');
-  final dd = d.day.toString().padLeft(2, '0');
-  return '${d.year}-$mm-$dd';
+  return formatDisplayDateOrNull(epochMillis);
 }
 
 /// A labelled, outlined text field with the forms' standard 12-px bottom

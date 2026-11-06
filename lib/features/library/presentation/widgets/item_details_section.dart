@@ -20,8 +20,8 @@ library;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pitaka/core/di/providers.dart';
+import 'package:pitaka/core/text/display_date.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
-import 'package:pitaka/features/library/domain/value_objects/calendar_date.dart';
 import 'package:pitaka/features/library/domain/value_objects/item_details.dart';
 import 'package:pitaka/features/library/presentation/widgets/detail_row.dart';
 import 'package:pitaka/features/periodicals/presentation/pages/periodical_detail_page.dart';
@@ -54,7 +54,7 @@ class _IssueSection extends ConsumerWidget {
   /// Formats a canonical UTC calendar day as `YYYY-MM-DD`; an unset or
   /// unrepresentable value renders as no row instead of throwing.
   static String? _formatDate(int? epochMillis) =>
-      CalendarDate.fromEpochMillisOrNull(epochMillis)?.toString();
+      formatDisplayDateOrNull(epochMillis, utc: true);
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {

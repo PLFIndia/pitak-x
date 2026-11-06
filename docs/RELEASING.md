@@ -35,6 +35,20 @@
   `N` must be greater than every code Play has **ever** seen, including
   discarded uploads.
 
+### Local test installs
+
+For **every test install**, use the F-Droid flavor and install with
+`adb install -r` so the existing package and its test data are preserved:
+
+```bash
+fvm flutter build apk --release --flavor fdroid
+adb install -r build/app/outputs/flutter-apk/app-fdroid-release.apk
+```
+
+Do not use `flutter install` for testing: it may uninstall the existing
+package before installing the new APK. The F-Droid release is debug-signed
+locally and remains for testing only, never distribution.
+
 ---
 
 ## 2. Flavors: what may link where (F-Droid purity, P3)

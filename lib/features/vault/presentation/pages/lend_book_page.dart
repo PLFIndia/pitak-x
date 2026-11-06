@@ -12,6 +12,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/core/text/display_date.dart';
 import 'package:pitaka/features/vault/application/lend_book_use_case.dart';
 import 'package:pitaka/features/vault/application/vault_session_controller.dart';
 import 'package:pitaka/features/vault/domain/entities/borrower.dart';
@@ -57,11 +58,7 @@ class _LendBookPageState extends ConsumerState<LendBookPage> {
     return t.isEmpty ? null : t;
   }
 
-  static String _fmtDate(DateTime d) {
-    final m = d.month.toString().padLeft(2, '0');
-    final day = d.day.toString().padLeft(2, '0');
-    return '${d.year}-$m-$day';
-  }
+  static String _fmtDate(DateTime d) => formatDisplayDateTime(d);
 
   Future<void> _pickDueDate() async {
     final now = DateTime.now();

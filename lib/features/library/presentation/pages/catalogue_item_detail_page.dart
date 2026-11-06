@@ -30,11 +30,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_cropper/image_cropper.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:pitaka/core/di/providers.dart';
+import 'package:pitaka/core/text/display_date.dart';
 import 'package:pitaka/core/widgets/cover_crop.dart';
 import 'package:pitaka/core/widgets/item_cover.dart';
 import 'package:pitaka/core/widgets/lock_suppressor.dart';
 import 'package:pitaka/features/library/application/book_cover_controller.dart';
-import 'package:pitaka/features/library/domain/catalogue_rules.dart';
 import 'package:pitaka/features/library/domain/cover_owner.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/presentation/widgets/catalogue_item_actions.dart';
@@ -271,13 +271,8 @@ class _ItemDetailBody extends ConsumerWidget {
   /// Formats an epoch-millis added date as a plain `YYYY-MM-DD`, or null when
   /// unset (addedDate == 0 means "no date recorded"). M15: an out-of-range
   /// value from a pre-M15 row renders as no date instead of throwing.
-  static String? _formatDate(int epochMillis) {
-    final d = CatalogueRules.dateFromMillisOrNull(epochMillis)?.toLocal();
-    if (d == null) return null;
-    final mm = d.month.toString().padLeft(2, '0');
-    final dd = d.day.toString().padLeft(2, '0');
-    return '${d.year}-$mm-$dd';
-  }
+  static String? _formatDate(int epochMillis) =>
+      formatDisplayDateOrNull(epochMillis);
 }
 
 /// Book cover with a camera-capture "replace" affordance (#cover).

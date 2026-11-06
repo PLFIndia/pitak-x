@@ -8,7 +8,7 @@
 library;
 
 import 'package:flutter/material.dart';
-import 'package:pitaka/features/library/domain/value_objects/calendar_date.dart';
+import 'package:pitaka/core/text/display_date.dart';
 import 'package:pitaka/features/network/domain/entities/published_catalogue.dart';
 import 'package:pitaka/features/network/presentation/widgets/published_item_badges.dart';
 import 'package:pitaka/features/network/presentation/widgets/published_item_cover.dart';
@@ -134,10 +134,8 @@ class PublishedCatalogueItemPage extends StatelessWidget {
 
   /// A normalized calendar day as a plain date, or an em dash when the stored
   /// value is not representable (defence in depth: the reader rejects those).
-  static String _formatDay(int? millis) {
-    final day = CalendarDate.fromEpochMillisOrNull(millis);
-    return day == null ? '—' : day.toString();
-  }
+  static String _formatDay(int? millis) =>
+      formatDisplayDateOrNull(millis, utc: true) ?? '—';
 }
 
 /// One "Label: value" line.

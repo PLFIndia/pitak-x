@@ -17,7 +17,7 @@ library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:pitaka/features/library/domain/value_objects/calendar_date.dart';
+import 'package:pitaka/core/text/display_date.dart';
 import 'package:pitaka/features/library/presentation/catalogue_save_messages.dart';
 import 'package:pitaka/features/periodicals/application/periodicals_controller.dart';
 import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
@@ -45,7 +45,7 @@ class SeriesSubscriptionCard extends StatelessWidget {
   /// Formats a canonical UTC calendar day as `YYYY-MM-DD`, or null when unset
   /// or out of range. This is not the Added row's local-instant conversion.
   static String? _formatDate(int? epochMillis) =>
-      CalendarDate.fromEpochMillisOrNull(epochMillis)?.toString();
+      formatDisplayDateOrNull(epochMillis, utc: true);
 
   @override
   Widget build(BuildContext context) {

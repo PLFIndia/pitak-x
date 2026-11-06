@@ -189,7 +189,7 @@ void main() {
     ).status;
     await tester.pumpWidget(_app(CloudflareConnectionUi(status: status)));
     await _expand(tester);
-    expect(find.text('Token expires: 2027-01-02'), findsOneWidget);
+    expect(find.text('Token expires: 2 January 2027'), findsOneWidget);
   });
 
   testWidgets('working phase disables connection actions', (tester) async {

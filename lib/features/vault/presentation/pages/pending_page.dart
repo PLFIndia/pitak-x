@@ -9,6 +9,7 @@ library;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pitaka/core/di/providers.dart';
+import 'package:pitaka/features/vault/domain/loan_status.dart';
 
 /// The pending / reminders screen.
 class PendingPage extends ConsumerWidget {
@@ -122,15 +123,8 @@ class _LoanTile extends StatelessWidget {
       ),
       title: Text('Item #$bookId'),
       subtitle: Text(
-        dueDate == null ? 'No due date' : 'Due ${_date(dueDate!)}',
+        dueDate == null ? 'No due date' : 'Due ${formatLoanDate(dueDate!)}',
       ),
     );
-  }
-
-  static String _date(int epochMillis) {
-    final d = DateTime.fromMillisecondsSinceEpoch(epochMillis);
-    final m = d.month.toString().padLeft(2, '0');
-    final day = d.day.toString().padLeft(2, '0');
-    return '${d.year}-$m-$day';
   }
 }

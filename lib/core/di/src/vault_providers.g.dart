@@ -494,6 +494,95 @@ final pendingSnapshotProvider =
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef PendingSnapshotRef = AutoDisposeFutureProviderRef<PendingSnapshot?>;
+String _$reminderTemplateStoreHash() =>
+    r'4c88f7782e651d576d3d9f38f4ddf3698e3856e9';
+
+/// Plaintext, device-local reminder template persistence (never vault secrets).
+///
+/// Copied from [reminderTemplateStore].
+@ProviderFor(reminderTemplateStore)
+final reminderTemplateStoreProvider =
+    AutoDisposeFutureProvider<ReminderTemplateStore>.internal(
+      reminderTemplateStore,
+      name: r'reminderTemplateStoreProvider',
+      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+          ? null
+          : _$reminderTemplateStoreHash,
+      dependencies: null,
+      allTransitiveDependencies: null,
+    );
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef ReminderTemplateStoreRef =
+    AutoDisposeFutureProviderRef<ReminderTemplateStore>;
+String _$buildBorrowedItemsSnapshotHash() =>
+    r'364ed513e1ce53e458eb331fe5cbafd590b95a3e';
+
+/// Builds the strict active-loan read model over the two catalogue ports.
+///
+/// Copied from [buildBorrowedItemsSnapshot].
+@ProviderFor(buildBorrowedItemsSnapshot)
+final buildBorrowedItemsSnapshotProvider =
+    AutoDisposeFutureProvider<BuildBorrowedItemsSnapshot>.internal(
+      buildBorrowedItemsSnapshot,
+      name: r'buildBorrowedItemsSnapshotProvider',
+      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+          ? null
+          : _$buildBorrowedItemsSnapshotHash,
+      dependencies: null,
+      allTransitiveDependencies: null,
+    );
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef BuildBorrowedItemsSnapshotRef =
+    AutoDisposeFutureProviderRef<BuildBorrowedItemsSnapshot>;
+String _$prepareLoanReminderUseCaseHash() =>
+    r'85f99dd504d086c9b5aeb00f7c671571eb62e457';
+
+/// Prepares reminder captions and sanitized local covers without network IO.
+///
+/// Copied from [prepareLoanReminderUseCase].
+@ProviderFor(prepareLoanReminderUseCase)
+final prepareLoanReminderUseCaseProvider =
+    AutoDisposeFutureProvider<PrepareLoanReminderUseCase>.internal(
+      prepareLoanReminderUseCase,
+      name: r'prepareLoanReminderUseCaseProvider',
+      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+          ? null
+          : _$prepareLoanReminderUseCaseHash,
+      dependencies: null,
+      allTransitiveDependencies: null,
+    );
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef PrepareLoanReminderUseCaseRef =
+    AutoDisposeFutureProviderRef<PrepareLoanReminderUseCase>;
+String _$borrowedItemsSnapshotHash() =>
+    r'a18f4a352dc6cabb023fe333406acce7d4c5ddaa';
+
+/// Borrowed Items is null while locked/uninitialized. Repository failures stay
+/// AsyncError; they are never converted to an empty list or missing covers.
+///
+/// Copied from [borrowedItemsSnapshot].
+@ProviderFor(borrowedItemsSnapshot)
+final borrowedItemsSnapshotProvider =
+    AutoDisposeFutureProvider<BorrowedItemsSnapshot?>.internal(
+      borrowedItemsSnapshot,
+      name: r'borrowedItemsSnapshotProvider',
+      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+          ? null
+          : _$borrowedItemsSnapshotHash,
+      dependencies: null,
+      allTransitiveDependencies: null,
+    );
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef BorrowedItemsSnapshotRef =
+    AutoDisposeFutureProviderRef<BorrowedItemsSnapshot?>;
 String _$screenCaptureProtectedHash() =>
     r'4270b86c7cebaa1556cb10261ebed6aa92ad0c57';
 

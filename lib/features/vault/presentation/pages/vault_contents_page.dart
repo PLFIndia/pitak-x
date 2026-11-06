@@ -10,6 +10,7 @@ library;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pitaka/core/di/providers.dart';
+import 'package:pitaka/core/text/display_date.dart';
 import 'package:pitaka/features/vault/domain/entities/borrower.dart';
 import 'package:pitaka/features/vault/domain/entities/vault_data.dart';
 
@@ -121,10 +122,5 @@ class _LoanRow extends ConsumerWidget {
     );
   }
 
-  static String _date(int epochMillis) {
-    final d = DateTime.fromMillisecondsSinceEpoch(epochMillis).toLocal();
-    final mm = d.month.toString().padLeft(2, '0');
-    final dd = d.day.toString().padLeft(2, '0');
-    return '${d.year}-$mm-$dd';
-  }
+  static String _date(int epochMillis) => formatDisplayDate(epochMillis);
 }

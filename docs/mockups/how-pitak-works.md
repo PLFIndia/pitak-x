@@ -37,6 +37,7 @@ minute. Rules used for the copy:
 │ [logo]  Kadugodi Library     │
 ├──────────────────────────────┤
 │ 🔒  Borrowers vault          │
+│ ↩   Borrowed Items           │
 │ ☁️   Publish to web           │
 │ 🔖  Wishlist                 │
 │ 📰  Magazines                │
@@ -508,7 +509,8 @@ If you publish a website, its publishing record goes in too, so a new phone
 that has not published yet continues the same site without uploading every
 cover again.
 **Not inside:** events and posters, logo, contact details, your GitHub or
-Cloudflare sign-in, app settings — set those up again after a restore.
+Cloudflare sign-in, app settings, reminder message templates — set those up
+again after a restore.
 Keep the file somewhere private (your Drive, a computer) — it is your data in
 plain form, except the vault.
 
@@ -576,6 +578,20 @@ without opening the vault.
   due soon, and items missing details.
 - Add a phone or email on a borrower's page and you get **Call**,
   **WhatsApp** and **Email** buttons there.
+- **☰ → Borrowed Items** shows every active loan with its cover, title,
+  borrower and due status. Filter **All**, **Overdue**, **Due soon (72 hours)**
+  or **No due date**; tap **Call** when a phone is available.
+- The generic share action on a borrowed item prepares the selected message
+  template and local cover in the OS share flow. You choose WhatsApp and the
+  conversation, review, then tap Send yourself. The separate WhatsApp icon
+  opens the borrower's conversation with only text prefilled when a phone is
+  available; it does not read the cover. Titles and due dates use WhatsApp
+  bold markers, and user-visible dates use full month names. Neither action
+  sends automatically. Blank/remote covers offer text only; a broken local
+  cover stops image sharing instead of sending raw bytes.
+- **Message templates** opens named templates in any language, with separate
+  overdue, upcoming and no-due-date messages. Templates are plaintext on this
+  device and are not in the current backup, so do not include private details.
 
 **Good to know**
 
@@ -693,7 +709,7 @@ have no books of its own.
 | Phone GPS is never read; coordinates are typed as "lat, lng" | `BuildOwnDescriptor.ownLocation` (D6); GPS field hint |
 | Approximate = rounded to 2 decimals ≈ 1.1 km | `GeoPoint.coarsen()` |
 | Others see the pin after saving you and tapping Refresh | `RefreshNetworkUseCase`; map page |
-| Backup carries the whole catalogue, including magazine titles/issues and item kinds; events/posters, logo, contact details, publishing sign-ins and app settings are excluded | `create_backup_page.dart`; `create_backup_use_case.dart`; `backup_manifest.dart`; `restore_page.dart`; ADR 0014 W2 |
+| Backup carries the whole catalogue, including magazine titles/issues and item kinds; events/posters, logo, contact details, publishing sign-ins, app settings and reminder message templates are excluded | `create_backup_page.dart`; `create_backup_use_case.dart`; `backup_manifest.dart`; `restore_page.dart`; ADR 0014 W2 |
 | Backup carries the website publishing record (cover salt, both publish records, active host and verified address; never a token); a restored phone takes it over only if it has not published yet (2026-11-02) | `PublishStateBackupReader`; `RestoredPublishStateAdopter`; `PublishStateAdoptionRule`; ADR 0014 amendment of 2026-11-02 |
 | Restore is all-or-nothing; shows contents first; passphrase only if vault | `restore_page.dart`; `RestoreController` |
 | Export formats JSON/CSV/PDF; import adds, updates same-identity, skips same-ISBN | `export_page.dart`, `import_page.dart` |
@@ -702,6 +718,8 @@ have no books of its own.
 | No auto-lock | ADR 0006 |
 | Lend: existing/new borrower, optional due date; Return on borrower Edit page; Pending = overdue/due soon/missing metadata | `lend_book_page.dart`, `borrower_edit_page.dart`, `pending_page.dart` |
 | Call / WhatsApp / Email buttons from phone/email fields | `borrower_profile_page.dart` |
+| Borrowed Items = one card per active loan, shared urgency/date rules, owner-less covers, strict reads, per-loan busy state and lock aborts | `borrowed_items_page.dart`; `BuildBorrowedItemsSnapshot`; `loan_status.dart`; ADR 0022 |
+| Unicode templates use three status bodies and two placeholders; plaintext preferences are not in backup; generic share and direct WhatsApp text are never sent/delivery claims | `reminder_template.dart`; `PrefsReminderTemplateStore`; `PrepareLoanReminderUseCase`; `file_share.dart`; ADR 0022 |
 | Card = site URL + public fingerprint, never the ID; Add member is in-person | `network_page.dart` My card tab; ADR 0012 |
 | Three kinds, app-defined; one list / search / lendable unit for every kind | `ItemKind` (ADR 0013 F1–F3); `LendDecision.forItem`; FTS over the base table |
 | "+" sheet entries: Add book · Add magazine issue · Add other item · New magazine title; "Scan to add" | `add_sheet.dart`; `library_page.dart` app-bar tooltip |
