@@ -37,8 +37,8 @@ import 'package:pitaka/features/settings/application/settings_controller.dart';
 /// Form screen to add a new book or edit an existing one.
 class AddBookPage extends ConsumerStatefulWidget {
   /// Creates the page. When [book] is non-null the form opens in edit mode.
-  /// [initialIsbn] pre-fills the ISBN field for the quick-add-by-scan flow
-  /// (add mode only); the user still taps Lookup explicitly.
+  /// [initialIsbn] pre-fills the ISBN field for home quick-add (add mode
+  /// only); the shared setting decides whether lookup also starts.
   const AddBookPage({
     this.book,
     this.initialIsbn,
@@ -90,6 +90,9 @@ class _AddBookPageState extends ConsumerState<AddBookPage> {
 
   bool get _isEdit => widget.book != null;
 
+  /// A manual lookup also consumes this one-shot home quick-add request.
+  late bool _initialLookupPending;
+
   @override
   void initState() {
     super.initState();
@@ -111,6 +114,15 @@ class _AddBookPageState extends ConsumerState<AddBookPage> {
     _ageGroup = b?.ageGroup;
     _addedDate = b?.addedDate ?? DateTime.now().millisecondsSinceEpoch;
     _needsMetadata = b?.needsMetadata ?? false;
+    _initialLookupPending = !_isEdit && widget.initialIsbn != null;
+    // Home quick-add supplies the ISBN before this form opens. Honour the
+    // same opt-in as an in-form scan, after the first frame has built.
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted || !_initialLookupPending) return;
+      final enabled = await shouldLookupIsbnAfterScan(ref);
+      if (!mounted || !_initialLookupPending || !enabled) return;
+      await _lookupIsbn();
+    });
   }
 
   @override
@@ -154,6 +166,7 @@ class _AddBookPageState extends ConsumerState<AddBookPage> {
   /// Looks up the current ISBN and prefills EMPTY fields from the result.
   /// Never overwrites a field the user already filled in.
   Future<void> _lookupIsbn() async {
+    _initialLookupPending = false;
     if (_looking) return; // a scan-triggered and manual lookup must not overlap
     final normalized = IsbnFormat.normalize(_isbn.text);
     if (normalized.isEmpty) return;
