@@ -556,6 +556,44 @@ void main() {
       expect(h.api.deployCalls, 0);
     });
 
+    test('empty-catalogue recovery adopts an API-confirmed Worker with zero '
+        'deploys', () async {
+      final h = CloudflareSetupHarness(
+        connection: cloudflareTestConnection(withWorker: false),
+        catalogueEmpty: true,
+      );
+      h.api.workerExistsValue = true;
+
+      final ready = _right(await h.setup.selectWorker('existing'));
+
+      expect(ready, isA<CloudflareWorkerReady>());
+      expect(h.api.deployCalls, 0);
+      expect(
+        h.credentials.record?.status.target?.siteUrl,
+        'https://existing.library.workers.dev/',
+      );
+    });
+
+    test(
+      'empty-catalogue recovery refuses destructive manual verification',
+      () async {
+        final h = CloudflareSetupHarness(
+          connection: cloudflareTestConnection(
+            withWorker: false,
+            confirmed: false,
+          ),
+          catalogueEmpty: true,
+        );
+        h.api.workerExistsValue = true;
+
+        final result = await h.setup.selectWorker('existing');
+
+        expect(result.isLeft(), isTrue);
+        expect(h.api.deployCalls, 0);
+        expect(h.credentials.record?.status.target, isNull);
+      },
+    );
+
     test(
       'manual candidate requests verification before a remote write',
       () async {

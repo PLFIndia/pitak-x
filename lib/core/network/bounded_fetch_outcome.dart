@@ -85,11 +85,15 @@ final class FetchRefused extends BoundedFetchOutcome {
   /// Creates a refusal for [reason]. An HTTP refusal may carry its numeric
   /// [statusCode] so optional sibling files can distinguish 404 (absent) from
   /// 500 (failed). It is diagnostic data only, never response text or a URL.
-  const FetchRefused(this.reason, {this.statusCode});
+  const FetchRefused(this.reason, {this.statusCode, this.receivedBytes = 0});
 
   /// Which defence (or fault) refused the fetch.
   final FetchRefusal reason;
 
   /// The non-2xx HTTP status, when the host returned one.
   final int? statusCode;
+
+  /// Body bytes read before refusal (currently an actual-size overflow).
+  /// Lets aggregate download budgets account for refused bodies too.
+  final int receivedBytes;
 }

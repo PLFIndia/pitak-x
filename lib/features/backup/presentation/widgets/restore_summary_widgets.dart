@@ -78,6 +78,11 @@ class RestoreManifestSummary extends StatelessWidget {
         ),
         if (manifest.hasCovers) const Text('• Cover images'),
         if (identityLine != null) Text(identityLine),
+        if (identity?.publishedFingerprint != null)
+          const Text(
+            '• Published site identity (restoring adopts this public label; '
+            'check that it came from your own backup)',
+          ),
         if (manifest.hasNetwork) const Text('• Saved-libraries list'),
         if (publishLine != null) Text(publishLine),
         if (date != null) ...[

@@ -1664,5 +1664,150 @@ class _PublishedCoverFetcherProviderElement
   String get siteUrl => (origin as PublishedCoverFetcherProvider).siteUrl;
 }
 
+String _$publishedCoverDownloadFetcherHash() =>
+    r'93c019fcb6c8dd9a22a97cb83efbdd15a997dde8';
+
+/// Restore-specific cover port with raw-byte accounting for aggregate budgets.
+///
+/// Copied from [publishedCoverDownloadFetcher].
+@ProviderFor(publishedCoverDownloadFetcher)
+const publishedCoverDownloadFetcherProvider =
+    PublishedCoverDownloadFetcherFamily();
+
+/// Restore-specific cover port with raw-byte accounting for aggregate budgets.
+///
+/// Copied from [publishedCoverDownloadFetcher].
+class PublishedCoverDownloadFetcherFamily
+    extends Family<PublishedCoverDownloadFetcher> {
+  /// Restore-specific cover port with raw-byte accounting for aggregate budgets.
+  ///
+  /// Copied from [publishedCoverDownloadFetcher].
+  const PublishedCoverDownloadFetcherFamily();
+
+  /// Restore-specific cover port with raw-byte accounting for aggregate budgets.
+  ///
+  /// Copied from [publishedCoverDownloadFetcher].
+  PublishedCoverDownloadFetcherProvider call(String siteUrl) {
+    return PublishedCoverDownloadFetcherProvider(siteUrl);
+  }
+
+  @override
+  PublishedCoverDownloadFetcherProvider getProviderOverride(
+    covariant PublishedCoverDownloadFetcherProvider provider,
+  ) {
+    return call(provider.siteUrl);
+  }
+
+  static const Iterable<ProviderOrFamily>? _dependencies = null;
+
+  @override
+  Iterable<ProviderOrFamily>? get dependencies => _dependencies;
+
+  static const Iterable<ProviderOrFamily>? _allTransitiveDependencies = null;
+
+  @override
+  Iterable<ProviderOrFamily>? get allTransitiveDependencies =>
+      _allTransitiveDependencies;
+
+  @override
+  String? get name => r'publishedCoverDownloadFetcherProvider';
+}
+
+/// Restore-specific cover port with raw-byte accounting for aggregate budgets.
+///
+/// Copied from [publishedCoverDownloadFetcher].
+class PublishedCoverDownloadFetcherProvider
+    extends AutoDisposeProvider<PublishedCoverDownloadFetcher> {
+  /// Restore-specific cover port with raw-byte accounting for aggregate budgets.
+  ///
+  /// Copied from [publishedCoverDownloadFetcher].
+  PublishedCoverDownloadFetcherProvider(String siteUrl)
+    : this._internal(
+        (ref) => publishedCoverDownloadFetcher(
+          ref as PublishedCoverDownloadFetcherRef,
+          siteUrl,
+        ),
+        from: publishedCoverDownloadFetcherProvider,
+        name: r'publishedCoverDownloadFetcherProvider',
+        debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+            ? null
+            : _$publishedCoverDownloadFetcherHash,
+        dependencies: PublishedCoverDownloadFetcherFamily._dependencies,
+        allTransitiveDependencies:
+            PublishedCoverDownloadFetcherFamily._allTransitiveDependencies,
+        siteUrl: siteUrl,
+      );
+
+  PublishedCoverDownloadFetcherProvider._internal(
+    super._createNotifier, {
+    required super.name,
+    required super.dependencies,
+    required super.allTransitiveDependencies,
+    required super.debugGetCreateSourceHash,
+    required super.from,
+    required this.siteUrl,
+  }) : super.internal();
+
+  final String siteUrl;
+
+  @override
+  Override overrideWith(
+    PublishedCoverDownloadFetcher Function(
+      PublishedCoverDownloadFetcherRef provider,
+    )
+    create,
+  ) {
+    return ProviderOverride(
+      origin: this,
+      override: PublishedCoverDownloadFetcherProvider._internal(
+        (ref) => create(ref as PublishedCoverDownloadFetcherRef),
+        from: from,
+        name: null,
+        dependencies: null,
+        allTransitiveDependencies: null,
+        debugGetCreateSourceHash: null,
+        siteUrl: siteUrl,
+      ),
+    );
+  }
+
+  @override
+  AutoDisposeProviderElement<PublishedCoverDownloadFetcher> createElement() {
+    return _PublishedCoverDownloadFetcherProviderElement(this);
+  }
+
+  @override
+  bool operator ==(Object other) {
+    return other is PublishedCoverDownloadFetcherProvider &&
+        other.siteUrl == siteUrl;
+  }
+
+  @override
+  int get hashCode {
+    var hash = _SystemHash.combine(0, runtimeType.hashCode);
+    hash = _SystemHash.combine(hash, siteUrl.hashCode);
+
+    return _SystemHash.finish(hash);
+  }
+}
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+mixin PublishedCoverDownloadFetcherRef
+    on AutoDisposeProviderRef<PublishedCoverDownloadFetcher> {
+  /// The parameter `siteUrl` of this provider.
+  String get siteUrl;
+}
+
+class _PublishedCoverDownloadFetcherProviderElement
+    extends AutoDisposeProviderElement<PublishedCoverDownloadFetcher>
+    with PublishedCoverDownloadFetcherRef {
+  _PublishedCoverDownloadFetcherProviderElement(super.provider);
+
+  @override
+  String get siteUrl =>
+      (origin as PublishedCoverDownloadFetcherProvider).siteUrl;
+}
+
 // ignore_for_file: type=lint
 // ignore_for_file: subtype_of_sealed_class, invalid_use_of_internal_member, invalid_use_of_visible_for_testing_member, deprecated_member_use_from_same_package

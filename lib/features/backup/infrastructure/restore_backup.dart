@@ -360,6 +360,7 @@ final class RestoreBackup {
           restoredIdentity: identity == null
               ? null
               : (id: identity.id, name: identity.name),
+          restoredPublishedFingerprint: identity?.publishedFingerprint,
           restoredNetwork: network?.rows,
           networkRowsDropped: network?.dropped ?? 0,
           identityInvalid: manifest.hasIdentity && identity == null,

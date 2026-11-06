@@ -103,6 +103,7 @@ class AppSettings {
     this.themeMode = AppThemeMode.system,
     this.libraryName = '',
     this.libraryId = '',
+    this.publishedFingerprint,
     this.maintainerName = '',
     this.librarySort = LibrarySort.recentlyAdded,
     this.loadRemoteCovers = false,
@@ -133,6 +134,11 @@ class AppSettings {
   /// JSON export so a recipient's merge gate can decide match-vs-decision.
   /// Blank means "not yet minted". Not PII.
   final String libraryId;
+
+  /// Public fingerprint recovered from this library's own published site.
+  /// When present it overrides the fingerprint derived from [libraryId].
+  /// This is a public label, not a secret or proof of account ownership.
+  final String? publishedFingerprint;
 
   /// Maintainer/cataloguer name; stamped onto newly-added books (`addedBy`).
   final String maintainerName;
@@ -209,6 +215,7 @@ class AppSettings {
     AppThemeMode? themeMode,
     String? libraryName,
     String? libraryId,
+    Object? publishedFingerprint = _keepPublishedFingerprint,
     String? maintainerName,
     LibrarySort? librarySort,
     bool? loadRemoteCovers,
@@ -227,6 +234,10 @@ class AppSettings {
       themeMode: themeMode ?? this.themeMode,
       libraryName: libraryName ?? this.libraryName,
       libraryId: libraryId ?? this.libraryId,
+      publishedFingerprint:
+          identical(publishedFingerprint, _keepPublishedFingerprint)
+          ? this.publishedFingerprint
+          : publishedFingerprint as String?,
       maintainerName: maintainerName ?? this.maintainerName,
       librarySort: librarySort ?? this.librarySort,
       loadRemoteCovers: loadRemoteCovers ?? this.loadRemoteCovers,
@@ -246,4 +257,11 @@ class AppSettings {
       lookupIsbnAfterScan: lookupIsbnAfterScan ?? this.lookupIsbnAfterScan,
     );
   }
+
+  /// Accepts only the public wire shape; validity is not proof of ownership.
+  static bool isValidPublishedFingerprint(String value) =>
+      RegExp(r'^[0-9a-f]{64}$').hasMatch(value);
 }
+
+/// Sentinel that lets `copyWith(publishedFingerprint: null)` clear the field.
+const Object _keepPublishedFingerprint = Object();

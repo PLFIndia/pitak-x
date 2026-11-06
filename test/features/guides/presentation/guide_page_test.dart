@@ -23,12 +23,13 @@ void main() {
   /// S8 raised it 3800 → 5000 for the product owner's "Which host suits
   /// you?" table and its worked example (plan P7/C.9): the publish guide
   /// now ends at about 4,910 dp under the test font, which wraps far more
-  /// than the real one.)
+  /// than the real one. The hosting-account safety section added for site
+  /// recovery deliberately raises the surface to 6,000 dp.)
   Future<List<GuideDestination>> pumpGuide(
     WidgetTester tester,
     Guide guide,
   ) async {
-    tester.view.physicalSize = const Size(1080, 15000);
+    tester.view.physicalSize = const Size(1080, 18000);
     tester.view.devicePixelRatio = 3;
     addTearDown(tester.view.reset);
     final opened = <GuideDestination>[];
@@ -69,6 +70,8 @@ void main() {
       expect(find.text('First time on GitHub Pages'), findsOneWidget);
       expect(find.text('Or use Cloudflare Workers'), findsOneWidget);
       expect(find.text('Every time after that'), findsOneWidget);
+      expect(find.text('Keep your hosting account safe'), findsOneWidget);
+      expect(find.textContaining('Restore from this site'), findsWidgets);
       expect(find.text('Moving to the other host later'), findsOneWidget);
       expect(
         find.textContaining('Give the Worker to Pitak alone'),
@@ -179,6 +182,7 @@ void main() {
     expect(find.text('Use'), findsOneWidget);
     expect(find.textContaining('Bring that copy back'), findsOneWidget);
     expect(find.textContaining('Merge from a file'), findsOneWidget);
+    expect(find.textContaining('with no backup'), findsOneWidget);
   });
 
   testWidgets('every guide renders without layout errors at phone width', (

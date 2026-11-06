@@ -14,6 +14,22 @@ heading as part of the `chore(release):` commit.
 
 ## [Unreleased]
 
+### Added
+- **Restore from your own published site (ADR 0021):** Publish → Connection
+  can restore public catalogue fields and same-site covers from the active
+  GitHub Pages or Cloudflare target into an empty catalogue. The defensive
+  mapper preserves periodical relationships, reports duplicates and losses,
+  and refuses newer/ambiguous payloads. Cover consent defaults on, with
+  sequential decoding and independent request, time, raw-byte and retained-
+  byte budgets; third-party links remain consent-gated.
+- **Published identity recovery:** a valid `library.json` fingerprint is
+  preserved through a durable target-bound journal, startup/identity-only
+  retry, and later `.pitabak` backups. Publish, card and refresh use the
+  override. Empty-catalogue publish guards and non-destructive Cloudflare
+  Worker adoption prevent a fresh install from overwriting its only recovery
+  copy. Guides and privacy documentation explain account safety, private
+  fields that cannot return, and the site details to re-enter.
+
 ## [1.9.3] - 2026-11 (tag `1.9.3`, versionCode 35)
 
 Release sentinel (`tool/release_build.sh --sentinel`): `NetworkMapIcon`.

@@ -35,6 +35,7 @@ export 'package:pitaka/core/di/src/periodical_providers.dart';
 export 'package:pitaka/core/di/src/platform_providers.dart';
 export 'package:pitaka/core/di/src/publish_providers.dart';
 export 'package:pitaka/core/di/src/publish_state_providers.dart';
+export 'package:pitaka/core/di/src/restore_providers.dart';
 export 'package:pitaka/core/di/src/settings_providers.dart';
 export 'package:pitaka/core/di/src/vault_providers.dart';
 export 'package:pitaka/core/di/src/wishlist_providers.dart';

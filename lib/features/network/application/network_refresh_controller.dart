@@ -9,9 +9,9 @@
 library;
 
 import 'package:pitaka/core/di/providers.dart';
+import 'package:pitaka/features/network/application/own_fingerprint.dart';
 import 'package:pitaka/features/network/domain/library_move_candidate.dart';
 import 'package:pitaka/features/network/domain/usecases/refresh_network_use_case.dart';
-import 'package:pitaka/features/network/domain/value_objects/library_fingerprint.dart';
 import 'package:pitaka/features/settings/application/settings_controller.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
@@ -125,6 +125,11 @@ class NetworkRefreshController extends _$NetworkRefreshController {
         .read(settingsControllerProvider.notifier)
         .current();
     final own = identity.toNullable();
-    return own == null ? null : LibraryFingerprint.of(own.id);
+    return own == null
+        ? null
+        : ownFingerprintPartsOf(
+            libraryId: own.id,
+            publishedFingerprint: own.publishedFingerprint,
+          );
   }
 }

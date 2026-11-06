@@ -21,13 +21,20 @@ import 'package:pitaka/core/error/failure.dart';
 /// This device's current library identity.
 class LibraryIdentity {
   /// Creates an identity snapshot.
-  const LibraryIdentity({required this.id, required this.name});
+  const LibraryIdentity({
+    required this.id,
+    required this.name,
+    this.publishedFingerprint,
+  });
 
   /// The 32-char library ID (minted on first read, never blank on success).
   final String id;
 
   /// The library display name; blank when the user never set one.
   final String name;
+
+  /// Recovered public fingerprint, when it differs from the derived label.
+  final String? publishedFingerprint;
 }
 
 /// What [LibraryNamespace.adopt] actually changed on this device.
@@ -75,5 +82,9 @@ abstract interface class LibraryNamespace {
   ///  - if the rollback itself fails the outcome is [LibraryAdoptionOutcome
   ///    .partiallyAdopted] and memory is published as the TRUTH (new ID,
   ///    previous name) — never the old ID while disk holds the new one.
-  Future<LibraryAdoption> adopt({required String id, required String name});
+  Future<LibraryAdoption> adopt({
+    required String id,
+    required String name,
+    String? publishedFingerprint,
+  });
 }

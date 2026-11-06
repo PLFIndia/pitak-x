@@ -204,6 +204,7 @@ class _FakeNamespace implements LibraryNamespace {
   Future<LibraryAdoption> adopt({
     required String id,
     required String name,
+    String? publishedFingerprint,
   }) async {
     adoptCalls++;
     final failure = adoptFailure;

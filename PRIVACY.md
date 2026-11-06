@@ -1,6 +1,11 @@
 # Privacy Policy — Pitak
 
-_Effective date: 2026-11-04 · Publisher: Parallel Line Foundation_
+_Effective date: 2026-11-06 · Publisher: Parallel Line Foundation_
+
+_Changed 2026-11-06 — **Restore from this site** can recover public catalogue
+fields and covers from your own active hosting target into an empty catalogue.
+It also restores the public fingerprint when available and carries it in later
+backups. No new party is contacted and no private fields are recovered._
 
 _Changed 2026-11-04 — a new optional Settings → Library switch can start an
 ISBN lookup immediately after scanning. It is off by default; the ISBN goes
@@ -207,6 +212,25 @@ Settings → Data), and the passive update check of Google Play builds
    copy at its host if you do not want it public. Reconnecting to a different
    Cloudflare Worker does not touch the previous Worker, which keeps serving
    exactly what it last served until you delete it in the Cloudflare dashboard.
+
+   **Restoring from your own site.** After reinstalling, reconnecting the same
+   hosting account and choosing **Restore from this site**, Pitak downloads
+   `library.json` and `books.json` from that active site only. With your
+   default-on cover consent it also downloads same-site cover images; turn the
+   checkbox off to leave those references empty. Third-party cover links are
+   kept but not fetched during restore (item 2 governs them later). The host
+   sees your device's IP address and the app's fixed User-Agent, with no
+   publishing token on these public reads. Restore works only into an empty
+   catalogue and reports unreadable rows, duplicates and skipped covers. Notes,
+   descriptions, locations, copy counts, page counts, added dates and loans are
+   not on the site and cannot come back. The library name, map pin and hub lists
+   must be re-entered. The public fingerprint is a label that helps readers
+   avoid an identity conflict; it does not prove ownership. Your hosting
+   account is the real publishing boundary, so protect it with a unique
+   password and two-factor sign-in. Backups made afterwards carry that public
+   fingerprint as plain JSON; the restore inspection says when a backup will
+   adopt it. A well-formed fingerprint in a crafted backup is not proof that it
+   belongs to you, so restore only backups you trust.
 4. **Library network — Refresh.** The Library network screen keeps the list
    of other Pitak libraries you save (by web address, or by scanning a
    library's card in person). Nothing about it leaves your device until you

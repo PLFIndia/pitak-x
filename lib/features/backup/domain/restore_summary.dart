@@ -18,6 +18,7 @@ class RestoreSummary {
     this.existingVaultKept = false,
     this.coversDropped = 0,
     this.restoredIdentity,
+    this.restoredPublishedFingerprint,
     this.restoredNetwork,
     this.identityInvalid = false,
     this.networkInvalid = false,
@@ -72,6 +73,9 @@ class RestoreSummary {
   /// validated by the restorer; APPLIED by the restore controller after the
   /// catalogue switch (see [identityAdopted]).
   final ({String id, String name})? restoredIdentity;
+
+  /// Recovered public site label carried beside [restoredIdentity].
+  final String? restoredPublishedFingerprint;
 
   /// The validated saved-libraries rows parsed from the archive's
   /// `network.json` — null when the archive carried no usable list (absent,
@@ -196,6 +200,7 @@ class RestoreSummary {
       existingVaultKept: existingVaultKept,
       coversDropped: coversDropped,
       restoredIdentity: restoredIdentity,
+      restoredPublishedFingerprint: restoredPublishedFingerprint,
       restoredNetwork: restoredNetwork,
       identityInvalid: identityInvalid,
       networkInvalid: networkInvalid,

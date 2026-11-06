@@ -111,8 +111,30 @@ final publishAvailabilityToCloudflareUseCaseProvider =
 // ignore: unused_element
 typedef PublishAvailabilityToCloudflareUseCaseRef =
     AutoDisposeFutureProviderRef<PublishAvailabilityToCloudflareUseCase>;
+String _$preRestorePublishGuardHash() =>
+    r'adda0f0b8a070450f9572202c1941374fa11a3cc';
+
+/// Shared pre-write recovery guard, also used by catalogue/events controllers.
+///
+/// Copied from [preRestorePublishGuard].
+@ProviderFor(preRestorePublishGuard)
+final preRestorePublishGuardProvider =
+    AutoDisposeFutureProvider<PreRestorePublishGuard>.internal(
+      preRestorePublishGuard,
+      name: r'preRestorePublishGuardProvider',
+      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+          ? null
+          : _$preRestorePublishGuardHash,
+      dependencies: null,
+      allTransitiveDependencies: null,
+    );
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef PreRestorePublishGuardRef =
+    AutoDisposeFutureProviderRef<PreRestorePublishGuard>;
 String _$availabilityPublishRunnerHash() =>
-    r'3345e58fd7af2a0f53adcadec76a4c08d118a370';
+    r'15b3fdcb0f639a201530b358eb7c51d1ce8628fc';
 
 /// Runs one lane publish inside the publish queue, for the active host.
 ///

@@ -124,6 +124,23 @@ const Guide publishGuide = Guide(
             'says **Verified** — nothing new was published.',
       ],
     ),
+    GuideBullets(
+      title: 'Keep your hosting account safe',
+      bullets: [
+        'Your GitHub or Cloudflare account is the key to your web page. '
+            'Anyone who can sign in to it can change what the world sees as '
+            'your library — Pitak cannot tell them apart from you.',
+        'Use a password you use nowhere else, and turn on two-factor sign-in '
+            "in the account's security settings. It is one extra code when "
+            'you sign in, and the single best protection there is.',
+        'Never share the Cloudflare token or paste it anywhere except Pitak. '
+            "If you think it leaked, delete it on Cloudflare's website and "
+            'make a new one.',
+        'The same account is also how you get your catalogue back if you '
+            'lose your phone (**Restore from this site**) — one more reason '
+            'to keep it yours.',
+      ],
+    ),
     GuideParagraphs(
       title: 'Moving to the other host later',
       paragraphs: [

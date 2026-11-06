@@ -29,6 +29,7 @@ import 'package:pitaka/features/publish/domain/publish_state_backup_ports.dart';
 import 'package:pitaka/features/settings/application/settings_controller.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
 import 'package:pitaka/features/settings/domain/settings_repository.dart';
+import 'package:pitaka/features/settings/infrastructure/prefs_settings_repository.dart';
 import 'package:pitaka/features/vault/application/vault_session_controller.dart';
 import 'package:pitaka/features/vault/domain/entities/vault_data.dart';
 import 'package:pitaka/features/vault/domain/entities/vault_session_state.dart';
@@ -1018,6 +1019,46 @@ void main() {
       expect(window.rows.map((r) => r.name), ['Hub']);
       await settleCascade(container);
     });
+
+    test(
+      'a recovered published fingerprint is adopted after the new ID',
+      () async {
+        TestWidgetsFlutterBinding.ensureInitialized();
+        final fingerprint = 'f' * 64;
+        SharedPreferences.setMockInitialValues({
+          'library_id': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+          'published_fingerprint': 'd' * 64,
+        });
+        final prefs = await SharedPreferences.getInstance();
+        final container = makeContainer(
+          settings: PrefsSettingsRepository(prefs),
+        );
+        pinRestoreController(container);
+
+        await container
+            .read(restoreControllerProvider.notifier)
+            .restore(
+              archiveBytes: identityNetworkArchive(
+                identityJson: jsonEncode({
+                  'libraryId': archiveId,
+                  'libraryName': 'Meera Road',
+                  'publishedFingerprint': fingerprint,
+                }),
+              ),
+            );
+
+        final summary = container.read(restoreControllerProvider).value!;
+        expect(summary.identityAdopted, isTrue);
+        expect(summary.restoredPublishedFingerprint, fingerprint);
+        final settings = await container.read(
+          settingsControllerProvider.future,
+        );
+        expect(settings.libraryId, archiveId);
+        expect(settings.publishedFingerprint, fingerprint);
+        expect(prefs.getString('published_fingerprint'), fingerprint);
+        await settleCascade(container);
+      },
+    );
 
     test('an identity adopt Left is reported; catalogue + network still '
         'applied', () async {

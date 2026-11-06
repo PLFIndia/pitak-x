@@ -572,6 +572,7 @@ final class CloudflareSetupHarness {
     CloudflareConnection? connection,
     PublishHostState? hostState,
     String? legacyGitHubRepo,
+    bool catalogueEmpty = false,
   }) : credentials = InMemoryCloudflareCredentialStore(connection),
        hostStore = FakePublishHostStateStore(hostState) {
     final hostRepository = PublishHostStateRepository(
@@ -596,6 +597,7 @@ final class CloudflareSetupHarness {
       hostState: hostRepository,
       verifyAddress: verifyAddress,
       clock: () => cloudflareTestNow,
+      catalogueIsEmpty: () async => catalogueEmpty,
     );
   }
 

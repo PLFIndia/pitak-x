@@ -15,10 +15,10 @@ library;
 
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/features/network/application/own_fingerprint.dart';
 import 'package:pitaka/features/network/domain/entities/library_descriptor.dart';
 import 'package:pitaka/features/network/domain/value_objects/bookmark_url.dart';
 import 'package:pitaka/features/network/domain/value_objects/geo_point.dart';
-import 'package:pitaka/features/network/domain/value_objects/library_fingerprint.dart';
 import 'package:pitaka/features/network/domain/value_objects/network_name.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
 
@@ -56,10 +56,14 @@ abstract final class BuildOwnDescriptor {
     required LocationSharing sharing,
     required String gps,
     required int updatedAt,
+    String? publishedFingerprint,
     List<MemberEntry> members = const [],
     List<String> memberOf = const [],
   }) {
-    final fingerprint = LibraryFingerprint.of(libraryId);
+    final fingerprint = ownFingerprintPartsOf(
+      libraryId: libraryId,
+      publishedFingerprint: publishedFingerprint,
+    );
     if (fingerprint == null) {
       return const Left(ValidationFailure('Library identity unavailable'));
     }

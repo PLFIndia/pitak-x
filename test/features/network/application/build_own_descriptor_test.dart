@@ -17,6 +17,7 @@ void main() {
     String name = 'My Library',
     List<MemberEntry> members = const [],
     List<String> memberOf = const [],
+    String? publishedFingerprint,
   }) {
     final result = BuildOwnDescriptor.build(
       libraryId: id,
@@ -25,6 +26,7 @@ void main() {
       sharing: sharing,
       gps: gps,
       updatedAt: 1760000000000,
+      publishedFingerprint: publishedFingerprint,
       members: members,
       memberOf: memberOf,
     );
@@ -38,6 +40,13 @@ void main() {
       expect(d.fingerprint, LibraryFingerprint.of(id));
       expect(d.fingerprint, isNot(id));
       expect(d.fingerprint, isNot(contains(id)));
+    });
+
+    test('a recovered published fingerprint overrides the derived label', () {
+      final fingerprint = 'f' * 64;
+      final descriptor = buildOk(publishedFingerprint: fingerprint);
+      expect(descriptor.fingerprint, fingerprint);
+      expect(descriptor.fingerprint, isNot(LibraryFingerprint.of(id)));
     });
 
     test('an invalid library ID refuses (Left) rather than hashes junk', () {

@@ -199,7 +199,11 @@ class RestoreController extends _$RestoreController {
         // raw repository (N07: the in-memory settings must move with disk).
         final adopted = await ref
             .read(settingsControllerProvider.notifier)
-            .adopt(id: identity.id, name: identity.name);
+            .adopt(
+              id: identity.id,
+              name: identity.name,
+              publishedFingerprint: summary.restoredPublishedFingerprint,
+            );
         identityAdopted = adopted.outcome == LibraryAdoptionOutcome.adopted;
         // The ID landed but the name did not: the page must say so instead of
         // "unchanged" (review finding 4).

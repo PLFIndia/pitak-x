@@ -247,51 +247,6 @@ final publishMarkerCodecProvider =
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef PublishMarkerCodecRef = AutoDisposeProviderRef<PublishMarkerCodec>;
-String _$verifyCloudflareAddressHash() =>
-    r'0463cd69dbbeca16b309bf91bc7df4b3257f54ef';
-
-/// Marker-only manual-address verification (D.2), never a normal publication.
-///
-/// Copied from [verifyCloudflareAddress].
-@ProviderFor(verifyCloudflareAddress)
-final verifyCloudflareAddressProvider =
-    AutoDisposeProvider<VerifyCloudflareAddress>.internal(
-      verifyCloudflareAddress,
-      name: r'verifyCloudflareAddressProvider',
-      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
-          ? null
-          : _$verifyCloudflareAddressHash,
-      dependencies: null,
-      allTransitiveDependencies: null,
-    );
-
-@Deprecated('Will be removed in 3.0. Use Ref instead')
-// ignore: unused_element
-typedef VerifyCloudflareAddressRef =
-    AutoDisposeProviderRef<VerifyCloudflareAddress>;
-String _$setupCloudflareSiteHash() =>
-    r'5bd4b4c2865b3b06171b6ffc97b8b6d81c9196fa';
-
-/// Staged setup commands. Every mutating call is invoked inside the shared
-/// [publishOperationQueueProvider] by the outer connection controller.
-///
-/// Copied from [setupCloudflareSite].
-@ProviderFor(setupCloudflareSite)
-final setupCloudflareSiteProvider =
-    AutoDisposeFutureProvider<SetupCloudflareSite>.internal(
-      setupCloudflareSite,
-      name: r'setupCloudflareSiteProvider',
-      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
-          ? null
-          : _$setupCloudflareSiteHash,
-      dependencies: null,
-      allTransitiveDependencies: null,
-    );
-
-@Deprecated('Will be removed in 3.0. Use Ref instead')
-// ignore: unused_element
-typedef SetupCloudflareSiteRef =
-    AutoDisposeFutureProviderRef<SetupCloudflareSite>;
 String _$publishCredentialStoreHash() =>
     r'3b31461d16fbf56902e23d43430383b9d60baf70';
 

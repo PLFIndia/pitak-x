@@ -30,6 +30,7 @@ import 'package:http/http.dart' as http;
 import 'package:pitaka/core/images/image_downscaler.dart';
 import 'package:pitaka/core/network/bounded_fetch_outcome.dart';
 import 'package:pitaka/core/network/bounded_http_fetcher.dart';
+import 'package:pitaka/features/network/domain/published_cover_fetcher.dart';
 import 'package:pitaka/features/network/domain/published_cover_resolver.dart';
 
 /// Fetches and downscales cover images under strict limits.
@@ -74,6 +75,14 @@ final class BoundedPublishedCoverFetcher {
   Future<Uint8List?> fetch(
     PublishedCoverRequest request, {
     Future<void>? abortTrigger,
+  }) async => (await fetchDetailed(request, abortTrigger: abortTrigger)).bytes;
+
+  /// The restore variant: downscaled bytes plus the raw network cost. Decode
+  /// remains sequential at the caller, so off-isolate work cannot multiply
+  /// peak decoded-image memory across four concurrent requests.
+  Future<PublishedCoverDownload> fetchDetailed(
+    PublishedCoverRequest request, {
+    Future<void>? abortTrigger,
   }) async {
     final scoped = BoundedHttpFetcher(
       client: _client,
@@ -86,8 +95,14 @@ final class BoundedPublishedCoverFetcher {
     );
     final outcome = await scoped.fetch(request.url, abortTrigger: abortTrigger);
     return switch (outcome) {
-      FetchedBytes(:final bytes) => await decode(bytes),
-      FetchRefused() => null,
+      FetchedBytes(:final bytes) => PublishedCoverDownload(
+        bytes: await decode(bytes),
+        sourceByteCount: bytes.length,
+      ),
+      FetchRefused(:final receivedBytes) => PublishedCoverDownload(
+        bytes: null,
+        sourceByteCount: receivedBytes,
+      ),
     };
   }
 }

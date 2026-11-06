@@ -21,3 +21,25 @@ typedef PublishedCoverFetcher =
       PublishedCoverRequest request, {
       Future<void>? abortTrigger,
     });
+
+/// One completed cover attempt, including its raw network-byte cost.
+final class PublishedCoverDownload {
+  /// Creates an attempt result; [bytes] is null when fetch/decode failed.
+  const PublishedCoverDownload({
+    required this.bytes,
+    required this.sourceByteCount,
+  });
+
+  /// Downscaled JPEG bytes, never the source image.
+  final Uint8List? bytes;
+
+  /// Raw response bytes read, including an actual-size refusal.
+  final int sourceByteCount;
+}
+
+/// Restore-specific port that preserves raw-byte accounting for budgets.
+typedef PublishedCoverDownloadFetcher =
+    Future<PublishedCoverDownload> Function(
+      PublishedCoverRequest request, {
+      Future<void>? abortTrigger,
+    });

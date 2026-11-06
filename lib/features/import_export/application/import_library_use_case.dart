@@ -25,6 +25,7 @@ library;
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/import_export/application/bundle_import_images.dart';
+import 'package:pitaka/features/import_export/application/import_merge_existing.dart';
 import 'package:pitaka/features/import_export/application/import_payload_guard.dart';
 import 'package:pitaka/features/import_export/application/import_reconciliation.dart';
 import 'package:pitaka/features/import_export/domain/bundle_cover_files.dart';
@@ -35,7 +36,6 @@ import 'package:pitaka/features/import_export/domain/import_payload.dart';
 import 'package:pitaka/features/import_export/domain/library_json_codec.dart';
 import 'package:pitaka/features/library/domain/catalogue_rules.dart';
 import 'package:pitaka/features/library/domain/cover_file_coordinator.dart';
-import 'package:pitaka/features/library/domain/cover_precedence.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/merge/issue_identity.dart';
 import 'package:pitaka/features/library/domain/merge/periodical_merge.dart';
@@ -164,12 +164,35 @@ final class ImportLibraryUseCase {
     ImportBundle bundle, {
     required BundleCoverFiles coverFiles,
     required CoverFileCoordinator coordinator,
+    bool requireEmptyCatalogue = false,
   }) => coordinator.run(() async {
     final batch = coverFiles.begin();
     final images = BundleImportImages(bundle, batch);
     Either<Failure, ImportSummary> result;
     try {
       result = await _bookRepo.runInTransaction(() async {
+        if (requireEmptyCatalogue) {
+          // This check MUST share the write transaction: the publish queue
+          // does not block ordinary catalogue edits during network downloads.
+          final items = await _bookRepo.getAll();
+          if (items.isLeft()) {
+            return items.map((_) => const ImportSummary(format: null));
+          }
+          final titles = await _periodicalRepo.listAll();
+          if (titles.isLeft()) {
+            return titles.map((_) => const ImportSummary(format: null));
+          }
+          final itemCount = items.toNullable()!.length;
+          final titleCount = titles.toNullable()!.length;
+          if (itemCount != 0 || titleCount != 0) {
+            return left(
+              ValidationFailure(
+                'Restore works into an empty catalogue. You have $itemCount '
+                'items and $titleCount magazine titles.',
+              ),
+            );
+          }
+        }
         final applied = await _applyInside(
           bundle.payload,
           ImportFormat.pitakaBundle,
@@ -280,7 +303,7 @@ final class ImportLibraryUseCase {
             return prepared.map((_) => const ImportSummary(format: null));
           }
           final updated = await _bookRepo.update(
-            _mergeIntoExisting(
+            mergeImportedCatalogueItem(
               existing: existing,
               incoming: prepared.toNullable()!,
             ),
@@ -440,50 +463,4 @@ final class ImportLibraryUseCase {
       '${errors.map((e) => '${e.field} ${e.problem}').join('; ')}.',
     ),
   );
-
-  /// The row to write when [incoming] (same itemUid) updates [existing]:
-  /// keep this device's `id` (vault loans reference it) and `itemUid`; take
-  /// the incoming catalogue fields; the cover follows [resolveIncomingCover]
-  /// (M09): a local photo is never replaced by an incoming remote URL, and
-  /// a file carrying no cover keeps the local one.
-  static CatalogueItem _mergeIntoExisting({
-    required CatalogueItem existing,
-    required CatalogueItem incoming,
-  }) {
-    final cover = resolveIncomingCover(
-      existing: existing.coverUrl,
-      incoming: incoming.coverUrl,
-    );
-    return CatalogueItem(
-      id: existing.id,
-      itemUid: existing.itemUid,
-      title: incoming.title,
-      titleTransliteration: incoming.titleTransliteration,
-      author: incoming.author,
-      isbn: incoming.isbn,
-      publisher: incoming.publisher,
-      publishedYear: incoming.publishedYear,
-      genre: incoming.genre,
-      coverUrl: cover,
-      pageCount: incoming.pageCount,
-      language: incoming.language,
-      notes: incoming.notes,
-      location: incoming.location,
-      sourceType: incoming.sourceType,
-      sourceDetail: incoming.sourceDetail,
-      ageGroup: incoming.ageGroup,
-      addedDate: incoming.addedDate == 0
-          ? existing.addedDate
-          : incoming.addedDate,
-      copyCount: incoming.copyCount,
-      needsMetadata: incoming.needsMetadata,
-      removed: incoming.removed,
-      removedAt: incoming.removedAt,
-      addedBy: incoming.addedBy ?? existing.addedBy,
-      // The caller has already proved both rows are the SAME kind. Incoming
-      // details therefore replace same-kind values only; a missing v3 kind
-      // can never delete a stored issue or other-item marker.
-      details: incoming.details,
-    );
-  }
 }

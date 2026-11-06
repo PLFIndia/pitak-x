@@ -469,6 +469,9 @@ to false** (the `hasX` forward-compat pattern):
 | Published cover deadline | 15 s whole request, abortable — including on reload/close | `BoundedPublishedCoverFetcher` |
 | Published cover origin | same-site: saved origin AND directory; third-party: the cover allow-list; both re-checked on every redirect hop | `PublishedCoverResolver` |
 | Published cover cache | ≤ 100 images / 16 MiB, memory only, LRU eviction, cleared on reload and on route close | `PublishedCatalogueCoverController` |
+| Restore cover attempts | ≤ 4,096 requests, including failures; sequential fetch/decode only | `PublishedCoverRestorer` |
+| Restore cover time | ≤ 10 min for the whole cover phase; cancellation aborts the in-flight socket before writing | `PublishedCoverRestorer`, `BoundedPublishedCoverFetcher` |
+| Restore cover bytes | ≤ 256 MiB raw responses (actual-size refusals included) and ≤ 128 MiB retained downscaled JPEGs; exhaustion is reported separately | `PublishedCoverRestorer`, `PublishedCoverDownload` |
 | Redirect hops | ≤ 3, each re-validated | `BoundedHttpFetcher` |
 | URL | https, no userinfo, ≤ 2048 chars; host suffix `github.io` / `pages.dev`, OR the strict `<worker>.<account-subdomain>.workers.dev` root form (exactly two leading labels, no other path) | `BookmarkUrl`, `WorkersDevUrl` |
 | Name | 1–80 chars after trim; reject code units < 0x20, 0x7F, U+202A–U+202E, U+2066–U+2069 | `NetworkName` |
@@ -526,6 +529,19 @@ on every hop; a third-party cover re-checks the cover allow-list on every hop
 8 MiB / 15 s, decoded in a worker isolate with the existing header/pixel
 guards and FRAME 0 only, and only the resulting 400×600 JPEG reaches the
 image widget: no `Image.network`, no raw fallback, no local persistence.
+
+**Restore from the user's own site (ADR 0021)** is a separate, explicitly
+authorised write path from the Connection tab's active target, never from the
+saved-library viewer. It requires an empty catalogue (checked again inside the
+bundle import transaction), refuses newer schemas, unknown kinds, truncation
+and duplicate series, and counts every recoverable drop. Same-site covers are
+optional and use the independent restore budgets above; third-party links are
+retained but not fetched. A target-bound preferences journal bridges the DB
+commit and fingerprint save, with startup and identity-only recovery. Every
+publish lane refuses while identity recovery is pending or an empty local
+catalogue could overwrite a non-empty/unreadable remote recovery copy.
+Cloudflare recovery adopts an existing Worker only through authenticated
+Worker presence plus an API-confirmed subdomain, with no verification deploy.
 
 ### 5.7 Pitaka-JSON and `books.json` carry the item kind (ADR 0014)
 

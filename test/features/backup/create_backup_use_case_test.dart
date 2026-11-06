@@ -5,10 +5,12 @@ import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/backup/application/create_backup_use_case.dart';
 import 'package:pitaka/features/backup/domain/backup_archive_builder.dart';
+import 'package:pitaka/features/backup/domain/backup_identity.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
 import 'package:pitaka/features/network/domain/entities/network_library.dart';
 import 'package:pitaka/features/network/domain/repositories/network_repository.dart';
+import 'package:pitaka/features/network/domain/value_objects/library_fingerprint.dart';
 import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
 import 'package:pitaka/features/periodicals/domain/repositories/periodical_repository.dart';
 import 'package:pitaka/features/publish/domain/publish_manifest.dart';
@@ -66,6 +68,25 @@ void main() {
     // …and network.json the encoded rows under the §3.4 envelope.
     expect(call.networkJson, contains('"schemaVersion":1'));
     expect(call.networkJson, contains('https://hub.github.io/x/'));
+  });
+
+  test('a recovered published fingerprint reaches identity.json', () async {
+    final fingerprint = 'f' * 64;
+    final result = await useCase(
+      namespace: _Namespace(
+        right(
+          LibraryIdentity(
+            id: identity.id,
+            name: identity.name,
+            publishedFingerprint: fingerprint,
+          ),
+        ),
+      ),
+    )();
+    expect(fingerprint, isNot(LibraryFingerprint.of(identity.id)));
+    expect(result.isRight(), isTrue);
+    final decoded = BackupIdentity.fromJson(writer.calls.single.identityJson!);
+    expect(decoded?.publishedFingerprint, fingerprint);
   });
 
   test('an identity Left does NOT block the backup — it proceeds and says '

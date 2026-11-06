@@ -27,6 +27,7 @@ final class _MatchingNamespace implements LibraryNamespace {
   Future<LibraryAdoption> adopt({
     required String id,
     required String name,
+    String? publishedFingerprint,
   }) async => (outcome: LibraryAdoptionOutcome.adopted, failure: null);
 }
 

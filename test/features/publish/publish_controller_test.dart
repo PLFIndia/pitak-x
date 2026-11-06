@@ -17,10 +17,12 @@ import 'package:pitaka/features/library/domain/value_objects/item_details.dart';
 import 'package:pitaka/features/network/domain/entities/network_library.dart';
 import 'package:pitaka/features/network/domain/repositories/network_repository.dart';
 import 'package:pitaka/features/network/domain/value_objects/library_fingerprint.dart';
+import 'package:pitaka/features/network/infrastructure/published_catalogue_codec.dart';
 import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
 import 'package:pitaka/features/periodicals/domain/repositories/periodical_repository.dart';
 import 'package:pitaka/features/publish/application/publish_controller.dart';
 import 'package:pitaka/features/publish/application/publish_library_use_case.dart';
+import 'package:pitaka/features/publish/application/restore/pre_restore_publish_guard.dart';
 import 'package:pitaka/features/publish/application/site/catalogue_section_builder.dart';
 import 'package:pitaka/features/publish/application/site/deferred_publish_verification.dart';
 import 'package:pitaka/features/publish/application/site/publish_going_live_controller.dart';
@@ -34,6 +36,7 @@ import 'package:pitaka/features/publish/domain/publish_cover_ids.dart';
 import 'package:pitaka/features/publish/domain/publish_credential_store.dart';
 import 'package:pitaka/features/publish/domain/publish_item_keys.dart';
 import 'package:pitaka/features/publish/domain/publish_manifest.dart';
+import 'package:pitaka/features/publish/domain/restore/restore_identity_journal.dart';
 import 'package:pitaka/features/publish/domain/site/publish_host_state.dart';
 import 'package:pitaka/features/publish/domain/site/publish_mode.dart';
 import 'package:pitaka/features/publish/domain/site/publish_proof_path.dart';
@@ -403,7 +406,8 @@ void main() {
 
       expect((result as PublishFailure).reason, _safeReadFailure);
       expect(h.states.last.requireValue, same(result));
-      expect(h.books.reads, 3);
+      // Recovery preflight + the strict publish read on the successful run.
+      expect(h.books.reads, 4);
       expect(h.api.commits, hasLength(1));
       // The failure wrote nothing: the last successful record is untouched.
       expect(h.manifest.saves, savesAfterSuccess);
@@ -853,6 +857,16 @@ class _Harness {
         // The pre-check of an unconfirmed commit reads through the structured
         // port (ADR 0019 Decision 10); it is the same in-memory site.
         publishedSiteReadVerifierProvider.overrideWithValue(verifier),
+        preRestorePublishGuardProvider.overrideWith(
+          (ref) async => PreRestorePublishGuard(
+            items: books,
+            periodicals: periodicals,
+            journal: _EmptyRestoreJournal(),
+            reader: _AbsentRecoveryReader(),
+            decode: (bytes) async =>
+                const PublishedCatalogueCodec().decode(bytes),
+          ),
+        ),
         // A clock that ticks a minute per read: two publishes never share a
         // timestamp, so an updatedAt-reuse test is deterministic.
         clockProvider.overrideWithValue(() => 1000 + (++_clockTicks * 60000)),
@@ -914,6 +928,26 @@ class _Harness {
     await tester.pump(_settle);
     return pending;
   }
+}
+
+final class _EmptyRestoreJournal implements RestoreIdentityJournalStore {
+  @override
+  Future<Either<Failure, RestoreIdentityJournal?>> load() async => right(null);
+  @override
+  Future<Either<Failure, Unit>> save(RestoreIdentityJournal journal) async =>
+      right(unit);
+  @override
+  Future<Either<Failure, Unit>> clear() async => right(unit);
+}
+
+final class _AbsentRecoveryReader implements PublishedSiteReadVerifier {
+  @override
+  Future<PublishedSiteReadOutcome> readOutcome({
+    required String siteUrl,
+    required String path,
+    required int maxBytes,
+    String? cacheBuster,
+  }) async => const PublishedSiteReadAbsent();
 }
 
 /// The publish salt. Every catalogue publish reads it since plan S3: it names

@@ -97,6 +97,7 @@ class SettingsController extends _$SettingsController
     } on Object catch (e) {
       // Name the type only: platform text may carry private detail.
       appLog('settings write threw: ${e.runtimeType}');
+      await _publishActual(repo);
       return left(StorageFailure('settings write threw: ${e.runtimeType}'));
     }
     if (result.isRight()) {
@@ -104,12 +105,22 @@ class SettingsController extends _$SettingsController
       state = AsyncData(patch(_current));
       return result;
     }
-    // Fail closed: never show a preference the device did not store, and never
-    // turn a loaded screen into an error for a failed SAVE.
-    final current = state.valueOrNull;
-    if (current != null) state = AsyncData(current);
+    // A multi-key identity write can be partially applied even when it returns
+    // a left. Reload the actual persisted state; ordinary failed writes simply
+    // reload their last good value. Never turn a loaded screen into an error.
+    await _publishActual(repo);
     return result;
   });
+
+  /// Publishes what is really on disk after a failed multi-key operation.
+  Future<void> _publishActual(SettingsRepository repo) async {
+    try {
+      state = AsyncData(await repo.load());
+    } on Object {
+      final current = state.valueOrNull;
+      if (current != null) state = AsyncData(current);
+    }
+  }
 
   /// The last good settings, or a typed failure when none was ever loaded.
   ///
@@ -130,19 +141,29 @@ class SettingsController extends _$SettingsController
   /// the minted value to the caller. A left is returned untouched and nothing
   /// is published (no phantom ID, M17).
   Future<Either<Failure, String>> _mintLibraryId(
-    Future<Either<Failure, String>> Function(SettingsRepository repo) mint,
-  ) => _serialised(() async {
+    Future<Either<Failure, String>> Function(SettingsRepository repo) mint, {
+    bool clearPublishedFingerprint = false,
+  }) => _serialised(() async {
     final repo = await ref.read(settingsRepositoryProvider.future);
     final Either<Failure, String> minted;
     try {
       minted = await mint(repo);
     } on Object catch (e) {
       appLog('settings mint threw: ${e.runtimeType}');
+      await _publishActual(repo);
       return left(StorageFailure('settings mint threw: ${e.runtimeType}'));
     }
     final id = minted.getOrElse((_) => '');
-    if (minted.isRight() && _current.libraryId != id) {
-      state = AsyncData(_current.copyWith(libraryId: id));
+    if (minted.isRight() &&
+        (clearPublishedFingerprint || _current.libraryId != id)) {
+      final current = _current;
+      state = AsyncData(
+        clearPublishedFingerprint
+            ? current.copyWith(libraryId: id, publishedFingerprint: null)
+            : current.copyWith(libraryId: id),
+      );
+    } else if (minted.isLeft()) {
+      await _publishActual(repo);
     }
     return minted;
   });
@@ -170,82 +191,116 @@ class SettingsController extends _$SettingsController
   /// `LibraryId.normalizeOrNull`.
   Future<Either<Failure, Unit>> setLibraryId(String id) => _update(
     (repo) => repo.setLibraryId(id),
-    (s) => s.copyWith(libraryId: id.trim()),
+    (s) => s.copyWith(libraryId: id.trim(), publishedFingerprint: null),
   );
+
+  /// Saves or clears the recovered public fingerprint through the one writer.
+  Future<Either<Failure, Unit>> setPublishedFingerprint(String? fingerprint) =>
+      _update((repo) {
+        final store = repo is PublishedFingerprintStore
+            ? repo as PublishedFingerprintStore
+            : null;
+        if (store == null) {
+          return Future.value(
+            left(
+              const StorageFailure('published fingerprint store unavailable'),
+            ),
+          );
+        }
+        return store.setPublishedFingerprint(fingerprint);
+      }, (s) => s.copyWith(publishedFingerprint: fingerprint));
 
   /// Mints a brand-new library ID (CSPRNG), detaching this device from the
   /// previous namespace, and reflects it into state. Left on persist failure
   /// (M17) — the old ID then stays in force.
-  Future<Either<Failure, String>> regenerateLibraryId() =>
-      _mintLibraryId((repo) => repo.regenerateLibraryId());
+  Future<Either<Failure, String>> regenerateLibraryId() => _mintLibraryId(
+    (repo) => repo.regenerateLibraryId(),
+    clearPublishedFingerprint: true,
+  );
 
   /// The merge use case's read of this device's identity (N07): the ID via
   /// the FIFO like [getOrCreateLibraryId], the name from the loaded settings.
   @override
   Future<Either<Failure, LibraryIdentity>> current() async {
     final id = await getOrCreateLibraryId();
-    final name = await _loadedLibraryName();
-    return id.map((value) => LibraryIdentity(id: value, name: name));
+    final settings = (await loaded()).toNullable() ?? _current;
+    return id.map(
+      (value) => LibraryIdentity(
+        id: value,
+        name: settings.libraryName,
+        publishedFingerprint: settings.publishedFingerprint,
+      ),
+    );
   }
 
-  /// The library name once the first load has finished. `future` rejects when
-  /// an earlier setter published an [AsyncError] (a failed prefs write); the
-  /// last good value is still cached on that state, so use it — the name only
-  /// feeds the merge's "which library is this?" copy, never a gate.
-  Future<String> _loadedLibraryName() async {
-    final loadedSettings = await loaded();
-    return loadedSettings.toNullable()?.libraryName ?? _current.libraryName;
-  }
-
-  /// Adopts an incoming library ID + name in ONE queued turn (N07), with
-  /// rollback when the second write fails (review finding 4).
-  ///
-  /// Why rollback (beginner note): the settings store has no multi-key
-  /// transaction, so "write the ID, then the name" can stop half-way. Before,
-  /// that left the ID on disk while memory still showed the old one, and the
-  /// restore screen said "unchanged". Now:
-  ///  - ID write refused → nothing changed, [LibraryAdoptionOutcome
-  ///    .notAdopted];
-  ///  - blank incoming name → adopt the ID alone (the current name stays);
-  ///  - name write refused (or threw) → put the previous ID back;
-  ///  - that rollback also fails → publish the true partial state (new ID,
-  ///    previous name) and report [LibraryAdoptionOutcome.partiallyAdopted],
-  ///    so no screen can claim the old identity is still in force.
+  /// Adopts identity fields in one queued turn. A backup's public fingerprint
+  /// is written AFTER the ID (which clears the old override). Any later
+  /// failure rolls back the ID, name and previous override as far as the
+  /// preference store allows; a failed rollback publishes the partial truth.
   @override
-  Future<LibraryAdoption> adopt({required String id, required String name}) =>
-      _serialised(() async {
-        final repo = await ref.read(settingsRepositoryProvider.future);
-        final trimmedId = id.trim();
-        final trimmedName = name.trim();
-        // Read BEFORE writing: this is what a rollback must restore.
-        final previous = _current;
+  Future<LibraryAdoption> adopt({
+    required String id,
+    required String name,
+    String? publishedFingerprint,
+  }) => _serialised(() async {
+    final repo = await ref.read(settingsRepositoryProvider.future);
+    final trimmedId = id.trim();
+    final trimmedName = name.trim();
+    final previous = _current;
 
-        final Either<Failure, Unit> idWritten;
-        try {
-          idWritten = await repo.setLibraryId(trimmedId);
-        } on Object catch (e) {
-          return _notAdopted(_writeThrew(e));
-        }
-        if (idWritten case Left(value: final failure)) {
-          return _notAdopted(failure);
-        }
-        if (trimmedName.isEmpty) {
-          _publishIdentity(id: trimmedId, name: previous.libraryName);
-          return (outcome: LibraryAdoptionOutcome.adopted, failure: null);
-        }
+    final Either<Failure, Unit> idWritten;
+    try {
+      idWritten = await repo.setLibraryId(trimmedId);
+    } on Object catch (e) {
+      await _publishActual(repo);
+      return _notAdopted(_writeThrew(e));
+    }
+    if (idWritten case Left(value: final failure)) {
+      await _publishActual(repo);
+      return _notAdopted(failure);
+    }
 
-        final Either<Failure, Unit> nameWritten;
-        try {
-          nameWritten = await repo.setLibraryName(trimmedName);
-        } on Object catch (e) {
-          return _rollBackId(repo, previous, trimmedId, _writeThrew(e));
-        }
-        if (nameWritten case Left(value: final failure)) {
-          return _rollBackId(repo, previous, trimmedId, failure);
-        }
-        _publishIdentity(id: trimmedId, name: trimmedName);
-        return (outcome: LibraryAdoptionOutcome.adopted, failure: null);
-      });
+    final restoreName = trimmedName.isNotEmpty;
+    if (restoreName) {
+      final Either<Failure, Unit> nameWritten;
+      try {
+        nameWritten = await repo.setLibraryName(trimmedName);
+      } on Object catch (e) {
+        return _rollBackAdoption(
+          repo,
+          previous,
+          restoreName: false,
+          cause: _writeThrew(e),
+        );
+      }
+      if (nameWritten case Left(value: final failure)) {
+        return _rollBackAdoption(
+          repo,
+          previous,
+          restoreName: false,
+          cause: failure,
+        );
+      }
+    }
+
+    if (publishedFingerprint != null) {
+      final written = await _writeFingerprint(repo, publishedFingerprint);
+      if (written case Left(value: final failure)) {
+        return _rollBackAdoption(
+          repo,
+          previous,
+          restoreName: restoreName,
+          cause: failure,
+        );
+      }
+    }
+    _publishIdentity(
+      id: trimmedId,
+      name: restoreName ? trimmedName : previous.libraryName,
+      publishedFingerprint: publishedFingerprint,
+    );
+    return (outcome: LibraryAdoptionOutcome.adopted, failure: null);
+  });
 
   static LibraryAdoption _notAdopted(Failure failure) =>
       (outcome: LibraryAdoptionOutcome.notAdopted, failure: failure);
@@ -253,36 +308,69 @@ class SettingsController extends _$SettingsController
   static Failure _writeThrew(Object error) =>
       StorageFailure('settings write threw: ${error.runtimeType}');
 
-  /// Undoes the ID write after the name write failed.
-  ///
-  /// Successful rollback: disk is back on [previous] and memory never left it
-  /// → `notAdopted` with the ORIGINAL failure (the one the caller can act on).
-  /// Failed rollback: the ID is on disk and cannot be undone, so memory is
-  /// published as the partial truth and the outcome says so.
-  Future<LibraryAdoption> _rollBackId(
+  Future<Either<Failure, Unit>> _writeFingerprint(
     SettingsRepository repo,
-    AppSettings previous,
-    String newId,
-    Failure cause,
+    String? fingerprint,
   ) async {
-    Either<Failure, Unit> rolledBack;
-    try {
-      rolledBack = await repo.setLibraryId(previous.libraryId);
-    } on Object catch (e) {
-      rolledBack = left(_writeThrew(e));
+    final store = repo is PublishedFingerprintStore
+        ? repo as PublishedFingerprintStore
+        : null;
+    if (store == null) {
+      return left(
+        const StorageFailure('published fingerprint store unavailable'),
+      );
     }
-    if (rolledBack.isRight()) return _notAdopted(cause);
-    _publishIdentity(id: newId, name: previous.libraryName);
-    return (
-      outcome: LibraryAdoptionOutcome.partiallyAdopted,
-      failure: rolledBack.getLeft().toNullable() ?? cause,
-    );
+    try {
+      return await store.setPublishedFingerprint(fingerprint);
+    } on Object catch (e) {
+      return left(_writeThrew(e));
+    }
+  }
+
+  Future<LibraryAdoption> _rollBackAdoption(
+    SettingsRepository repo,
+    AppSettings previous, {
+    required bool restoreName,
+    required Failure cause,
+  }) async {
+    var restored = true;
+    try {
+      restored &= (await repo.setLibraryId(previous.libraryId)).isRight();
+    } on Object {
+      restored = false;
+    }
+    if (restoreName) {
+      try {
+        restored &= (await repo.setLibraryName(previous.libraryName)).isRight();
+      } on Object {
+        restored = false;
+      }
+    }
+    if (previous.publishedFingerprint != null) {
+      restored &= (await _writeFingerprint(
+        repo,
+        previous.publishedFingerprint,
+      )).isRight();
+    }
+    await _publishActual(repo);
+    if (restored) return _notAdopted(cause);
+    return (outcome: LibraryAdoptionOutcome.partiallyAdopted, failure: cause);
   }
 
   /// Publishes the identity fields only, patching whatever is there NOW (M16:
   /// never replace the whole snapshot).
-  void _publishIdentity({required String id, required String name}) {
-    state = AsyncData(_current.copyWith(libraryId: id, libraryName: name));
+  void _publishIdentity({
+    required String id,
+    required String name,
+    required String? publishedFingerprint,
+  }) {
+    state = AsyncData(
+      _current.copyWith(
+        libraryId: id,
+        libraryName: name,
+        publishedFingerprint: publishedFingerprint,
+      ),
+    );
   }
 
   /// Sets the maintainer name (stamped onto newly-added books).

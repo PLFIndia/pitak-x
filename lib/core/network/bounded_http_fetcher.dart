@@ -294,7 +294,7 @@ final class BoundedHttpFetcher {
         // subscription; completing the trigger makes the client close the
         // socket now rather than whenever the stream is collected.
         if (!abort.isCompleted) abort.complete();
-        return const FetchRefused(FetchRefusal.tooLarge);
+        return FetchRefused(FetchRefusal.tooLarge, receivedBytes: total);
       }
       builder.add(chunk);
     }

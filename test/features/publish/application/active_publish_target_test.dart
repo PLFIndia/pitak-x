@@ -5,19 +5,26 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
+import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
+import 'package:pitaka/features/network/infrastructure/published_catalogue_codec.dart';
 import 'package:pitaka/features/publish/application/publish_controller.dart';
 import 'package:pitaka/features/publish/application/publish_library_use_case.dart'
     show PublishManifestGateway;
 import 'package:pitaka/features/publish/application/publish_result.dart';
+import 'package:pitaka/features/publish/application/restore/pre_restore_publish_guard.dart';
 import 'package:pitaka/features/publish/application/site/active_publish_target.dart';
 import 'package:pitaka/features/publish/application/site/publish_host_state_repository.dart';
 import 'package:pitaka/features/publish/application/site/publish_snapshot_builder.dart';
 import 'package:pitaka/features/publish/domain/publish_credential_store.dart';
 import 'package:pitaka/features/publish/domain/publish_manifest.dart';
 import 'package:pitaka/features/publish/domain/publish_target.dart';
+import 'package:pitaka/features/publish/domain/restore/restore_identity_journal.dart';
 import 'package:pitaka/features/publish/domain/site/publish_host.dart';
 import 'package:pitaka/features/publish/domain/site/publish_host_state.dart';
+import 'package:pitaka/features/publish/domain/site/published_site_verifier.dart';
 
+import '../../periodicals/application/periodical_fakes.dart';
 import '../support/cloudflare_fakes.dart';
 import '../support/cloudflare_s8_fakes.dart';
 
@@ -149,6 +156,16 @@ void main() {
         ),
         cloudflareCredentialStoreProvider.overrideWithValue(h.credentials),
         publishCredentialStoreProvider.overrideWithValue(gitHub),
+        preRestorePublishGuardProvider.overrideWith(
+          (ref) async => PreRestorePublishGuard(
+            items: _EmptyBooks(),
+            periodicals: FakePeriodicals(),
+            journal: _EmptyJournal(),
+            reader: _AbsentReader(),
+            decode: (bytes) async =>
+                const PublishedCatalogueCodec().decode(bytes),
+          ),
+        ),
         publishToCloudflareUseCaseProvider.overrideWith(
           (ref) async => (PublishReads reads) {
             factoryReads.add(reads);
@@ -170,4 +187,34 @@ void main() {
     expect(gitHub.targetReads, 0);
     expect(gitHub.tokenReads, 0);
   });
+}
+
+final class _EmptyBooks implements CatalogueItemRepository {
+  @override
+  Future<Either<Failure, List<CatalogueItem>>> getAll() async =>
+      right(const []);
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnimplementedError('${invocation.memberName} not used');
+}
+
+final class _EmptyJournal implements RestoreIdentityJournalStore {
+  @override
+  Future<Either<Failure, RestoreIdentityJournal?>> load() async => right(null);
+  @override
+  Future<Either<Failure, Unit>> save(RestoreIdentityJournal journal) async =>
+      right(unit);
+  @override
+  Future<Either<Failure, Unit>> clear() async => right(unit);
+}
+
+final class _AbsentReader implements PublishedSiteReadVerifier {
+  @override
+  Future<PublishedSiteReadOutcome> readOutcome({
+    required String siteUrl,
+    required String path,
+    required int maxBytes,
+    String? cacheBuster,
+  }) async => const PublishedSiteReadAbsent();
 }

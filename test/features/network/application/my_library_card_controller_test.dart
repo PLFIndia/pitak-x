@@ -49,6 +49,21 @@ void main() {
     expect(card.name, 'Test Lib'); // trimmed by the name rules
   });
 
+  test('the card keeps a recovered published fingerprint', () async {
+    final fingerprint = 'f' * 64;
+    SharedPreferences.setMockInitialValues({
+      'library_id': rawId,
+      'library_name': 'Test Lib',
+      'published_fingerprint': fingerprint,
+    });
+    final container = containerWith('https://me.github.io/lib/');
+
+    final card = await container.read(myLibraryCardControllerProvider.future);
+
+    expect(card?.fingerprint, fingerprint);
+    expect(card?.fingerprint, isNot(LibraryFingerprint.of(rawId)));
+  });
+
   test('a blank name falls back to the default display name', () async {
     SharedPreferences.setMockInitialValues({'library_id': rawId});
     final container = containerWith('https://me.github.io/lib/');

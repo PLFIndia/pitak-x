@@ -7,7 +7,7 @@ part of 'my_library_card_controller.dart';
 // **************************************************************************
 
 String _$myLibraryCardControllerHash() =>
-    r'3a0dbd87a65118ab6720afd17e4ae430efb1ad19';
+    r'80a8b163831c008b7924ce99684442ef3600ff5a';
 
 /// Builds this device's [LibraryCard] from identity + published site URL.
 ///

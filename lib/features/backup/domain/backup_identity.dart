@@ -15,15 +15,21 @@ library;
 import 'dart:convert';
 
 import 'package:pitaka/features/library/domain/value_objects/library_id.dart';
+import 'package:pitaka/features/network/domain/value_objects/library_fingerprint.dart';
 import 'package:pitaka/features/network/domain/value_objects/network_name.dart';
 
 /// A validated library identity parsed from `identity.json`.
 final class BackupIdentity {
   /// Creates an identity snapshot (already validated — see [fromJson]).
-  const BackupIdentity({required this.id, required this.name});
+  const BackupIdentity({
+    required this.id,
+    required this.name,
+    this.publishedFingerprint,
+  });
 
-  /// Largest `identity.json` we will decode. The document is two short
-  /// strings (an id ≤64 chars and a name ≤80) — 4 KiB is enormous headroom
+  /// Largest `identity.json` we will decode. The document is three short
+  /// strings (an id ≤64 chars, a name ≤80 and a 64-char fingerprint) — 4 KiB
+  /// is enormous headroom
   /// and matches the "bound before parse" rule the network entry follows.
   static const int maxBytes = 4 * 1024;
 
@@ -34,9 +40,21 @@ final class BackupIdentity {
   /// device's current name — `LibraryNamespace.adopt` skips blank names).
   final String name;
 
+  /// Recovered public site identity, when the backup was made after a site
+  /// restore. Shape validation does not prove that it belongs to this user.
+  final String? publishedFingerprint;
+
   /// Encodes the `identity.json` entry content.
-  static String encode({required String id, required String name}) =>
-      jsonEncode({'libraryId': id, 'libraryName': name});
+  static String encode({
+    required String id,
+    required String name,
+    String? publishedFingerprint,
+  }) => jsonEncode({
+    'libraryId': id,
+    'libraryName': name,
+    if (publishedFingerprint != null)
+      'publishedFingerprint': publishedFingerprint,
+  });
 
   /// Parses `identity.json` content, or null when it is unusable.
   ///
@@ -66,6 +84,15 @@ final class BackupIdentity {
     final name = rawName is String
         ? NetworkName.normalizeOrNull(rawName) ?? ''
         : '';
-    return BackupIdentity(id: id, name: name);
+    final rawFingerprint = decoded['publishedFingerprint'];
+    final fingerprint =
+        rawFingerprint is String && LibraryFingerprint.isValid(rawFingerprint)
+        ? rawFingerprint
+        : null;
+    return BackupIdentity(
+      id: id,
+      name: name,
+      publishedFingerprint: fingerprint,
+    );
   }
 }

@@ -2,6 +2,8 @@
 /// publish module so each file remains below the 500-line architecture ratchet.
 library;
 
+import 'package:pitaka/core/di/src/database_providers.dart';
+import 'package:pitaka/core/di/src/library_providers.dart';
 import 'package:pitaka/core/di/src/platform_providers.dart';
 import 'package:pitaka/core/di/src/publish_providers.dart';
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_artifact_store.dart';
@@ -10,6 +12,8 @@ import 'package:pitaka/features/publish/application/cloudflare/cloudflare_publis
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_replacement_preparation.dart';
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_verified_state_commit.dart';
 import 'package:pitaka/features/publish/application/cloudflare/publish_to_cloudflare_use_case.dart';
+import 'package:pitaka/features/publish/application/cloudflare/setup_cloudflare_site.dart';
+import 'package:pitaka/features/publish/application/cloudflare/verify_cloudflare_address.dart';
 import 'package:pitaka/features/publish/application/site/active_publish_target.dart';
 import 'package:pitaka/features/publish/application/site/publish_snapshot_builder.dart';
 import 'package:pitaka/features/publish/infrastructure/file_publish_artifact_store.dart';
@@ -118,6 +122,43 @@ Future<PublishToCloudflareUseCaseFactory> publishToCloudflareUseCase(
     timingSink: timingSink,
   );
 }
+
+/// Marker-only manual-address verification (D.2), never a normal publication.
+@riverpod
+VerifyCloudflareAddress verifyCloudflareAddress(
+  VerifyCloudflareAddressRef ref,
+) => VerifyCloudflareAddress(
+  api: ref.watch(cloudflareApiProvider),
+  verifier: ref.watch(publishedSiteVerifierProvider),
+  codec: ref.watch(publishMarkerCodecProvider),
+  sleep: Future<void>.delayed,
+  clock: ref.watch(clockProvider),
+);
+
+/// Staged setup commands. Every mutating call is invoked inside the shared
+/// [publishOperationQueueProvider] by the outer connection controller.
+@riverpod
+Future<SetupCloudflareSite> setupCloudflareSite(
+  SetupCloudflareSiteRef ref,
+) async => SetupCloudflareSite(
+  accountApi: ref.watch(cloudflareApiProvider),
+  deployApi: ref.watch(cloudflareApiProvider),
+  credentials: ref.watch(cloudflareCredentialStoreProvider),
+  hostState: await ref.watch(publishHostStateRepositoryProvider.future),
+  verifyAddress: ref.watch(verifyCloudflareAddressProvider),
+  clock: ref.watch(clockProvider),
+  catalogueIsEmpty: () async {
+    // Fail closed for the remote site: an unreadable local catalogue must
+    // never authorize a destructive verification deploy.
+    final items = await ref.read(catalogueItemRepositoryProvider.future);
+    final titles = await ref.read(periodicalRepositoryProvider.future);
+    final books = await items.getAll();
+    if (books.isLeft()) return true;
+    final series = await titles.listAll();
+    if (series.isLeft()) return true;
+    return books.toNullable()!.isEmpty && series.toNullable()!.isEmpty;
+  },
+);
 
 /// Active-host target resolution shared by both ordinary publish commands.
 @riverpod

@@ -96,12 +96,14 @@ final class AvailabilityPublishRunner {
     required CloudflareAvailabilityPublish cloudflare,
     required PublishManifestGateway gitHubRecord,
     required CloudflareManifestStore cloudflareRecord,
+    Future<Either<Failure, Unit>> Function(PublishTarget target)? checkTarget,
   }) : _queue = queue,
        _resolveTarget = resolveTarget,
        _gitHub = gitHub,
        _cloudflare = cloudflare,
        _gitHubRecord = gitHubRecord,
-       _cloudflareRecord = cloudflareRecord;
+       _cloudflareRecord = cloudflareRecord,
+       _checkTarget = checkTarget;
 
   final SerialOpQueue _queue;
   final Future<Either<Failure, PublishTarget>> Function() _resolveTarget;
@@ -109,6 +111,8 @@ final class AvailabilityPublishRunner {
   final CloudflareAvailabilityPublish _cloudflare;
   final PublishManifestGateway _gitHubRecord;
   final CloudflareManifestStore _cloudflareRecord;
+  final Future<Either<Failure, Unit>> Function(PublishTarget target)?
+  _checkTarget;
 
   /// Shown when a use case throws instead of answering. A bug, not a site
   /// fact: nothing is claimed, and the lane retries later (AV11).
@@ -132,6 +136,14 @@ final class AvailabilityPublishRunner {
           return AvailabilityRunBlocked(
             _reasonFor(resolved.swap().toNullable()!),
           );
+        }
+        final check = _checkTarget;
+        if (check != null) {
+          final allowed = await check(target);
+          final failure = allowed.swap().toNullable();
+          if (failure != null) {
+            return AvailabilityRunBlocked(_reasonFor(failure));
+          }
         }
         if (update is AvailabilityDelete && !_recordShowsFile(target)) {
           return AvailabilityRunFinished(

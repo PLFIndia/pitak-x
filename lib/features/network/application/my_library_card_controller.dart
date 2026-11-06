@@ -14,8 +14,8 @@ library;
 
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/features/network/application/build_own_descriptor.dart';
+import 'package:pitaka/features/network/application/own_fingerprint.dart';
 import 'package:pitaka/features/network/domain/value_objects/library_card_payload.dart';
-import 'package:pitaka/features/network/domain/value_objects/library_fingerprint.dart';
 import 'package:pitaka/features/network/domain/value_objects/network_name.dart';
 import 'package:pitaka/features/settings/application/settings_controller.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
@@ -40,7 +40,10 @@ class MyLibraryCardController extends _$MyLibraryCardController {
         .current();
     final own = identity.toNullable();
     if (own == null) return null;
-    final fingerprint = LibraryFingerprint.of(own.id);
+    final fingerprint = ownFingerprintPartsOf(
+      libraryId: own.id,
+      publishedFingerprint: own.publishedFingerprint,
+    );
     if (fingerprint == null) return null;
     // Same name rule as the published descriptor (§5.5): an unusable name
     // falls back rather than producing a card nobody recognises.

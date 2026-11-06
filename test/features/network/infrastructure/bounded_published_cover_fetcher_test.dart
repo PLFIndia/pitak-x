@@ -120,6 +120,19 @@ void main() {
       expect(decodedInput, raw);
     });
 
+    test('detailed restore result keeps raw-byte accounting', () async {
+      final raw = jpegBytes();
+      final adapter = fetcher(
+        streaming([raw]),
+        decode: (bytes) async => Uint8List.fromList(const [1, 2, 3]),
+      );
+
+      final result = await adapter.fetchDetailed(sameSite());
+
+      expect(result.bytes, [1, 2, 3]);
+      expect(result.sourceByteCount, raw.length);
+    });
+
     test('a real decode produces a JPEG, never a raw download', () async {
       final gif = img.encodeGif(
         img.Image(width: 8, height: 8)
@@ -170,6 +183,9 @@ void main() {
       );
       expect(await adapter.fetch(sameSite()), isNull);
       expect(aborted, isTrue);
+      final detailed = await adapter.fetchDetailed(sameSite());
+      expect(detailed.bytes, isNull);
+      expect(detailed.sourceByteCount, 128);
     });
 
     test('an honest oversized Content-Length is refused unread', () async {

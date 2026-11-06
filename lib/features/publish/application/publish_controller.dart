@@ -107,6 +107,14 @@ class PublishController extends _$PublishController implements PublishReads {
       return CloudflarePublishOutcomes.failure(targetFailure);
     }
     final target = resolved.toNullable()!;
+    if (!verificationOnly) {
+      final guard = await ref.read(preRestorePublishGuardProvider.future);
+      final allowed = await guard.call(target);
+      final guardFailure = allowed.swap().toNullable();
+      if (guardFailure != null) {
+        return CloudflarePublishOutcomes.failure(guardFailure);
+      }
+    }
     if (target is GitHubPublishTarget &&
         (confirmation != null || verificationOnly)) {
       return const PublishFailure(
@@ -297,6 +305,7 @@ class PublishController extends _$PublishController implements PublishReads {
 
     final built = BuildOwnDescriptor.build(
       libraryId: own.id,
+      publishedFingerprint: settings.publishedFingerprint,
       libraryName: settings.libraryName,
       siteUrl: siteUrl,
       sharing: settings.publishLocationSharing,

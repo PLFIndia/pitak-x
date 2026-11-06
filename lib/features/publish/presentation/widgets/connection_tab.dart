@@ -15,6 +15,7 @@ import 'package:pitaka/features/publish/presentation/widgets/cloudflare_connecti
 import 'package:pitaka/features/publish/presentation/widgets/github_connection_dialogs.dart';
 import 'package:pitaka/features/publish/presentation/widgets/github_tile.dart';
 import 'package:pitaka/features/publish/presentation/widgets/publish_card.dart';
+import 'package:pitaka/features/publish/presentation/widgets/restore_from_site_section.dart';
 
 /// The hosting-provider and current-site connection surface.
 class ConnectionTab extends ConsumerStatefulWidget {
@@ -170,6 +171,7 @@ class _ConnectionTabState extends ConsumerState<ConnectionTab> {
         ),
         const CloudflareConnectionSection(),
         const PublishCard(),
+        const RestoreFromSiteSection(),
         // Built only when this build runs the lane (true since plan S8; the
         // build's kill switch). `main.dart` has already started the lane.
         if (ref.watch(availabilityLaneActivatedProvider))

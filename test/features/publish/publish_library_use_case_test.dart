@@ -11,12 +11,14 @@ import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/value_objects/item_details.dart';
 import 'package:pitaka/features/network/domain/entities/network_library.dart';
 import 'package:pitaka/features/network/domain/repositories/network_repository.dart';
+import 'package:pitaka/features/network/infrastructure/published_catalogue_codec.dart';
 import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
 import 'package:pitaka/features/periodicals/domain/value_objects/periodical_frequency.dart';
 import 'package:pitaka/features/publish/application/github_artifact_store.dart';
 import 'package:pitaka/features/publish/application/publish_controller.dart';
 import 'package:pitaka/features/publish/application/publish_cover_decider.dart';
 import 'package:pitaka/features/publish/application/publish_library_use_case.dart';
+import 'package:pitaka/features/publish/application/restore/pre_restore_publish_guard.dart';
 import 'package:pitaka/features/publish/application/site/catalogue_section_builder.dart';
 import 'package:pitaka/features/publish/application/site/events_section_builder.dart';
 import 'package:pitaka/features/publish/application/site/publish_host_state_repository.dart';
@@ -35,6 +37,7 @@ import 'package:pitaka/features/publish/domain/publish_export.dart';
 import 'package:pitaka/features/publish/domain/publish_item_keys.dart';
 import 'package:pitaka/features/publish/domain/publish_manifest.dart';
 import 'package:pitaka/features/publish/domain/publish_target.dart';
+import 'package:pitaka/features/publish/domain/restore/restore_identity_journal.dart';
 import 'package:pitaka/features/publish/domain/site/publish_proof_path.dart';
 import 'package:pitaka/features/publish/domain/site/publish_snapshot.dart';
 import 'package:pitaka/features/publish/domain/site/publish_state.dart';
@@ -1627,6 +1630,16 @@ void main() {
             // The pre-check reads through the structured port (ADR 0019
             // Decision 10); the same counted fake keeps this test offline.
             publishedSiteReadVerifierProvider.overrideWithValue(liveSite),
+            preRestorePublishGuardProvider.overrideWith(
+              (ref) async => PreRestorePublishGuard(
+                items: fixture.books,
+                periodicals: fixture.periodicals,
+                journal: _EmptyRestoreJournal(),
+                reader: _AbsentRecoveryReader(),
+                decode: (bytes) async =>
+                    const PublishedCatalogueCodec().decode(bytes),
+              ),
+            ),
             viewerHtmlFactoryProvider.overrideWithValue(({
               required libraryName,
               required contact,
@@ -2507,4 +2520,24 @@ void main() {
       expect(api.deleted, isNot(contains('.nojekyll')));
     });
   });
+}
+
+final class _EmptyRestoreJournal implements RestoreIdentityJournalStore {
+  @override
+  Future<Either<Failure, RestoreIdentityJournal?>> load() async => right(null);
+  @override
+  Future<Either<Failure, Unit>> save(RestoreIdentityJournal journal) async =>
+      right(unit);
+  @override
+  Future<Either<Failure, Unit>> clear() async => right(unit);
+}
+
+final class _AbsentRecoveryReader implements PublishedSiteReadVerifier {
+  @override
+  Future<PublishedSiteReadOutcome> readOutcome({
+    required String siteUrl,
+    required String path,
+    required int maxBytes,
+    String? cacheBuster,
+  }) async => const PublishedSiteReadAbsent();
 }

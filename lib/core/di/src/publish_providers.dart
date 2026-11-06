@@ -26,8 +26,6 @@ import 'package:pitaka/features/library/application/materialize_remote_cover_use
 import 'package:pitaka/features/publish/application/availability/availability_lane_repository.dart';
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_manifest_store.dart';
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_publish_marker_probe.dart';
-import 'package:pitaka/features/publish/application/cloudflare/setup_cloudflare_site.dart';
-import 'package:pitaka/features/publish/application/cloudflare/verify_cloudflare_address.dart';
 import 'package:pitaka/features/publish/application/github_device_flow.dart';
 import 'package:pitaka/features/publish/application/publish_cover_decider.dart';
 import 'package:pitaka/features/publish/application/publish_library_use_case.dart'
@@ -203,32 +201,6 @@ CloudflareCredentialStore cloudflareCredentialStore(
 @riverpod
 PublishMarkerCodec publishMarkerCodec(PublishMarkerCodecRef ref) =>
     const CloudflarePublishMarkerCodec();
-
-/// Marker-only manual-address verification (D.2), never a normal publication.
-@riverpod
-VerifyCloudflareAddress verifyCloudflareAddress(
-  VerifyCloudflareAddressRef ref,
-) => VerifyCloudflareAddress(
-  api: ref.watch(cloudflareApiProvider),
-  verifier: ref.watch(publishedSiteVerifierProvider),
-  codec: ref.watch(publishMarkerCodecProvider),
-  sleep: Future<void>.delayed,
-  clock: ref.watch(clockProvider),
-);
-
-/// Staged setup commands. Every mutating call is invoked inside the shared
-/// [publishOperationQueueProvider] by the outer connection controller.
-@riverpod
-Future<SetupCloudflareSite> setupCloudflareSite(
-  SetupCloudflareSiteRef ref,
-) async => SetupCloudflareSite(
-  accountApi: ref.watch(cloudflareApiProvider),
-  deployApi: ref.watch(cloudflareApiProvider),
-  credentials: ref.watch(cloudflareCredentialStoreProvider),
-  hostState: await ref.watch(publishHostStateRepositoryProvider.future),
-  verifyAddress: ref.watch(verifyCloudflareAddressProvider),
-  clock: ref.watch(clockProvider),
-);
 
 /// Encrypted-at-rest GitHub publish credentials (token + clientId + repo).
 @Riverpod(keepAlive: true)

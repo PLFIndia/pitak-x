@@ -121,6 +121,35 @@ void main() {
     },
   );
 
+  test(
+    'own membership detection uses a recovered published fingerprint',
+    () async {
+      final fingerprint = 'f' * 64;
+      final prefs = await container.read(sharedPreferencesProvider.future);
+      await prefs.setString('published_fingerprint', fingerprint);
+      repo.rows = [const NetworkLibrary(id: 1, siteUrl: hubUrl)];
+      fetcher.results[descriptorUrlOf(hubUrl)] = DescriptorFetched(
+        LibraryDescriptor(
+          fingerprint: 'b' * 64,
+          name: 'Hub',
+          siteUrl: hubUrl,
+          updatedAt: 1,
+          members: [
+            MemberEntry(
+              fingerprint: fingerprint,
+              siteUrl: 'https://me.github.io/',
+            ),
+          ],
+        ),
+      );
+
+      final report = await controller().refresh();
+
+      expect(report?.pendingMemberships, 1);
+      expect(fingerprint, isNot(LibraryFingerprint.of(rawId)));
+    },
+  );
+
   test('one run at a time: a second refresh() while busy is refused', () async {
     repo.rows = [const NetworkLibrary(id: 1, siteUrl: hubUrl)];
     final gate = Completer<void>();

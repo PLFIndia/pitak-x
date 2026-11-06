@@ -7,7 +7,7 @@ part of 'network_refresh_controller.dart';
 // **************************************************************************
 
 String _$networkRefreshControllerHash() =>
-    r'771607ad786fccf1d3ab84a2f0a5bf0e3c353f34';
+    r'899d9d4c74a29774be8240a7fcde8a4392e60a7f';
 
 /// Runs network refreshes: state is `AsyncLoading` while a run is in flight,
 /// otherwise the last [RefreshReport] (null = never refreshed yet).

@@ -32,16 +32,17 @@ abstract interface class SettingsRepository {
   /// mint/persist is a left — callers must not proceed with a phantom ID.
   Future<Either<Failure, String>> getOrCreateLibraryId();
 
-  /// Replaces the stored library ID with [id] (adopted from an incoming file on
-  /// a Join/Overwrite, or scanned from a pairing QR). The caller MUST pass a
-  /// value already validated by `LibraryId.normalizeOrNull` — this method does
-  /// not re-validate.
+  /// Replaces the stored library ID with [id] and clears any recovered
+  /// published-fingerprint override. The caller MUST pass a value already
+  /// validated by `LibraryId.normalizeOrNull` — this method does not
+  /// re-validate.
   Future<Either<Failure, Unit>> setLibraryId(String id);
 
-  /// Mints a BRAND-NEW library ID (CSPRNG), replacing any existing one, and
-  /// returns it. Used by "Start a new library" — it detaches this device from
-  /// the previous namespace (PLAN-merge.md D40). Destructive to pairing, not to
-  /// data, so the UI guards it behind a confirm.
+  /// Mints a BRAND-NEW library ID (CSPRNG), replacing any existing one and
+  /// clearing its published-fingerprint override. Used by "Start a new
+  /// library" — it detaches this device from the previous namespace
+  /// (PLAN-merge.md D40). Destructive to pairing, not to data, so the UI
+  /// guards it behind a confirm.
   Future<Either<Failure, String>> regenerateLibraryId();
 
   /// Persists the maintainer name (stamped onto new books).
@@ -95,4 +96,14 @@ abstract interface class SettingsRepository {
   /// Persists whether a successful ISBN scan immediately searches online.
   /// Non-secret; default false (scan fills the ISBN only).
   Future<Either<Failure, Unit>> setLookupIsbnAfterScan({required bool enabled});
+}
+
+/// Persistence for the optional public identity recovered from a website.
+/// Separate from [SettingsRepository] so existing test repositories need no
+/// knowledge of publishing; production implements both interfaces.
+// A nominal port makes the production/test capability explicit.
+// ignore: one_member_abstracts
+abstract interface class PublishedFingerprintStore {
+  /// Stores [fingerprint], or clears the override when it is null.
+  Future<Either<Failure, Unit>> setPublishedFingerprint(String? fingerprint);
 }

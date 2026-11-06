@@ -11,6 +11,7 @@ import 'package:pitaka/features/publish/domain/publish_manifest.dart';
 import 'package:pitaka/features/publish/domain/site/publish_host.dart';
 import 'package:pitaka/features/publish/domain/site/publish_host_state.dart';
 import 'package:pitaka/features/publish/infrastructure/commit_recording_github_api.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../features/publish/support/availability_lane_fakes.dart';
 import '../../features/publish/support/cloudflare_fakes.dart';
@@ -101,6 +102,8 @@ void main() {
   });
 
   test('the runner wires both hosts over the shared providers', () async {
+    TestWidgetsFlutterBinding.ensureInitialized();
+    SharedPreferences.setMockInitialValues({});
     final tmp = Directory.systemTemp.createTempSync('pitak_lane_di');
     addTearDown(() => tmp.deleteSync(recursive: true));
     final container = ProviderContainer(

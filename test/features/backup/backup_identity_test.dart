@@ -16,6 +16,25 @@ void main() {
       expect(parsed.name, 'My Library');
     });
 
+    test(
+      'published fingerprint round-trips and malformed values are ignored',
+      () {
+        final fingerprint = 'f' * 64;
+        final parsed = BackupIdentity.fromJson(
+          BackupIdentity.encode(
+            id: validId,
+            name: 'My Library',
+            publishedFingerprint: fingerprint,
+          ),
+        );
+        expect(parsed?.publishedFingerprint, fingerprint);
+        final hostile = BackupIdentity.fromJson(
+          '{"libraryId":"$validId","publishedFingerprint":"NOT-HEX"}',
+        );
+        expect(hostile?.publishedFingerprint, isNull);
+      },
+    );
+
     test('malformed JSON → null (never throws)', () {
       expect(BackupIdentity.fromJson('{not json'), isNull);
     });

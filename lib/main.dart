@@ -53,7 +53,10 @@ class PitakaApp extends ConsumerWidget {
       // is published by itself. The notifier decides everything else — it
       // starts nothing while `availabilityLaneActivated` is false — so there
       // is nothing to do with its value here.
-      ..listen(availabilityAutoPublisherProvider, (_, _) {});
+      ..listen(availabilityAutoPublisherProvider, (_, _) {})
+      // Complete a site restore that committed its catalogue but was
+      // interrupted before the public identity preference was saved.
+      ..listen(publishedIdentityStartupRecoveryProvider, (_, _) {});
 
     // AppLockObserver sits ABOVE MaterialApp: it forwards lifecycle events to
     // the app-lock controller and, while locked, intercepts the Android back

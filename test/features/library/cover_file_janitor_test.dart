@@ -1,8 +1,10 @@
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/features/import_export/infrastructure/file_bundle_cover_store.dart';
 import 'package:pitaka/features/library/application/cover_file_janitor.dart';
 import 'package:pitaka/features/library/domain/cover_file_coordinator.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
@@ -115,6 +117,35 @@ void main() {
     expect(removed, 1);
     // Referenced covers, the logo, and a non-cover file all survive.
     expect(leaves(), {a, b, logo, 'notes.txt'});
+  });
+
+  test('a non-JPEG source staged as JPEG is cleaned after a crash', () async {
+    const crashLeaf = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee.jpg';
+    final batch = FileBundleCoverStore(
+      coversDir: tmp.path,
+      newId: () => 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee',
+    ).begin();
+    // The restore mapper has already normalized remote.png to restore-0.jpg;
+    // the generic bundle store preserves only that synthetic suffix.
+    final staged = await batch.stage(
+      'restore-0.jpg',
+      Uint8List.fromList([1, 2, 3]),
+    );
+    expect(staged.toNullable(), 'covers/$crashLeaf');
+    // No commit/rollback: the process died after staging. The synthetic .jpg
+    // leaf is recognised by the normal startup janitor.
+    final janitor = CoverFileJanitor(
+      books: const _Books([]),
+      wishlist: const _Wishlist([]),
+      periodicals: const _Periodicals([]),
+      settings: _Settings(),
+      store: store,
+      coordinator: CoverFileCoordinator(),
+    );
+
+    // The four unreferenced fixture covers are removed too.
+    expect(await janitor.sweep(), 5);
+    expect(File('${tmp.path}/$crashLeaf').existsSync(), isFalse);
   });
 
   test('sweep deletes NOTHING when the database cannot be read', () async {

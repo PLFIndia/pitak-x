@@ -419,3 +419,15 @@ PublishedCoverFetcher publishedCoverFetcher(
   );
   return fetcher.fetch;
 }
+
+/// Restore-specific cover port with raw-byte accounting for aggregate budgets.
+@riverpod
+PublishedCoverDownloadFetcher publishedCoverDownloadFetcher(
+  PublishedCoverDownloadFetcherRef ref,
+  String siteUrl,
+) {
+  final fetcher = BoundedPublishedCoverFetcher(
+    client: ref.watch(publishedViewerHttpClientProvider(siteUrl)),
+  );
+  return fetcher.fetchDetailed;
+}

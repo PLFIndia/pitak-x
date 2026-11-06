@@ -33,6 +33,13 @@ const Guide backupGuide = Guide(
         ),
         (want: 'Bring that copy back', use: '**Restore backup**'),
         (
+          want: 'Get my catalogue back after losing the phone, with no backup',
+          use:
+              '**Publish to web → Restore from this site** (needs an empty '
+              'app; puts back titles, authors, ISBNs and covers from your web '
+              'page — not notes, locations or loans)',
+        ),
+        (
           want: 'Share or print my book list',
           use: '**Export** → JSON, CSV or PDF',
         ),

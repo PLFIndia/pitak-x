@@ -87,7 +87,7 @@ void main() {
       // §3.3: one chip, "What goes online" (2), the host table (3 rows),
       // the example, 6 GitHub steps, Cloudflare (2), "Every time after
       // that", moving, 3 "Good to know" (plan C.9).
-      GuideId.publish: [1, 2, 3, 1, 6, 2, 1, 1, 3],
+      GuideId.publish: [1, 2, 3, 1, 6, 2, 1, 4, 1, 3],
       // §3.4: one chip, the four values Pitak asks for, 6 token steps, 5
       // finishing steps, the "already on GitHub" paragraph, 3 "Good to know".
       GuideId.cloudflare: [1, 4, 6, 5, 1, 3],
@@ -95,7 +95,7 @@ void main() {
       GuideId.events: [0, 5, 3, 3],
       GuideId.map: [0, 6, 3, 3],
       // S11 (plan CV6): "what is inside" gained the publishing-record line.
-      GuideId.backup: [0, 5, 4, 2, 3, 1, 1, 1, 2],
+      GuideId.backup: [0, 6, 4, 2, 3, 1, 1, 1, 2],
       GuideId.vault: [0, 3, 3, 3, 3],
       GuideId.network: [0, 1, 2, 5, 0],
     };

@@ -15,7 +15,8 @@ import 'package:pitaka/features/settings/domain/settings_repository.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// Persists [AppSettings] via [SharedPreferences].
-class PrefsSettingsRepository implements SettingsRepository {
+class PrefsSettingsRepository
+    implements SettingsRepository, PublishedFingerprintStore {
   /// Creates the repository over [_prefs].
   const PrefsSettingsRepository(this._prefs);
 
@@ -24,6 +25,7 @@ class PrefsSettingsRepository implements SettingsRepository {
   static const _themeKey = 'theme_mode';
   static const _libraryNameKey = 'library_name';
   static const _libraryIdKey = 'library_id';
+  static const _publishedFingerprintKey = 'published_fingerprint';
   static const _maintainerNameKey = 'maintainer_name';
   static const _librarySortKey = 'library_sort';
   static const _loadRemoteCoversKey = 'load_remote_covers';
@@ -55,6 +57,7 @@ class PrefsSettingsRepository implements SettingsRepository {
       themeMode: AppThemeModeX.fromToken(_prefs.getString(_themeKey)),
       libraryName: _prefs.getString(_libraryNameKey) ?? '',
       libraryId: _prefs.getString(_libraryIdKey) ?? '',
+      publishedFingerprint: _readPublishedFingerprint(),
       maintainerName: _prefs.getString(_maintainerNameKey) ?? '',
       librarySort: LibrarySortX.fromToken(_prefs.getString(_librarySortKey)),
       loadRemoteCovers: _prefs.getBool(_loadRemoteCoversKey) ?? false,
@@ -104,13 +107,59 @@ class PrefsSettingsRepository implements SettingsRepository {
 
   @override
   Future<Either<Failure, Unit>> setLibraryId(String id) =>
-      _writeString(_libraryIdKey, id.trim());
+      _replaceLibraryId(id.trim());
 
   @override
   Future<Either<Failure, String>> regenerateLibraryId() async {
     final minted = _mintLibraryId();
-    final saved = await _writeString(_libraryIdKey, minted);
+    final saved = await _replaceLibraryId(minted);
     return saved.match(left, (_) => right(minted));
+  }
+
+  /// Changes the private ID and clears its public override as one logical
+  /// operation. Preferences has no multi-key transaction, so a failed clear
+  /// triggers a best-effort ID rollback; the controller reloads after a left
+  /// and publishes the actual state if even that rollback was refused.
+  Future<Either<Failure, Unit>> _replaceLibraryId(String id) async {
+    final previousId = _prefs.getString(_libraryIdKey);
+    final written = await _writeString(_libraryIdKey, id);
+    if (written.isLeft()) return written;
+    final cleared = await removePrefs(
+      _prefs,
+      _publishedFingerprintKey,
+      what: 'settings identity clear',
+    );
+    if (cleared.isRight()) return cleared;
+    if (previousId == null) {
+      await removePrefs(_prefs, _libraryIdKey, what: 'settings ID rollback');
+    } else {
+      await _writeString(_libraryIdKey, previousId);
+    }
+    return cleared;
+  }
+
+  String? _readPublishedFingerprint() {
+    final stored = _prefs.getString(_publishedFingerprintKey);
+    return stored != null && AppSettings.isValidPublishedFingerprint(stored)
+        ? stored
+        : null;
+  }
+
+  @override
+  Future<Either<Failure, Unit>> setPublishedFingerprint(
+    String? fingerprint,
+  ) async {
+    if (fingerprint == null) {
+      return removePrefs(
+        _prefs,
+        _publishedFingerprintKey,
+        what: 'settings fingerprint clear',
+      );
+    }
+    if (!AppSettings.isValidPublishedFingerprint(fingerprint)) {
+      return left(const ValidationFailure('Invalid published fingerprint.'));
+    }
+    return _writeString(_publishedFingerprintKey, fingerprint);
   }
 
   /// Mints a 32-char lowercase-hex ID from 16 CSPRNG bytes (§6.4: never the

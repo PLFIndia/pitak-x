@@ -36,12 +36,14 @@ final class SetupCloudflareSite {
     required PublishHostStateRepository hostState,
     required VerifyCloudflareAddress verifyAddress,
     required int Function() clock,
+    Future<bool> Function()? catalogueIsEmpty,
   }) : _accountApi = accountApi,
        _deployApi = deployApi,
        _credentials = credentials,
        _hostState = hostState,
        _verifyAddress = verifyAddress,
-       _clock = clock;
+       _clock = clock,
+       _catalogueIsEmpty = catalogueIsEmpty;
 
   final CloudflareAccountApi _accountApi;
   final CloudflareDeployApi _deployApi;
@@ -49,6 +51,7 @@ final class SetupCloudflareSite {
   final PublishHostStateRepository _hostState;
   final VerifyCloudflareAddress _verifyAddress;
   final int Function() _clock;
+  final Future<bool> Function()? _catalogueIsEmpty;
 
   /// Subdomain commands over the same ports; cheap to build per call.
   CloudflareSubdomainCommands get _subdomains => CloudflareSubdomainCommands(
@@ -261,6 +264,23 @@ final class SetupCloudflareSite {
     final exists = presence.exists;
     final hasContent = presence.hasContent;
     final selected = current.selectWorker(worker); // Prospective record only.
+    // Recovery must never destroy the only published copy. Authenticated
+    // Worker presence + an API-read account subdomain prove the address
+    // without a marker deployment. A manual subdomain has no such proof, so
+    // its destructive verification is refused while the catalogue is empty.
+    if (exists && hasContent && (await _catalogueIsEmpty?.call() ?? false)) {
+      if (selected.addressConfirmed) {
+        return _finalize(selected.markAddressProven());
+      }
+      return left(
+        const ValidationFailure(
+          'This Worker may hold your only recovery copy. Pitak will not '
+          'replace it to verify a manual address while your catalogue is '
+          'empty. Reconnect with API-confirmed account-subdomain discovery, '
+          'then use Restore from this site.',
+        ),
+      );
+    }
     if (selected.addressConfirmed) {
       if (hasContent && !replacementConsent) {
         return right(

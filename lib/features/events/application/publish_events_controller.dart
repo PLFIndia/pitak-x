@@ -77,6 +77,14 @@ class PublishEventsController extends _$PublishEventsController {
       return CloudflarePublishOutcomes.failure(targetFailure);
     }
     final target = resolved.toNullable()!;
+    if (!verificationOnly) {
+      final guard = await ref.read(preRestorePublishGuardProvider.future);
+      final allowed = await guard.call(target);
+      final guardFailure = allowed.swap().toNullable();
+      if (guardFailure != null) {
+        return CloudflarePublishOutcomes.failure(guardFailure);
+      }
+    }
     if (target is GitHubPublishTarget &&
         (confirmation != null || verificationOnly)) {
       return const PublishFailure(

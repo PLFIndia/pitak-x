@@ -146,8 +146,11 @@ class CreateBackupUseCase {
       final current = await namespace.current();
       return current.match(
         (_) => null,
-        (identity) =>
-            BackupIdentity.encode(id: identity.id, name: identity.name),
+        (identity) => BackupIdentity.encode(
+          id: identity.id,
+          name: identity.name,
+          publishedFingerprint: identity.publishedFingerprint,
+        ),
       );
     } on Object {
       return null; // best-effort: never block the catalogue backup
