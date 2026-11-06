@@ -1,0 +1,3 @@
+* Home Scan to add now follows Look up ISBN after scanning, with the same default-off privacy and manual Lookup option.
+* Prevents duplicate requests when an automatic ISBN lookup is already running.
+* Network map has a clearer coloured map-and-pin icon.

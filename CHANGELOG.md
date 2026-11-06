@@ -14,6 +14,17 @@ heading as part of the `chore(release):` commit.
 
 ## [Unreleased]
 
+## [1.9.3] - 2026-11 (tag `1.9.3`, versionCode 35)
+
+Release sentinel (`tool/release_build.sh --sentinel`): `NetworkMapIcon`.
+
+AAB sha256: `5767a421d89a116f76105d3ced03a3a2f697b99fa07411acf33318cd15d16df5`.
+The 216-second `tool/release_build.sh` build (its own `flutter clean`, locked
+dependencies, Rust for three ABIs and Dart AOT) passed upload-signature,
+package/version and fresh arm64 Dart-sentinel verification. Built from the
+local `main` working tree at HEAD `4945b8f` plus the uncommitted release and
+follow-up changes; `pubspec.lock` was unchanged.
+
 ### Fixed
 - **Home quick-add honours ISBN lookup after scanning:** Library → Scan to add
   now runs one metadata lookup for a new ISBN when the existing setting is on.
