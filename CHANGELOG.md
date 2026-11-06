@@ -14,6 +14,29 @@ heading as part of the `chore(release):` commit.
 
 ## [Unreleased]
 
+### Fixed
+- **Home quick-add honours ISBN lookup after scanning:** Library → Scan to add
+  now runs one metadata lookup for a new ISBN when the existing setting is on.
+  Default-off and unavailable settings stay manual, an in-flight automatic
+  lookup cannot be duplicated by the explicit Lookup button, and existing-item
+  and magazine routes are unchanged.
+
+### Changed
+- **Clearer Network map action:** the home app bar uses a filled primary-colour
+  map with a small tertiary-colour location pin; its tooltip and destination
+  are unchanged.
+
+## [1.9.2] - 2026-11 (tag `1.9.2`, versionCode 34)
+
+Release sentinel (`tool/release_build.sh --sentinel`): `IsbnLookupField`.
+
+AAB sha256: `5da0faccbea67357e14cbc3f8412357456287b83ddb46df0d3fabf06d779ea7a`.
+The 216-second `tool/release_build.sh` build (its own `flutter clean`, locked
+dependencies, Rust for three ABIs and Dart AOT) passed upload-signature,
+package/version and fresh arm64 Dart-sentinel verification. Built from `main`
+at `4945b8f` plus this release metadata; `lib/` and `pubspec.lock` were
+unchanged by the release preparation.
+
 ### Added
 - **Optional immediate ISBN lookup after scanning:** Settings → Library gains
   **Look up ISBN after scanning** (default off). Add book and Add to wishlist
