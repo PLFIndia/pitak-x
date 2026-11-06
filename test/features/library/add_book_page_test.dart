@@ -228,6 +228,33 @@ void main() {
     expect(repo.books.single.itemUid, isNotNull);
   });
 
+  testWidgets('edit mode: an unset addedDate keeps the date label empty', (
+    tester,
+  ) async {
+    // The constructor's default addedDate is the documented 0/unset sentinel.
+    const legacy = CatalogueItem(id: 1, itemUid: 'uid-legacy', title: 'Legacy');
+    final repo = _MemRepo()..books.add(legacy);
+    await tester.pumpWidget(_host(repo, book: legacy));
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.text('Date added'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+
+    final dateField = find.byWidgetPredicate(
+      (widget) =>
+          widget is InputDecorator &&
+          widget.decoration.labelText == 'Date added',
+    );
+    final dateRow = tester.widget<Row>(
+      find.descendant(of: dateField, matching: find.byType(Row)),
+    );
+    expect((dateRow.children.first as Text).data, isEmpty);
+    expect(find.textContaining('1970'), findsNothing);
+    expect(find.textContaining('1969'), findsNothing);
+  });
+
   testWidgets('edit mode: prefills and updates in place, preserving id', (
     tester,
   ) async {

@@ -33,6 +33,11 @@ final class ReminderTemplatesPage extends ConsumerWidget {
                     ref.invalidate(reminderTemplatesControllerProvider),
                 child: const Text('Retry'),
               ),
+              const SizedBox(height: 8),
+              OutlinedButton(
+                onPressed: () => _confirmReset(context, ref),
+                child: const Text('Reset to built-in'),
+              ),
             ],
           ),
         ),
@@ -40,6 +45,41 @@ final class ReminderTemplatesPage extends ConsumerWidget {
       ),
     );
   }
+}
+
+Future<void> _confirmReset(BuildContext context, WidgetRef ref) async {
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      title: const Text('Reset message templates?'),
+      content: const Text(
+        'This discards every custom template and restores built-in English. '
+        'Other app settings are not changed.',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(dialogContext).pop(false),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(dialogContext).pop(true),
+          child: const Text('Reset templates'),
+        ),
+      ],
+    ),
+  );
+  if (confirmed != true || !context.mounted) return;
+  final result = await ref
+      .read(reminderTemplatesControllerProvider.notifier)
+      .resetToBuiltIn();
+  if (!context.mounted) return;
+  result.match((_) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text("Couldn't reset message templates. Please try again."),
+      ),
+    );
+  }, (_) {});
 }
 
 final class _TemplateList extends ConsumerWidget {

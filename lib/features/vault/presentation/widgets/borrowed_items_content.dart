@@ -66,6 +66,9 @@ final class BorrowedItemsContent extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final async = ref.watch(borrowedItemsSnapshotProvider);
     return async.when(
+      // Minute ticks and catalogue mutations reload this provider. Keep the
+      // current cards mounted instead of replacing them with a spinner.
+      skipLoadingOnReload: true,
       loading: () => const Center(child: CircularProgressIndicator.adaptive()),
       error: (_, _) => _LoadError(
         onRetry: () => ref.invalidate(borrowedItemsSnapshotProvider),
@@ -240,6 +243,7 @@ final class _LoanList extends StatelessWidget {
         final grid = constraints.maxWidth >= largeScreenMinWidth;
         if (grid) {
           return GridView.builder(
+            key: const PageStorageKey('borrowed-items-grid'),
             padding: const EdgeInsets.all(12),
             gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
               maxCrossAxisExtent: 360,
@@ -263,6 +267,7 @@ final class _LoanList extends StatelessWidget {
           );
         }
         return ListView.separated(
+          key: const PageStorageKey('borrowed-items-list'),
           padding: const EdgeInsets.all(12),
           itemCount: entries.length,
           separatorBuilder: (_, _) => const SizedBox(height: 8),

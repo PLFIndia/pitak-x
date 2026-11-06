@@ -57,11 +57,18 @@ void main() {
     );
   });
 
-  test('formatLoanDate uses local fields, including local midnight', () {
+  test('formatLoanDateOrNull uses local fields, including local midnight', () {
     final localMidnight = DateTime(2026, 11, 6);
     expect(
-      formatLoanDate(localMidnight.millisecondsSinceEpoch),
+      formatLoanDateOrNull(localMidnight.millisecondsSinceEpoch),
       '6 November 2026',
     );
+  });
+
+  test('formatLoanDateOrNull rejects unset and out-of-range stored values', () {
+    expect(formatLoanDateOrNull(null), isNull);
+    for (final epochMillis in [8640000000000001, -8640000000000001]) {
+      expect(formatLoanDateOrNull(epochMillis), isNull);
+    }
   });
 }

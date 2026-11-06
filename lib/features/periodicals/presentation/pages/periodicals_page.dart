@@ -199,8 +199,8 @@ class _PeriodicalRow extends StatelessWidget {
     );
   }
 
-  /// "12 issues · latest 2026-09" — the count always, the newest issue's
-  /// month when any issue carries a date.
+  /// "12 issues · latest 1 September 2026" — the count always, followed by
+  /// the newest issue's full display date when any issue carries one.
   static String _summaryLine(PeriodicalListEntry entry) {
     final count = entry.issueCount;
     final issues = count == 1 ? '1 issue' : '$count issues';

@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/vault/domain/loan_status.dart';
 import 'package:pitaka/features/vault/domain/reminder_template.dart';
 
@@ -118,6 +119,26 @@ void main() {
     }
   });
 
+  test(
+    'template IDs accept the shared limit and reject one unit beyond it',
+    () {
+      expect(
+        ReminderTemplate.validate(
+          _template().copyWith(id: 'x' * ReminderTemplateLimits.maxIdLength),
+        ).isRight(),
+        isTrue,
+      );
+      expect(
+        ReminderTemplate.validate(
+          _template().copyWith(
+            id: 'x' * (ReminderTemplateLimits.maxIdLength + 1),
+          ),
+        ).isLeft(),
+        isTrue,
+      );
+    },
+  );
+
   test('blank and over-limit labels and bodies are rejected', () {
     expect(
       ReminderTemplate.validate(_template().copyWith(name: '  ')).isLeft(),
@@ -159,6 +180,18 @@ void main() {
       dueDate: null,
     );
     expect(result.toNullable(), 'Open *Literal {{dueDate}} and {{itemTitle}}*');
+  });
+
+  test('out-of-range overdue due date returns a typed validation failure', () {
+    final result = renderReminderMessage(
+      template: ReminderTemplate.builtInEnglish,
+      urgency: LoanUrgency.overdue,
+      itemTitle: 'Godaan',
+      dueDate: 8640000000000001,
+    );
+
+    expect(result.isLeft(), isTrue);
+    expect(result.swap().toNullable(), isA<ValidationFailure>());
   });
 
   test('template toString never exposes message bodies', () {

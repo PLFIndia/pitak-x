@@ -196,7 +196,11 @@ class _BorrowedItemsPageState extends ConsumerState<BorrowedItemsPage> {
       }
       final raw = BorrowerContact.decode(entry.borrower.contact).whatsappUri;
       if (raw == null) return;
-      final uri = Uri.parse(raw).replace(queryParameters: {'text': caption});
+      // WhatsApp specifies percent-encoded text. `queryParameters` would use
+      // form encoding (`+` for spaces), which is not verified to decode there.
+      final uri = Uri.parse(
+        raw,
+      ).replace(query: 'text=${Uri.encodeComponent(caption)}');
       final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
       if (mounted && !opened) {
         _show('Could not open WhatsApp on this device.');
@@ -233,8 +237,12 @@ class _BorrowedItemsPageState extends ConsumerState<BorrowedItemsPage> {
   }
 
   bool _canHandOff() {
-    return mounted &&
-        ref.read(vaultSessionControllerProvider).valueOrNull is VaultUnlocked;
+    if (!mounted) return false;
+    final session = ref.read(vaultSessionControllerProvider);
+    // valueOrNull can contain a PREVIOUS VaultUnlocked while the current
+    // session is loading or has failed. Only current data authorizes
+    // disclosure.
+    return session.unwrapPrevious().valueOrNull is VaultUnlocked;
   }
 
   Rect? _shareOrigin(BuildContext buttonContext) {

@@ -1,6 +1,6 @@
 # Borrowed Items and loan reminders — implementation plan
 
-- **Status:** Implementation complete on `reminders`; pubspec OSV scan and real-device verification pending
+- **Status:** The `reminder-fixes.md` and `reminder-issues1.md` code fixes are complete and verified; pubspec OSV scan and real-device verification pending
 - **Date:** 2026-11-06
 - **Scope:** Borrowed Items navigation/page, active-loan cards, reusable message templates, and cover-plus-caption reminder sharing
 
@@ -51,7 +51,7 @@ Custom templates are also required. A maintainer can write and save named templa
 - `CatalogueItemRow`, `CatalogueItemGridCard`, and `ItemCover` provide the visual baseline. `ItemCover` displays local files but can materialize a remote cover when `owner` is non-null; Borrowed Items must pass `owner: null`. Series-cover behavior remains consistent with `IssueCover`.
 - `CatalogueItemRepository` has `getById` but no multi-ID read. A current scan finds 46 direct test implementers in 43 files, so expanding that interface has a broad test cost. V1 uses sequential reads per unique item ID (or a small fixed concurrency bound if needed), never an unbounded `Future.wait` and never a whole-catalogue read.
 - `periodicalCoversProvider` deliberately converts a periodical `listAll` failure to an empty map, and Pending converts catalogue failure to an empty list. Neither fail-soft behavior is suitable for the borrowed-items snapshot.
-- `BorrowerContact` parses phone numbers and builds sanitized dialer/WhatsApp contact URIs. `telUri != null` is the existing Call visibility rule; this is URI sanitization, not proof that the number is valid. Reminder sharing uses the OS share flow, not a `wa.me` message URL.
+- `BorrowerContact` parses phone numbers and builds sanitized dialer/WhatsApp contact URIs. `telUri != null` is the existing Call visibility rule; this is URI sanitization, not proof that the number is valid. Generic cover sharing uses the OS share flow. The maintainer-approved direct text action uses `wa.me`; its browser fallback is an explicit privacy decision in ADR 0022, not an assumption that WhatsApp is installed.
 - `FileShareService.shareBytes` accepts bytes, filename, MIME type, caption text, and iPad origin; `shareText` is the text-only fallback. `ShareOutcome.success` means hand-off only, not sent/delivered (`lib/core/platform/file_share.dart`).
 - `lib/features/publish/infrastructure/local_cover_reader.dart` re-encodes asynchronously with metadata stripping and no raw fallback, but currently buffers the whole file before decoding and returns `null` for every unavailable/failure case. `lib/core/platform/bounded_file_read.dart` supplies the tested streaming-cap pattern. Publish tests pin the downscaler defaults to the 400×600 q80 rendition.
 - `PrefsPublishHostStore` demonstrates one versioned JSON preference key and `writePrefsString`, but its size checks are UTF-16 lengths. `PrefsAvailabilityLaneStore` demonstrates wrong-type handling with `_prefs.get`; `JsonNestingDepth` supplies the pre-parse depth guard. `SerialOpQueue` is the existing tested FIFO for serialized mutations.
@@ -147,7 +147,7 @@ Exact behavior:
 
 - **Usable local cover:** one tap on the generic share icon opens the OS share flow with cover and caption together. The maintainer chooses WhatsApp and the conversation, reviews/edits, and taps Send.
 - **Direct text action:** the separate WhatsApp icon opens the borrower's conversation with only the caption prefilled. It performs no cover read and no generic share-service call, and never claims the message was sent.
-- **Blank or remote-only cover reference:** do not fetch. Offer a clearly labelled text-only choice through `FileShareService.shareText`; never put the message in a `wa.me` URL.
+- **Blank or remote-only cover reference:** do not fetch. Offer a clearly labelled text-only choice through `FileShareService.shareText`. The separate direct WhatsApp text action remains governed by ADR 0022 Decision 7 and performs no cover read.
 - **Safe-local reference whose file is missing, or an unreadable/unsafe/oversized/corrupt cover:** show "Couldn't prepare the cover" and do not open a misleading image share or automatically fall back to text. A separate explicit text-only action may remain available.
 - **Template invalid/unavailable or message too long:** block the hand-off and show a safe corrective message.
 - **Busy:** disable only the tapped loan ID's action and collapse duplicate taps until preparation/hand-off completes.
@@ -159,6 +159,28 @@ Exact behavior:
 No raw cover bytes, message text, template text, borrower name, or phone number enters logs. No reminder history or app-owned persistent reminder copy is written; the share plugin's temporary cache-file behavior is documented rather than denied.
 
 ## Implementation steps
+
+### Review fixes from `reminder-fixes.md`
+
+- [x] **Current-session authorization:** reject retained unlocked values in loading/error session states after every asynchronous preparation step and text-only confirmation; add the four-case generic-share/direct-WhatsApp regression matrix and busy-state assertions.
+- [x] **Safe stored-date boundaries:** replace the throwing loan-date formatter with the nullable display helper, return a typed rendering failure for invalid dated loans, show safe Borrowed Items/Pending labels, and add domain/widget regressions.
+- [x] **Privacy summary:** distinguish generic OS sharing from direct `wa.me` hand-off, including the borrower phone number, while retaining item 9.
+- [x] **Review-fix verification:** run focused tests, both timezone runs, analysis, formatting, the non-golden suite with coverage, and `git diff --check`; do not edit generated files or add dependencies/schema/permission changes.
+
+### Robust fixes from `reminder-issues1.md`
+
+- [x] Restore the catalogue `addedDate` domain gate on both affected pages and pin `0`/negative rendering regressions.
+- [x] Add confirmed template reset on the existing `SerialOpQueue`; make string-preference overwrite/rollback handle wrong-typed prior values, with controller, page and storage tests.
+- [x] Keep the approved direct WhatsApp text action, document the browser/Meta fallback, reconcile the plan/ADR, and use/test raw percent-encoded query text.
+- [x] Reject retained unlocked sessions in `borrowedItemsSnapshot` and keep the existing list visible during dependency reloads; add loading-with-previous and reload/scroll regressions.
+- [x] Apply the small local fixes: fail closed instead of rendering `null`, share one template-ID limit, explain bold markers, reuse the bounded file read, and make busy-tap absorption explicit.
+- [x] Run focused tests, both timezone runs, analysis, formatting, build_runner stability, the non-golden suite with coverage, and `git diff --check`; leave real-device checks manual.
+
+**Maintainer decision (2026-11-06):** keep the direct prefilled WhatsApp action (option a). Its privacy documentation must say that a browser fallback can disclose the borrower number and rendered message to `wa.me` and browser history. Do not detect WhatsApp or add a dependency/permission.
+
+**Scope for this follow-up:** reuse `writePrefsString`, `SerialOpQueue`, `readPickedFileBounded`, and Riverpod's existing reload flag rather than adding new subsystems. Keep the accepted product-wide full-month date format. Commit splitting, unrelated release-document edits, and root review-artifact moves/deletions are merge hygiene outside this code fix. `pendingSnapshot` and `borrowerProfile` retain their existing session-read convention unless a separate review changes them.
+
+### Original feature implementation
 
 - [x] **Review baseline:** at `58652ca`, 92 focused vault/contact/cover/share/bounded-read/FIFO/app-lock/screen-security tests passed under the pinned Flutter 3.44.2.
 - [x] **Activate:** archived the finished 1.9.4 release record as `docs/plans/release-1.9.4-aab.md` and made this feature the active plan.
@@ -208,7 +230,7 @@ No raw cover bytes, message text, template text, borrower name, or phone number 
 - On a real Android device with WhatsApp, verify that one Pitak tap hands off the actual cover and caption together, the maintainer can choose a conversation/edit/cancel, and nothing sends until WhatsApp's Send button. This is a required verification before claiming the behavior, not an assumption from `ShareLibrarySheet`.
 - Repeat with Hindi and a right-to-left template containing a Latin title, an overdue loan, due-soon and due-later loans, no due date, and a long caption. Record truncation/ordering exactly as received; do not add bidi isolate marks or claim an external caption limit from memory.
 - Repeat with no cover, a remote-only cover, a missing/corrupt/oversized local cover, process restart after selecting a custom default, and return from WhatsApp with the global app lock enabled.
-- With WhatsApp not installed, verify the generic sheet offers only available targets and that choosing another target or dismissing remains honest; the app must not report that it detected WhatsApp's absence.
+- With WhatsApp not installed, verify the generic sheet offers only available targets and that choosing another target or dismissing remains honest. Also open the direct text action and record the actual browser fallback, including the number/message disclosure and whether spaces arrive as spaces rather than `+`; the app must not report that it detected WhatsApp's absence.
 - Verify the generic share flow on iOS/iPad if available, including popover anchoring. Caption presentation is controlled by the receiving app, so record platform-specific behavior rather than promising identical rendering everywhere.
 - Smoke both Play and F-Droid flavors; no WhatsApp or Google code should be bundled.
 
@@ -222,7 +244,7 @@ No raw cover bytes, message text, template text, borrower name, or phone number 
 - **Existing time semantics:** keep overdue-from-local-midnight and the rolling 72-hour due-soon window. Changing to calendar-day or end-of-due-day behavior would require an explicit maintainer decision and changes to both pages.
 - **Local instant dates:** loan due dates use the shared local `10 November 2026`-style formatter, never `CalendarDate`. All other user-visible dates use the same full-month display helper, with UTC calendar-day fields kept separate from local instants and storage/export/wire formats unchanged.
 - **Catalogue reads:** sequential `getById` per unique item in v1; a measured later need may justify `getByIds` and its test updates.
-- **Cross-platform share sheet first:** use the existing `share_plus` service. A targeted Android WhatsApp intent is a later optimization only if its extra native FileProvider/URI security work is justified.
+- **Two sharing paths:** generic cover/caption sharing uses the existing `share_plus` service. The maintainer-approved direct text action uses `wa.me` with strict percent encoding and the documented browser/Meta fallback. A targeted native Android image intent remains a later optimization only if its extra FileProvider/URI security work is justified.
 - **Template model:** named custom Unicode templates with three status bodies and two placeholders; built-in English remains the safe initial default. Dated bodies require `{{dueDate}}`; repeated known placeholders are allowed.
 - **Storage:** dedicated versioned preference JSON, not a Drift schema migration and not the encrypted Rust vault. Templates are device-local, plaintext, excluded from the current backup, and must not be described as incapable of containing private free text.
 - **Cover recipe:** the shared reader uses the existing publish defaults and a streamed 8 MiB source cap; publishing behavior is not silently changed to a reminder-specific rendition.
@@ -262,4 +284,8 @@ Verified under pinned Flutter 3.44.2:
 - Secret scan and F-Droid purity plus Play positive control passed. No dependency was added.
 - Golden tests were attempted on macOS and failed with the documented renderer differences; Linux CI remains the reference renderer. No golden PNG was changed.
 
-Remaining verification: `osv-scanner` is not installed, so the pubspec OSV scan was not run (Rust advisories did run through `cargo deny`). The F-Droid release APK was built and installed on the Pixel 8a. Real Android WhatsApp cover/caption behavior, Hindi/RTL rendering, missing/corrupt/oversized covers, restart persistence, app-lock round trip, iOS/iPad behavior, and Play/F-Droid device smoke are still unverified. Test-install guidance now requires the F-Droid flavor and `adb install -r` in `README.md` and `docs/RELEASING.md`.
+Review-fix follow-up (2026-11-06): current-session-only hand-off authorization, nullable loan-date boundaries, safe Borrowed Items/Pending labels, typed invalid-date rendering failures, and the corrected two-path privacy summary are implemented with regressions. All 48 focused tests passed; all 22 date/reminder tests passed in each required timezone; 6,021 non-golden tests passed with coverage. Analysis of `lib test integration_test`, formatting, and `git diff --check` passed. No generated file, dependency, schema, permission, or unrelated screen changed.
+
+Robust-review follow-up (2026-11-06): restored catalogue date sentinels; added confirmed wrong-type-safe template reset and typed rollback; documented the approved direct-WhatsApp browser/Meta fallback and switched its caption to strict percent encoding; rejected stale unlocked snapshots; preserved cards and scroll position during reloads; reused the bounded cover read; shared the template-ID limit; made renderer failure closed; documented bold markers and the intentional busy gesture sink. The accepted global full-month format and unrelated commit/artifact hygiene stayed unchanged. All 170 affected tests passed; all 23 date/reminder tests passed in each required timezone; 6,030 non-golden tests passed with coverage. Analysis of `lib test integration_test`, formatting, `git diff --check`, and consecutive build_runner stability checks passed (second run wrote zero outputs). Only the two expected generated provider hashes changed. No dependency, schema, permission, or platform configuration changed.
+
+Remaining verification: `osv-scanner` is not installed, so the pubspec OSV scan was not run (Rust advisories did run through `cargo deny`). The F-Droid release APK was built and installed on the Pixel 8a. Real Android WhatsApp cover/caption behavior, direct-text `%20`/browser-fallback behavior, Hindi/RTL rendering, missing/corrupt/oversized covers, restart persistence, app-lock round trip, iOS/iPad behavior, and Play/F-Droid device smoke are still unverified. Test-install guidance now requires the F-Droid flavor and `adb install -r` in `README.md` and `docs/RELEASING.md`.

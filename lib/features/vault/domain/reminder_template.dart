@@ -10,6 +10,9 @@ abstract final class ReminderTemplateLimits {
   /// Maximum number of persisted custom templates.
   static const maxCustomTemplates = 20;
 
+  /// Maximum stable template/selection ID length in UTF-16 code units.
+  static const maxIdLength = 80;
+
   /// Maximum label length in UTF-16 code units.
   static const maxNameLength = 80;
 
@@ -71,7 +74,8 @@ final class ReminderTemplate {
     ReminderTemplate template,
   ) {
     final name = template.name.trim();
-    if (template.id.trim().isEmpty || template.id.length > 80) {
+    if (template.id.trim().isEmpty ||
+        template.id.length > ReminderTemplateLimits.maxIdLength) {
       return left(const ValidationFailure('Template ID is invalid.'));
     }
     if (name.isEmpty || name.length > ReminderTemplateLimits.maxNameLength) {
@@ -212,8 +216,11 @@ Either<ValidationFailure, String> renderReminderMessage({
   final failure = validated.swap().toNullable();
   if (failure != null) return left(failure);
   final dated = urgency != LoanUrgency.noDueDate;
-  if (dated && dueDate == null) {
-    return left(const ValidationFailure('This dated loan has no due date.'));
+  final dueText = formatLoanDateOrNull(dueDate);
+  if (dated && dueText == null) {
+    return left(
+      const ValidationFailure('This dated loan has no valid due date.'),
+    );
   }
   final body = switch (urgency) {
     LoanUrgency.overdue => template.overdueBody,
@@ -224,7 +231,6 @@ Either<ValidationFailure, String> renderReminderMessage({
   if (parsed.error != null) {
     return left(const ValidationFailure('The selected template is invalid.'));
   }
-  final dueText = dueDate == null ? null : formatLoanDate(dueDate);
   // WhatsApp's single-asterisk markup usually renders bold. The receiving
   // app owns the final presentation, so this is emphasis, not a guarantee.
   final rendered = StringBuffer();
@@ -234,7 +240,14 @@ Either<ValidationFailure, String> renderReminderMessage({
       case _Token.itemTitle:
         rendered.write('*$itemTitle*');
       case _Token.dueDate:
-        rendered.write(dueText == null ? null : '*$dueText*');
+        // Validation currently makes this unreachable. Fail closed if that
+        // invariant ever changes rather than writing the literal string null.
+        if (dueText == null) {
+          return left(
+            const ValidationFailure('This reminder needs a valid due date.'),
+          );
+        }
+        rendered.write('*$dueText*');
       case null:
         break;
     }

@@ -35,6 +35,7 @@ import 'package:pitaka/core/widgets/cover_crop.dart';
 import 'package:pitaka/core/widgets/item_cover.dart';
 import 'package:pitaka/core/widgets/lock_suppressor.dart';
 import 'package:pitaka/features/library/application/book_cover_controller.dart';
+import 'package:pitaka/features/library/domain/catalogue_rules.dart';
 import 'package:pitaka/features/library/domain/cover_owner.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/presentation/widgets/catalogue_item_actions.dart';
@@ -268,11 +269,12 @@ class _ItemDetailBody extends ConsumerWidget {
     };
   }
 
-  /// Formats an epoch-millis added date as a plain `YYYY-MM-DD`, or null when
-  /// unset (addedDate == 0 means "no date recorded"). M15: an out-of-range
-  /// value from a pre-M15 row renders as no date instead of throwing.
-  static String? _formatDate(int epochMillis) =>
-      formatDisplayDateOrNull(epochMillis);
+  /// Formats a valid added date with a full month, or null when unset/invalid.
+  /// CatalogueRules owns the `0` sentinel and legacy-row validity boundary.
+  static String? _formatDate(int epochMillis) {
+    final date = CatalogueRules.dateFromMillisOrNull(epochMillis);
+    return date == null ? null : formatDisplayDateTime(date);
+  }
 }
 
 /// Book cover with a camera-capture "replace" affordance (#cover).

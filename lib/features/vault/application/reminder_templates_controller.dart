@@ -141,6 +141,12 @@ class ReminderTemplatesController extends _$ReminderTemplatesController {
     return right(current.copyWith(selectedTemplateId: id));
   });
 
+  /// Replaces an unreadable document with built-in English after UI
+  /// confirmation. This deliberately bypasses [loaded], which cannot read the
+  /// corrupt state.
+  Future<Either<Failure, Unit>> resetToBuiltIn() =>
+      _queue.enqueue(() => _persist(ReminderTemplateSettings.initial));
+
   Future<Either<Failure, Unit>> _mutate(
     Either<Failure, ReminderTemplateSettings> Function(
       ReminderTemplateSettings current,
@@ -154,6 +160,10 @@ class ReminderTemplatesController extends _$ReminderTemplatesController {
     final nextFailure = nextRead.swap().toNullable();
     if (nextFailure != null) return left(nextFailure);
     final next = nextRead.toNullable()!;
+    return _persist(next);
+  });
+
+  Future<Either<Failure, Unit>> _persist(ReminderTemplateSettings next) async {
     try {
       final store = await ref.read(reminderTemplateStoreProvider.future);
       final saved = await store.save(next);
@@ -164,7 +174,7 @@ class ReminderTemplatesController extends _$ReminderTemplatesController {
     } on Object {
       return left(const StorageFailure('reminder template write'));
     }
-  });
+  }
 }
 
 ReminderTemplate? _customById(ReminderTemplateSettings settings, String id) {

@@ -122,9 +122,13 @@ class _LoanTile extends StatelessWidget {
         color: emphasize ? scheme.error : null,
       ),
       title: Text('Item #$bookId'),
-      subtitle: Text(
-        dueDate == null ? 'No due date' : 'Due ${formatLoanDate(dueDate!)}',
-      ),
+      subtitle: Text(_dueLabel(dueDate)),
     );
   }
+}
+
+String _dueLabel(int? dueDate) {
+  if (dueDate == null) return 'No due date';
+  final formatted = formatLoanDateOrNull(dueDate);
+  return formatted == null ? 'Due date unavailable' : 'Due $formatted';
 }

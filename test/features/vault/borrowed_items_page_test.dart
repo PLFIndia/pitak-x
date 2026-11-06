@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -211,6 +213,80 @@ void main() {
     expect(find.text('Godaan'), findsNothing);
     expect(find.byTooltip('Share loan reminder'), findsNothing);
     expect(find.byTooltip('Call borrower'), findsNothing);
+  });
+
+  testWidgets('dependency reload keeps cards and scroll position visible', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(500, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    SharedPreferences.setMockInitialValues({});
+    final session = TestVaultSession(const VaultUnlocked(VaultData.empty));
+    final snapshot = BorrowedItemsSnapshot(
+      entries: [
+        for (var id = 1; id <= 8; id++)
+          testEntry(loanId: id, itemId: id + 1, title: 'Book $id'),
+      ],
+      unresolvedCount: 0,
+    );
+    var tick = 0;
+    Completer<void>? reloadGate;
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          vaultSessionControllerProvider.overrideWith(() => session),
+          nowTickProvider.overrideWith((ref) => tick),
+          borrowedItemsSnapshotProvider.overrideWith((ref) async {
+            ref.watch(nowTickProvider);
+            await reloadGate?.future;
+            return snapshot;
+          }),
+        ],
+        child: const MaterialApp(home: BorrowedItemsPage()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final scrollable = find.descendant(
+      of: find.byType(ListView),
+      matching: find.byType(Scrollable),
+    );
+    expect(scrollable, findsOneWidget);
+    await tester.drag(find.byType(ListView), const Offset(0, -300));
+    await tester.pumpAndSettle();
+    final offset = tester.state<ScrollableState>(scrollable).position.pixels;
+    expect(offset, greaterThan(0));
+
+    final gate = Completer<void>();
+    reloadGate = gate;
+    tick++;
+    ProviderScope.containerOf(
+      tester.element(find.byType(BorrowedItemsPage)),
+    ).invalidate(nowTickProvider);
+    await tester.pump();
+
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+    expect(find.byType(BorrowedLoanRow), findsWidgets);
+    expect(tester.state<ScrollableState>(scrollable).position.pixels, offset);
+
+    gate.complete();
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('out-of-range stored due date has a safe card label', (
+    tester,
+  ) async {
+    await pumpBorrowedItems(
+      tester,
+      snapshot: BorrowedItemsSnapshot(
+        entries: [testEntry(due: 8640000000000001)],
+        unresolvedCount: 0,
+      ),
+    );
+
+    expect(find.text('Due date unavailable'), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets(

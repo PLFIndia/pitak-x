@@ -508,6 +508,10 @@ class _AddBookPageState extends ConsumerState<AddBookPage> {
     AgeGroup.advanced => 'Advanced',
   };
 
-  static String _formatDate(int epochMillis) =>
-      formatDisplayDateOrNull(epochMillis) ?? '';
+  static String _formatDate(int epochMillis) {
+    // Keep the catalogue's `0` sentinel and legacy-date rules out of the
+    // generic display helper, which also serves domains with other rules.
+    final date = CatalogueRules.dateFromMillisOrNull(epochMillis);
+    return date == null ? '' : formatDisplayDateTime(date);
+  }
 }

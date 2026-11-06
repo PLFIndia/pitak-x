@@ -40,9 +40,7 @@ LoanUrgency loanUrgency(
       : LoanUrgency.dueLater;
 }
 
-/// Formats a loan instant in the device's LOCAL calendar as `10 November 2026`.
-///
-/// Loan dates are picker-produced local instants. `CalendarDate` is not used:
-/// its UTC fields belong to catalogue date-only values and could shift the day.
-/// Fixed English month names avoid introducing a second localization system.
-String formatLoanDate(int epochMillis) => formatDisplayDate(epochMillis);
+/// Formats a valid local loan instant, or returns null for unset or
+/// out-of-range stored values instead of throwing.
+String? formatLoanDateOrNull(int? epochMillis) =>
+    formatDisplayDateOrNull(epochMillis);

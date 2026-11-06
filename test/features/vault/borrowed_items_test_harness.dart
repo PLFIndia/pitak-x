@@ -30,6 +30,17 @@ class TestVaultSession extends VaultSessionController {
   void show(VaultSessionState next) {
     state = AsyncData(next);
   }
+
+  void showLoadingWithPrevious() {
+    state = const AsyncLoading<VaultSessionState>().copyWithPrevious(state);
+  }
+
+  void showErrorWithPrevious() {
+    state = AsyncError<VaultSessionState>(
+      StateError('session unavailable'),
+      StackTrace.current,
+    ).copyWithPrevious(state);
+  }
 }
 
 BorrowedLoan testEntry({
@@ -144,6 +155,7 @@ pumpBorrowedItems(
   TestVaultSession? session,
   TestCoverReader? reader,
   TestShare? share,
+  Completer<void>? prepareGate,
   List<Override> extraOverrides = const [],
   ThemeData? theme,
   TextScaler? textScaler,
@@ -163,12 +175,13 @@ pumpBorrowedItems(
       overrides: [
         vaultSessionControllerProvider.overrideWith(() => effectiveSession),
         borrowedItemsSnapshotProvider.overrideWith((ref) async => snapshot),
-        prepareLoanReminderUseCaseProvider.overrideWith(
-          (ref) async => PrepareLoanReminderUseCase(
+        prepareLoanReminderUseCaseProvider.overrideWith((ref) async {
+          await prepareGate?.future;
+          return PrepareLoanReminderUseCase(
             coverReader: effectiveReader.call,
             clock: () => testNow,
-          ),
-        ),
+          );
+        }),
         fileShareServiceProvider.overrideWithValue(effectiveShare),
         coversDirProvider.overrideWith((ref) async => '.'),
         ...extraOverrides,

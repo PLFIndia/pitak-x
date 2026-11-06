@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/core/platform/file_share.dart';
 import 'package:pitaka/features/library/domain/local_cover_reader.dart';
 import 'package:pitaka/features/vault/domain/borrowed_items.dart';
+import 'package:pitaka/features/vault/domain/entities/vault_data.dart';
 import 'package:pitaka/features/vault/domain/entities/vault_session_state.dart';
 import 'package:pitaka/features/vault/infrastructure/prefs_reminder_template_store.dart';
 // Transitive test seam for the existing url_launcher dependency.
@@ -129,6 +130,8 @@ void main() {
       expect(uri.scheme, 'https');
       expect(uri.host, 'wa.me');
       expect(uri.path, '/919812345678');
+      expect(uri.query, startsWith('text=Your%20loan%20of%20'));
+      expect(uri.query, isNot(contains('+')));
       expect(
         uri.queryParameters['text'],
         'Your loan of "*Godaan*" was due for return on *5 November 2026*.',
@@ -240,6 +243,65 @@ void main() {
     expect(find.textContaining('Choose a valid template'), findsOneWidget);
     expect(launcher.urls, isEmpty);
   });
+
+  for (final directWhatsApp in [false, true]) {
+    final action = directWhatsApp ? 'direct WhatsApp text' : 'generic share';
+    for (final showError in [false, true]) {
+      final sessionState = showError ? 'error' : 'loading';
+      testWidgets(
+        '$action rejects $sessionState state with a previous unlock',
+        (tester) async {
+          final previous = UrlLauncherPlatform.instance;
+          final launcher = _Launcher();
+          UrlLauncherPlatform.instance = launcher;
+          addTearDown(() => UrlLauncherPlatform.instance = previous);
+          final prepareGate = Completer<void>();
+          final harness = await pumpBorrowedItems(
+            tester,
+            prepareGate: prepareGate,
+            snapshot: BorrowedItemsSnapshot(
+              entries: [testEntry(coverUrl: 'covers/a.jpg')],
+              unresolvedCount: 0,
+            ),
+          );
+
+          await tester.tap(
+            find.byTooltip(
+              directWhatsApp
+                  ? 'WhatsApp borrower (text only)'
+                  : 'Share loan reminder',
+            ),
+          );
+          for (var i = 0; i < 6; i++) {
+            await tester.pump();
+          }
+          if (showError) {
+            harness.session.showErrorWithPrevious();
+          } else {
+            harness.session.showLoadingWithPrevious();
+          }
+          await tester.pump();
+          prepareGate.complete();
+          for (var i = 0; i < 6; i++) {
+            await tester.pump();
+          }
+
+          expect(harness.share.byteCalls, isEmpty);
+          expect(harness.share.textCalls, isEmpty);
+          expect(launcher.urls, isEmpty);
+
+          // Reveal the card again to prove the aborted action cleared its busy
+          // state rather than merely hiding it behind the session gate.
+          harness.session.show(const VaultUnlocked(VaultData.empty));
+          await tester.pumpAndSettle();
+          expect(find.byType(CircularProgressIndicator), findsNothing);
+          expect(harness.share.byteCalls, isEmpty);
+          expect(harness.share.textCalls, isEmpty);
+          expect(launcher.urls, isEmpty);
+        },
+      );
+    }
+  }
 
   testWidgets('locking during asynchronous cover preparation aborts hand-off', (
     tester,

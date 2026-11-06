@@ -7,7 +7,7 @@ part of 'reminder_templates_controller.dart';
 // **************************************************************************
 
 String _$reminderTemplatesControllerHash() =>
-    r'e000f7754eab11a003ef310d578aa4e8fe3bd354';
+    r'c7a874a947762b8e7633995599eb6af142232dbf';
 
 /// Loads, selects and edits templates without losing concurrent mutations.
 ///

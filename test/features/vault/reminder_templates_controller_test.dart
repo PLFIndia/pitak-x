@@ -206,6 +206,56 @@ void main() {
   });
 
   test(
+    'corrupt storage can be reset to built-in with exactly one write',
+    () async {
+      final store = _Store()..readFailure = const StorageFailure('corrupt');
+      final container = _container(store);
+      final controller = container.read(
+        reminderTemplatesControllerProvider.notifier,
+      );
+      await expectLater(
+        container.read(reminderTemplatesControllerProvider.future),
+        throwsA(isA<StorageFailure>()),
+      );
+
+      final result = await controller.resetToBuiltIn();
+
+      expect(result.isRight(), isTrue);
+      expect(store.writes, [ReminderTemplateSettings.initial]);
+      expect(
+        container.read(reminderTemplatesControllerProvider).value,
+        ReminderTemplateSettings.initial,
+      );
+    },
+  );
+
+  test(
+    'a failed reset returns a typed failure and stays in AsyncError',
+    () async {
+      final store = _Store()
+        ..readFailure = const StorageFailure('corrupt')
+        ..failWrites = true;
+      final container = _container(store);
+      final controller = container.read(
+        reminderTemplatesControllerProvider.notifier,
+      );
+      await expectLater(
+        container.read(reminderTemplatesControllerProvider.future),
+        throwsA(isA<StorageFailure>()),
+      );
+
+      final result = await controller.resetToBuiltIn();
+
+      expect(result.swap().toNullable(), isA<StorageFailure>());
+      expect(
+        container.read(reminderTemplatesControllerProvider).hasError,
+        isTrue,
+      );
+      expect(store.writes, isEmpty);
+    },
+  );
+
+  test(
     'unavailable selection is visible and requires an explicit recovery',
     () async {
       final store = _Store(

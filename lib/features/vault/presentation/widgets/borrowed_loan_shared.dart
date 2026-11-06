@@ -94,8 +94,11 @@ final class BorrowedLoanActions extends StatelessWidget {
             onPressed: busy ? null : onCall,
             icon: const Icon(Icons.call_outlined),
           ),
-        // A disabled IconButton can otherwise let the parent card's InkWell
-        // open details on a duplicate tap. Consume only this busy action.
+        // This opaque gesture sink is intentional, including the empty busy
+        // callback: it claims the gesture arena only while busy, so the parent
+        // card's InkWell cannot open details on a duplicate tap. AbsorbPointer
+        // is not equivalent in this nested action layout (covered by the
+        // duplicate-tap/busy-isolation widget test).
         GestureDetector(
           behavior: HitTestBehavior.opaque,
           onTap: busy ? () {} : null,
@@ -144,7 +147,9 @@ String _urgencyLabel(LoanUrgency urgency) => switch (urgency) {
 
 String _dueLabel(BorrowedLoan entry) {
   final due = entry.loan.dueDate;
-  return due == null ? 'No return date set' : 'Due ${formatLoanDate(due)}';
+  if (due == null) return 'No return date set';
+  final formatted = formatLoanDateOrNull(due);
+  return formatted == null ? 'Due date unavailable' : 'Due $formatted';
 }
 
 enum _BadgeTone { neutral, overdue, soon, later }

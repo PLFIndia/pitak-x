@@ -46,6 +46,7 @@ void main() {
     await tester.tap(find.text('Add template'));
     await tester.pumpAndSettle();
     expect(find.byType(ReminderTemplateEditorPage), findsOneWidget);
+    expect(find.textContaining('WhatsApp bold'), findsOneWidget);
     await _enter(tester, 'reminder-template-name', 'हिन्दी');
     await _enter(
       tester,
@@ -108,6 +109,37 @@ void main() {
     }
     await _save(tester);
     expect(find.text('Chips'), findsOneWidget);
+  });
+
+  testWidgets('corrupt storage offers a confirmed wrong-type-safe reset', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({
+      PrefsReminderTemplateStore.key: true,
+    });
+    await _pumpManager(tester);
+    expect(find.text("Couldn't read message templates."), findsOneWidget);
+
+    await tester.tap(find.text('Reset to built-in'));
+    await tester.pumpAndSettle();
+    expect(find.text('Reset message templates?'), findsOneWidget);
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    var prefs = await SharedPreferences.getInstance();
+    expect(prefs.get(PrefsReminderTemplateStore.key), isTrue);
+
+    await tester.tap(find.text('Reset to built-in'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Reset templates'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('English'), findsOneWidget);
+    expect(find.text("Couldn't read message templates."), findsNothing);
+    prefs = await SharedPreferences.getInstance();
+    final restored = PrefsReminderTemplateStore(prefs).load().toNullable();
+    expect(restored, isNotNull);
+    expect(restored!.selectedTemplateId, ReminderTemplate.builtInEnglishId);
+    expect(restored.customTemplates, isEmpty);
   });
 
   testWidgets(

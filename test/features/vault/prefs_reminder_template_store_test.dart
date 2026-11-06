@@ -1,7 +1,6 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/vault/domain/reminder_template.dart';
 import 'package:pitaka/features/vault/domain/reminder_template_store.dart';
 import 'package:pitaka/features/vault/infrastructure/prefs_reminder_template_store.dart';
@@ -157,15 +156,21 @@ void main() {
   });
 
   test(
-    'saving over a wrong-typed preference returns a typed failure',
+    'saving over a wrong-typed preference restores readable defaults',
     () async {
       SharedPreferences.setMockInitialValues({
         PrefsReminderTemplateStore.key: true,
       });
+
       final result = await (await _store()).save(
         ReminderTemplateSettings.initial,
       );
-      expect(result.swap().toNullable(), isA<StorageFailure>());
+
+      expect(result.isRight(), isTrue);
+      final restored = (await _store()).load().toNullable();
+      expect(restored, isNotNull);
+      expect(restored!.selectedTemplateId, ReminderTemplate.builtInEnglishId);
+      expect(restored.customTemplates, isEmpty);
     },
   );
 }

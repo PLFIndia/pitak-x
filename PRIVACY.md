@@ -4,9 +4,12 @@ _Effective date: 2026-11-06 · Publisher: Parallel Line Foundation_
 
 _Changed 2026-11-06 — **Borrowed Items** adds maintainer-reviewed loan
 reminders. Template text is plaintext on this device and is not in the current
-backup. A reminder's title, due message and sanitized cover leave the device
-only when you tap the share action and choose a target in the OS share flow.
-Nothing is sent automatically (item 9)._
+backup. The generic share action hands the item title, due message and
+sanitized cover to the OS share flow when you tap it; you then choose a target.
+The separate WhatsApp action instead opens `wa.me` with the borrower's phone
+number and rendered text. If a browser handles that link, those values can
+reach Meta's `wa.me` service and browser history. No reminder message is sent
+automatically (item 9)._
 
 _Changed 2026-11-06 — **Restore from this site** can recover public catalogue
 fields and covers from your own active hosting target into an empty catalogue.
@@ -349,8 +352,12 @@ Settings → Data), and the passive update check of Google Play builds
    send automatically, or treat a share hand-off as delivery. A separate
    WhatsApp icon appears when a phone number is available: it opens the
    borrower's `wa.me` conversation with only the rendered text prefilled,
-   without reading the cover. You still tap Send in WhatsApp. Blank or
-   remote-only covers lead to an optional text-only share; Pitak does not
+   without reading the cover. When WhatsApp handles the link, you still tap
+   Send. If WhatsApp is absent or does not handle the link, a browser may open
+   it instead; in that case the phone number and rendered text are sent to
+   Meta's `wa.me` web service and may be retained in browser history. Pitak
+   does not detect WhatsApp or claim that this fallback keeps the data local.
+   Blank or remote-only covers lead to an optional text-only share; Pitak does not
    download a cover just for a reminder. Local images are re-encoded to strip EXIF/GPS metadata, and a
    missing, unsafe, oversized or corrupt local file blocks image sharing rather
    than silently sending raw bytes. The `share_plus` plugin writes a temporary

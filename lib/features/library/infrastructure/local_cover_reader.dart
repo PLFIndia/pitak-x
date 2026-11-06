@@ -2,10 +2,11 @@
 library;
 
 import 'dart:io';
-import 'dart:typed_data';
 
+import 'package:file_selector/file_selector.dart' show XFile;
 import 'package:path/path.dart' as p;
 import 'package:pitaka/core/images/image_downscaler.dart';
+import 'package:pitaka/core/platform/bounded_file_read.dart';
 import 'package:pitaka/features/import_export/domain/cover_paths.dart';
 import 'package:pitaka/features/library/domain/local_cover_reader.dart';
 
@@ -28,23 +29,18 @@ final class LocalCoverReader {
       if (!file.existsSync()) {
         return const LocalCoverReadFailure(LocalCoverReadFailureReason.missing);
       }
-      if (file.lengthSync() > maxLocalCoverSourceBytes) {
+      // Reuse the core streamed cap (reported length + actual byte count)
+      // rather than maintaining a second copy of that security boundary.
+      final bytes = await readPickedFileBounded(
+        XFile(file.path),
+        maxBytes: maxLocalCoverSourceBytes,
+      );
+      if (bytes == null) {
         return const LocalCoverReadFailure(
           LocalCoverReadFailureReason.tooLarge,
         );
       }
-      final builder = BytesBuilder(copy: false);
-      await for (final chunk in file.openRead()) {
-        if (builder.length + chunk.length > maxLocalCoverSourceBytes) {
-          return const LocalCoverReadFailure(
-            LocalCoverReadFailureReason.tooLarge,
-          );
-        }
-        builder.add(chunk);
-      }
-      final jpeg = await ImageDownscaler.downscaleJpegAsync(
-        builder.takeBytes(),
-      );
+      final jpeg = await ImageDownscaler.downscaleJpegAsync(bytes);
       if (jpeg == null) {
         return const LocalCoverReadFailure(
           LocalCoverReadFailureReason.unreadable,

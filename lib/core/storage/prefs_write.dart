@@ -31,14 +31,30 @@ Future<Either<Failure, Unit>> writePrefsString(
   String value, {
   required String what,
 }) {
-  final previous = prefs.getString(key);
+  // Read the untyped value so a wrong-typed legacy/corrupt preference can be
+  // overwritten. If the write fails, restore it with its ORIGINAL type.
+  final previous = prefs.get(key);
   return _guardedWrite(
     write: () => prefs.setString(key, value),
-    restore: previous == null
-        ? () => prefs.remove(key)
-        : () => prefs.setString(key, previous),
+    restore: () => _restorePrevious(prefs, key, previous),
     what: what,
   );
+}
+
+Future<bool> _restorePrevious(
+  SharedPreferences prefs,
+  String key,
+  Object? previous,
+) {
+  if (previous == null) return prefs.remove(key);
+  if (previous is bool) return prefs.setBool(key, previous);
+  if (previous is int) return prefs.setInt(key, previous);
+  if (previous is double) return prefs.setDouble(key, previous);
+  if (previous is String) return prefs.setString(key, previous);
+  if (previous is List<String>) return prefs.setStringList(key, previous);
+  // SharedPreferences supports no other value types. Fail closed if a custom
+  // platform implementation ever returns one.
+  return Future<bool>.value(false);
 }
 
 /// Writes one boolean preference, restoring the previous cached value on

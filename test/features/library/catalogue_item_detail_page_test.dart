@@ -645,24 +645,29 @@ void main() {
     });
   });
 
-  testWidgets('M15: a pre-M15 row with an out-of-range addedDate renders', (
+  testWidgets('M15: unset and invalid addedDate values render no Added row', (
     tester,
   ) async {
-    // Rows persisted before M15 (or by a hostile file on an old build) can
-    // hold an addedDate that DateTime cannot represent. The detail page must
-    // render the row without a date instead of throwing a RangeError.
-    const hostile = CatalogueItem(
-      id: 7,
-      itemUid: 'uid-7',
-      title: 'Dune',
-      addedDate: 8640000000000001, // maxDateMillis + 1
-    );
-    final repo = _MemBookRepo([hostile]);
-    await tester.pumpWidget(_host(repo, tmp.path, initialBook: hostile));
-    await _openDetail(tester);
+    // `0` means unset; negative and out-of-range values can exist in legacy
+    // rows. None may turn into a 1969/1970 date or crash the detail page.
+    for (final addedDate in [0, -1, 8640000000000001]) {
+      final legacy = CatalogueItem(
+        id: 7,
+        itemUid: 'uid-7',
+        title: 'Dune',
+        addedDate: addedDate,
+      );
+      final repo = _MemBookRepo([legacy]);
+      await tester.pumpWidget(_host(repo, tmp.path, initialBook: legacy));
+      await _openDetail(tester);
 
-    expect(find.text('Dune'), findsOneWidget);
-    expect(tester.takeException(), isNull);
+      expect(find.text('Dune'), findsOneWidget);
+      expect(find.text('Added'), findsNothing, reason: '$addedDate');
+      expect(find.textContaining('1970'), findsNothing, reason: '$addedDate');
+      expect(find.textContaining('1969'), findsNothing, reason: '$addedDate');
+      expect(tester.takeException(), isNull, reason: '$addedDate');
+      await tester.pumpWidget(const SizedBox());
+    }
   });
 
   testWidgets('N03: a repository failure shows a safe message, not raw text', (

@@ -130,6 +130,12 @@ class _ReminderTemplateEditorPageState
               'Templates are stored unencrypted on this device and are not in '
               'the current library backup. Do not include private details.',
             ),
+            const SizedBox(height: 8),
+            const Text(
+              'Titles and dates use *…* for WhatsApp bold; other share targets '
+              'may show the asterisks.',
+              style: TextStyle(fontSize: 12),
+            ),
             const SizedBox(height: 16),
             TextField(
               key: const ValueKey('reminder-template-name'),

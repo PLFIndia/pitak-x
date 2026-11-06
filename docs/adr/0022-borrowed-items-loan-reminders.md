@@ -18,6 +18,13 @@ oversized/corrupt. Image-plus-text sharing is controlled by the OS and receiving
 app, so a hand-off is not proof of a preselected conversation, caption rendering,
 or delivery.
 
+The original plan allowed only generic OS sharing and prohibited a message in a
+`wa.me` URL. The maintainer later approved a separate direct text action for a
+one-tap borrower conversation. That convenience also accepts a documented
+fallback: if a browser handles the link, the borrower number and rendered text
+can reach Meta's `wa.me` service and browser history. Pitak still does not
+detect WhatsApp or add a native WhatsApp integration.
+
 ## Decision
 
 1. **One Borrowed Items entry per active loan.** The drawer destination joins
@@ -51,7 +58,10 @@ or delivery.
    Unknown selections remain visible and block sharing rather than silently
    selecting English. A keep-alive controller serializes write-then-publish
    mutations with `SerialOpQueue`; selected-template deletion falls back to
-   built-in English in the same write.
+   built-in English in the same write. An unreadable document has an explicit,
+   confirmed reset-to-built-in recovery on that queue. String-preference writes
+   preserve a wrong-typed previous value's type for rollback after a failed
+   overwrite; other preferences are not cleared.
 6. **Sanitize before sharing.** The shared local-cover reader performs a
    streamed 8 MiB read and the existing asynchronous 400×600 q80 JPEG
    re-encode, stripping metadata with no raw fallback. Publishing retains its
@@ -65,20 +75,25 @@ or delivery.
    `FileShareService` with caption and iPad origin. A separate WhatsApp icon,
    shown only when a sanitized phone exists, renders the same caption without
    reading the cover and opens the borrower's `wa.me` conversation with text
-   prefilled. Neither action sends automatically, suppresses app lock, records
-   history, or claims success means sent. Duplicate taps collapse per loan ID.
-   No package, permission, telemetry or Google dependency is added.
+   prefilled. Its query uses `Uri.encodeComponent` (`%20` for spaces), not
+   form-style `+` encoding. The browser fallback above is stated in `PRIVACY.md`.
+   Neither action sends automatically, suppresses app lock, records history, or
+   claims success means sent. Duplicate taps collapse per loan ID. No package,
+   permission, telemetry or Google dependency is added.
 
 ## Consequences
 
 - Domain, store/controller, preparation, provider and widget tests cover time
   boundaries, Unicode/RTL rendering, corruption, FIFO writes, strict joins,
-  owner-less covers, exact share arguments, direct WhatsApp number/caption
-  launch without a cover read, text-only confirmation, busy isolation, safe
-  outcomes and lock-during-preparation aborts.
+  owner-less covers, exact share arguments and raw `%20` direct-text encoding,
+  wrong-type-safe reset/rollback, stale-session rejection, reload/scroll
+  preservation, direct WhatsApp number/caption launch without a cover read,
+  text-only confirmation, busy isolation, safe outcomes and
+  lock-during-preparation aborts.
 - Template text is visibly documented as unencrypted and excluded from backup.
   The share plugin's temporary cache-file behavior is documented rather than
   denied. No app-owned persistent reminder copy is written.
-- Real Android WhatsApp image/caption behavior, RTL presentation, iOS/iPad
-  behavior and Play/F-Droid device smoke remain manual verification gates;
-  they are not inferred from the existing `ShareLibrarySheet` call shape.
+- Real Android WhatsApp image/caption behavior, direct-text spacing and the
+  no-WhatsApp browser fallback, RTL presentation, iOS/iPad behavior and
+  Play/F-Droid device smoke remain manual verification gates; they are not
+  inferred from the existing `ShareLibrarySheet` call shape.

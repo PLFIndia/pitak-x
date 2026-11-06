@@ -64,6 +64,36 @@ void main() {
     expect(find.text('Book #7'), findsNothing);
   });
 
+  testWidgets('Pending safely labels an out-of-range stored due date', (
+    tester,
+  ) async {
+    const snapshot = PendingSnapshot(
+      overdue: [
+        Loan(
+          id: 1,
+          itemId: 7,
+          borrowerId: 2,
+          lentDate: 1,
+          dueDate: 8640000000000001,
+        ),
+      ],
+      dueSoon: [],
+      staleMetadataBooks: [],
+    );
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          pendingSnapshotProvider.overrideWith((ref) async => snapshot),
+        ],
+        child: const MaterialApp(home: PendingPage()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Due date unavailable'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('S9: borrower edit labels a loan row as Item #id', (
     tester,
   ) async {

@@ -15,19 +15,25 @@ class _FailingStore extends InMemorySharedPreferencesStore {
     this.failSet = true,
     this.throwSet = false,
     this.failRemove = false,
+    this.failFirstSet = false,
   }) : super.withData(data);
 
   final bool failSet;
   final bool throwSet;
   final bool failRemove;
+  final bool failFirstSet;
+  var _setCalls = 0;
 
   @override
   Future<bool> setValue(String valueType, String key, Object value) async {
+    _setCalls++;
     if (throwSet) {
       throw PlatformException(code: 'write_failed', message: 'disk full');
     }
+    if (failFirstSet && _setCalls == 1) return false;
     // A failing store never persists; the plugin cache still changed.
-    return !failSet;
+    if (failSet) return false;
+    return super.setValue(valueType, key, value);
   }
 
   @override
@@ -55,6 +61,35 @@ void main() {
     expect(saved.isRight(), isTrue);
     expect(prefs.getString('k'), 'v');
   });
+
+  test('a string write can replace a wrong-typed previous value', () async {
+    final store = _FailingStore(data: {'flutter.k': true}, failSet: false);
+    final prefs = await _installStore(store);
+
+    final saved = await writePrefsString(prefs, 'k', 'new', what: 'test');
+
+    expect(saved.isRight(), isTrue);
+    expect(prefs.getString('k'), 'new');
+    expect((await store.getAll())['flutter.k'], 'new');
+  });
+
+  test(
+    'a failed write restores a wrong-typed previous value and its type',
+    () async {
+      final store = _FailingStore(
+        data: {'flutter.k': true},
+        failSet: false,
+        failFirstSet: true,
+      );
+      final prefs = await _installStore(store);
+
+      final saved = await writePrefsString(prefs, 'k', 'new', what: 'test');
+
+      expect(saved.isLeft(), isTrue);
+      expect(prefs.get('k'), isTrue);
+      expect((await store.getAll())['flutter.k'], isTrue);
+    },
+  );
 
   test('a false result restores the previous cached value', () async {
     // The regression (L9): the plugin updates its cache before the platform

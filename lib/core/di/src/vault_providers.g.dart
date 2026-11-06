@@ -561,7 +561,7 @@ final prepareLoanReminderUseCaseProvider =
 typedef PrepareLoanReminderUseCaseRef =
     AutoDisposeFutureProviderRef<PrepareLoanReminderUseCase>;
 String _$borrowedItemsSnapshotHash() =>
-    r'a18f4a352dc6cabb023fe333406acce7d4c5ddaa';
+    r'db586d9d6f8548a506923f6a87d52aa84c399fdf';
 
 /// Borrowed Items is null while locked/uninitialized. Repository failures stay
 /// AsyncError; they are never converted to an empty list or missing covers.

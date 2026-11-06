@@ -191,7 +191,12 @@ Future<PrepareLoanReminderUseCase> prepareLoanReminderUseCase(
 Future<BorrowedItemsSnapshot?> borrowedItemsSnapshot(
   BorrowedItemsSnapshotRef ref,
 ) async {
-  final session = ref.watch(vaultSessionControllerProvider).valueOrNull;
+  // A retained unlocked value during loading/error is not current authority
+  // to rebuild loan data (for example while restore invalidates the session).
+  final session = ref
+      .watch(vaultSessionControllerProvider)
+      .unwrapPrevious()
+      .valueOrNull;
   if (session is! VaultUnlocked) return null;
   if (session.data.loans.every((loan) => loan.isReturned)) {
     return BorrowedItemsSnapshot.empty;

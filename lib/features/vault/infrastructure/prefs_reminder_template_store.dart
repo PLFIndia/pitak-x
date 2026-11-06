@@ -54,7 +54,7 @@ final class PrefsReminderTemplateStore implements ReminderTemplateStore {
     final rawTemplates = decoded['customTemplates'];
     if (selected is! String ||
         selected.trim().isEmpty ||
-        selected.length > 80 ||
+        selected.length > ReminderTemplateLimits.maxIdLength ||
         rawTemplates is! List ||
         rawTemplates.length > ReminderTemplateLimits.maxCustomTemplates) {
       return _unreadable();
@@ -82,7 +82,8 @@ final class PrefsReminderTemplateStore implements ReminderTemplateStore {
   @override
   Future<Either<Failure, Unit>> save(ReminderTemplateSettings settings) async {
     final selected = settings.selectedTemplateId;
-    if (selected.trim().isEmpty || selected.length > 80) {
+    if (selected.trim().isEmpty ||
+        selected.length > ReminderTemplateLimits.maxIdLength) {
       return left(const ValidationFailure('Template selection is invalid.'));
     }
     if (settings.customTemplates.length >

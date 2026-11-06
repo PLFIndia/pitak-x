@@ -78,7 +78,7 @@ void main() {
         expect(
           (result as LoanReminderTextOnlyEligible).caption,
           'Your loan of "*Godaan*" is due for return on '
-          '*${formatLoanDate(due)}*.',
+          '*${formatLoanDateOrNull(due)!}*.',
         );
       }
       final open = await useCase(

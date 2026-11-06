@@ -22,6 +22,17 @@ class _Session extends VaultSessionController {
   void show(VaultSessionState next) {
     state = AsyncData(next);
   }
+
+  void showLoadingWithPrevious() {
+    state = const AsyncLoading<VaultSessionState>().copyWithPrevious(state);
+  }
+
+  void showErrorWithPrevious() {
+    state = AsyncError<VaultSessionState>(
+      StateError('session unavailable'),
+      StackTrace.current,
+    ).copyWithPrevious(state);
+  }
 }
 
 ProviderContainer _container({
@@ -67,6 +78,42 @@ void main() {
     expect(snapshot!.hasActiveLoans, isFalse);
     expect(emptyItems.calls, isEmpty);
   });
+
+  test(
+    'loading/error with a previous unlock returns null without reads',
+    () async {
+      final items = FakeItems();
+      final stored = items.seed(const CatalogueItem(title: 'Current title'));
+      final session = _Session(
+        VaultUnlocked(
+          VaultData(
+            borrowers: const [Borrower(id: 1, name: 'Asha')],
+            loans: [Loan(id: 9, itemId: stored.id, borrowerId: 1, lentDate: 0)],
+          ),
+        ),
+      );
+      final container = _container(session: session, items: items);
+      expect(
+        (await container.read(borrowedItemsSnapshotProvider.future))!.entries,
+        hasLength(1),
+      );
+      final reads = items.calls.length;
+
+      session.showLoadingWithPrevious();
+      expect(
+        await container.read(borrowedItemsSnapshotProvider.future),
+        isNull,
+      );
+      expect(items.calls.length, reads);
+
+      session.showErrorWithPrevious();
+      expect(
+        await container.read(borrowedItemsSnapshotProvider.future),
+        isNull,
+      );
+      expect(items.calls.length, reads);
+    },
+  );
 
   test(
     'minute ticks, catalogue signals and returned loans refresh the snapshot',
