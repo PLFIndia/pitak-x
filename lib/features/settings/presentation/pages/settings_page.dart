@@ -24,6 +24,7 @@ import 'package:pitaka/features/backup/presentation/pages/restore_page.dart';
 import 'package:pitaka/features/import_export/presentation/pages/export_page.dart';
 import 'package:pitaka/features/import_export/presentation/pages/import_page.dart';
 import 'package:pitaka/features/import_export/presentation/pages/merge_page.dart';
+import 'package:pitaka/features/network/presentation/widgets/events_watch_settings_group.dart';
 import 'package:pitaka/features/settings/application/library_logo_controller.dart';
 import 'package:pitaka/features/settings/application/settings_controller.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
@@ -224,8 +225,8 @@ class _DataTab extends ConsumerWidget {
           onTap: () => go(const MergePage()),
         ),
         const CommunityLibrarySection(),
-        // Renders nothing until the availability lane ships (plan S8).
-        const PublishingSettingsGroup(),
+        const PublishingSettingsGroup(), // empty until the lane ships (S8)
+        const EventsWatchSettingsGroup(), // empty off Android (ADR 0024)
         const Divider(),
         ListTile(
           leading: const Icon(Icons.backup_outlined),

@@ -8,8 +8,25 @@
     <uses-feature
         android:name="android.hardware.camera"
         android:required="false"/>
-    <!-- Internet for ISBN metadata lookup (#30), only on explicit user action. -->
+    <!-- Internet for ISBN metadata lookup (#30) and reading other libraries'
+         published sites. Used on explicit user action AND, when the user
+         leaves "Event alerts" on (default ON, Settings), by a scheduled
+         background check of the libraries they saved — roughly every 12 h,
+         HTTPS only, no credentials (PRIVACY.md, ADR 0024). -->
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- Background event alerts (ADR 0024). Android 13+ runtime permission,
+         requested only after an in-app explanation. flutter_local_notifications
+         also merges VIBRATE from its own manifest; declared here explicitly so
+         the app's permission set is readable in one place. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <uses-permission android:name="android.permission.VIBRATE"/>
+    <!-- Merged by androidx.work (via the workmanager plugin), NOT declared
+         here: ACCESS_NETWORK_STATE (the "connected" job constraint),
+         RECEIVE_BOOT_COMPLETED (re-arm the periodic job after reboot),
+         WAKE_LOCK (keep the CPU on for the few seconds a check runs) and
+         FOREGROUND_SERVICE (unused by Pitak; the library declares it for
+         expedited work). Verify with the merged manifest after any plugin
+         bump: build/app/intermediates/merged_manifests/<flavor>/. -->
     <!-- Privacy: Android Auto Backup defaults ON and would silently copy the
          catalogue DB (private notes, shelf locations), preferences (contact
          details) and covers to the user's Google account — contradicting the

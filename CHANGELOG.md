@@ -15,6 +15,26 @@ heading as part of the `chore(release):` commit.
 ## [Unreleased]
 
 ### Added
+- **Background event alerts (ADR 0024, Android only):** a WorkManager
+  periodic job (about every 12 h, `NetworkType.connected`, battery-not-low)
+  reads `events.json` of user-saved libraries (`bookmark`/`card` rows only,
+  strict raw-token SQL) through a dedicated read-only `sqlite3` connection
+  that peeks the active data generation and never opens Drift, and posts
+  one grouped `flutter_local_notifications` alert per library (stable
+  SHA-256-derived id, private lock-screen visibility, feature tag) plus a
+  summary. Settings live in `events_watch_settings.json` (foreground-only
+  writer; incarnation + epoch token) and worker bookkeeping in
+  `events_watch_state.json` (worker-only writer through a serialized
+  reducer); both bounded, strictly decoded and atomically replaced. First
+  sight and every re-enable baseline quietly; `304`/`404`/partial/newer-
+  schema reads withhold alerts; a blocked channel writes a revocation marker
+  that only a foreground token change supersedes; an ON setting with no
+  registered job requires explicit Resume. Default ON is offered with an
+  explanation on first use, never scheduled silently. Requires core-library
+  desugaring (`desugar_jdk_libs 2.1.4`); F-Droid classpath verified free of
+  gms/play/firebase/mlkit.
+- `DataGenerations.peekActive()` — side-effect-free generation resolver for
+  background work; `CapacityFailure` in the sealed failure hierarchy.
 - **Borrower lending limits (ADR 0023):** an optional 1–99 active-loan cap per
   borrower, off by default. Warn asks for named confirmation and retries the
   identical captured lend; Refuse has no override and rechecks the count inside

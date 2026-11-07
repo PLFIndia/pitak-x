@@ -359,4 +359,74 @@ void main() {
       expect(Directory(active.path).existsSync(), isTrue);
     });
   });
+
+  group('peekActive (read-only resolver for background work)', () {
+    /// Snapshot of every path under docs so a test can prove peek touched
+    /// nothing: no directory created, no pointer rewritten, nothing deleted.
+    Map<String, List<int>?> treeSnapshot() {
+      final out = <String, List<int>?>{};
+      if (!docs.existsSync()) return out;
+      for (final entity in docs.listSync(recursive: true)) {
+        final rel = p.relative(entity.path, from: docs.path);
+        out[rel] = entity is File ? entity.readAsBytesSync() : null;
+      }
+      return out;
+    }
+
+    test('on a fresh install returns null and creates nothing', () {
+      final before = treeSnapshot();
+
+      expect(generations.peekActive(), isNull);
+
+      expect(treeSnapshot(), before);
+      expect(Directory(dataPath('')).existsSync(), isFalse);
+    });
+
+    test('returns the generation CURRENT names when it is complete', () {
+      final opened = generations.open();
+
+      final peeked = DataGenerations(docsDir: docs.path).peekActive();
+
+      expect(peeked, isNotNull);
+      expect(peeked!.name, opened.name);
+      expect(peeked.catalogueDbPath, opened.catalogueDbPath);
+    });
+
+    test('returns null (does NOT fall back) when CURRENT names an '
+        'incomplete generation, and repairs nothing', () {
+      generations.open();
+      Directory(dataPath('gen-000002')).createSync();
+      File(dataPath('gen-000002/pitaka.db')).writeAsBytesSync([2]);
+      current().writeAsStringSync('gen-000002\n');
+      final before = treeSnapshot();
+
+      expect(DataGenerations(docsDir: docs.path).peekActive(), isNull);
+
+      // open() would have deleted gen-000002 and rewritten CURRENT; peek
+      // must leave both exactly as they were.
+      expect(treeSnapshot(), before);
+    });
+
+    test('returns null for a malformed or traversal pointer', () {
+      generations.open();
+      for (final bad in ['../etc', 'gen-1', 'gen-0000011', '']) {
+        current().writeAsStringSync('$bad\n');
+        expect(
+          DataGenerations(docsDir: docs.path).peekActive(),
+          isNull,
+          reason: 'pointer "$bad"',
+        );
+      }
+    });
+
+    test('does not adopt a pre-M02 flat layout', () {
+      writeFlat('pitaka.db', [1]);
+      final before = treeSnapshot();
+
+      expect(generations.peekActive(), isNull);
+
+      expect(treeSnapshot(), before);
+      expect(File(p.join(docs.path, 'pitaka.db')).existsSync(), isTrue);
+    });
+  });
 }

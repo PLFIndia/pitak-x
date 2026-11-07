@@ -159,6 +159,13 @@ dependencies:
   # transitive via flutter_map; pinned direct so the map code can name
   # `LatLng` without depending on a transitive version drifting.
   latlong2: ^0.9.1
+  # Background event alerts (PLAN.md 2026-11-07, ADR 0024). Both audited for
+  # F-Droid purity: neither pulls gms/play/firebase/mlkit. workmanager bridges
+  # androidx.work only; flutter_local_notifications brings androidx.core,
+  # androidx.media and gson (Apache-2.0). The notification plugin requires
+  # core-library desugaring in android/app/build.gradle.kts.
+  workmanager: ^0.6.0
+  flutter_local_notifications: ^20.1.0
   # NOTE (S36): the Play in-app update flow is our OWN flavor-split Kotlin
   # (android/app/src/play/kotlin/.../AppUpdateChannel.kt). Do not re-add the
   # `in_app_update` plugin: a plugin links Google's proprietary Play Core

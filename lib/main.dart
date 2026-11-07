@@ -5,8 +5,10 @@ import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/theme/app_theme.dart';
 import 'package:pitaka/core/widgets/app_gate.dart';
 import 'package:pitaka/core/widgets/edge_to_edge_safe_area.dart';
+import 'package:pitaka/core/widgets/root_navigator_key.dart';
 import 'package:pitaka/core/widgets/unfocus_on_pause.dart';
 import 'package:pitaka/features/library/presentation/pages/library_page.dart';
+import 'package:pitaka/features/network/presentation/widgets/events_watch_lifecycle_relay.dart';
 import 'package:pitaka/features/publish/application/availability/availability_auto_publisher.dart';
 import 'package:pitaka/features/publish/presentation/widgets/availability_lifecycle_relay.dart';
 import 'package:pitaka/features/settings/application/settings_controller.dart';
@@ -65,29 +67,40 @@ class PitakaApp extends ConsumerWidget {
     // needs the app's lifecycle, not a route's): it tells the lane when the
     // app returns to the foreground, so a set that could not go out while
     // offline is retried (plan C.4 "Retry triggers").
+    // EventsWatchLifecycleRelay (ADR 0024) sits here for the same reason:
+    // it bootstraps the event-alert plugins once, reconciles the schedule
+    // on start/unlock/resume, and routes a notification tap only after the
+    // app lock has been passed.
     return AppLockObserver(
       child: AvailabilityLifecycleRelay(
-        child: MaterialApp(
-          title: 'Pitak',
-          // `builder` wraps the Navigator itself, so both wrappers below apply
-          // to EVERY route, dialog and sheet — not just `home`:
-          //  - AppGate: splash + optional biometric lock painted OVER the whole
-          //    navigator; routes underneath are kept alive but inert (B01).
-          //  - EdgeToEdgeSafeArea: Android 15+ draws the app behind the system
-          //    navigation bar; pads all content clear of it once (decision A).
-          builder: (context, child) => AppGate(
-            child: EdgeToEdgeSafeArea(child: child ?? const SizedBox.shrink()),
+        child: EventsWatchLifecycleRelay(
+          child: MaterialApp(
+            navigatorKey: ref.watch(rootNavigatorKeyProvider),
+            title: 'Pitak',
+            // `builder` wraps the Navigator itself, so both wrappers below
+            // apply to EVERY route, dialog and sheet — not just `home`:
+            //  - AppGate: splash + optional biometric lock painted OVER the
+            //    whole navigator; routes underneath are kept alive but inert
+            //    (B01).
+            //  - EdgeToEdgeSafeArea: Android 15+ draws the app behind the
+            //    system navigation bar; pads all content clear of it once
+            //    (decision A).
+            builder: (context, child) => AppGate(
+              child: EdgeToEdgeSafeArea(
+                child: child ?? const SizedBox.shrink(),
+              ),
+            ),
+            themeMode: themeMode,
+            // Both themes live in lib/core/theme/app_theme.dart so the golden and
+            // accessibility tests render exactly what ships.
+            theme: AppTheme.light,
+            darkTheme: AppTheme.dark,
+            // UnfocusOnPause: releases keyboard focus when the app is
+            // backgrounded, so the first tap after resume reliably reopens the
+            // keyboard (fixes the stale-IME "tap does nothing" bug) and clears
+            // focus off secret fields.
+            home: const UnfocusOnPause(child: LibraryPage()),
           ),
-          themeMode: themeMode,
-          // Both themes live in lib/core/theme/app_theme.dart so the golden and
-          // accessibility tests render exactly what ships.
-          theme: AppTheme.light,
-          darkTheme: AppTheme.dark,
-          // UnfocusOnPause: releases keyboard focus when the app is
-          // backgrounded, so the first tap after resume reliably reopens the
-          // keyboard (fixes the stale-IME "tap does nothing" bug) and clears
-          // focus off secret fields.
-          home: const UnfocusOnPause(child: LibraryPage()),
         ),
       ),
     );

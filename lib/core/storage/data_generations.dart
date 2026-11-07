@@ -149,6 +149,21 @@ final class DataGenerations {
     return active;
   }
 
+  /// Reads the active generation WITHOUT repairing, adopting, creating or
+  /// deleting anything (background event checks, PLAN.md §2).
+  ///
+  /// Why a separate method (beginner note): [open] is the foreground's
+  /// startup path and it is allowed to write — move the flat layout, create
+  /// `gen-000001`, rewrite `CURRENT`, delete leftovers. A background worker
+  /// must never do any of that: it may run while the foreground is in the
+  /// middle of a restore, and two writers to `data/` would race. So the
+  /// worker only *looks* at the pointer. Null means "nothing trustworthy to
+  /// read right now" (no pointer yet, a malformed pointer, or a pointer that
+  /// names an incomplete generation) and the caller must fail closed — skip
+  /// its work — rather than fall back to the newest complete directory the
+  /// way [open] would.
+  DataGeneration? peekActive() => _readPointer();
+
   /// Creates the next, empty generation directory (name sorts after
   /// [active] and after every leftover). It is NOT complete and NOT active:
   /// the caller fills it, then calls [complete] and [activate], or [discard].

@@ -97,7 +97,8 @@ void main() {
       // S11 (plan CV6): "what is inside" gained the publishing-record line.
       GuideId.backup: [0, 6, 4, 2, 3, 1, 1, 1, 2],
       GuideId.vault: [0, 3, 3, 3, 3],
-      GuideId.network: [0, 1, 2, 5, 0],
+      // ADR 0024: "Event alerts (Android)" paragraphs (2) before the end.
+      GuideId.network: [0, 1, 2, 5, 2, 0],
     };
     for (final guide in guideCatalog) {
       final counts = <int>[

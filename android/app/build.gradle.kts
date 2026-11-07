@@ -32,6 +32,12 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+        // Background event alerts (ADR 0024): flutter_local_notifications 10+
+        // uses java.time and REQUIRES core-library desugaring, even when
+        // scheduled notifications are unused (its README §"Gradle setup").
+        // Desugaring rewrites those calls for every minSdk; it adds no
+        // Google dependency (desugar_jdk_libs is Apache-2.0, F-Droid-clean).
+        isCoreLibraryDesugaringEnabled = true
     }
 
     kotlinOptions {
@@ -169,6 +175,11 @@ dependencies {
     // dependency choices — declare it explicitly, same version, no new
     // artifacts (F-Droid reproducibility unaffected). User-approved D3.
     implementation("androidx.biometric:biometric:1.1.0")
+
+    // Pairs with `isCoreLibraryDesugaringEnabled` above (ADR 0024). Version
+    // taken from the flutter_local_notifications 20.1.0 README; both flavors
+    // need it because the plugin links into every flavor.
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
 
     // Native buffer-wiping tests use fake crypto/prompt outcomes only.
     testImplementation("junit:junit:4.13.2")

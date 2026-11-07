@@ -300,6 +300,23 @@ enum PublishedCatalogueFailureReason {
   invalid,
 }
 
+/// A bounded store or query has reached its hard capacity and the operation
+/// was refused rather than silently truncated (background event checks,
+/// PLAN.md §1–§2).
+///
+/// Why this is its own variant (beginner note): "too much data to handle"
+/// is neither a storage error nor invalid input — the data is fine, there is
+/// simply more of it than the feature promised to handle. The UI must show
+/// a *visible* capacity message instead of a generic "could not save", so
+/// the user is never left thinking a subset was processed.
+final class CapacityFailure extends Failure {
+  /// Creates a capacity failure with a short diagnostic [reason].
+  const CapacityFailure(this.reason);
+
+  /// Short diagnostic (not shown verbatim to users).
+  final String reason;
+}
+
 /// A published catalogue could not be read (network domain, ADR 0015).
 ///
 /// A *newer declared schema is not a failure*: those bytes decode into a

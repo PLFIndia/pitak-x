@@ -130,8 +130,9 @@ const Guide networkGuide = Guide(
   intro:
       '**☰ → Library network** is your list of other Pitak libraries. Nothing '
       'leaves your phone until you tap **Refresh**, which reads each '
-      "library's published page or you open a library to browse its "
-      'published catalogue inside Pitak.',
+      "library's published page, or you open a library to browse its "
+      'published catalogue inside Pitak — except event alerts (below), '
+      'which check saved libraries on a schedule if you leave them on.',
   needs: [],
   sections: [
     GuideParagraphs(
@@ -176,6 +177,23 @@ const Guide networkGuide = Guide(
             'asked again.',
         '**My card** is your own card to show — it is your site address plus '
             'a public fingerprint, never your private library ID.',
+      ],
+    ),
+    GuideParagraphs(
+      title: 'Event alerts (Android)',
+      paragraphs: [
+        'When you first save a library, Pitak offers to tell you about new '
+            'or changed event posters at the libraries you saved. If you '
+            'accept, it checks their public events file about every 12 '
+            'hours — also while the app is closed and on mobile data — and '
+            "shows a notification with the poster's caption. The first "
+            'check only notes what is already there; removed posters are '
+            'not announced. Timing is best effort: Android may delay '
+            'checks to save battery.',
+        'Turn it off or on any time in **Settings → Data → Event alerts**. '
+            'If the switch says "not scheduled", tap **Resume**. Each '
+            'library you follow sees a request from your phone on that '
+            'schedule, as any website does.',
       ],
     ),
   ],

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Resources the R8 resource shrinker must keep even though no Kotlin/Java
+     code references them: flutter_local_notifications looks the small icon
+     up BY NAME at runtime, and a shrunk-away icon makes every notification
+     fail silently (plugin README, "resource shrinking"). ADR 0024. -->
+<resources xmlns:tools="http://schemas.android.com/tools"
+    tools:keep="@drawable/ic_stat_pitak_events" />

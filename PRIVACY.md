@@ -1,6 +1,6 @@
 # Privacy Policy — Pitak
 
-_Effective date: 2026-11-06 · Publisher: Parallel Line Foundation_
+_Effective date: 2026-11-07 · Publisher: Parallel Line Foundation_
 
 _Changed 2026-11-06 — **Borrowed Items** adds maintainer-reviewed loan
 reminders. Template text is plaintext on this device and is not in the current
@@ -47,6 +47,12 @@ analytics, no advertising, and no tracking of any kind.**
 
 - **Your library catalogue** (books, wishlist, covers, notes) in a database
   in the app's private storage. Never uploaded anywhere by itself.
+- **Event-alert bookkeeping** (Android, item 10): which saved libraries are
+  checked, a fingerprint of their last-seen posters and any alert not yet
+  shown. Plain files in private storage, excluded from backups. They reveal
+  which libraries you follow to anyone who can read the app's private
+  folder (a rooted or compromised device), which is why they hold no more
+  than that.
 - **Your borrowers vault** (borrower names/contact details and loans), if you
   use it, in a separate SQLCipher-encrypted database. Argon2id strengthens
   your chosen passphrase into a key-encryption key, and AES-256-GCM uses that
@@ -102,15 +108,27 @@ produces a file you control.
 - **Internet** — used for the actions listed below. Google Play builds also
   check for updates on launch and, after you accept Play's update dialog,
   download in the background (item 7); the F-Droid flavor has no Play
-  Core/update library and cannot run that check.
+  Core/update library and cannot run that check. On Android, event alerts
+  (item 10) also use it on a schedule while the app is closed, if you leave
+  them on.
+- **Notifications** (Android 13+ asks you; older Android does not) — used
+  only for event alerts (item 10). Pitak shows no other notifications.
+- **Android system permissions merged by the scheduling library**
+  (`ACCESS_NETWORK_STATE`, `RECEIVE_BOOT_COMPLETED`, `WAKE_LOCK`,
+  `FOREGROUND_SERVICE`): they let the scheduled check wait for a network
+  connection, survive a reboot and keep the device awake for the few seconds
+  a check takes. Pitak runs no foreground service and reads no network
+  details beyond "connected or not".
 
 ## When anything leaves your device
 
-Network activity happens only when you explicitly ask for it, with two
+Network activity happens only when you explicitly ask for it, with three
 exceptions: once you publish a site, Pitak keeps its *Available / Not
 available* tags up to date by itself (item 3; on by default, switch in
-Settings → Data), and the passive update check of Google Play builds
-(item 8):
+Settings → Data); on Android, **event alerts** check the libraries you saved
+about every 12 hours while the app is closed (item 10; offered on first use,
+switch in Settings → Data); and the passive update check of Google Play
+builds (item 8):
 
 1. **ISBN lookup.** When you type an ISBN and tap Lookup — or scan one after
    enabling **Settings → Library → Look up ISBN after scanning** — that ISBN
@@ -283,7 +301,8 @@ Settings → Data), and the passive update check of Google Play builds
    checked, the saved copy is shown with a note saying how old it is. Saved
    copies take at most 200 MB together (the least recently opened library is
    removed first), and a library's copies are deleted when you remove it from
-   your saved libraries. There is no background refresh.
+   your saved libraries. The viewer itself never refreshes in the background;
+   the separate event-alert check (item 10) reads only `events.json`.
    Covers and event posters are SEPARATE requests and obey the
    remote-cover switch in item 2: with it off (the default) the viewer
    shows placeholders and offers a Load covers button; with it on, images load
@@ -364,6 +383,34 @@ Settings → Data), and the passive update check of Google Play builds
    cover file in its app-cache directory during sharing; the OS/plugin or a
    later Android share removes it. Pitak keeps no reminder history or
    app-owned persistent reminder copy.
+10. **Event alerts (Android only; on by default after you accept the
+    explanation).** The first time you have a saved library, Pitak explains
+    this feature and asks; on Android 13+ the system then asks for the
+    notification permission. If you accept, about every 12 hours — including
+    while the app is closed, and on mobile data — Pitak asks each library you
+    saved yourself (by address or by card; never libraries it merely
+    discovered) for its public `events.json`, under the same site-directory,
+    HTTPS and redirect rules as item 5, with the fixed User-Agent and no
+    cookies or credentials. Each site sees your device's IP address for that
+    request, and — because the request repeats on a schedule — can infer that
+    a device follows that library. When a poster appears or its caption
+    changes, Pitak shows a notification with the poster's public caption; the
+    notification title is the library's public name as published in its own
+    `library.json` (never a name you typed), and alerts are hidden on the lock
+    screen. The first check of a library only records what is there; it never
+    alerts about posters that already existed. Removed posters are not
+    announced. Pitak cannot tell when an image file was replaced under the
+    same name. Timing is best effort: Android may delay or skip checks under
+    battery saving, Doze or manufacturer restrictions, and a check never runs
+    after you force-stop the app until you open it again. Turn alerts off at
+    any time in **Settings → Data → Event alerts**; turning them off cancels
+    the schedule and removes Pitak's alerts from the shade. Blocking Pitak's
+    notifications in Android settings has the same effect the next time the
+    app runs. What Pitak keeps for this: a small file with the addresses of
+    the libraries it checks, a fingerprint of the posters it last saw, the
+    site's `ETag`, and any alert not yet shown — in the app's private storage,
+    excluded from backups, and deleted when you reset the feature or remove
+    the library. No history of shown alerts is kept.
 
 ## What Pitak does NOT do
 
