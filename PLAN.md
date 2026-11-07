@@ -1,9 +1,8 @@
 # Borrower limit (items per borrower) — implementation plan
 
-- **Status:** Implemented locally; steps 1–6 and 8 are complete. All local
-  gates pass (424 focused tests, 6,069 non-golden tests). Step 7 remains open
-  only for Linux golden regeneration/review; step 9 and any commit remain
-  pending maintainer approval.
+- **Status:** Steps 1–8 complete. Feature commit `a055d21` is pushed. The
+  Linux golden artifact is reviewed and staged for a follow-up commit; final
+  Linux CI confirmation and the step 9 report remain open.
 - **Date:** 2026-11-07
 - **Branch:** `reminders` (after the 1.9.5+37 release commits `6caf0ed`, `aa1b799`)
 - **Previous plan:** the Borrowed Items / loan reminders plan this file replaces is in git history (`aa1b799:PLAN.md`); that work shipped in 1.9.5.
@@ -370,7 +369,7 @@ write never leaves the cache claiming success.
 - [x] 4. Providers (`borrowerLimitPolicyStoreProvider`, `LendingRulesController`, wire the use case); add the Refuse-only FIFO re-check in `VaultSessionController.addLoan` (shared refusal copy, no `VaultLender` signature change); `build_runner`. In the SAME step add default-empty prefs/policy setup to `lend_book_page_test.dart` and `vault_session_controller_test.dart`, add the default-off policy-store override to `test/features/library/replacement_harness.dart`, run those existing vault/lend/catalogue-replacement tests, and add the overlapping-Refuse and unreadable-inner-gate tests.
 - [x] 5. `LendingRulesPage` (form renders in the error state too; Save disabled while pending) + always-visible vault app-bar action OUTSIDE the unlocked-only Pending/Lock spread (Decision 10) and the updated `vault_page.dart:8-9` doc comment; add default-empty prefs to `vault_page_test.dart` and `lending_rules_page_test.dart`; widget tests for locked, uninitialized and unlocked navigation.
 - [x] 6. Lend page: capture the original submission and disable form inputs while busy; confirmation dialog; Cancel/barrier dismissal without a second call; confirm with the acknowledged second call reusing the captured target and arguments; new widget tests.
-- [ ] 7. Run `dart run build_runner build --delete-conflicting-outputs` (no uncommitted generated diff), `dart format --set-exit-if-changed lib test`, `dart analyze lib test` (zero), `flutter test --no-pub test/features/vault test/architecture`, and the full non-golden `flutter test --coverage --exclude-tags golden` suite; compare with step 0 and run the remaining applicable repo CI gates. Regenerate the changed `vault_unlock.png` on Linux via `update_goldens.yml` (ask before the external workflow) and review the image diff; do not substitute a macOS-rendered golden.
+- [x] 7. Run `dart run build_runner build --delete-conflicting-outputs` (no uncommitted generated diff), `dart format --set-exit-if-changed lib test`, `dart analyze lib test` (zero), `flutter test --no-pub test/features/vault test/architecture`, and the full non-golden `flutter test --coverage --exclude-tags golden` suite; compare with step 0 and run the remaining applicable repo CI gates. Regenerate the changed `vault_unlock.png` on Linux via `update_goldens.yml` (ask before the external workflow) and review the image diff; do not substitute a macOS-rendered golden.
 - [x] 8. Add `docs/adr/0023-borrower-lending-limits.md` from `docs/adr/0000-template.md` (Decision 9), index it in `docs/adr/README.md`, and add a `CHANGELOG.md` `[Unreleased]` entry. The store pattern remains ADR 0022. Before naming Koha identifiers in the changelog, verify `maxissueqty` / `AllowTooManyOverride` against Koha's docs, or drop the identifiers and keep only "Koha circulation rules: cap + override preference".
 - [ ] 9. Report with the §11 checklist; ask before any commit.
 
