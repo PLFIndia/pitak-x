@@ -1,8 +1,8 @@
 # Borrower limit (items per borrower) — implementation plan
 
-- **Status:** Steps 1–8 complete. Feature commit `a055d21` is pushed. The
-  Linux golden artifact is reviewed and staged for a follow-up commit; final
-  Linux CI confirmation and the step 9 report remain open.
+- **Status:** Complete. All 10 decision points and steps 0–9 are implemented
+  and verified on 2026-11-07; the full Linux CI matrix and all 10 Linux
+  golden comparisons are green.
 - **Date:** 2026-11-07
 - **Branch:** `reminders` (after the 1.9.5+37 release commits `6caf0ed`, `aa1b799`)
 - **Previous plan:** the Borrowed Items / loan reminders plan this file replaces is in git history (`aa1b799:PLAN.md`); that work shipped in 1.9.5.
@@ -371,7 +371,7 @@ write never leaves the cache claiming success.
 - [x] 6. Lend page: capture the original submission and disable form inputs while busy; confirmation dialog; Cancel/barrier dismissal without a second call; confirm with the acknowledged second call reusing the captured target and arguments; new widget tests.
 - [x] 7. Run `dart run build_runner build --delete-conflicting-outputs` (no uncommitted generated diff), `dart format --set-exit-if-changed lib test`, `dart analyze lib test` (zero), `flutter test --no-pub test/features/vault test/architecture`, and the full non-golden `flutter test --coverage --exclude-tags golden` suite; compare with step 0 and run the remaining applicable repo CI gates. Regenerate the changed `vault_unlock.png` on Linux via `update_goldens.yml` (ask before the external workflow) and review the image diff; do not substitute a macOS-rendered golden.
 - [x] 8. Add `docs/adr/0023-borrower-lending-limits.md` from `docs/adr/0000-template.md` (Decision 9), index it in `docs/adr/README.md`, and add a `CHANGELOG.md` `[Unreleased]` entry. The store pattern remains ADR 0022. Before naming Koha identifiers in the changelog, verify `maxissueqty` / `AllowTooManyOverride` against Koha's docs, or drop the identifiers and keep only "Koha circulation rules: cap + override preference".
-- [ ] 9. Report with the §11 checklist; ask before any commit.
+- [x] 9. Report with the §11 checklist; ask before any commit.
 
 ## Out-of-scope observations
 
@@ -387,4 +387,32 @@ write never leaves the cache claiming success.
 
 ## Result
 
-_(filled in when done)_
+Implemented the optional 1–99 per-borrower active-loan cap, off by default.
+Each active loan counts separately. Warn returns a no-write confirmation
+outcome and retries the identical captured submission after named approval;
+Cancel and barrier dismissal do nothing. Refuse ignores acknowledgement and
+re-reads/rechecks policy and borrower count inside the serialized loan write.
+Unreadable rules fail closed and can be repaired from the always-visible
+Lending rules page, including while locked. The versioned preferences document
+contains no borrower data. ADR 0023 and the changelog record the design.
+
+The complete insert operation was extracted to
+`lib/features/vault/application/insert_loan_with_policy.dart`; this preserved
+the FIFO/cancellation order and reduced `vault_session_controller.dart` to 826
+lines, below its 836-line architecture-ratchet record.
+
+Verification:
+
+- Focused vault/architecture suite: **424 passed** (baseline 385).
+- Full non-golden suite: **6,069 passed**; both timezone matrices: **226 each**.
+- Coverage: **83.89% locally**, **83.86% on CI** (floor 64%).
+- Generated outputs stable on rerun; format and analysis clean; fastlane,
+  block-buffer, architecture and tracked/changed-file secret checks passed.
+- `update_goldens.yml` run `42378500038` changed only `vault_unlock.png`;
+  review isolated 675 changed pixels to the new app-bar icon.
+- CI run `42379293323` passed Flutter, Rust, OSV and F-Droid jobs, including
+  **10/10 Linux golden tests**. A macOS golden run was discarded as the known
+  renderer mismatch, not used as evidence or as an image source.
+- Commits: `a055d21` (`feat: add borrower lending limits`) and `655f353`
+  (`test: update vault lending rules golden`); the final documentation commit
+  records this result.
