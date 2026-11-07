@@ -16,6 +16,19 @@ heading as part of the `chore(release):` commit.
 
 ## [1.9.5] - 2026-11 (tag `1.9.5`, versionCode 37)
 
+Release sentinel (`tool/release_build.sh --sentinel`):
+`PrepareLoanReminderUseCase`.
+
+AAB sha256: `403dc6c3344dbfa3663db2c7e4ea38952fb5a9ba23d912a2697d11c5db3c5363`.
+The 195-second `tool/release_build.sh` build (its own `flutter clean`, locked
+dependencies, Rust for three ABIs and Dart AOT; 184.4 s in Gradle) passed
+upload-signature, package/version and fresh arm64 Dart-sentinel
+verification. Built from `reminders` at HEAD `6caf0ed`; `pubspec.lock`
+was unchanged. Every 64-bit native `LOAD` alignment was at least 16 KiB
+(`armeabi-v7a` `libpitak_crypto.so` and `libsqlite3.so` remain 4 KiB, as
+§7 allows for 32-bit); native libraries are uncompressed and
+`extractNativeLibs=false`.
+
 ### Added
 - **Borrowed Items (vault):** a drawer destination that lists every active
   loan as a catalogue-style card (cover, title, borrower, due status, Call
