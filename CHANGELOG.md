@@ -14,6 +14,26 @@ heading as part of the `chore(release):` commit.
 
 ## [Unreleased]
 
+## [1.9.5] - 2026-11 (tag `1.9.5`, versionCode 37)
+
+### Added
+- **Borrowed Items (vault):** a drawer destination that lists every active
+  loan as a catalogue-style card (cover, title, borrower, due status, Call
+  and WhatsApp actions) with All / Overdue / Due soon (72 hours) / No due
+  date filters. The list is vault-gated — nothing is shown while the vault
+  is locked — and viewing it never downloads a cover (`owner: null`).
+- **Loan reminders:** one tap prepares a reminder message plus the item's
+  local cover and hands both to the OS share sheet. The cover is read through
+  the new `LocalCoverReader` (8 MiB source cap, metadata-stripped JPEG
+  re-encode, no network); if it cannot be sanitized the app offers
+  "Share text only" instead of falling back to raw bytes. The maintainer
+  picks the conversation and sends; nothing is sent automatically and no
+  reminder history is kept.
+- **Message templates:** named reminder templates in any language with a
+  selected default, stored as a versioned preferences document holding
+  template text only (never rendered messages or borrower details). The
+  editor warns not to include private details.
+
 ## [1.9.4] - 2026-11 (tag `1.9.4`, versionCode 36)
 
 Release sentinel (`tool/release_build.sh --sentinel`):

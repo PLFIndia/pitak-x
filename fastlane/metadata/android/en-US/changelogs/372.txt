@@ -1,0 +1,4 @@
+* New Borrowed Items screen: every active loan with its cover, title, borrower, due status and Call / WhatsApp actions.
+* Filter loans by Overdue, Due soon (72 hours) or No due date.
+* Share a loan reminder with the item's cover and a message; you pick the conversation and send it yourself, nothing is sent automatically.
+* Write and save your own reminder message templates in any language and choose a default.
