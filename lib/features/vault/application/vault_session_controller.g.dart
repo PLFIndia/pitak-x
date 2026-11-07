@@ -7,7 +7,7 @@ part of 'vault_session_controller.dart';
 // **************************************************************************
 
 String _$vaultSessionControllerHash() =>
-    r'1b7a75cf5e0a271d0db55ea40de5182dbd5050d9';
+    r'de171186eff4f736abaf54f75e75a0a6de167152';
 
 /// Holds the persistent vault's [VaultSessionState] across navigation.
 ///

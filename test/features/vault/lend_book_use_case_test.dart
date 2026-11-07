@@ -7,6 +7,8 @@ import 'package:pitaka/features/library/domain/library_query.dart';
 import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
 import 'package:pitaka/features/library/domain/value_objects/item_details.dart';
 import 'package:pitaka/features/vault/application/lend_book_use_case.dart';
+import 'package:pitaka/features/vault/domain/borrower_limit_policy.dart';
+import 'package:pitaka/features/vault/domain/borrower_limit_policy_store.dart';
 import 'package:pitaka/features/vault/domain/entities/borrower.dart';
 import 'package:pitaka/features/vault/domain/lending_policy.dart';
 
@@ -111,6 +113,31 @@ class _Vault implements VaultLender {
   }
 }
 
+class _PolicyStore implements BorrowerLimitPolicyStore {
+  _PolicyStore([this.policy]);
+
+  BorrowerLimitPolicy? policy;
+  Failure? readFailure;
+  int loads = 0;
+
+  @override
+  Either<Failure, BorrowerLimitPolicy?> load() {
+    loads++;
+    final failure = readFailure;
+    return failure == null ? Right(policy) : Left(failure);
+  }
+
+  @override
+  Future<Either<Failure, Unit>> save(BorrowerLimitPolicy policy) async =>
+      right(unit);
+}
+
+BorrowerLimitPolicy _policy(int limit, BorrowerLimitAction action) =>
+    BorrowerLimitPolicy.validate(
+      maxActiveLoans: limit,
+      action: action,
+    ).toNullable()!;
+
 void main() {
   const single = CatalogueItem(id: 1, title: 'One copy');
   const triple = CatalogueItem(id: 2, title: 'Three copies', copyCount: 3);
@@ -194,7 +221,11 @@ void main() {
 
     test('lends a free book to an existing borrower', () async {
       final vault = _Vault();
-      final uc = LendBookUseCase(books: books, vault: vault);
+      final uc = LendBookUseCase(
+        books: books,
+        vault: vault,
+        policyStore: _PolicyStore(),
+      );
       final r = await uc(
         bookId: 1,
         target: const ExistingBorrower(7),
@@ -212,7 +243,11 @@ void main() {
       'REFUSES a second loan of a single-copy book, explaining why',
       () async {
         final vault = _Vault(loans: [out(1)]);
-        final uc = LendBookUseCase(books: books, vault: vault);
+        final uc = LendBookUseCase(
+          books: books,
+          vault: vault,
+          policyStore: _PolicyStore(),
+        );
         final r = await uc(
           bookId: 1,
           target: const ExistingBorrower(7),
@@ -231,7 +266,11 @@ void main() {
 
     test('REFUSES lending a removed book', () async {
       final vault = _Vault();
-      final uc = LendBookUseCase(books: books, vault: vault);
+      final uc = LendBookUseCase(
+        books: books,
+        vault: vault,
+        policyStore: _PolicyStore(),
+      );
       final r = await uc(
         bookId: 3,
         target: const ExistingBorrower(7),
@@ -241,9 +280,73 @@ void main() {
       expect(vault.addedLoans, isEmpty);
     });
 
+    test('item gate precedes the borrower gate and policy read', () async {
+      final store = _PolicyStore(_policy(1, BorrowerLimitAction.refuse));
+      final vault = _Vault(loans: [out(1)]);
+      final uc = LendBookUseCase(
+        books: books,
+        vault: vault,
+        policyStore: store,
+      );
+      final result = await uc(
+        bookId: 1,
+        target: const ExistingBorrower(9),
+        lentDate: 10,
+      );
+      final failure = result.swap().toNullable()!;
+      expect(
+        (failure as ValidationFailure).message,
+        contains('already out on loan'),
+      );
+      expect(store.loads, 0);
+      expect(vault.addedLoans, isEmpty);
+    });
+
+    test('a new borrower has no history and cannot trip the limit', () async {
+      final vault = _Vault(loans: [out(2)]);
+      final uc = LendBookUseCase(
+        books: books,
+        vault: vault,
+        policyStore: _PolicyStore(_policy(1, BorrowerLimitAction.refuse)),
+      );
+      final result = await uc(
+        bookId: 2,
+        target: const NewBorrower('Asha'),
+        lentDate: 10,
+      );
+      expect(result.toNullable(), isA<LoanRecorded>());
+      expect(vault.addedBorrowers.single.name, 'Asha');
+      expect(vault.addedLoans.single.borrowerId, 100);
+    });
+
+    test('Warn confirmation returns both numbers and writes nothing', () async {
+      final vault = _Vault(loans: [out(2)]);
+      final uc = LendBookUseCase(
+        books: books,
+        vault: vault,
+        policyStore: _PolicyStore(_policy(1, BorrowerLimitAction.warn)),
+      );
+      final result = await uc(
+        bookId: 2,
+        target: const ExistingBorrower(9),
+        lentDate: 10,
+      );
+      final outcome = result.toNullable();
+      expect(outcome, isA<LimitConfirmationNeeded>());
+      final confirmation = outcome! as LimitConfirmationNeeded;
+      expect(confirmation.limit, 1);
+      expect(confirmation.active, 1);
+      expect(vault.addedLoans, isEmpty);
+      expect(vault.addedBorrowers, isEmpty);
+    });
+
     test('creates the inline borrower and uses the RETURNED id', () async {
       final vault = _Vault()..nextBorrowerId = 42;
-      final uc = LendBookUseCase(books: books, vault: vault);
+      final uc = LendBookUseCase(
+        books: books,
+        vault: vault,
+        policyStore: _PolicyStore(),
+      );
       final r = await uc(
         bookId: 2,
         target: const NewBorrower('  Asha  '),
@@ -256,7 +359,11 @@ void main() {
 
     test('blank inline name is a validation failure with no writes', () async {
       final vault = _Vault();
-      final uc = LendBookUseCase(books: books, vault: vault);
+      final uc = LendBookUseCase(
+        books: books,
+        vault: vault,
+        policyStore: _PolicyStore(),
+      );
       final r = await uc(
         bookId: 2,
         target: const NewBorrower('   '),
@@ -268,7 +375,11 @@ void main() {
 
     test('a loan write failure after an inline borrower says so', () async {
       final vault = _Vault()..failLoan = true;
-      final uc = LendBookUseCase(books: books, vault: vault);
+      final uc = LendBookUseCase(
+        books: books,
+        vault: vault,
+        policyStore: _PolicyStore(),
+      );
       final r = await uc(
         bookId: 2,
         target: const NewBorrower('Asha'),
@@ -283,10 +394,76 @@ void main() {
       );
     });
 
+    test('acknowledged Warn writes the loan', () async {
+      final vault = _Vault(loans: [out(2)]);
+      final uc = LendBookUseCase(
+        books: books,
+        vault: vault,
+        policyStore: _PolicyStore(_policy(1, BorrowerLimitAction.warn)),
+      );
+      final result = await uc(
+        bookId: 2,
+        target: const ExistingBorrower(9),
+        lentDate: 10,
+        limitWarningAcknowledged: true,
+      );
+      expect(result.toNullable(), isA<LoanRecorded>());
+      expect(vault.addedLoans.single.borrowerId, 9);
+    });
+
+    test('Refuse ignores acknowledgement and names both numbers', () async {
+      final vault = _Vault(loans: [out(2), out(2)]);
+      final uc = LendBookUseCase(
+        books: books,
+        vault: vault,
+        policyStore: _PolicyStore(_policy(1, BorrowerLimitAction.refuse)),
+      );
+      final result = await uc(
+        bookId: 2,
+        target: const ExistingBorrower(9),
+        lentDate: 10,
+        limitWarningAcknowledged: true,
+      );
+      final failure = result.swap().toNullable()!;
+      expect(
+        (failure as ValidationFailure).message,
+        borrowerLimitRefusalMessage(activeLoans: 2, limit: 1),
+      );
+      expect(vault.addedLoans, isEmpty);
+    });
+
+    test(
+      'unreadable rules fail closed with recovery copy and no writes',
+      () async {
+        final store = _PolicyStore()
+          ..readFailure = const StorageFailure('private detail');
+        final vault = _Vault();
+        final uc = LendBookUseCase(
+          books: books,
+          vault: vault,
+          policyStore: store,
+        );
+        final result = await uc(
+          bookId: 1,
+          target: const NewBorrower('Asha'),
+          lentDate: 10,
+        );
+        final failure = result.swap().toNullable();
+        expect(failure, isA<ValidationFailure>());
+        expect(
+          (failure! as ValidationFailure).message,
+          borrowerLimitPolicyRecoveryMessage,
+        );
+        expect(vault.addedBorrowers, isEmpty);
+        expect(vault.addedLoans, isEmpty);
+      },
+    );
+
     test('locked vault and missing book are typed failures', () async {
       final locked = LendBookUseCase(
         books: books,
         vault: _Vault()..loans = null,
+        policyStore: _PolicyStore(),
       );
       expect(
         (await locked(
@@ -296,7 +473,11 @@ void main() {
         )).isLeft(),
         isTrue,
       );
-      final uc = LendBookUseCase(books: books, vault: _Vault());
+      final uc = LendBookUseCase(
+        books: books,
+        vault: _Vault(),
+        policyStore: _PolicyStore(),
+      );
       final r = await uc(
         bookId: 999,
         target: const ExistingBorrower(7),

@@ -19,6 +19,16 @@ Map<int, int> activeLoanCountsByBook(Iterable<Loan> loans) {
   return counts;
 }
 
+/// Counts active loans held by one borrower, ignoring returned loans and every
+/// other borrower. Each loan counts separately, including loans of one title.
+int activeLoanCountForBorrower(Iterable<Loan> loans, int borrowerId) {
+  var count = 0;
+  for (final loan in loans) {
+    if (loan.borrowerId == borrowerId && !loan.isReturned) count++;
+  }
+  return count;
+}
+
 /// True when [bookId] has at least [copyCount] active loans (all copies out),
 /// given the precomputed [activeCounts]. [copyCount] is clamped to a minimum of
 /// 1 so a malformed zero/negative count never makes a book permanently

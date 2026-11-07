@@ -15,7 +15,9 @@ import 'package:pitaka/features/vault/domain/entities/borrower.dart';
 import 'package:pitaka/features/vault/domain/entities/vault_data.dart';
 import 'package:pitaka/features/vault/domain/repositories/vault_repository.dart';
 import 'package:pitaka/features/vault/infrastructure/vault_store.dart';
+import 'package:pitaka/features/vault/presentation/pages/lending_rules_page.dart';
 import 'package:pitaka/features/vault/presentation/pages/vault_page.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../support/a11y.dart';
 import '../periodicals/application/periodical_fakes.dart';
@@ -38,7 +40,10 @@ class _StubVault with VaultWriteUnsupported implements VaultRepository {
 void main() {
   late Directory tmp;
 
-  setUp(() => tmp = Directory.systemTemp.createTempSync('vault_page_test'));
+  setUp(() {
+    SharedPreferences.setMockInitialValues({});
+    tmp = Directory.systemTemp.createTempSync('vault_page_test');
+  });
   tearDown(() {
     if (tmp.existsSync()) tmp.deleteSync(recursive: true);
   });
@@ -91,6 +96,35 @@ void main() {
     expect(find.text('Unlock'), findsOneWidget);
     expect(find.textContaining('Enter your vault passphrase'), findsOneWidget);
   });
+
+  for (final state in ['uninitialized', 'locked', 'unlocked']) {
+    testWidgets('Lending rules action navigates when $state', (tester) async {
+      final c = container(initialized: state != 'uninitialized');
+      if (state == 'unlocked') {
+        await c.read(vaultSessionControllerProvider.future);
+        final unlocked = await c
+            .read(vaultSessionControllerProvider.notifier)
+            .unlock(SecretBytes(Uint8List.fromList([1, 2, 3, 4, 5, 6, 7, 8])));
+        expect(unlocked.isRight(), isTrue);
+      }
+      await tester.pumpWidget(host(c));
+      await tester.pumpAndSettle();
+
+      expect(find.byTooltip('Lending rules'), findsOneWidget);
+      if (state == 'unlocked') {
+        expect(find.byTooltip('Pending'), findsOneWidget);
+        expect(find.byTooltip('Lock'), findsOneWidget);
+      } else {
+        expect(find.byTooltip('Pending'), findsNothing);
+        expect(find.byTooltip('Lock'), findsNothing);
+      }
+
+      await tester.tap(find.byTooltip('Lending rules'));
+      await tester.pumpAndSettle();
+      expect(find.byType(LendingRulesPage), findsOneWidget);
+      expect(find.text('Limit items per borrower'), findsOneWidget);
+    });
+  }
 
   // Regression (review 2026-09-03, Blocker): the controller used to flip the
   // session to AsyncLoading during unlock, which UNMOUNTED this form; the

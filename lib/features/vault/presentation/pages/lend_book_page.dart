@@ -37,6 +37,22 @@ class LendBookPage extends ConsumerStatefulWidget {
   ConsumerState<LendBookPage> createState() => _LendBookPageState();
 }
 
+final class _LendSubmission {
+  const _LendSubmission({
+    required this.target,
+    required this.borrowerName,
+    required this.lentDate,
+    required this.dueDate,
+    required this.notes,
+  });
+
+  final LendTarget target;
+  final String? borrowerName;
+  final int lentDate;
+  final int? dueDate;
+  final String? notes;
+}
+
 class _LendBookPageState extends ConsumerState<LendBookPage> {
   /// Selected existing borrower id, or null when creating a new borrower.
   int? _borrowerId;
@@ -72,12 +88,19 @@ class _LendBookPageState extends ConsumerState<LendBookPage> {
   }
 
   Future<void> _lend(List<Borrower> borrowers) async {
-    // Resolve WHO gets the book; the use case decides WHETHER it can be lent
-    // (removed / all copies out → refused with a reason) and does the writes.
+    // Capture WHO and WHAT once. A Warn confirmation retries this exact
+    // submission, never values that could change during an asynchronous gap.
     final LendTarget target;
+    String? borrowerName;
     final borrowerId = _borrowerId;
     if (borrowerId != null) {
       target = ExistingBorrower(borrowerId);
+      for (final borrower in borrowers) {
+        if (borrower.id == borrowerId) {
+          borrowerName = borrower.name;
+          break;
+        }
+      }
     } else {
       final name = _newName.text.trim();
       if (name.isEmpty) {
@@ -86,6 +109,21 @@ class _LendBookPageState extends ConsumerState<LendBookPage> {
       }
       target = NewBorrower(name);
     }
+    await _submit(
+      _LendSubmission(
+        target: target,
+        borrowerName: borrowerName,
+        lentDate: DateTime.now().millisecondsSinceEpoch,
+        dueDate: _dueDate?.millisecondsSinceEpoch,
+        notes: _trimOrNull(_notes.text),
+      ),
+    );
+  }
+
+  Future<void> _submit(
+    _LendSubmission submission, {
+    bool limitWarningAcknowledged = false,
+  }) async {
     setState(() {
       _busy = true;
       _error = null;
@@ -93,18 +131,62 @@ class _LendBookPageState extends ConsumerState<LendBookPage> {
     final useCase = await ref.read(lendBookUseCaseProvider.future);
     final result = await useCase(
       bookId: widget.bookId,
-      target: target,
-      lentDate: DateTime.now().millisecondsSinceEpoch,
-      dueDate: _dueDate?.millisecondsSinceEpoch,
-      notes: _trimOrNull(_notes.text),
+      target: submission.target,
+      lentDate: submission.lentDate,
+      dueDate: submission.dueDate,
+      notes: submission.notes,
+      limitWarningAcknowledged: limitWarningAcknowledged,
     );
     if (!mounted) return;
-    result.match(
-      (f) => setState(() {
+    final failure = result.swap().toNullable();
+    if (failure != null) {
+      setState(() {
         _busy = false;
-        _error = _messageFor(f);
-      }),
-      (_) => Navigator.of(context).pop(),
+        _error = _messageFor(failure);
+      });
+      return;
+    }
+    switch (result.toNullable()!) {
+      case LoanRecorded():
+        Navigator.of(context).pop();
+      case LimitConfirmationNeeded(:final limit, :final active):
+        final confirmed = await _confirmLimit(
+          submission.borrowerName,
+          limit,
+          active,
+        );
+        if (!mounted) return;
+        if (confirmed != true) {
+          setState(() => _busy = false);
+          return;
+        }
+        await _submit(submission, limitWarningAcknowledged: true);
+    }
+  }
+
+  Future<bool?> _confirmLimit(String? borrowerName, int limit, int active) {
+    final subject = borrowerName == null
+        ? 'This borrower'
+        : 'Borrower $borrowerName';
+    final noun = active == 1 ? 'item' : 'items';
+    return showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Borrower limit reached'),
+        content: Text(
+          '$subject has $active $noun out; your limit is $limit. Lend anyway?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Lend anyway'),
+          ),
+        ],
+      ),
     );
   }
 
@@ -159,12 +241,13 @@ class _LendBookPageState extends ConsumerState<LendBookPage> {
                     child: Text(b.name, overflow: TextOverflow.ellipsis),
                   ),
               ],
-              onChanged: (v) => setState(() => _borrowerId = v),
+              onChanged: _busy ? null : (v) => setState(() => _borrowerId = v),
             ),
           if (_borrowerId == null) ...[
             const SizedBox(height: 12),
             TextField(
               controller: _newName,
+              enabled: !_busy,
               textCapitalization: TextCapitalization.words,
               decoration: const InputDecoration(
                 labelText: 'New borrower name',
@@ -180,13 +263,14 @@ class _LendBookPageState extends ConsumerState<LendBookPage> {
               _dueDate == null ? 'No due date' : _fmtDate(_dueDate!),
             ),
             trailing: TextButton(
-              onPressed: _pickDueDate,
+              onPressed: _busy ? null : _pickDueDate,
               child: const Text('Pick'),
             ),
           ),
           const SizedBox(height: 8),
           TextField(
             controller: _notes,
+            enabled: !_busy,
             minLines: 2,
             maxLines: 4,
             decoration: const InputDecoration(

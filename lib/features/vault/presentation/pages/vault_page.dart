@@ -5,8 +5,8 @@
 ///  - locked → "unlock" (enter the passphrase);
 ///  - unlocked → the borrower list with add / edit / delete + a lock action.
 ///
-/// Change-passphrase + biometric settings live under Settings → Security; the
-/// vault app-bar keeps only Pending (bell) + Lock.
+/// Change-passphrase + biometric settings live under Settings → Security.
+/// Lending rules are always available; Pending (bell) + Lock are unlocked-only.
 ///
 /// All crypto lives behind the controller; this widget only collects the
 /// passphrase via a secure field and forwards the resulting bytes. The vault
@@ -23,6 +23,7 @@ import 'package:pitaka/features/vault/domain/entities/borrower.dart';
 import 'package:pitaka/features/vault/domain/entities/vault_session_state.dart';
 import 'package:pitaka/features/vault/presentation/pages/borrower_edit_page.dart';
 import 'package:pitaka/features/vault/presentation/pages/borrower_profile_page.dart';
+import 'package:pitaka/features/vault/presentation/pages/lending_rules_page.dart';
 import 'package:pitaka/features/vault/presentation/pages/pending_page.dart';
 
 /// The persistent borrowers-vault screen.
@@ -37,6 +38,13 @@ class VaultPage extends ConsumerWidget {
       appBar: AppBar(
         title: const Text('Borrowers vault'),
         actions: [
+          IconButton(
+            tooltip: 'Lending rules',
+            icon: const Icon(Icons.rule),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => const LendingRulesPage()),
+            ),
+          ),
           if (async.valueOrNull is VaultUnlocked) ...[
             IconButton(
               tooltip: 'Pending',

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -16,12 +17,15 @@ import 'package:pitaka/features/library/infrastructure/drift_catalogue_item_repo
 import 'package:pitaka/features/vault/application/vault_session_controller.dart';
 import 'package:pitaka/features/vault/domain/biometric_unlock.dart';
 import 'package:pitaka/features/vault/domain/borrower_deletion.dart';
+import 'package:pitaka/features/vault/domain/borrower_limit_policy.dart';
 import 'package:pitaka/features/vault/domain/entities/biometric_enrolment.dart';
 import 'package:pitaka/features/vault/domain/entities/borrower.dart';
 import 'package:pitaka/features/vault/domain/entities/vault_data.dart';
 import 'package:pitaka/features/vault/domain/entities/vault_session_state.dart';
 import 'package:pitaka/features/vault/domain/repositories/vault_repository.dart';
+import 'package:pitaka/features/vault/infrastructure/prefs_borrower_limit_policy_store.dart';
 import 'package:pitaka/features/vault/infrastructure/vault_store.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 /// In-memory fake vault: simulates create/unlock/CRUD against maps keyed by the
 /// dbPath, with a fixed "correct" passphrase so we can exercise wrong-pass.
@@ -250,7 +254,10 @@ class _FakeBioStore implements BiometricKeyStore {
 void main() {
   late Directory tmp;
 
-  setUp(() => tmp = Directory.systemTemp.createTempSync('vault_session_test'));
+  setUp(() {
+    SharedPreferences.setMockInitialValues({});
+    tmp = Directory.systemTemp.createTempSync('vault_session_test');
+  });
   tearDown(() {
     if (tmp.existsSync()) tmp.deleteSync(recursive: true);
   });
@@ -299,6 +306,16 @@ void main() {
   // doesn't create it, so write a placeholder DB file when "enabling".
   void touchDb() =>
       File(p.join(tmp.path, 'borrowers.db')).writeAsBytesSync([0]);
+
+  void mockPolicy(int limit, BorrowerLimitAction action) {
+    SharedPreferences.setMockInitialValues({
+      PrefsBorrowerLimitPolicyStore.key: jsonEncode({
+        'version': 1,
+        'maxActiveLoans': limit,
+        'action': action.name,
+      }),
+    });
+  }
 
   test('M07: unlock completed after lock must stay locked', () async {
     final vault = _InMemoryVault();
@@ -534,6 +551,68 @@ void main() {
         expect(dataOf(container).loans, isEmpty);
       },
     );
+  });
+
+  group('borrower limit inside the vault FIFO', () {
+    Future<(VaultSessionController, int)> unlockedWithBorrower(
+      ProviderContainer container,
+    ) async {
+      await container.read(vaultSessionControllerProvider.future);
+      final notifier = container.read(vaultSessionControllerProvider.notifier);
+      await notifier.enable(good());
+      touchDb();
+      final id = (await notifier.addBorrower(
+        const Borrower(name: 'Asha'),
+      )).toNullable()!;
+      return (notifier, id);
+    }
+
+    VaultData dataOf(ProviderContainer container) =>
+        (container.read(vaultSessionControllerProvider).value! as VaultUnlocked)
+            .data;
+
+    test('Refuse rechecks overlapping lends of different items', () async {
+      mockPolicy(1, BorrowerLimitAction.refuse);
+      final container = makeContainer(_InMemoryVault());
+      final (notifier, id) = await unlockedWithBorrower(container);
+
+      final first = notifier.addLoan(
+        Loan(itemId: 1, borrowerId: id, lentDate: 1),
+      );
+      final second = notifier.addLoan(
+        Loan(itemId: 2, borrowerId: id, lentDate: 2),
+      );
+      final results = await Future.wait([first, second]);
+
+      expect(results.first.isRight(), isTrue);
+      final failure = results.last.swap().toNullable();
+      expect(failure, isA<ValidationFailure>());
+      expect(
+        (failure! as ValidationFailure).message,
+        borrowerLimitRefusalMessage(activeLoans: 1, limit: 1),
+      );
+      expect(dataOf(container).loans.single.itemId, 1);
+    });
+
+    test('unreadable rules fail closed before insert', () async {
+      SharedPreferences.setMockInitialValues({
+        PrefsBorrowerLimitPolicyStore.key: 'not json',
+      });
+      final container = makeContainer(_InMemoryVault());
+      final (notifier, id) = await unlockedWithBorrower(container);
+
+      final result = await notifier.addLoan(
+        Loan(itemId: 1, borrowerId: id, lentDate: 1),
+      );
+
+      final failure = result.swap().toNullable();
+      expect(failure, isA<ValidationFailure>());
+      expect(
+        (failure! as ValidationFailure).message,
+        borrowerLimitPolicyRecoveryMessage,
+      );
+      expect(dataOf(container).loans, isEmpty);
+    });
   });
 
   test('a mutation while locked fails closed with ValidationFailure', () async {

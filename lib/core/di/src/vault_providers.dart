@@ -27,6 +27,7 @@ import 'package:pitaka/features/vault/application/vault_session_controller.dart'
 import 'package:pitaka/features/vault/domain/availability.dart';
 import 'package:pitaka/features/vault/domain/biometric_unlock.dart';
 import 'package:pitaka/features/vault/domain/borrowed_items.dart';
+import 'package:pitaka/features/vault/domain/borrower_limit_policy_store.dart';
 import 'package:pitaka/features/vault/domain/borrower_profile.dart';
 import 'package:pitaka/features/vault/domain/entities/borrower.dart';
 import 'package:pitaka/features/vault/domain/entities/vault_session_state.dart';
@@ -37,6 +38,7 @@ import 'package:pitaka/features/vault/infrastructure/ffi_vault_repository.dart';
 import 'package:pitaka/features/vault/infrastructure/keystore_biometric_secret_vault.dart';
 import 'package:pitaka/features/vault/infrastructure/local_auth_biometric_authenticator.dart';
 import 'package:pitaka/features/vault/infrastructure/open_vault_from_archive.dart';
+import 'package:pitaka/features/vault/infrastructure/prefs_borrower_limit_policy_store.dart';
 import 'package:pitaka/features/vault/infrastructure/prefs_reminder_template_store.dart';
 import 'package:pitaka/features/vault/infrastructure/vault_store.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
@@ -78,8 +80,9 @@ Future<VaultStore> vaultStore(VaultStoreRef ref) async {
 @riverpod
 Future<LendBookUseCase> lendBookUseCase(LendBookUseCaseRef ref) async {
   final repo = await ref.watch(catalogueItemRepositoryProvider.future);
+  final policyStore = await ref.watch(borrowerLimitPolicyStoreProvider.future);
   final vault = ref.read(vaultSessionControllerProvider.notifier);
-  return LendBookUseCase(books: repo, vault: vault);
+  return LendBookUseCase(books: repo, vault: vault, policyStore: policyStore);
 }
 
 /// Active-loan counts per book id when the vault is UNLOCKED, or null when
@@ -154,6 +157,14 @@ Future<PendingSnapshot?> pendingSnapshot(PendingSnapshotRef ref) async {
     now: now,
   );
 }
+
+/// Plaintext lending rules: policy numbers only, never borrower/vault data.
+@riverpod
+Future<BorrowerLimitPolicyStore> borrowerLimitPolicyStore(
+  BorrowerLimitPolicyStoreRef ref,
+) async => PrefsBorrowerLimitPolicyStore(
+  await ref.watch(sharedPreferencesProvider.future),
+);
 
 /// Plaintext, device-local reminder template persistence (never vault secrets).
 @riverpod

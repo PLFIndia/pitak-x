@@ -26,13 +26,13 @@ import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/library/application/delete_catalogue_item_use_case.dart';
 import 'package:pitaka/features/library/domain/catalogue_replacement_guard.dart';
+import 'package:pitaka/features/vault/application/insert_loan_with_policy.dart';
 import 'package:pitaka/features/vault/application/lend_book_use_case.dart';
 import 'package:pitaka/features/vault/application/vault_secret_keeper.dart';
 import 'package:pitaka/features/vault/domain/biometric_unlock.dart';
 import 'package:pitaka/features/vault/domain/borrower_deletion.dart';
 import 'package:pitaka/features/vault/domain/entities/borrower.dart';
 import 'package:pitaka/features/vault/domain/entities/vault_session_state.dart';
-import 'package:pitaka/features/vault/domain/lending_policy.dart';
 import 'package:pitaka/features/vault/domain/repositories/vault_repository.dart';
 import 'package:pitaka/features/vault/domain/vault_artifacts_store.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
@@ -536,33 +536,23 @@ class VaultSessionController extends _$VaultSessionController
       });
 
   /// Inserts a loan, then re-reads the vault. Vault must be unlocked.
-  /// Re-check the book INSIDE the FIFO: a lend form may have read it before
-  /// a queued catalogue replacement removed it (M03).
+  /// Item availability and Refuse limits are rechecked INSIDE the FIFO (M03).
   @override
-  Future<Either<Failure, Unit>> addLoan(Loan loan) =>
-      _mutate((p, store, blob) async {
-        final generation = _keeper.generation;
-        final books = await ref.read(catalogueItemRepositoryProvider.future);
-        if (!_keeper.isCurrent(generation)) return left(_cancelled);
-        final found = await books.getById(loan.itemId);
-        if (!_keeper.isCurrent(generation)) return left(_cancelled);
-        if (found.isLeft()) return found.map((_) => unit);
-        final book = found.toNullable();
-        if (book == null) return left(const NotFoundFailure());
-        if (loan.returnedDate == null) {
-          final decision = LendDecision.forItem(book, currentLoans ?? const []);
-          if (decision is! LendAllowed) {
-            return left(ValidationFailure(decision.reason!));
-          }
-        }
-        final r = await _vault.insertLoan(
-          passphrase: p,
-          blob: blob,
-          dbPath: store.dbPath,
-          loan: loan,
-        );
-        return r.map((_) => unit);
-      });
+  Future<Either<Failure, Unit>> addLoan(Loan loan) => _mutate((p, store, blob) {
+    final generation = _keeper.generation;
+    return insertLoanWithPolicy(
+      vault: _vault,
+      loadBooks: () => ref.read(catalogueItemRepositoryProvider.future),
+      loadPolicyStore: () => ref.read(borrowerLimitPolicyStoreProvider.future),
+      currentLoans: () => currentLoans ?? const [],
+      isCurrent: () => _keeper.isCurrent(generation),
+      cancelled: _cancelled,
+      passphrase: p,
+      blob: blob,
+      dbPath: store.dbPath,
+      loan: loan,
+    );
+  });
 
   /// Updates a loan, then re-reads the vault. Vault must be unlocked.
   Future<Either<Failure, Unit>> updateLoan(Loan loan) =>

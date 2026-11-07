@@ -1,291 +1,391 @@
-# Borrowed Items and loan reminders — implementation plan
+# Borrower limit (items per borrower) — implementation plan
 
-- **Status:** The `reminder-fixes.md` and `reminder-issues1.md` code fixes are complete and verified; pubspec OSV scan and real-device verification pending
-- **Date:** 2026-11-06
-- **Scope:** Borrowed Items navigation/page, active-loan cards, reusable message templates, and cover-plus-caption reminder sharing
+- **Status:** Implemented locally; steps 1–6 and 8 are complete. All local
+  gates pass (424 focused tests, 6,069 non-golden tests). Step 7 remains open
+  only for Linux golden regeneration/review; step 9 and any commit remain
+  pending maintainer approval.
+- **Date:** 2026-11-07
+- **Branch:** `reminders` (after the 1.9.5+37 release commits `6caf0ed`, `aa1b799`)
+- **Previous plan:** the Borrowed Items / loan reminders plan this file replaces is in git history (`aa1b799:PLAN.md`); that work shipped in 1.9.5.
 
 ## Understanding
 
-The current **Borrowers vault → Pending** screen classifies overdue and due-soon loans, but its rows show only `Item #id` and a due date. It does not show the catalogue cover/title or borrower contact actions. The maintainer wants a catalogue-like **Borrowed Items** destination where each active loan is recognizable and a WhatsApp action prepares a reminder containing the item's cover and message text. Nothing is sent automatically.
+The maintainer wants to cap how many items one borrower may have out at the
+same time. In the app they set:
 
-Custom templates are also required. A maintainer can write and save named templates in Hindi or any other language, choose one as the default, and have every reminder reuse it with the item title and, for dated loans, the due date filled in.
+1. **the limit** — a number of items, or off;
+2. **what happens at the limit** — **warn** (best-effort check, named
+   confirmation, then lend anyway if confirmed) or **refuse** (hard
+   enforcement: no override, and the borrower count is re-checked inside the
+   vault write queue).
 
-### Goals
+Decided with the maintainer (2026-11-07):
 
-- Add **Borrowed Items** to the left drawer, near **Borrowers vault**.
-- Show one catalogue-style entry per **active loan**, including multiple loans of different copies of the same item.
-- Support **All**, **Overdue**, **Due soon (72 hours)**, and **No due date** filters; use the existing overdue/rolling-72-hour rules.
-- Show cover, title, author, due status/date, borrower name, available phone number, Call, a generic reminder-share action, and a direct WhatsApp text action when a phone number is available.
-- On one WhatsApp tap, prepare the selected message and local cover together for maintainer-reviewed sharing.
-- Persist named Unicode templates and the selected default across app restarts.
-- Reuse existing architecture, packages, cover rendering, contact parsing, image sanitization, and sharing seams.
+- **Count per loan, not per title.** Two copies of the same book out to one
+  borrower count as 2. "Active" means `Loan.returnedDate == null`, the same
+  rule `activeLoanCountsByBook` already uses (`availability.dart:13`).
+- **At-or-over semantics.** With limit 3, a borrower holding 3 active loans is
+  *at* the limit and the 4th lend triggers the warning/refusal. Holding fewer
+  than 3 is fine.
+- **Where the setting lives:** an always-visible app-bar action **Lending
+  rules** on the Borrowers vault page (`vault_page.dart:39`). Pending and Lock
+  remain unlocked-only; the rules can be inspected or repaired before
+  unlocking.
+- **Range 1–99. Default: off.** Existing users see no change until they opt in.
+- A borrower created inline on the lend screen has 0 active loans and can
+  never trip the limit.
 
-### Non-goals
-
-- Automatically sending a message or claiming that a share hand-off proves delivery.
-- Guaranteeing a preselected WhatsApp conversation when an image is attached.
-- Background/push notifications, translation, language detection, or cloud synchronization.
-- Downloading a remote cover merely to send a reminder.
-- Adding a WhatsApp-specific native Android channel in the first implementation.
-- Replacing Pending, adding Return actions, or adding template backup/export in this change.
+Non-goals: per-borrower custom limits, limits by item kind, blocking
+Return/Delete, showing "2 of 3" badges on borrower lists (noted below as a
+follow-up), backup/export of the rule.
 
 ## Privacy & threat notes
 
-- **Vault gate the whole loan list.** Active-loan facts and borrower details come from the encrypted vault. While locked/uninitialized, show an unlock/setup route, not titles of borrowed items or stale entries from an earlier unlocked state. Do not add an unencrypted loan index. Re-check the session after asynchronous preparation before opening an external share.
-- **Explicit external disclosure only.** Tapping WhatsApp is the user's choice to hand the item title, due message, and cover to the generic OS share flow. No background share, telemetry, recipient lookup, or automatic Send. The app does not detect or claim that WhatsApp is installed.
-- **Recipient limitation is visible.** The maintainer chooses WhatsApp and the conversation in the external flow. The app must not imply that the borrower was preselected or that the message was sent. Choosing another target or dismissing is also valid.
-- **Sanitize and bound images.** Read local covers under an explicit streamed byte cap, then re-encode through `ImageDownscaler` so EXIF/GPS metadata is stripped and decoder dimension/pixel limits apply. Never fall back to raw image bytes. A local reference that is missing, unreadable, unsafe, oversized, or corrupt is a preparation failure, not a silent text-only fallback.
-- **No silent network fetch.** A remote-only cover is treated as unavailable for image sharing unless it was already materialized locally through the existing consent-gated flow. Borrowed Items cards pass `owner: null` to `ItemCover`, so merely viewing this page cannot start a download.
-- **Plaintext template warning.** Persist template definitions and the selected template ID—never rendered messages, recipients, or share history. The app never inserts borrower details into a template, but free-form template text can contain anything the maintainer types and is stored unencrypted in preferences. The editor must say not to include private details. Do not log template bodies or rendered messages.
-- **Share-cache honesty.** No reminder history or app-owned persistent reminder copy is written. The pinned `share_plus` implementation does create a temporary cover file in its app-cache directory while sharing; OS/plugin cleanup or a later Android share removes it. Do not claim that no bytes ever reach disk.
-- **Bound user input and stored data.** Limit template count, label/body lengths, stored JSON size/depth, and rendered message length. Label/body/message caps are UTF-16 code units (`String.length`); the 64 KiB document cap is UTF-8 bytes. Reject wrong-typed, malformed, excessive, or newer-version input rather than treating it as absent.
-- **Screen and app lock.** Existing unlocked-vault policy already applies Android `FLAG_SECURE`; no page-level toggle is needed, and equivalent iOS/desktop protection must not be implied. The optional global app lock re-gates on return from an external share and is not suppressed. This is separate from the vault session, which deliberately remains unlocked in memory behind that gate.
-- **Least privilege.** Use existing `share_plus`; add no package, Android permission, WhatsApp SDK, Google dependency, or F-Droid impurity.
+- **What is stored:** one small JSON document in SharedPreferences
+  (`maxActiveLoans`, `action`, schema version). No borrower identity, no
+  counts, no history. A device-local attacker who reads prefs learns only the
+  policy numbers. Accepted; this is not vault material.
+- **Where counts come from:** only the unlocked vault session's loans
+  (`VaultLender.currentLoans`). Locked → the use case already refuses with
+  "Vault is locked." Nothing new is cached outside the vault.
+- **Borrower name in the warning:** no borrower lookup is added. The outcome
+  carries only the limit/count; the lend page uses the borrower name already
+  loaded for its dropdown in the dialog, with generic "This borrower…" copy
+  only as a fallback. No borrower identity enters the policy outcome or policy
+  document; nothing new is logged.
+- **Input validation at the boundary:** the limit field accepts digits only,
+  1–99; the prefs decoder checks the flat field types, schema version, range
+  and enum behind a small raw-length cap. A wrong/oversized document is
+  `StorageFailure`, never a guess.
+- **Fail closed on an unreadable policy document:** the lend use case refuses
+  with a recoverable message ("Lending rules could not be read. Open Lending
+  rules and save them again.") rather than silently treating the limit as off.
+  It must arrive as a `ValidationFailure`: the lend page shows only that
+  type's text verbatim (`lend_book_page.dart:111-114`). Saving from the
+  Lending rules page overwrites the bad document.
+- No network, no telemetry, no new permissions.
 
-## Investigation notes
+## Investigation notes (verified in this session)
 
-- `lib/core/widgets/app_drawer.dart` owns drawer destinations and has widget navigation tests.
-- `VaultUnlocked` exposes decrypted `VaultData`; locked/uninitialized states contain no loans (`lib/features/vault/domain/entities/vault_session_state.dart`).
-- `lib/features/vault/domain/pending_snapshot.dart` defines overdue as `now > dueDate` and due soon as not overdue and due within a fixed 72-hour millisecond window, not three calendar days across DST transitions. `Loan.isOverdue` already owns the same overdue comparison. `nowTickProvider` refreshes time-dependent UI every 60 seconds.
-- Loan due dates are stored from the local date picker and Pending renders them with local `DateTime.fromMillisecondsSinceEpoch`. `CalendarDate.fromEpochMillis` reads UTC fields and must not format these instants.
-- `CatalogueItemRow`, `CatalogueItemGridCard`, and `ItemCover` provide the visual baseline. `ItemCover` displays local files but can materialize a remote cover when `owner` is non-null; Borrowed Items must pass `owner: null`. Series-cover behavior remains consistent with `IssueCover`.
-- `CatalogueItemRepository` has `getById` but no multi-ID read. A current scan finds 46 direct test implementers in 43 files, so expanding that interface has a broad test cost. V1 uses sequential reads per unique item ID (or a small fixed concurrency bound if needed), never an unbounded `Future.wait` and never a whole-catalogue read.
-- `periodicalCoversProvider` deliberately converts a periodical `listAll` failure to an empty map, and Pending converts catalogue failure to an empty list. Neither fail-soft behavior is suitable for the borrowed-items snapshot.
-- `BorrowerContact` parses phone numbers and builds sanitized dialer/WhatsApp contact URIs. `telUri != null` is the existing Call visibility rule; this is URI sanitization, not proof that the number is valid. Generic cover sharing uses the OS share flow. The maintainer-approved direct text action uses `wa.me`; its browser fallback is an explicit privacy decision in ADR 0022, not an assumption that WhatsApp is installed.
-- `FileShareService.shareBytes` accepts bytes, filename, MIME type, caption text, and iPad origin; `shareText` is the text-only fallback. `ShareOutcome.success` means hand-off only, not sent/delivered (`lib/core/platform/file_share.dart`).
-- `lib/features/publish/infrastructure/local_cover_reader.dart` re-encodes asynchronously with metadata stripping and no raw fallback, but currently buffers the whole file before decoding and returns `null` for every unavailable/failure case. `lib/core/platform/bounded_file_read.dart` supplies the tested streaming-cap pattern. Publish tests pin the downscaler defaults to the 400×600 q80 rendition.
-- `PrefsPublishHostStore` demonstrates one versioned JSON preference key and `writePrefsString`, but its size checks are UTF-16 lengths. `PrefsAvailabilityLaneStore` demonstrates wrong-type handling with `_prefs.get`; `JsonNestingDepth` supplies the pre-parse depth guard. `SerialOpQueue` is the existing tested FIFO for serialized mutations.
-- Pinned `share_plus` 12.0.2 documents both temporary cache files for `XFile.fromData` and receiving-app limitations for image-plus-text sharing. Existing `ShareLibrarySheet` usage proves the call shape, not WhatsApp caption behavior; real-device verification remains required.
+- `lib/features/vault/domain/lending_policy.dart` — `LendDecision.forItem(book, loans)`
+  sealed decision; `LendAllowed` / `LendRefusedRemoved` / `LendRefusedAllCopiesOut`.
+- `LendDecision.forItem` is ALSO called from
+  `lib/features/library/presentation/widgets/catalogue_item_actions.dart:146`
+  to render the item-level Lend button **before a borrower is chosen**. The
+  borrower rule therefore cannot be folded into `forItem`; it is a second,
+  independent decision evaluated once the borrower is known.
+- `lib/features/vault/application/lend_book_use_case.dart` — the ONLY loan
+  writer (every `addLoan` caller checked: the port method, this use case, and
+  `vault_session_controller.dart:542` which implements the port). Returns
+  `Either<Failure, Unit>`; policy refusals are `ValidationFailure(reason)`.
+  Single call site: `lend_book_page.dart:93`. Only entry to the lend page:
+  `catalogue_item_actions.dart:155`.
+- No other path raises a borrower's active count: both `updateLoan` callers
+  only set `returnedDate` (`borrower_profile_page.dart:141-143`,
+  `borrower_edit_page.dart:202-206`), and `Loan.copyWith` cannot clear it
+  (`borrower.dart:110`).
+- `vault_session_controller.dart:540-566` — the port implementation re-runs
+  the ITEM gate inside the `_mutate` FIFO (M03: a lend form may hold stale
+  loans). `_mutate` serializes writes and re-reads the vault after each
+  successful mutation, so a Refuse borrower check added there sees the
+  previous queued loan. Warn remains only in the use case; Refuse is mirrored
+  inside the FIFO — Decision 8.
+- `lib/core/storage/prefs_write.dart:28` — `writePrefsString` is the one
+  blessed prefs write (restores the cached value when the platform write
+  fails); `PrefsReminderTemplateStore` uses it at `:120`.
+- `test/features/vault/lend_book_page_test.dart` overrides
+  `vaultStoreProvider`, `vaultRepositoryProvider`,
+  `catalogueItemRepositoryProvider` (lines 81, 127, 156, 217) but NOT
+  `sharedPreferencesProvider`; `lend_book_use_case_test.dart` constructs
+  `LendBookUseCase(books:, vault:)` at 8 sites. Both must change (steps 3, 4).
+  `vault_session_controller_test.dart:494` also creates an active loan
+  directly through the port; its test container needs mock prefs or a
+  default-off policy store once the inner Refuse check is added. The active
+  direct calls in `catalogue_replacement_failure_test.dart:108-110` and
+  `catalogue_replacement_integration_test.dart:135,156` share
+  `test/features/library/replacement_harness.dart:129`; that harness also
+  needs a default-off `borrowerLimitPolicyStoreProvider` override so these
+  catalogue tests do not resolve the real SharedPreferences plugin. The
+  direct calls at `vault_session_controller_test.dart:520-526` insert
+  returned loans and skip the policy load.
+  `vault_page_test.dart` and the new `lending_rules_page_test.dart` need
+  default-empty mock prefs before opening Lending rules as well.
+  No other test reaches the lend page or `lendBookUseCaseProvider`, and
+  nothing in `lib/` lists or clears preference keys, so no key registry needs
+  the new key.
+- ADR 0022 line 55 already records the versioned-SharedPreferences-JSON
+  store pattern → no new store ADR.
+- `lib/features/vault/domain/availability.dart:13` — `activeLoanCountsByBook`;
+  lending needs only one borrower's active count, not an all-borrower map.
+- `lib/features/vault/domain/entities/borrower.dart` — `Loan(itemId,
+  borrowerId, lentDate, id, dueDate, returnedDate, notes)`.
+- Persistence precedent: `ReminderTemplateStore` (domain port, sync
+  `Either<Failure, T?> load()`, async save) +
+  `PrefsReminderTemplateStore` (`infrastructure/`, key `reminder_templates`,
+  `schema = 1`, byte cap, nesting-depth cap, strict decode →
+  `StorageFailure('… read')`). Provider: `reminderTemplateStoreProvider`
+  in `lib/core/di/src/vault_providers.dart:160`. Controller precedent:
+  `ReminderTemplatesController` (`AsyncNotifier`, `build()` loads).
+- Validation precedent: `ReminderTemplate.validate(...)` returns
+  `Either<ValidationFailure, T>` (static ingress gate, ADR 0004 style).
+- Dialog precedent: `borrowed_items_page.dart:216` (`_offerTextOnly`,
+  `AlertDialog` with Cancel + `FilledButton`).
+- Lend page: borrower picked via `DropdownButtonFormField<int?>`
+  (`lend_book_page.dart:143`); errors rendered inline from `_messageFor`,
+  which shows only `ValidationFailure` text verbatim; a `StorageFailure`
+  becomes "Could not lend the item. Please try again." (`:111-114`).
+- Vault app bar: `vault_page.dart:8-9` documents "the vault app-bar keeps only
+  Pending (bell) + Lock"; those existing actions sit in the unlocked-only
+  spread at `:40`. The new always-visible action goes OUTSIDE that spread
+  (Decision 10). `test/golden/key_screens_test.dart:300-317` captures the
+  LOCKED page as `vault_unlock.png`, so that golden now changes; CI compares
+  goldens (`.github/workflows/ci.yml:184`) and regenerates them only on Linux
+  (`.github/workflows/update_goldens.yml`).
+- Tests precedent: `test/features/vault/lend_book_use_case_test.dart`
+  (`_Books`, `_Vault implements VaultLender`),
+  `prefs_reminder_template_store_test.dart`, `lend_book_page_test.dart`.
 
 ## Proposed approach
 
-### 1. Shared loan status and read model
+**OSS reference (from memory, unverified):** Koha's circulation rules have a
+"current checkouts allowed" cap per patron category (`maxissueqty`); the
+`TooMany` check refuses the checkout, and the `AllowTooManyOverride` system
+preference decides whether staff may override. Our **Warn** mode is "override
+allowed", **Refuse** is "override not allowed". We borrow the shape (cap +
+separate override policy), not code.
 
-Create pure-Dart domain types under `lib/features/vault/domain/`:
+### 1. Domain (pure Dart)
 
-- `LoanUrgency`: `overdue`, `dueSoon`, `dueLater`, `noDueDate`.
-- `loanUrgency(...)`: one boundary-tested classifier used by both Pending and Borrowed Items. It uses the existing `Loan.isOverdue` comparison rather than adding another overdue rule; returned-loan exclusion stays explicit in callers. Due soon retains the current rolling 72-hour rule.
-- `BorrowedLoan`: immutable `CatalogueItem`, `Loan`, `Borrower`, urgency, and the exact display cover reference.
-- `BorrowedItemsSnapshot`: ordered entries plus a count of unresolved active loans that cannot safely be displayed. Entries plus unresolved count determines whether any active loan exists.
+`lib/features/vault/domain/borrower_limit_policy.dart`
 
-Build the snapshot from the unlocked `VaultData` and only the referenced catalogue rows:
+```dart
+enum BorrowerLimitAction { warn, refuse }
 
-- Filter to `returnedDate == null`; keep active loans even if their catalogue item is soft-removed. No active loans means no catalogue or periodical query.
-- Read the existing `CatalogueItemRepository.getById` once per unique `itemId`, sequentially in v1. If concurrency is later measured as necessary, use a small fixed bound. A repository `Left` fails the snapshot; a returned null is an unresolved reference. Do not expand the repository interface unless measurement later justifies `getByIds` and its test-fake updates.
-- Join borrowers and items by ID. Skip and count missing item/borrower references using the `LoanIntegrity` rule rather than rendering actionable broken cards.
-- Resolve the displayed cover once, including a magazine issue's series-cover fallback, so card and shared image agree. When fallback is needed, read `PeriodicalRepository.listAll` once and propagate its `Left`; do not use the fail-soft `periodicalCoversProvider`. A missing series means no fallback cover, not an unresolved loan.
-- Order by due date ascending with nulls last, then title, borrower name, and loan ID for deterministic ties. Each active loan remains a separate entry.
+/// Result of applying the policy to one borrower's current active-loan count.
+enum BorrowerLimitCheck { allowed, needsConfirmation, refused }
 
-Move Pending's local `10 November 2026`-style instant formatter into shared pure-Dart loan-domain code and use it for Pending, cards, and `{{dueDate}}`. Do not use `CalendarDate`, whose UTC calendar-day rule belongs to catalogue date-only fields.
+/// How many items one borrower may have out at once, and what to do at the cap.
+final class BorrowerLimitPolicy {
+  static const minLimit = 1, maxLimit = 99;
+  static const off = BorrowerLimitPolicy._(maxActiveLoans: null, action: BorrowerLimitAction.warn);
+  /// Ingress gate: null → off; 1..99 → on; anything else → ValidationFailure.
+  static Either<ValidationFailure, BorrowerLimitPolicy> validate({int? maxActiveLoans, required BorrowerLimitAction action});
+  final int? maxActiveLoans;   // null = off
+  final BorrowerLimitAction action;
+  bool get isOn => maxActiveLoans != null;
 
-Add an application read use case returning `Either<Failure, BorrowedItemsSnapshot>`. The Riverpod provider watches vault session, catalogue/periodical mutation signals, and `nowTickProvider`; vault-session loading/error, locked/uninitialized, unlocked empty, and repository failure are distinct states. A repository failure is never converted to "nothing borrowed" or to missing covers.
+  /// Off/under → allowed; warn at/over → confirmation unless acknowledged;
+  /// refuse at/over → refused even when acknowledged.
+  BorrowerLimitCheck check({required int activeLoans, bool warningAcknowledged = false});
+}
+```
 
-### 2. Borrowed Items page and navigation
+`activeLoanCountForBorrower(Iterable<Loan> loans, int borrowerId)` is added
+beside `activeLoanCountsByBook` in `availability.dart`; it ignores returned
+loans and every other borrower. There is no all-borrower map and no second
+sealed decision hierarchy — `LendOutcome` is the application-level sum type.
 
-Add `BorrowedItemsPage` and dedicated row/grid widgets under vault presentation. Reuse `ItemCover` with `owner: null` and the library's responsive layout breakpoint, but do not force borrower/contact behavior into generic catalogue widgets.
+`lib/features/vault/domain/borrower_limit_policy_store.dart` — port:
+`Either<Failure, BorrowerLimitPolicy?> load()` (null = no document yet) and
+`Future<Either<Failure, Unit>> save(BorrowerLimitPolicy)`.
 
-Page behavior:
+### 2. Infrastructure
 
-- **Loading:** centered progress indicator for either vault-session or snapshot loading.
-- **Locked/uninitialized:** plain explanation plus the existing **Unlock the vault** / **Set up the vault** route through `VaultPage`; returning after unlock rebuilds the list. Locking while visible must immediately hide every previously resolved title, borrower detail, and action.
-- **Unlocked, no active loans:** "Nothing is currently borrowed" only when entries and unresolved count are both zero.
-- **Read failure:** safe "Couldn't load borrowed items" state with Retry for vault-session, catalogue, or periodical read failures; no raw failure text and no unlock/empty misclassification.
-- **Unresolved references:** show a non-sensitive warning count while rendering only complete entries; never expose contact actions for them. If every active loan is unresolved, show the warning and an explanatory state rather than "Nothing is currently borrowed."
-- **Filters:** All, Overdue, Due soon (72 hours), No due date. Due-later loans remain in All. Show a specific empty-filter message.
-- **Cards:** key by loan ID and show cover, title/author, kind where applicable, status badge, local formatted due date, borrower name, and decoded phone when present. Card tap opens the existing catalogue detail page.
-- **Call:** shown when `BorrowerContact.telUri` is non-null and launched through the existing sanitized `tel:` path. This does not claim the phone number was verified.
-- **Generic share:** uses the cover-plus-message share flow below with a generic share icon. It does not claim to preselect the borrower, detect WhatsApp, or exclude other share targets.
-- **Direct WhatsApp text:** a separate WhatsApp icon appears only when `BorrowerContact.whatsappUri` is non-null. It renders the current caption without reading the cover and opens the borrower's `wa.me` conversation with that text prefilled. The maintainer still taps Send in WhatsApp.
-- **Time/mutations:** a minute tick moves loans between statuses; lend/return/edit/rename/cover changes refresh the visible entries.
+`lib/features/vault/infrastructure/prefs_borrower_limit_policy_store.dart` —
+`PrefsBorrowerLimitPolicyStore`, key `borrower_limit_policy`, `schema = 1`,
+document `{"version":1,"maxActiveLoans":3|null,"action":"warn"|"refuse"}`.
+Strict decode checks an exact integer version, required flat-field types,
+range via `BorrowerLimitPolicy.validate`, and the action token; malformed,
+wrong-typed or unknown data is unreadable. A 256-code-unit raw-length cap is
+ample for this fixed document and rejects garbage before `jsonDecode`. Do NOT
+copy the reminder store's UTF-8 accounting or nesting walker: this document is
+tiny and flat. Save goes through `writePrefsString`
+(`core/storage/prefs_write.dart`) — the one blessed prefs write — so a failed
+write never leaves the cache claiming success.
 
-Use lazy list/grid builders and accessibility-friendly action buttons. Grid sizing must leave room for borrower/actions rather than reusing the catalogue's fixed 280-pixel card height blindly. Per-card busy state is keyed by loan ID so one loan of a multi-copy item never disables another.
+### 3. Application
 
-### 3. Reusable Unicode message templates
+- `LendBookUseCase` gains `required BorrowerLimitPolicyStore policyStore` and a
+  `bool limitWarningAcknowledged = false` call parameter. Return type changes
+  from `Either<Failure, Unit>` to `Either<Failure, LendOutcome>` where
+  `sealed class LendOutcome { LoanRecorded; LimitConfirmationNeeded(limit, active) }`.
+  Order: vault unlocked → item gate (unchanged) → policy `load()` → inspect
+  target and apply the borrower check → resolve target → write. A `load()`
+  `Left` refuses (fail closed) as `ValidationFailure('Lending rules could not
+  be read. Open Lending rules and save them again.')`, never the raw
+  `StorageFailure`, whose generic retry copy cannot recover a bad document
+  (user-facing `ValidationFailure` precedent: `lend_book_use_case.dart:129`).
+  A new borrower has no history and passes the borrower check.
+  `BorrowerLimitCheck.refused` → `ValidationFailure` naming both numbers
+  ("This borrower has 4 items out; your limit is 3. Mark one returned before
+  lending another."), with "1 item" for a count of one; `needsConfirmation` →
+  `Right(LimitConfirmationNeeded)` with NO write;
+  `allowed` → proceed. Refuse mode ignores the acknowledgement when the use
+  case re-checks, so the dialog cannot bypass a refusal. This outer borrower
+  count is read from `vault.currentLoans` outside the `_mutate` FIFO. Warn is
+  therefore best-effort; Refuse is checked again inside the FIFO (Decision 8).
+  `LendOutcome` gets a doc comment explaining the two-phase shape; ADR 0023
+  records that shape and the Warn/Refuse enforcement split (Decision 9).
+  The 8 `LendBookUseCase(...)` constructions in
+  `lend_book_use_case_test.dart` gain `policyStore:` with a small in-memory
+  fake.
+- `VaultSessionController.addLoan` keeps the existing `VaultLender` signature.
+  Inside `_mutate`, after the item gate and before `insertLoan`, an active
+  loan loads the current policy through `borrowerLimitPolicyStoreProvider`
+  using `ref.read` (not a watch that could rebuild and wipe the session). A
+  read failure returns the same recovery `ValidationFailure`. Off/Warn adds no
+  inner borrower gate; Refuse counts `currentLoans` for `loan.borrowerId` and
+  refuses at/over the limit. Because the queue re-reads after each write,
+  overlapping Refuse lends cannot both pass. Returned-loan inserts skip the
+  policy load and borrower rule. One shared domain refusal-message helper
+  serves both gates so the copy and singular/plural wording cannot drift;
+  existing generation/cancellation guards apply after the async store read.
+- `lib/features/vault/application/lending_rules_controller.dart` —
+  `@riverpod class LendingRulesController extends _$LendingRulesController`
+  (`AsyncNotifier<BorrowerLimitPolicy>`): `build()` loads (absent → `off`;
+  `Left` → throw the typed failure so Riverpod surfaces `AsyncError`, exactly
+  as `reminder_templates_controller.dart:23-32`).
+  `Future<Either<Failure, Unit>> save(policy)` publishes `AsyncData` only
+  after a successful write, returns a write failure without claiming success,
+  and can overwrite a bad document while `build()` is in `AsyncError`. No
+  `SerialOpQueue`; the page disables Save while one save is pending.
+- `lib/core/di/src/vault_providers.dart`: `borrowerLimitPolicyStoreProvider`
+  (next to `reminderTemplateStoreProvider`); `lendBookUseCaseProvider` passes
+  the store. Run `build_runner`.
 
-Add an immutable `ReminderTemplate` domain model with a validating factory or static ingress gate:
+### 4. Presentation
 
-- Stable generated `id` for custom templates.
-- User-chosen `name` such as "English", "Hindi", or "ಕನ್ನಡ"; no locale code or translation service is needed.
-- Separate `overdueBody`, `upcomingBody`, and `noDueDateBody`, because "is due" versus "was due" differs naturally across languages. `upcomingBody` serves both `dueSoon` and `dueLater`.
+- `lib/features/vault/presentation/pages/lending_rules_page.dart` —
+  `SwitchListTile` "Limit items per borrower"; when on: numeric `TextFormField`
+  (digits only, `maxLength: 2`, inline validation 1–99) and a
+  `SegmentedButton<BorrowerLimitAction>` Warn / Refuse with a one-line
+  explanation of each; Save. Save is disabled while pending and a failed write
+  shows a safe inline message without discarding the entered values. On
+  `AsyncError` (unreadable document) the page STILL renders the form with `off`
+  defaults plus one line of safe text ("Lending rules could not be read. Save
+  to set them again.") — Save overwrites the bad document. This is what makes
+  Decision 4's recovery hint true; a page that only showed an error would
+  strand the user with lending blocked.
+- `vault_page.dart:40` — `IconButton(Icons.rule, tooltip: 'Lending rules')`
+  pushing the page, OUTSIDE the existing
+  `if (async.valueOrNull is VaultUnlocked) [...]` spread so it is visible in
+  every vault state (Decision 10). Pending and Lock stay inside that spread.
+  Update the `vault_page.dart:8-9` doc comment, which says the app bar keeps
+  only Pending + Lock. The locked `vault_unlock.png` golden changes and must
+  be regenerated on Linux (step 7).
+- `lend_book_page.dart` — on the first tap, capture one immutable submission:
+  the target, selected borrower name (nullable for the generic fallback),
+  `lentDate`, `dueDate` and notes. Disable the borrower/name/due-date/notes
+  inputs while `_busy`, so the visible request cannot change during an await.
+  On `LimitConfirmationNeeded` show an `AlertDialog` ("Borrower Asha has 4
+  items out; your limit is 3. Lend anyway?", Cancel / **Lend anyway**)
+  following `_offerTextOnly`'s style. Use the captured name from the borrower
+  list already loaded for the dropdown, falling back to "This borrower…" when
+  no name was available. Show both numbers: `active` exceeds `limit` after any
+  earlier "Lend anyway". Use "1 item" for a count of one.
+  Cancel OR dismissing the dialog clears the busy state without another call;
+  confirm retries the CAPTURED submission with the same target and arguments
+  plus `limitWarningAcknowledged: true`, never values reconstructed from the
+  current form controllers. `_messageFor` is unchanged for refusals (they
+  arrive as `ValidationFailure`). No borrower lookup is added; the policy
+  outcome remains limited to count/limit.
+- `catalogue_item_actions.dart` — untouched.
 
-Provide one read-only built-in English template:
+### 5. Tests
 
-- Overdue: `Your loan of "{{itemTitle}}" was due for return on {{dueDate}}.`
-- Upcoming: `Your loan of "{{itemTitle}}" is due for return on {{dueDate}}.`
-- No due date: `Your loan of "{{itemTitle}}" is currently out on loan.`
-
-Only two placeholders are supported: `{{itemTitle}}` and `{{dueDate}}`. Dates use the shared local `10 November 2026`-style loan formatter with fixed English month names, avoiding a second localization system. Template text itself remains verbatim Unicode, including Indic and right-to-left scripts. Do not add bidi isolate marks; ordering in the receiving app is its responsibility.
-
-Template rules:
-
-- Overdue/upcoming bodies must contain both `{{itemTitle}}` and `{{dueDate}}`; no-due-date bodies must contain `{{itemTitle}}` and must not contain `{{dueDate}}`. This preserves the goal that every dated reminder includes its due date. Making `{{dueDate}}` optional is a separate maintainer choice, not a silent simplification.
-- Repeated known placeholders are allowed and each occurrence is rendered. Reject blank labels/bodies, unknown/unclosed/stray placeholder delimiters, excessive lengths, and more than 20 custom templates.
-- Caps: 80 UTF-16 code units per label, 1,000 per body, 64 KiB of UTF-8 bytes for the stored JSON document, and 1,000 UTF-16 code units per rendered message. The body and rendered caps deliberately agree so a long body is not accepted while being inherently unshareable; rendering still enforces the cap because the item title can make the result longer. Editor errors explain that some scripts/emoji count as more than one visible character.
-- Render with a single-pass token parser that appends values directly. Never chain `replaceAll` calls: a title containing `{{dueDate}}` must remain a title, not be interpreted as another placeholder. Substituted titles and dates are wrapped in WhatsApp's `*bold*` markers; the receiving app controls whether that emphasis renders.
-- The built-in template cannot be edited or deleted. Custom templates can be added, renamed, edited, duplicated, and deleted. Deleting the selected custom template selects built-in English in the same persisted write.
-- A missing/corrupt selected template must be visible in the template UI and must not silently switch a just-tapped Hindi reminder to English. Block sharing with a safe selection prompt if the selection cannot be resolved.
-
-Persist custom templates and `selectedTemplateId` as one versioned JSON document in a dedicated `PrefsReminderTemplateStore`. A single key avoids template/selection write skew; keep the built-in template out of storage. Follow the host store's typed unreadable/write pattern, not its size implementation: use `_prefs.get` with wrong-type rejection, a cheap code-unit pre-reject before allocation, actual UTF-8 byte-cap checks on read and write, `JsonNestingDepth` before `jsonDecode`, strict field/list bounds, and `writePrefsString`. Corrupt, oversized, wrong-typed, or newer-version data is unreadable, never absent.
-
-Add a keep-alive `ReminderTemplatesController` using the existing `SerialOpQueue` for serialized write-then-publish mutations, matching the settings controller's state semantics without copying its FIFO. Failed writes leave the last good state visible and return a typed failure. The Borrowed Items page shows the active template name and a selector; its app-bar **Message templates** action opens the manager. The selected default persists, so the WhatsApp button remains a single-tap action.
-
-The template editor provides separate fields for the three statuses, placeholder-insertion chips, and a sample preview. Saving validates all three bodies and warns that template text is stored unencrypted and should not contain private details. No actual borrower or loan data is used in previews.
-
-### 4. Cover-plus-caption reminder sharing
-
-Create a pure message renderer and an application `PrepareLoanReminderUseCase` over an injected reminder-cover-reader port:
-
-1. Read the current selected template at tap time and map `overdue` to `overdueBody`, `dueSoon`/`dueLater` to `upcomingBody`, and `noDueDate` to `noDueDateBody`, recomputing urgency from the injected clock.
-2. Render the item title and, where applicable, the shared local `10 November 2026`-style due date in one pass. Enforce the 1,000-code-unit final cap. This is a conservative application limit, not a claim about WhatsApp's exact external caption limit.
-3. Resolve the same display cover reference used by the card.
-4. Promote the publish local-cover implementation into shared library infrastructure. It performs a streamed byte-bounded read (8 MiB, matching the existing remote-cover cap), then the existing asynchronous downscaler with its unchanged 400×600 q80 defaults and no raw fallback. Publishing keeps the same implementation through its nullable adapter; the reminder port returns a typed outcome rather than importing publish application/infrastructure code or duplicating file IO.
-5. Return a sealed preparation result that distinguishes image-ready, text-only-eligible, and preparation failure. Image-ready contains sanitized JPEG bytes, `image/jpeg`, a safe fixed filename such as `loan-reminder.jpg`, and the rendered caption.
-
-The card's WhatsApp handler first re-checks after every asynchronous preparation step that it is mounted and the vault is still unlocked; otherwise it aborts without a hand-off. It then calls `FileShareService.shareBytes` with the prepared bytes/caption and the button's global rect for iPad. This uses the existing OSS `share_plus` `ShareParams(files:, text:)` mechanism also used by `ShareLibrarySheet`, rather than inventing a WhatsApp API or adding a plugin. That existing call shape is not evidence of WhatsApp behavior; actual cover/caption hand-off must pass real-device verification before being claimed.
-
-Exact behavior:
-
-- **Usable local cover:** one tap on the generic share icon opens the OS share flow with cover and caption together. The maintainer chooses WhatsApp and the conversation, reviews/edits, and taps Send.
-- **Direct text action:** the separate WhatsApp icon opens the borrower's conversation with only the caption prefilled. It performs no cover read and no generic share-service call, and never claims the message was sent.
-- **Blank or remote-only cover reference:** do not fetch. Offer a clearly labelled text-only choice through `FileShareService.shareText`. The separate direct WhatsApp text action remains governed by ADR 0022 Decision 7 and performs no cover read.
-- **Safe-local reference whose file is missing, or an unreadable/unsafe/oversized/corrupt cover:** show "Couldn't prepare the cover" and do not open a misleading image share or automatically fall back to text. A separate explicit text-only action may remain available.
-- **Template invalid/unavailable or message too long:** block the hand-off and show a safe corrective message.
-- **Busy:** disable only the tapped loan ID's action and collapse duplicate taps until preparation/hand-off completes.
-- **Dismissed:** no error and no success claim.
-- **Success:** no "sent" message; it means only that a target was chosen.
-- **Unavailable/throw:** show fixed safe copy and restore the action. Catch platform exceptions at the presentation boundary; never log private details. Generic sharing being unavailable is not the same fact as WhatsApp not being installed.
-- **App lock round trip:** do not use `LockSuppressor` for sharing. Returning from WhatsApp with the optional global app lock enabled prompts again while the vault session remains behind the gate.
-
-No raw cover bytes, message text, template text, borrower name, or phone number enters logs. No reminder history or app-owned persistent reminder copy is written; the share plugin's temporary cache-file behavior is documented rather than denied.
-
-## Implementation steps
-
-### Review fixes from `reminder-fixes.md`
-
-- [x] **Current-session authorization:** reject retained unlocked values in loading/error session states after every asynchronous preparation step and text-only confirmation; add the four-case generic-share/direct-WhatsApp regression matrix and busy-state assertions.
-- [x] **Safe stored-date boundaries:** replace the throwing loan-date formatter with the nullable display helper, return a typed rendering failure for invalid dated loans, show safe Borrowed Items/Pending labels, and add domain/widget regressions.
-- [x] **Privacy summary:** distinguish generic OS sharing from direct `wa.me` hand-off, including the borrower phone number, while retaining item 9.
-- [x] **Review-fix verification:** run focused tests, both timezone runs, analysis, formatting, the non-golden suite with coverage, and `git diff --check`; do not edit generated files or add dependencies/schema/permission changes.
-
-### Robust fixes from `reminder-issues1.md`
-
-- [x] Restore the catalogue `addedDate` domain gate on both affected pages and pin `0`/negative rendering regressions.
-- [x] Add confirmed template reset on the existing `SerialOpQueue`; make string-preference overwrite/rollback handle wrong-typed prior values, with controller, page and storage tests.
-- [x] Keep the approved direct WhatsApp text action, document the browser/Meta fallback, reconcile the plan/ADR, and use/test raw percent-encoded query text.
-- [x] Reject retained unlocked sessions in `borrowedItemsSnapshot` and keep the existing list visible during dependency reloads; add loading-with-previous and reload/scroll regressions.
-- [x] Apply the small local fixes: fail closed instead of rendering `null`, share one template-ID limit, explain bold markers, reuse the bounded file read, and make busy-tap absorption explicit.
-- [x] Run focused tests, both timezone runs, analysis, formatting, build_runner stability, the non-golden suite with coverage, and `git diff --check`; leave real-device checks manual.
-
-**Maintainer decision (2026-11-06):** keep the direct prefilled WhatsApp action (option a). Its privacy documentation must say that a browser fallback can disclose the borrower number and rendered message to `wa.me` and browser history. Do not detect WhatsApp or add a dependency/permission.
-
-**Scope for this follow-up:** reuse `writePrefsString`, `SerialOpQueue`, `readPickedFileBounded`, and Riverpod's existing reload flag rather than adding new subsystems. Keep the accepted product-wide full-month date format. Commit splitting, unrelated release-document edits, and root review-artifact moves/deletions are merge hygiene outside this code fix. `pendingSnapshot` and `borrowerProfile` retain their existing session-read convention unless a separate review changes them.
-
-### Original feature implementation
-
-- [x] **Review baseline:** at `58652ca`, 92 focused vault/contact/cover/share/bounded-read/FIFO/app-lock/screen-security tests passed under the pinned Flutter 3.44.2.
-- [x] **Activate:** archived the finished 1.9.4 release record as `docs/plans/release-1.9.4-aab.md` and made this feature the active plan.
-- [x] **Domain status:** extract the shared urgency classifier over `Loan.isOverdue`, migrate `buildPendingSnapshot` without behavior changes, add the local loan-date formatter, and add boundary tests.
-- [x] **Catalogue/read model:** implement/test sequential per-unique-ID reads, active-loan joining, integrity handling, strict periodical-cover resolution, and deterministic ordering. Do not add `getByIds` in v1.
-- [x] **Providers/UI:** add the borrowed-items provider, drawer destination, responsive cards, filters, locked/empty/error/unresolved states, and contact actions.
-- [x] **Template domain/storage:** implement validation, single-pass rendering, built-in English, strict versioned preference persistence, and the `SerialOpQueue`-serialized controller.
-- [x] **Template UI:** add manager/editor, default selector, CRUD, previews, plaintext-storage guidance, and safe corruption/write-failure handling.
-- [x] **Sharing:** promote the cover reader with a streamed byte cap and typed reminder outcome, implement reminder preparation and card hand-off, including session rechecks and all fallback/outcome paths.
-- [x] **Codegen:** run `dart run build_runner build --delete-conflicting-outputs` and review generated diffs.
-- [x] **Docs:** add `docs/adr/0022-borrowed-items-loan-reminders.md`; update `docs/mockups/how-pitak-works.md` and its `.html` twin; update `PRIVACY.md` with plaintext templates, external sharing, and cache behavior; and note in `README.md` that templates are not in the current backup.
-- [ ] **Verification:** automated gates pass except the unavailable pubspec OSV scanner and macOS-only golden renderer comparison; real-device WhatsApp/iOS checks and Play/F-Droid smoke remain. run all tests/checks below. Perform real-device WhatsApp checks before calling cover/caption hand-off verified; report unavailable platforms as unverified rather than passing them.
-
-## Test plan
-
-### Domain and application
-
-- Urgency: no due date, due exactly now, one millisecond past due, exactly 72 hours ahead, beyond 72 hours, due today at noon already overdue, due-later mapping to `upcomingBody`, fixed-window behavior across a DST transition, and returned-loan exclusion in both consumers.
-- Snapshot: active only, multiple loans of one item, soft-removed but active item, missing item/borrower, all entries unresolved, deterministic ties, series-cover fallback, missing series, and periodical/catalogue failures remaining failures.
-- Catalogue reads: no active loans performs no query, duplicate item IDs are read once, missing IDs count unresolved, issue-detail mapping, sequential/bounded completion, and any storage `Left` fails the whole snapshot.
-- Templates: Hindi and right-to-left round trips, required and repeated placeholders, unknown/unclosed/stray tokens, blank/over-limit input, no-due-date wording, body/final-length agreement, final-length refusal from a long title, and literal non-recursive substitution when a title contains placeholder-like text.
-- Template store/controller: versioned round trip, wrong preference type, corrupt/newer/oversized JSON, excessive nesting, non-ASCII input proving the 64 KiB cap is UTF-8 bytes, selected-template deletion, unavailable selection, failed writes preserving prior state, and concurrent mutations serialized without lost updates.
-- Preparation: correct status body and local date, exact caption, sanitized JPEG MIME/bytes at the unchanged publish rendition, safe filename, blank/remote text-only result, safe-local missing/corrupt/oversized refusal, streamed byte-cap enforcement, and proof that remote-only covers cause no fetch.
-
-### Widget and integration tests
-
-- Drawer opens Borrowed Items; locked/uninitialized routes work; vault-session loading/error, unlocked empty/error/retry, and all-unresolved states are distinct. Locking while visible removes stale titles/details/actions immediately.
-- Cards show real title/cover/borrower/phone and separate entries for multiple copies; filters and minute-tick transitions update correctly. `ItemCover` receives `owner: null` and never requests materialization.
-- Template CRUD, default selection, restart persistence, Unicode editing, validation messages, plaintext-storage guidance, and sample previews.
-- WhatsApp tap passes the exact sanitized bytes, caption, MIME type, filename, and iPad origin to a fake `FileShareService`; duplicate taps collapse and busy state is isolated by loan ID.
-- Dismissed/success/unavailable/throw outcomes produce the specified UI and never claim a message was sent. Returning from share with the global app lock enabled re-gates without `LockSuppressor`.
-- Blank/remote text-only choice calls `shareText` explicitly; safe-local missing/corrupt/oversized covers and invalid templates never invoke the share service. Locking during asynchronous preparation aborts before hand-off.
-- Call uses the sanitized dialer URI; missing phone hides Call without removing the loan card or its generic reminder-share action.
-- Accessibility checks at 320 pixels, large text, dark theme, phone list and wide grid; useful button tooltips/semantics and no overflow.
-- Add the message/date tests to the CI timezone matrix (`Asia/Calcutta` and `America/New_York`), including a local-midnight due date that must not shift through UTC formatting.
-
-### Required project gates
-
-- `dart run build_runner build --delete-conflicting-outputs` with no uncommitted generated diff.
-- `dart analyze` with zero issues and `dart format --set-exit-if-changed lib test integration_test`.
-- `flutter test --coverage --exclude-tags golden`, relevant golden tests, architecture/domain-purity checks, and the timezone matrix.
-- Existing Rust gates remain green: `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo deny check`, and `cargo test --release`.
-- Dependency/secret/OSV scans and `fdroidReleaseRuntimeClasspath` purity check; no new dependency is expected.
-
-### Manual device verification
-
-- On a real Android device with WhatsApp, verify that one Pitak tap hands off the actual cover and caption together, the maintainer can choose a conversation/edit/cancel, and nothing sends until WhatsApp's Send button. This is a required verification before claiming the behavior, not an assumption from `ShareLibrarySheet`.
-- Repeat with Hindi and a right-to-left template containing a Latin title, an overdue loan, due-soon and due-later loans, no due date, and a long caption. Record truncation/ordering exactly as received; do not add bidi isolate marks or claim an external caption limit from memory.
-- Repeat with no cover, a remote-only cover, a missing/corrupt/oversized local cover, process restart after selecting a custom default, and return from WhatsApp with the global app lock enabled.
-- With WhatsApp not installed, verify the generic sheet offers only available targets and that choosing another target or dismissing remains honest. Also open the direct text action and record the actual browser fallback, including the number/message disclosure and whether spaces arrive as spaces rather than `+`; the app must not report that it detected WhatsApp's absence.
-- Verify the generic share flow on iOS/iPad if available, including popover anchoring. Caption presentation is controlled by the receiving app, so record platform-specific behavior rather than promising identical rendering everywhere.
-- Smoke both Play and F-Droid flavors; no WhatsApp or Google code should be bundled.
+- `test/features/vault/borrower_limit_policy_test.dart`: validate 0, 1, 99,
+  100, -1, null/off; check matrix — off; under; warn at/over (→ confirmation);
+  warn + acknowledged (→ allowed); refuse at/over (→ refused, even when
+  acknowledged). Count-helper cases cover returned loans and other borrowers.
+- `lend_book_use_case_test.dart`: item gate still precedes borrower gate; a
+  new borrower does not trip the limit; `LimitConfirmationNeeded` writes
+  nothing; acknowledged warn writes; refuse ignores acknowledgement and its
+  text names both numbers; store `Left` → `ValidationFailure` with the exact
+  recovery text, nothing written.
+- `vault_session_controller_test.dart`: with Refuse limit 1, two overlapping
+  `addLoan` calls for DIFFERENT items to the same borrower produce one write
+  and one borrower-limit refusal (not an item-availability refusal), proving
+  the FIFO re-check. An unreadable policy inside the write path also fails
+  closed with the recovery text and writes nothing. Existing direct-loan tests
+  use default-empty mock prefs or a default-off store override.
+- `prefs_borrower_limit_policy_store_test.dart`: absent → null; round trip
+  on/off; wrong type, bad/non-integer version (including JSON `1.0`),
+  out-of-range, unknown action and oversized input → `StorageFailure`.
+- `lending_rules_controller_test.dart` (ProviderContainer overrides): absent
+  → `off`; store `Left` → `AsyncError`; save round-trips into state; failed
+  save does not publish; save from `AsyncError` replaces the bad document.
+- `lending_rules_page_test.dart` covers a successful valid save, 0/100
+  validation, Warn/Refuse selection, Save disabled while pending, the
+  unreadable-document form, safe save failure and one
+  `expectMeetsA11yGuidelines` check (present in 4 of 6 vault page tests).
+  `vault_page_test.dart`: the Lending rules action shows
+  and navigates when locked, uninitialized and unlocked. Extend
+  `lend_book_page_test.dart`:
+  Cancel and barrier dismissal each clear busy without a second call; confirm
+  makes the acknowledged second call with the SAME captured target, borrower
+  name, dates and notes; named dialog copy for `active > limit` plus the
+  generic fallback; refusal shows inline text.
+  **Provider-wiring prerequisites (steps 4–5):** add
+  `SharedPreferences.setMockInitialValues({})` to `lend_book_page_test.dart`
+  `setUp`, because `lendBookUseCaseProvider` will pull
+  `borrowerLimitPolicyStoreProvider` → `sharedPreferencesProvider`. Add the
+  equivalent default-empty setup to `vault_session_controller_test.dart` for
+  its direct active `addLoan` call. Override
+  `borrowerLimitPolicyStoreProvider` with a default-off in-memory fake in
+  `test/features/library/replacement_harness.dart`, covering both catalogue
+  replacement test files without touching platform prefs. Add default-empty
+  mock prefs to `vault_page_test.dart` and `lending_rules_page_test.dart`
+  before their navigation/form tests open Lending rules.
+- Existing architecture tests cover the domain-purity rule automatically.
 
 ## Decision points
 
-### Settled design
+| # | Decision | Status |
+|---|---|---|
+| 1 | Count per loan (copies count individually) | **Decided:** yes |
+| 2 | Setting location | **Decided:** Lending rules action on the Borrowers vault page |
+| 3 | Range / default | **Decided:** 1–99, off |
+| 4 | Unreadable policy document | **Decided (maintainer, 2026-11-07):** refuse lending with a recovery hint (fail closed): “Lending rules could not be read. Open Lending rules and save them again.” A corrupted document stops ALL lending — even for users who never turned the limit on — until they open Lending rules and Save once. Mitigation: the page renders the form in the error state (§4). |
+| 5 | Warn mode UX | **Decided (maintainer, 2026-11-07):** named-borrower modal confirm (“Borrower [name] has X items out; your limit is Y. Lend anyway?”) with Cancel / **Lend anyway**; re-checked by the use case. The name comes from the lend page’s already-loaded borrower list, with generic “This borrower…” fallback; no extra lookup or identity in the policy outcome. |
+| 6 | At-or-over semantics (`active >= limit` triggers) | **Decided:** yes |
+| 7 | Use case return type change (`Unit` → `LendOutcome`) | **Decided (maintainer, 2026-11-07):** approved; the use case returns `LoanRecorded` or `LimitConfirmationNeeded`, with failures unchanged. Single production call site. |
+| 8 | Where the borrower gate is enforced | **Decided (maintainer, 2026-11-07):** the existing Warn/Refuse setting controls strictness. **Warn** = best-effort outer use-case check plus named confirmation; an overlapping write or explicit override can exceed the limit. **Refuse** = hard enforcement with no override: `VaultSessionController.addLoan` re-reads the policy and re-checks the borrower count inside the `_mutate` FIFO before insert. The `VaultLender` signature and Warn acknowledgement flow stay unchanged. |
+| 9 | ADR for the two-phase lend (`LimitConfirmationNeeded` → second call) | **Decided (maintainer, 2026-11-07):** write `docs/adr/0023-borrower-lending-limits.md`. Record the two-phase Warn outcome, best-effort Warn versus FIFO-hard Refuse, and why the `VaultLender` signature stays narrow. The preference-store pattern remains covered by ADR 0022. |
+| 10 | Lending rules action visibility | **Decided (maintainer, 2026-11-07):** always visible in every vault state, outside the unlocked-only Pending/Lock spread, so users can inspect or repair rules before unlocking. The policy contains no borrower data. Regenerate the changed locked-state `vault_unlock.png` golden on Linux via `update_goldens.yml`. |
 
-- **Scope:** this plan includes the complete Borrowed Items page and reusable templates, not only the sharing helper.
-- **One entry per active loan:** required for correct multi-copy behavior; card and busy identity is the loan ID.
-- **Whole page vault-gated:** no borrowed-title list while locked or stale entries after a lock transition.
-- **Existing time semantics:** keep overdue-from-local-midnight and the rolling 72-hour due-soon window. Changing to calendar-day or end-of-due-day behavior would require an explicit maintainer decision and changes to both pages.
-- **Local instant dates:** loan due dates use the shared local `10 November 2026`-style formatter, never `CalendarDate`. All other user-visible dates use the same full-month display helper, with UTC calendar-day fields kept separate from local instants and storage/export/wire formats unchanged.
-- **Catalogue reads:** sequential `getById` per unique item in v1; a measured later need may justify `getByIds` and its test updates.
-- **Two sharing paths:** generic cover/caption sharing uses the existing `share_plus` service. The maintainer-approved direct text action uses `wa.me` with strict percent encoding and the documented browser/Meta fallback. A targeted native Android image intent remains a later optimization only if its extra FileProvider/URI security work is justified.
-- **Template model:** named custom Unicode templates with three status bodies and two placeholders; built-in English remains the safe initial default. Dated bodies require `{{dueDate}}`; repeated known placeholders are allowed.
-- **Storage:** dedicated versioned preference JSON, not a Drift schema migration and not the encrypted Rust vault. Templates are device-local, plaintext, excluded from the current backup, and must not be described as incapable of containing private free text.
-- **Cover recipe:** the shared reader uses the existing publish defaults and a streamed 8 MiB source cap; publishing behavior is not silently changed to a reminder-specific rendition.
-- **No silent fallback:** no remote cover fetch, no raw image share, no hidden language switch, no fail-soft repository read, and no automatic text-only share after a corrupt cover.
-- **Pending remains:** it keeps its current role; both pages share the same urgency classifier and local date formatter so they cannot disagree.
+## Steps
 
-### Maintainer choices before implementation
-
-- **Delivery:** implement one complete change in the recommended three internal stages: (a) urgency/read model/page with Call, (b) templates, (c) WhatsApp sharing.
-- **V1 surface:** full scope, including responsive grid, template duplication, placeholder chips, and previews.
-- **Dated-placeholder rule:** `{{dueDate}}` remains required in dated bodies, as specified in the approved plan.
+- [x] 0. Baseline (§8), Flutter 3.44.2 / Dart 3.12.2, 2026-11-07:
+  `dart analyze lib test` → No issues found; `flutter test --no-pub
+  test/features/vault test/architecture` → **385 passed, 0 failed**.
+  Environment note: the first attempt ran Flutter 3.41.1 from PATH and left
+  stale generated outputs (`.dart_tool/hooks_runner/objective_c/7ad245dadc/`,
+  `build/unit_test_assets/`) that the pinned SDK reused — first a hook-kernel
+  mismatch, then 7 `ink_sparkle.frag` shader-format failures. Both
+  directories were removed (approved) and regenerated by 3.44.2. If those
+  errors reappear after an SDK switch, delete the same two directories.
+- [x] 1. Domain: `BorrowerLimitPolicy` + `BorrowerLimitCheck` + `activeLoanCountForBorrower`, with unit tests.
+- [x] 2. Domain port `BorrowerLimitPolicyStore`; infrastructure `PrefsBorrowerLimitPolicyStore` (save via `writePrefsString`), with tests.
+- [x] 3. `LendBookUseCase`: policy store, `LendOutcome` (doc comment, Decision 9), acknowledgement flag; add `policyStore:` to the 8 constructions in `lend_book_use_case_test.dart`; new cases per §5.
+- [x] 4. Providers (`borrowerLimitPolicyStoreProvider`, `LendingRulesController`, wire the use case); add the Refuse-only FIFO re-check in `VaultSessionController.addLoan` (shared refusal copy, no `VaultLender` signature change); `build_runner`. In the SAME step add default-empty prefs/policy setup to `lend_book_page_test.dart` and `vault_session_controller_test.dart`, add the default-off policy-store override to `test/features/library/replacement_harness.dart`, run those existing vault/lend/catalogue-replacement tests, and add the overlapping-Refuse and unreadable-inner-gate tests.
+- [x] 5. `LendingRulesPage` (form renders in the error state too; Save disabled while pending) + always-visible vault app-bar action OUTSIDE the unlocked-only Pending/Lock spread (Decision 10) and the updated `vault_page.dart:8-9` doc comment; add default-empty prefs to `vault_page_test.dart` and `lending_rules_page_test.dart`; widget tests for locked, uninitialized and unlocked navigation.
+- [x] 6. Lend page: capture the original submission and disable form inputs while busy; confirmation dialog; Cancel/barrier dismissal without a second call; confirm with the acknowledged second call reusing the captured target and arguments; new widget tests.
+- [ ] 7. Run `dart run build_runner build --delete-conflicting-outputs` (no uncommitted generated diff), `dart format --set-exit-if-changed lib test`, `dart analyze lib test` (zero), `flutter test --no-pub test/features/vault test/architecture`, and the full non-golden `flutter test --coverage --exclude-tags golden` suite; compare with step 0 and run the remaining applicable repo CI gates. Regenerate the changed `vault_unlock.png` on Linux via `update_goldens.yml` (ask before the external workflow) and review the image diff; do not substitute a macOS-rendered golden.
+- [x] 8. Add `docs/adr/0023-borrower-lending-limits.md` from `docs/adr/0000-template.md` (Decision 9), index it in `docs/adr/README.md`, and add a `CHANGELOG.md` `[Unreleased]` entry. The store pattern remains ADR 0022. Before naming Koha identifiers in the changelog, verify `maxissueqty` / `AllowTooManyOverride` against Koha's docs, or drop the identifiers and keep only "Koha circulation rules: cap + override preference".
+- [ ] 9. Report with the §11 checklist; ask before any commit.
 
 ## Out-of-scope observations
 
-- Template backup/restore/export and synchronization across devices should be designed separately; preference-stored templates will not automatically travel with the current library backup.
-- Additional placeholders (`borrowerName`, `libraryName`), localized month names, rich text, automatic translation, and per-borrower template overrides are deliberately deferred.
-- A native Android direct-to-WhatsApp image intent could reduce one share-sheet step, but it needs a separate security review for content URIs, temporary-file lifetime, package visibility, and fallback behavior.
-- Pending still shows `Item #id`; this plan does not rewrite it, although the new page becomes the richer loan-management destination.
-- The existing size-unit limitation in `PrefsPublishHostStore` and fail-soft behavior in `periodicalCoversProvider` and Pending are not refactored by this feature. The new code avoids copying them where strict reads are required. The shared local-cover reader is in scope because both publishing and reminders will use its bounded implementation.
-
-## Review record
-
-- Reviewed against `58652ca` on `remoteImport`. The drawer, vault state, urgency/tick, contact, repository, cover, sharing, preference, CI-timezone, and ADR seams were verified directly.
-- The revised approach incorporates the second review: local instant dates, rolling-72-hour wording, owner-less covers, bounded per-ID reads, strict periodical failures, streamed cover byte limits, typed cover outcomes, UTF-16/UTF-8 cap distinctions, JSON depth/type guards, `SerialOpQueue`, unresolved/lock edge states, plaintext-template honesty, share-cache behavior, and device-verified WhatsApp claims.
-- The focused baseline is 92 passing tests under Flutter 3.44.2. No full-suite, Rust, release, or real-device verification has been performed for this proposed feature.
+- Borrower list / profile could show "2 of 3 items out" once a limit is on — useful, but a separate change.
+- `flutter analyze` from the repo root reports 43 errors in vendored `rust_builder/cargokit/build_tool/` and two `sort_pub_dependencies` infos (`pubspec.yaml:53,188`); `lib/`+`test/` are clean. Pre-existing.
+- 1.9.5 release follow-ups still maintainer-owned: `flutter test` run, signed tag `1.9.5`, merge `reminders` → `main`, F-Droid.
+- `lend_book_use_case.dart:134` says "Try lending again from their profile"
+  but there is no lend-from-profile flow (only lend entry:
+  `catalogue_item_actions.dart:155`). Pre-existing copy inaccuracy; not touched.
+- Four untracked scratch files in the repo root (`item-reminder.md`,
+  `reminder-fixes.md`, `reminder-issues1.md`, `remoteImport-issues.md`) are
+  not referenced by this plan. Maintainer decision: ignore, move, or delete.
 
 ## Result
 
-Implemented the full Borrowed Items destination, strict active-loan read model, responsive cards and filters, Unicode template CRUD/selection/persistence, bounded sanitized cover preparation, explicit generic OS sharing, and direct WhatsApp text with the borrower's sanitized phone number on the `reminders` branch. `main` was fast-forwarded from `4945b8f` to `58652ca` before the branch was created; the 1.9.4 plan is preserved at `docs/plans/release-1.9.4-aab.md`.
-
-Verified under pinned Flutter 3.44.2:
-
-- 6,013 non-golden tests passed with coverage (above the 64% floor), including direct WhatsApp number/caption launch with no cover read and bold title/date substitution.
-- `dart analyze lib test`, formatting, `git diff --check`, and consecutive build_runner stability checks passed.
-- Both CI timezone runs passed, including the new loan date/message tests.
-- Rust `cargo fmt --check`, clippy with warnings denied, `cargo deny check`, and release tests passed (36 tests; 2 real-archive tests remain environment-gated).
-- Secret scan and F-Droid purity plus Play positive control passed. No dependency was added.
-- Golden tests were attempted on macOS and failed with the documented renderer differences; Linux CI remains the reference renderer. No golden PNG was changed.
-
-Review-fix follow-up (2026-11-06): current-session-only hand-off authorization, nullable loan-date boundaries, safe Borrowed Items/Pending labels, typed invalid-date rendering failures, and the corrected two-path privacy summary are implemented with regressions. All 48 focused tests passed; all 22 date/reminder tests passed in each required timezone; 6,021 non-golden tests passed with coverage. Analysis of `lib test integration_test`, formatting, and `git diff --check` passed. No generated file, dependency, schema, permission, or unrelated screen changed.
-
-Robust-review follow-up (2026-11-06): restored catalogue date sentinels; added confirmed wrong-type-safe template reset and typed rollback; documented the approved direct-WhatsApp browser/Meta fallback and switched its caption to strict percent encoding; rejected stale unlocked snapshots; preserved cards and scroll position during reloads; reused the bounded cover read; shared the template-ID limit; made renderer failure closed; documented bold markers and the intentional busy gesture sink. The accepted global full-month format and unrelated commit/artifact hygiene stayed unchanged. All 170 affected tests passed; all 23 date/reminder tests passed in each required timezone; 6,030 non-golden tests passed with coverage. Analysis of `lib test integration_test`, formatting, `git diff --check`, and consecutive build_runner stability checks passed (second run wrote zero outputs). Only the two expected generated provider hashes changed. No dependency, schema, permission, or platform configuration changed.
-
-Remaining verification: `osv-scanner` is not installed, so the pubspec OSV scan was not run (Rust advisories did run through `cargo deny`). The F-Droid release APK was built and installed on the Pixel 8a. Real Android WhatsApp cover/caption behavior, direct-text `%20`/browser-fallback behavior, Hindi/RTL rendering, missing/corrupt/oversized covers, restart persistence, app-lock round trip, iOS/iPad behavior, and Play/F-Droid device smoke are still unverified. Test-install guidance now requires the F-Droid flavor and `adb install -r` in `README.md` and `docs/RELEASING.md`.
+_(filled in when done)_

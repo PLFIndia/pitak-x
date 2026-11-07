@@ -93,7 +93,7 @@ final vaultStoreProvider = AutoDisposeFutureProvider<VaultStore>.internal(
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef VaultStoreRef = AutoDisposeFutureProviderRef<VaultStore>;
-String _$lendBookUseCaseHash() => r'430e8bd3d266f7f5fc883557e0997d5dab0edb15';
+String _$lendBookUseCaseHash() => r'c34578933344f4a09f340e28bdeaecf597b19f32';
 
 /// Lends a library book, enforcing the lending policy (removed / all copies
 /// out → refused with a reason). The vault side is the session controller
@@ -494,6 +494,28 @@ final pendingSnapshotProvider =
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef PendingSnapshotRef = AutoDisposeFutureProviderRef<PendingSnapshot?>;
+String _$borrowerLimitPolicyStoreHash() =>
+    r'a84758ecb4dd76bd9dc3cf3712cc9449f4766b31';
+
+/// Plaintext lending rules: policy numbers only, never borrower/vault data.
+///
+/// Copied from [borrowerLimitPolicyStore].
+@ProviderFor(borrowerLimitPolicyStore)
+final borrowerLimitPolicyStoreProvider =
+    AutoDisposeFutureProvider<BorrowerLimitPolicyStore>.internal(
+      borrowerLimitPolicyStore,
+      name: r'borrowerLimitPolicyStoreProvider',
+      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+          ? null
+          : _$borrowerLimitPolicyStoreHash,
+      dependencies: null,
+      allTransitiveDependencies: null,
+    );
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef BorrowerLimitPolicyStoreRef =
+    AutoDisposeFutureProviderRef<BorrowerLimitPolicyStore>;
 String _$reminderTemplateStoreHash() =>
     r'4c88f7782e651d576d3d9f38f4ddf3698e3856e9';
 

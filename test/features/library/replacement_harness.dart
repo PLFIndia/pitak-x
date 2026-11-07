@@ -19,6 +19,8 @@ import 'package:pitaka/features/settings/domain/app_settings.dart';
 import 'package:pitaka/features/settings/domain/library_namespace.dart';
 import 'package:pitaka/features/settings/domain/settings_repository.dart';
 import 'package:pitaka/features/vault/application/vault_session_controller.dart';
+import 'package:pitaka/features/vault/domain/borrower_limit_policy.dart';
+import 'package:pitaka/features/vault/domain/borrower_limit_policy_store.dart';
 import 'package:pitaka/features/vault/domain/entities/borrower.dart';
 import 'package:pitaka/features/vault/domain/entities/vault_data.dart';
 import 'package:pitaka/features/vault/domain/repositories/vault_repository.dart';
@@ -26,6 +28,17 @@ import 'package:pitaka/features/vault/infrastructure/vault_store.dart';
 
 import '../publish/support/availability_lane_fakes.dart';
 import '../vault/vault_repository_write_stub.dart';
+
+class _DefaultOffBorrowerLimitPolicyStore implements BorrowerLimitPolicyStore {
+  const _DefaultOffBorrowerLimitPolicyStore();
+
+  @override
+  Either<Failure, BorrowerLimitPolicy?> load() => const Right(null);
+
+  @override
+  Future<Either<Failure, Unit>> save(BorrowerLimitPolicy policy) async =>
+      right(unit);
+}
 
 class ReplacementVault with VaultWriteUnsupported implements VaultRepository {
   List<Borrower> borrowers = [const Borrower(id: 1, name: 'Synthetic')];
@@ -164,6 +177,9 @@ class ReplacementHarness {
               ),
             );
           }),
+        borrowerLimitPolicyStoreProvider.overrideWith(
+          (ref) async => const _DefaultOffBorrowerLimitPolicyStore(),
+        ),
         catalogueItemRepositoryProvider.overrideWith((ref) async => books),
         settingsRepositoryProvider.overrideWith((ref) async => settings),
         vaultRepositoryProvider.overrideWithValue(vault),

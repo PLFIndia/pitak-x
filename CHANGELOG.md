@@ -14,6 +14,14 @@ heading as part of the `chore(release):` commit.
 
 ## [Unreleased]
 
+### Added
+- **Borrower lending limits (ADR 0023):** an optional 1–99 active-loan cap per
+  borrower, off by default. Warn asks for named confirmation and retries the
+  identical captured lend; Refuse has no override and rechecks the count inside
+  the vault write FIFO. Lending rules are available even while locked, use a
+  strict versioned preferences document with no borrower data, and fail closed
+  with an editable recovery form if that document is unreadable.
+
 ## [1.9.5] - 2026-11 (tag `1.9.5`, versionCode 37)
 
 Release sentinel (`tool/release_build.sh --sentinel`):
