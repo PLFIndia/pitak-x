@@ -90,15 +90,37 @@ void main() {
 
     test('round-trips every field', () async {
       final store = FileEventsWatchSettingsStore(docsDir: docs.path);
-      final settings = EventsWatchSettings.initial(
-        inc,
-      ).withEnabled(enabled: true).withExplanationAcknowledged();
+      final settings = EventsWatchSettings.initial(inc)
+          .withEnabled(enabled: true)
+          .withExplanationAcknowledged()
+          .withPausedForNoLibraries(paused: true);
 
       expect((await store.write(settings)).isRight(), isTrue);
 
       final read = (await store.read()).toNullable()!;
       final back = (read as WatchDocumentPresent<EventsWatchSettings>).value;
       expect(back.sameAs(settings), isTrue);
+      expect(back.pausedForNoLibraries, isTrue);
+    });
+
+    test('a document written before pausedForNoLibraries existed still '
+        'reads (absent = false)', () async {
+      File(settingsPath())
+        ..createSync(recursive: true)
+        ..writeAsStringSync(
+          jsonEncode({
+            'schema': 1,
+            'enabled': true,
+            'token': {'incarnation': inc, 'epoch': 1},
+            'acknowledgedExplanationVersion': 1,
+          }),
+        );
+      final read = (await FileEventsWatchSettingsStore(
+        docsDir: docs.path,
+      ).read()).toNullable()!;
+      final back = (read as WatchDocumentPresent<EventsWatchSettings>).value;
+      expect(back.enabled, isTrue);
+      expect(back.pausedForNoLibraries, isFalse);
     });
 
     test('newer schema → WatchDocumentNewerSchema (never corrupt)', () async {
@@ -128,6 +150,13 @@ void main() {
           'enabled': true,
           'token': {'incarnation': '../x', 'epoch': 0},
           'acknowledgedExplanationVersion': 0,
+        }),
+        'string pause': jsonEncode({
+          'schema': 1,
+          'enabled': true,
+          'token': {'incarnation': inc, 'epoch': 0},
+          'acknowledgedExplanationVersion': 0,
+          'pausedForNoLibraries': 'yes',
         }),
         'oversized': '{"schema":1,"pad":"${'x' * (16 * 1024)}"}',
         'deep': '${'[' * 9}${']' * 9}',

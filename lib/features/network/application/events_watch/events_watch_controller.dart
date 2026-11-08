@@ -152,8 +152,22 @@ class EventsWatchController extends _$EventsWatchController {
   ) async {
     if (!settings.enabled) {
       final count = await _watchedCount();
+      if (count == 0) {
+        return _view(
+          EventsWatchPhase.noLibraries,
+          status,
+          needsExplanation: settings.needsExplanation,
+        );
+      }
+      // `blocked` is derived from facts (OFF + delivery blocked), not from
+      // the action that turned us off. Why (device finding 2026-11-08):
+      // every permission prompt / system-settings round trip ends in a
+      // `resumed` lifecycle event, whose reconcile would otherwise replace
+      // the blocked sentence with the plain OFF copy within a second.
+      final delivery = await _notifier.delivery();
+      final blocked = delivery.toNullable() == NotificationDelivery.blocked;
       return _view(
-        count == 0 ? EventsWatchPhase.noLibraries : EventsWatchPhase.off,
+        blocked ? EventsWatchPhase.blocked : EventsWatchPhase.off,
         status,
         needsExplanation: settings.needsExplanation,
       );
@@ -181,15 +195,34 @@ class EventsWatchController extends _$EventsWatchController {
     final count = await _watchedCount();
     if (count == null) return _view(EventsWatchPhase.storageError, status);
     if (count == 0) {
-      await _scheduler.cancel(); // no prompt, no settings change
+      // Remember that WE paused for emptiness (same token: this is not a
+      // new enable/disable intent) BEFORE cancelling, so that the next
+      // saved library can resume automatically. If the save fails the
+      // pause is simply forgotten and the next library lands in the
+      // explicit Resume state (fail closed, decision 14).
+      if (!settings.pausedForNoLibraries) {
+        await _settings.write(settings.withPausedForNoLibraries(paused: true));
+      }
+      await _scheduler.cancel(); // no prompt
       return _view(EventsWatchPhase.noLibraries, status);
     }
 
     final registration = await _scheduler.registration();
-    final registered = switch (registration) {
+    var registered = switch (registration) {
       Right(value: WatchJobRegistration.registered) => true,
       _ => false, // unknown counts as not registered (fail closed)
     };
+    if (!registered && settings.pausedForNoLibraries) {
+      // Only our own no-libraries pause is resumed without the user:
+      // the foreground cancelled it and knows why. Any other missing
+      // registration still requires the explicit Resume (decision 14).
+      registered = (await _scheduler.ensureRegistered()).isRight();
+    }
+    if (registered && settings.pausedForNoLibraries) {
+      // Best effort: if this save fails the flag stays and a later
+      // reconcile clears it; an extra ensureRegistered is idempotent.
+      await _settings.write(settings.withPausedForNoLibraries(paused: false));
+    }
     return _view(
       registered ? EventsWatchPhase.on : EventsWatchPhase.notScheduled,
       status,

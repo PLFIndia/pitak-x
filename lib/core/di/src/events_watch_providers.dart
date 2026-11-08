@@ -10,7 +10,9 @@
 library;
 
 import 'package:flutter/foundation.dart';
+import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/di/src/platform_providers.dart';
+import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/network/domain/events_watch/events_watch_ports.dart';
 import 'package:pitaka/features/network/domain/events_watch/watched_libraries_source.dart';
 import 'package:pitaka/features/network/infrastructure/events_watch/events_watch_dispatcher.dart';
@@ -94,6 +96,24 @@ EventsWatchScheduler eventsWatchScheduler(EventsWatchSchedulerRef ref) =>
 @Riverpod(keepAlive: true)
 WatchClock eventsWatchClock(EventsWatchClockRef ref) =>
     const SystemWatchClock();
+
+/// Enqueues one immediate worker run (device testing aid).
+typedef EventsWatchDebugRunNow = Future<Either<Failure, Unit>> Function();
+
+/// DEBUG BUILDS ONLY: the "run the check now" hook for device testing.
+///
+/// Null in release/profile builds and wherever the WorkManager scheduler is
+/// not bound, so no screen can offer the action there. This provider is the
+/// single gate; the UI only checks for null. See
+/// `WorkmanagerEventsWatchScheduler.debugRunNow` for why `adb` cannot force
+/// the periodic job.
+@Riverpod(keepAlive: true)
+EventsWatchDebugRunNow? eventsWatchDebugRunNow(EventsWatchDebugRunNowRef ref) {
+  if (!kDebugMode) return null;
+  final scheduler = ref.watch(eventsWatchSchedulerProvider);
+  if (scheduler is! WorkmanagerEventsWatchScheduler) return null;
+  return scheduler.debugRunNow;
+}
 
 /// What the foreground must do once at start: register the WorkManager
 /// dispatcher and initialize the notifier with the tap callback. Returns

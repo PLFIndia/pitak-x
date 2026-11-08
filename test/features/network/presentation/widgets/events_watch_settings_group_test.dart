@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/di/providers.dart';
+import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/network/application/events_watch/events_watch_controller.dart';
 import 'package:pitaka/features/network/application/events_watch/events_watch_view.dart';
 import 'package:pitaka/features/network/domain/events_watch/events_watch_state.dart';
@@ -13,13 +15,19 @@ import 'package:pitaka/features/network/presentation/widgets/events_watch_settin
 void main() {
   late _FakeController fake;
 
-  Future<void> pump(WidgetTester tester, EventsWatchView view) async {
+  Future<void> pump(
+    WidgetTester tester,
+    EventsWatchView view, {
+    // Null = what a release build sees (the DI gate returns null there).
+    EventsWatchDebugRunNow? debugRunNow,
+  }) async {
     fake = _FakeController(view);
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
           eventsWatchSupportedProvider.overrideWithValue(true),
           eventsWatchControllerProvider.overrideWith(() => fake),
+          eventsWatchDebugRunNowProvider.overrideWithValue(debugRunNow),
         ],
         child: const MaterialApp(
           home: Scaffold(
@@ -157,6 +165,51 @@ void main() {
     await tester.tap(find.text('Try again'));
     await tester.pumpAndSettle();
     expect(fake.calls, ['reconcile']);
+  });
+
+  group('debug run hook', () {
+    testWidgets('absent when the DI gate returns null (release builds)', (
+      tester,
+    ) async {
+      await pump(tester, view(EventsWatchPhase.on));
+      expect(find.textContaining('Run check now'), findsNothing);
+    });
+
+    testWidgets('present → enqueues once, no controller action, feedback', (
+      tester,
+    ) async {
+      var runs = 0;
+      await pump(
+        tester,
+        view(EventsWatchPhase.on),
+        debugRunNow: () async {
+          runs++;
+          return right(unit);
+        },
+      );
+
+      await tester.tap(find.text('Run check now (debug build)'));
+      await tester.pumpAndSettle();
+
+      expect(runs, 1);
+      expect(fake.calls, isEmpty);
+      expect(find.textContaining('Check enqueued'), findsOneWidget);
+    });
+
+    testWidgets('failure shows a safe sentence', (tester) async {
+      await pump(
+        tester,
+        view(EventsWatchPhase.on),
+        debugRunNow: () async =>
+            left(const UnexpectedFailure('scheduler platform boom')),
+      );
+
+      await tester.tap(find.text('Run check now (debug build)'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Could not enqueue the check.'), findsOneWidget);
+      expect(find.textContaining('boom'), findsNothing);
+    });
   });
 
   group('text helpers', () {

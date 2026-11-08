@@ -230,15 +230,37 @@ void main() {
       );
     });
 
-    test(
-      'empty, control, bidi-override and over-long captions become null',
-      () {
-        expect(pendingWith('').safeCaption, isNull);
-        expect(pendingWith('   ').safeCaption, isNull);
-        expect(pendingWith('line\nbreak').safeCaption, isNull);
-        expect(pendingWith('evil\u202Etext').safeCaption, isNull);
-        expect(pendingWith('x' * 281).safeCaption, isNull);
-      },
-    );
+    test('layout whitespace folds into one space (multi-line captions '
+        'show as one line)', () {
+      expect(pendingWith('line\nbreak').safeCaption, 'line break');
+      expect(
+        pendingWith(
+          'old event.\r\n\ttested   after\u2028run\u2029now',
+        ).safeCaption,
+        'old event. tested after run now',
+      );
+      // Only whitespace → nothing to show.
+      expect(pendingWith('\n\t\n').safeCaption, isNull);
+    });
+
+    test('the folded caption is a fixed point of safeCaptionOf', () {
+      const raw = '  a\n\nb\t c  ';
+      final once = PendingChange.safeCaptionOf(raw);
+      expect(once, 'a b c');
+      expect(PendingChange.safeCaptionOf(once!), once);
+    });
+
+    test('empty, other-control, bidi-override and over-long captions become '
+        'null', () {
+      expect(pendingWith('').safeCaption, isNull);
+      expect(pendingWith('   ').safeCaption, isNull);
+      expect(pendingWith('bad\x00char').safeCaption, isNull);
+      expect(pendingWith('esc\x1b[31mred').safeCaption, isNull);
+      expect(pendingWith('evil\u202Etext').safeCaption, isNull);
+      expect(pendingWith('zero\u200Bwidth').safeCaption, isNull);
+      expect(pendingWith('x' * 281).safeCaption, isNull);
+      // Folding never rescues an over-long caption by less than it is.
+      expect(pendingWith('${'x' * 280}\ny').safeCaption, isNull);
+    });
   });
 }

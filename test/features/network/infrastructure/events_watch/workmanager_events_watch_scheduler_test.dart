@@ -89,6 +89,30 @@ void main() {
 
     expect((await scheduler().ensureRegistered()).isLeft(), isTrue);
   });
+
+  group('debugRunNow (device-testing hook)', () {
+    test(
+      'enqueues one one-off run without touching the periodic job',
+      () async {
+        final result = await scheduler().debugRunNow();
+
+        expect(result.isRight(), isTrue);
+        expect(gateway.oneOffCalls, 1);
+        expect(gateway.registerCalls, 0);
+        expect(gateway.cancelCalls, 0);
+        // Not confirmed by polling: a fast run may already have finished.
+        expect(gateway.pollCalls, 0);
+      },
+    );
+
+    test('a plugin error becomes a typed failure', () async {
+      gateway.throwOnOneOff = PlatformException(code: 'boom');
+
+      final result = await scheduler().debugRunNow();
+
+      expect(result.getLeft().toNullable(), isA<UnexpectedFailure>());
+    });
+  });
 }
 
 final class _FakeGateway implements WorkmanagerGateway {
@@ -98,10 +122,18 @@ final class _FakeGateway implements WorkmanagerGateway {
   int pollCalls = 0;
   int becomesScheduledAfterPolls = 0;
   int becomesUnscheduledAfterPolls = 0;
+  int oneOffCalls = 0;
   Exception? throwOnPoll;
+  Exception? throwOnOneOff;
 
   @override
   Future<void> registerPeriodic() async => registerCalls++;
+
+  @override
+  Future<void> registerOneOffNow() async {
+    if (throwOnOneOff != null) throw throwOnOneOff!;
+    oneOffCalls++;
+  }
 
   @override
   Future<void> cancel() async => cancelCalls++;

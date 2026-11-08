@@ -5,6 +5,7 @@
 /// phase gets one plain sentence; no URL, label or raw error ever appears.
 library;
 
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pitaka/core/di/providers.dart';
@@ -92,6 +93,14 @@ class EventsWatchSettingsGroup extends ConsumerWidget {
       return const SizedBox.shrink();
     }
     final controller = ref.read(eventsWatchControllerProvider.notifier);
+    // Debug builds only. The DI provider is the runtime gate; the
+    // `if (kDebugMode)` statement makes `_DebugRunAction` unreachable in
+    // release, so the AOT compiler drops the class, the provider function,
+    // `debugRunNow` and `registerOneOffNow` (verified with
+    // `--analyze-size`, 2026-11-08; two inert label literals still appear
+    // in the snapshot's string table, with no code that can show them).
+    Widget? debugAction;
+    if (kDebugMode) debugAction = const _DebugRunAction();
     final theme = Theme.of(context);
 
     Future<void> onSwitch({required bool on}) async {
@@ -140,6 +149,7 @@ class EventsWatchSettingsGroup extends ConsumerWidget {
           _Action(label: 'Try again', onPressed: controller.reconcile),
         if (view.phase == EventsWatchPhase.settingsCorrupt)
           _Action(label: 'Reset event alerts', onPressed: controller.reset),
+        if (debugAction != null) debugAction,
         if (view.phase != EventsWatchPhase.settingsCorrupt)
           ListTile(
             contentPadding: EdgeInsets.zero,
@@ -181,6 +191,36 @@ class EventsWatchSettingsGroup extends ConsumerWidget {
       ),
     );
     if (confirmed ?? false) await controller.reset();
+  }
+}
+
+/// Debug builds only (see the `kDebugMode` note in the group's `build`).
+/// Renders nothing when the DI gate returns null. The worker writes its
+/// result to the state file; the status lines refresh on the next
+/// reconcile (leave and return).
+class _DebugRunAction extends ConsumerWidget {
+  const _DebugRunAction();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final run = ref.watch(eventsWatchDebugRunNowProvider);
+    if (run == null) return const SizedBox.shrink();
+    return _Action(
+      label: 'Run check now (debug build)',
+      onPressed: () async {
+        final messenger = ScaffoldMessenger.of(context);
+        final result = await run();
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text(
+              result.isRight()
+                  ? 'Check enqueued. Leave and return to refresh the status.'
+                  : 'Could not enqueue the check.',
+            ),
+          ),
+        );
+      },
+    );
   }
 }
 

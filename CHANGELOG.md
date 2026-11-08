@@ -29,10 +29,14 @@ heading as part of the `chore(release):` commit.
   sight and every re-enable baseline quietly; `304`/`404`/partial/newer-
   schema reads withhold alerts; a blocked channel writes a revocation marker
   that only a foreground token change supersedes; an ON setting with no
-  registered job requires explicit Resume. Default ON is offered with an
-  explanation on first use, never scheduled silently. Requires core-library
+  registered job requires explicit Resume, except when Pitak itself paused
+  for having no saved library — saving one resumes checks automatically.
+  Default ON is offered with an
+  explanation on first use, never scheduled silently. Multi-line captions
+  are folded to one line in the notification body. Requires core-library
   desugaring (`desugar_jdk_libs 2.1.4`); F-Droid classpath verified free of
-  gms/play/firebase/mlkit.
+  gms/play/firebase/mlkit. Debug builds add a "Run check now" action in
+  Settings for device testing (absent from release builds).
 - `DataGenerations.peekActive()` — side-effect-free generation resolver for
   background work; `CapacityFailure` in the sealed failure hierarchy.
 - **Borrower lending limits (ADR 0023):** an optional 1–99 active-loan cap per

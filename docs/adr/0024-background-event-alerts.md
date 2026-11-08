@@ -85,7 +85,17 @@ Architecture:
   later run under the same token stops even if permission returned, until
   the foreground consumes the marker by persisting OFF. Settings ON with no
   registered (or unknown) job shows "not scheduled" and requires explicit
-  Resume; nothing is auto-repaired.
+  Resume; nothing is auto-repaired — with ONE exception (amended
+  2026-11-08 after device testing): when the foreground itself cancelled
+  the job because no library was saved, it records
+  `pausedForNoLibraries: true` in the settings document (same token, so
+  the worker neither discards pending alerts nor re-baselines), and the
+  next saved library resumes automatically and clears the flag. A pause
+  whose save failed is forgotten and falls back to explicit Resume. The
+  `blocked` phase is derived on every reconcile from "OFF and delivery
+  blocked", not from the action that turned alerts off, because every
+  permission or system-settings round trip ends in a lifecycle resume
+  whose reconcile would otherwise hide the sentence immediately.
 - **Default ON** (decision 1) is an *offer*: with a saved library and no
   settings file, the app shows the explanation once per session while
   unlocked; "Turn on" enables (Android 13+ prompt follows), "Not now"
@@ -123,3 +133,17 @@ Architecture:
 - Device verification still owed by the maintainer: process death, reboot,
   Android 13 prompt vs pre-33, revoke-then-regrant, Doze/battery saver,
   force-stop, cold-start tap while locked, Android 12L+ desugaring.
+- Testing note (2026-11-08, verified in `work-runtime 2.9.0`): with a flex
+  window the FIRST periodic run is scheduled at `enqueue + interval −
+  flex` (11 h), and `WorkerWrapper` refuses any periodic run before its
+  computed time ("executed before schedule") — it reschedules without
+  starting the Dart engine. `adb shell cmd jobscheduler run -f` therefore
+  never reaches the worker. Debug builds expose **Run check now** in
+  Settings (`eventsWatchDebugRunNowProvider`, null outside `kDebugMode`),
+  which enqueues a one-off request with the same task name under a
+  separate unique name; it never touches the periodic registration.
+- Notification bodies are one line: `PendingChange.safeCaptionOf` folds
+  layout whitespace (line breaks, tabs, runs of spaces, U+2028/2029) into
+  a single space before the safe-display check, because `EventPoster`
+  accepts multi-line descriptions. Other control/zero-width/bidi characters
+  still fall back to the fixed sentence.

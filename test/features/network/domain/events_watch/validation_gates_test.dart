@@ -75,6 +75,10 @@ void main() {
       expect(v(dig: 'nope'), isNull);
       expect(v(caption: 'bidi\u202E'), isNull);
       expect(v(caption: ' padded '), isNull);
+      // A stored caption must already be folded to one line; a raw
+      // multi-line value did not come from this app's writer.
+      expect(v(caption: 'two\nlines'), isNull);
+      expect(v(caption: 'two lines')?.safeCaption, 'two lines');
       expect(v(caption: 12), isNull);
     });
   });

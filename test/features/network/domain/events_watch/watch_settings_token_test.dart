@@ -132,5 +132,40 @@ void main() {
       expect(v(true, 1001), isNull);
       expect(v(true, '1'), isNull);
     });
+
+    test(
+      'pausedForNoLibraries: absent = false, bool kept, other = corrupt',
+      () {
+        EventsWatchSettings? v(Object? paused) => EventsWatchSettings.validate(
+          enabled: true,
+          incarnation: incA,
+          epoch: 1,
+          acknowledgedExplanationVersion: 1,
+          pausedForNoLibraries: paused,
+        );
+        expect(v(null)!.pausedForNoLibraries, isFalse);
+        expect(v(true)!.pausedForNoLibraries, isTrue);
+        expect(v(false)!.pausedForNoLibraries, isFalse);
+        expect(v('true'), isNull);
+        expect(v(1), isNull);
+      },
+    );
+
+    test('a pause keeps the token; any explicit enable/disable clears it '
+        'with a new epoch; acknowledgement preserves it', () {
+      final on = EventsWatchSettings.initial(incA).withEnabled(enabled: true);
+      final paused = on.withPausedForNoLibraries(paused: true);
+      expect(paused.pausedForNoLibraries, isTrue);
+      expect(paused.token.sameAs(on.token), isTrue);
+      expect(paused.sameAs(on), isFalse);
+
+      expect(paused.withExplanationAcknowledged().pausedForNoLibraries, isTrue);
+
+      final off = paused.withEnabled(enabled: false);
+      expect(off.pausedForNoLibraries, isFalse);
+      expect(off.token.epoch, on.token.epoch + 1);
+      expect(paused.withEnabled(enabled: true).pausedForNoLibraries, isFalse);
+      expect(paused.withPausedForNoLibraries(paused: false).sameAs(on), isTrue);
+    });
   });
 }

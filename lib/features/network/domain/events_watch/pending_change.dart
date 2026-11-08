@@ -58,14 +58,26 @@ final class PendingChange {
   /// Convenience: canonical site URL.
   String get siteUrl => identity.siteUrl;
 
-  /// A caption is shown only when non-empty, within the poster length cap
-  /// and free of control/bidi characters. Anything else → null.
+  /// Layout whitespace a publisher may legitimately type (line breaks,
+  /// tabs, repeated spaces, Unicode line/paragraph separators).
+  static final RegExp _layoutWhitespace = RegExp(r'[ \t\r\n\u2028\u2029]+');
+
+  /// The one-line text to show for a caption, or null when nothing safe
+  /// can be shown (the notifier then uses a fixed fallback line).
+  ///
+  /// Beginner note: a notification body is a single line, and
+  /// `EventPoster.create` accepts multi-line descriptions, so a caption
+  /// with line breaks is normal publisher input, not an attack. Runs of
+  /// layout whitespace are folded into one space BEFORE the safety check;
+  /// every other control, zero-width or bidi character still rejects the
+  /// caption. The result is a fixed point (folding it again changes
+  /// nothing), which [validate] relies on for stored captions.
   static String? safeCaptionOf(String raw) {
-    final trimmed = raw.trim();
-    if (trimmed.isEmpty) return null;
-    if (trimmed.length > EventPoster.maxDescriptionLength) return null;
-    if (!SafeDisplayText.isSafe(trimmed)) return null;
-    return trimmed;
+    final folded = raw.replaceAll(_layoutWhitespace, ' ').trim();
+    if (folded.isEmpty) return null;
+    if (folded.length > EventPoster.maxDescriptionLength) return null;
+    if (!SafeDisplayText.isSafe(folded)) return null;
+    return folded;
   }
 
   /// Strict gate for stored input.

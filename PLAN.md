@@ -397,7 +397,7 @@ the behavioral source of truth.
 | 11 | One writer per file; no foreground observer. | Preserved; worker non-overlap is a Step 0 gate. |
 | 12 | Do not change foreground `busy_timeout`/journal mode. | **Reconfirmed 2026-11-07.** Worker uses a short bounded busy wait and fails closed; at realistic scale skipped sites are harmless. |
 | 13 | Notification title provenance. | **Decided 2026-11-07:** stored `name` when `fetch_status = 'ok'` (public name via `refresh_run.dart:283`), generic title otherwise; no extra descriptor fetch; hide on lock screen. |
-| 14 | ON-settings with missing registration. | **Decided 2026-11-07:** explicit Resume; unknown registration fails closed; no automatic re-register or auto-disable. |
+| 14 | ON-settings with missing registration. | **Decided 2026-11-07:** explicit Resume; unknown registration fails closed; no automatic re-register or auto-disable. **Amended 2026-11-08:** the foreground's own no-libraries cancellation is recorded (`pausedForNoLibraries`, same token) and resumes automatically when a library is saved; every other missing registration still requires Resume. |
 | 15 | Sizing. | **New 2026-11-07:** realistic ≤ 20 libraries; hard cap 100; check all per run; pending ≤ 2/site; state ≤ 512 KiB; no overflow budget or fairness ordering. |
 | 16 | Phasing. | **Decided 2026-11-07:** background-only; no foreground badge phase. |
 
@@ -544,12 +544,42 @@ end-to-end or pause at each implementation decision.
   went through the explanation + system prompt).
 - Periodic job registered by WorkManager with the intended constraints
   (`batteryNotLow=true`, CONNECTIVITY, TIMING_DELAY).
-- Forcing it runs the worker: `adb shell cmd jobscheduler run -f
-  dev.khoj.pitaka <jobId>` consumed job #1 → #2 → #3 → #4 (one per run).
-  The WorkManager job id increments after every run; read the current id
-  from `adb shell dumpsys jobscheduler | grep 'JOB #u0a318'`.
+- ~~Forcing it runs the worker~~ **Corrected 2026-11-08 (second session):
+  `cmd jobscheduler run -f` does NOT run the Dart worker** — see
+  "Root cause" below. The job id increments because WorkManager
+  reschedules, not because the worker ran.
 
-### Open issue — no notification after a caption change
+### Root cause of the open issue (found 2026-11-08, debug build)
+
+`dumpsys jobscheduler` job history for the forced job: `START` → `STOP
+… app called jobFinished` **23 ms later**; no Flutter engine, no
+`events_watch:` log line, no WM-WorkerWrapper result line. Verified in
+`work-runtime-2.9.0.aar` bytecode (`WorkerWrapper.runWorker`,
+`WorkSpec.Companion.calculateNextRunTime`):
+
+- For periodic work with a flex window (`flex != interval`), the first
+  run time is `enqueue + initialDelay + (interval − flex)` = **enqueue +
+  11 h** for our 12 h / 1 h registration.
+- `WorkerWrapper` refuses any periodic/backed-off run while
+  `now < calculateNextRunTime()` ("Delaying execution … before
+  schedule", debug-level log) and resolves with *reschedule* → new
+  JobScheduler id. A forced JobScheduler run therefore never reaches
+  `BackgroundWorker`.
+
+Consequence: **none** of the previous session's forced runs (#1–#4)
+executed the worker. No baseline was ever written; the caption-change
+sequence was never checked; the "no notification" observation was
+expected behaviour of an un-run job, not a defect in the run logic.
+The Settings status lines on the old install would have shown no
+"Last check" — that evidence is gone (release copy uninstalled for the
+debug build).
+
+Product note (record, do not change without a decision): with the
+current flex, the first check after enabling happens 11–12 h later;
+subsequent checks every 12 h ± 1 h. Settings copy says "about every
+12 hours", which is compatible but silent on the first delay.
+
+### Open issue — no notification after a caption change (SUPERSEDED by the root cause above; kept for history)
 Sequence: library saved → alerts enabled → forced run #1 (baseline,
 nothing shown — correct) → maintainer published a poster, then **edited
 its caption** and reports it live → forced runs #2 and #3 → **no
@@ -596,10 +626,128 @@ adb shell dumpsys notification --noredact | grep -E 'pkg=dev.khoj.pitaka|pitak_e
 adb shell dumpsys package dev.khoj.pitaka | grep -E 'versionName|signatures=|POST_NOTIFICATIONS: granted'
 ```
 
-### Still owed after the open issue is resolved
-- Rest of the device matrix (PLAN.md §8): tap → route (warm and cold,
-  while locked), revoke → run → blocked phase, disable/Resume, reboot,
-  force-stop, Doze/battery saver, Android 12L+ desugaring crash check.
-- Commit (`git add -A && git commit -m "feat: background event alerts
-  (ADR 0024)"`), excluding the four unrelated root `.md` notes if desired.
+## Session 2026-11-08 (second): open issue closed
+
+Correction to the status line at the top: the feature WAS committed as
+`bc8b019` (2026-11-08 01:40, includes PLAN.md). This session's changes
+below are uncommitted on top of it.
+
+### Changes made (uncommitted)
+- Debug-only device-testing hook (approved in conversation):
+  `WorkmanagerGateway.registerOneOffNow()` +
+  `WorkmanagerEventsWatchScheduler.debugRunNow()` (one-off request, same
+  task name, separate unique name `…events_watch.debug_run`, no
+  constraints, no confirmation poll); `eventsWatchDebugRunNowProvider`
+  (null unless `kDebugMode` and the WorkManager scheduler is bound);
+  "Run check now (debug build)" action in `EventsWatchSettingsGroup`.
+  Tests: 2 scheduler cases, 3 widget cases (the widget `pump` helper pins
+  the hook to null so other cases model a release build).
+- `PendingChange.safeCaptionOf` folds layout whitespace (`\n \r \t`,
+  runs of spaces, U+2028/2029) into one space before the safe-display
+  check (approved: multi-line captions were always falling back to the
+  fixed sentence because `EventPoster.create` accepts newlines). Tests in
+  `events_diff_test.dart` and `validation_gates_test.dart`.
+- Docs: ADR 0024 "Testing note" + caption-folding consequence;
+  CHANGELOG Unreleased entry extended; this file.
+
+### Device evidence (OnePlus 9R, Android 14, play **debug** build)
+- Install: release copy uninstalled (data wiped), debug build installed;
+  later debug rebuilds installed with `-r` (data, permission, periodic job
+  all survived).
+- Debug one-off run: background engine starts (`FlutterJNI: Beginning
+  load of flutter`), `events_watch: run completed`, `WM-WorkerWrapper:
+  Worker result SUCCESS`, ~1.3 s per run; Settings shows "Last check … 1
+  checked". Periodic registration (`dev.khoj.pitaka.events_watch`)
+  untouched and still ENQUEUED.
+- Baseline run → no alert (correct). Second run with unchanged content →
+  no alert, nothing duplicated.
+- Caption edited on the host (verified with `curl`: new ETag, same
+  `imageRef`) → run → `dumpsys notification`: summary id 0 "New events at
+  1 saved library" (GROUP_SUMMARY|AUTO_CANCEL) + library id 11065214,
+  both `vis=PRIVATE`, channel `pitak_events_watch`. Title was generic and
+  body was the fixed sentence — both explained: the row had never been
+  Refreshed (`fetch_status ≠ ok`, decision 13 holds) and the caption
+  contained `\n` (led to the folding change above).
+- After Refresh in Network + another caption edit (three line breaks) +
+  rebuilt debug APK: maintainer reports title = library public name, body
+  = caption, tap → events poster page (warm tap route). Log:
+  `10:57:51 events_watch: run completed`, SUCCESS.
+
+### Device matrix, driven over adb/uiautomator (11:03–11:17)
+
+Evidence per step: Settings UI dump, `dumpsys jobscheduler`, WorkManager
+diagnostics broadcast, `run-as` reads of the two JSON documents, logcat.
+
+| Step | Result |
+|---|---|
+| Disable via switch | ✔ OFF persisted (epoch+1), WM work `CANCELLED`, JobScheduler job gone, state file untouched, no alerts. |
+| Re-enable | ✔ No explanation, no system prompt (both already satisfied), job re-registered; debug run = quiet re-baseline, same notification id. |
+| Reset | ✔ Fresh incarnation, epoch 0, OFF, job cancelled; state file still carried the old incarnation (foreground never writes it); next enable showed the explanation again (acknowledgement resets with the incarnation — acceptable, recorded); worker adopted the new token and re-baselined quietly. |
+| Force-stop → relaunch | ✔ JobScheduler job vanished with `stopped=true`; WorkManager's `ForceStopRunnable` re-registered it on launch BEFORE our reconcile; Settings shows ON, no Resume. |
+| Notifications blocked in system settings (`pm revoke`/appops are denied to shell on this OEM) | ✔ Process killed by the OS; relaunch reconcile persisted OFF (epoch+1) and cancelled the job. **Finding 1** below. |
+| Enable while blocked | ✔ OS re-prompted once; "Don't allow" → OFF (epoch+1), no job; second tap → no prompt loop, OFF again (epoch+1). **Finding 1** applies. |
+| Re-allow → enable | ✔ No dialogs, job registered, worker quiet under the new epoch, `revocationToken` null. |
+| Remove the only library | ✔ Job cancelled by the watched-count observer, settings stay ON, phase "Save a library in Network…". |
+| Re-add + Refresh | ✔ as designed (decision 14): ON + no job → "Checks are not scheduled → Resume"; Resume registered; run pruned rowId 1, baselined rowId 2 quietly, stable id reused. **Finding 2** below. |
+| Android 12L+ desugaring crash | ✔ Not reproduced on API 34: notifications initialise and post. |
+| Worker-side revocation (marker written by the worker) | ✗ Not reachable on-device: the only trigger is the debug hook, which needs the app open, and opening the app reconciles OFF first. Covered by unit tests only. |
+
+**Finding 1 (UX, controller) — FIXED (approved):** `_turnOffBecauseBlocked`
+returned the `blocked` view, but every permission / system-settings round
+trip ends in a `resumed` lifecycle event whose reconcile re-read settings
+(now OFF) and replaced the view with `off` within the same second; the
+"Notifications are blocked for Pitak…" sentence was never visible. Fix:
+`_reconcilePresent` derives `blocked` from facts (settings OFF **and**
+`delivery() == blocked`), `off` otherwise, `noLibraries` first; a
+delivery-check error shows plain `off`. Re-verified on device: the
+sentence stays through later reconciles (12:04–12:05).
+
+**Finding 2 (product, decision 14) — FIXED (approved, decision 14
+amended):** `EventsWatchSettings.pausedForNoLibraries` (schema 1, absent
+= false, non-bool = corrupt). The ON path writes it `true` (same token)
+before cancelling for an empty set; with libraries present and no
+registration it auto-registers only when the flag is set, then clears
+it; `withEnabled` clears it; a failed pause save falls back to Resume.
+The worker is unchanged (it still cancels on an empty set; it never
+writes settings). Re-verified on device: remove → job cancelled, flag
+true, epoch 5; re-add → job `#19` registered automatically, flag false,
+epoch still 5.
+
+Tests added: controller (6 cases: pause recorded once, auto-resume,
+no-pause → Resume, failed pause save → Resume, disable clears, derived
+blocked/off/noLibraries precedence, delivery error → off), settings
+model (validate + transitions), store round-trip + pre-field document +
+hostile value. `test/features/network` + `test/architecture` +
+`test/features/settings`: 1331 passed.
+
+**Out of scope, noticed:** the Network page header read "Never refreshed
+yet." after a force-stop although the row had been refreshed earlier
+(the title showed the public name); the last-refresh stamp looks
+in-memory only.
+
+### Still owed
+- Device matrix (§8) not yet exercised: cold-start tap (app killed) and
+  tap while locked (app-lock gate) — both need a fresh caption edit on
+  the host; reboot (WM `RECEIVE_BOOT_COMPLETED` re-registration);
+  Doze/battery saver; process death mid-run; one natural periodic run
+  (≥ 11 h after enable) to prove the scheduled path without the debug
+  hook.
+- [x] Full gates on the working tree (2026-11-08 12:30): `build_runner`
+  (only the controller's generated hash changed), `dart format` 0 changed,
+  `flutter analyze lib test integration_test` 0 issues, full
+  `flutter test` 6263 passed / 10 failed = the same 10 pre-existing golden
+  pixel diffs in `test/golden/key_screens_test.dart` (+16 net new tests),
+  F-Droid `fdroidReleaseRuntimeClasspath` free of gms/play/firebase/mlkit,
+  `flutter build apk --release --flavor fdroid` arm64 built.
+  `--analyze-size` of that release confirms `_DebugRunAction`, the
+  `eventsWatchDebugRunNow` provider function, `debugRunNow` and
+  `registerOneOffNow` are all tree-shaken (the `if (kDebugMode)` gate is
+  a statement around a dedicated widget class for that reason); two
+  inert label literals remain in the snapshot's string table.
+- Commit (`git add -A && git commit -m "feat(events-watch): debug run
+  hook, one-line captions, derived blocked phase, auto-resume after
+  no-libraries pause"`), excluding the four unrelated root `.md` notes
+  (`git add -A` would include them; use explicit paths or `git add -u`).
+- Reinstall a **release** build on the phone before any store upload test
+  (the phone currently runs the debug-signed play flavor).
 - Fastlane changelog entry at the next release.

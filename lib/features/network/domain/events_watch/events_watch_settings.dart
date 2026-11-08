@@ -15,6 +15,7 @@ final class EventsWatchSettings {
     required this.enabled,
     required this.token,
     required this.acknowledgedExplanationVersion,
+    this.pausedForNoLibraries = false,
   });
 
   /// Fresh settings for a brand-new [incarnation]: epoch 0, OFF. The
@@ -43,18 +44,34 @@ final class EventsWatchSettings {
   /// Highest explanation version acknowledged; 0 = never shown.
   final int acknowledgedExplanationVersion;
 
-  /// Fresh settings for a brand-new [incarnation]: epoch 0, OFF. The
-  /// foreground flips to ON (with a new epoch) only after the user's
-  /// first-run offer or an explicit enable succeeds.
+  /// True while the FOREGROUND itself cancelled the job because no library
+  /// was saved, with [enabled] still true. Only this pause may be resumed
+  /// automatically when a library is saved again; every other "ON but not
+  /// registered" state still needs the explicit Resume of decision 14,
+  /// because the foreground cannot tell an OS-side job loss from its own
+  /// unfinished OFF. Cleared by every explicit enable/disable.
+  final bool pausedForNoLibraries;
 
   /// Strict ingress gate for decoded documents. Null = unreadable.
+  /// [pausedForNoLibraries] may be absent (documents written before the
+  /// field existed) and then means false; any non-bool value is corrupt.
   static EventsWatchSettings? validate({
     required Object? enabled,
     required Object? incarnation,
     required Object? epoch,
     required Object? acknowledgedExplanationVersion,
+    Object? pausedForNoLibraries,
   }) {
     if (enabled is! bool) return null;
+    final bool paused;
+    switch (pausedForNoLibraries) {
+      case null:
+        paused = false; // written before the field existed
+      case final bool value:
+        paused = value;
+      default:
+        return null;
+    }
     final token = WatchSettingsToken.validate(
       incarnation: incarnation,
       epoch: epoch,
@@ -69,11 +86,13 @@ final class EventsWatchSettings {
       enabled: enabled,
       token: token,
       acknowledgedExplanationVersion: acknowledgedExplanationVersion,
+      pausedForNoLibraries: paused,
     );
   }
 
   /// The settings after an explicit enable/disable: a NEW epoch every time,
-  /// even when [enabled] does not change (the user's intent is new).
+  /// even when [enabled] does not change (the user's intent is new). An
+  /// explicit intent also ends any no-libraries pause.
   EventsWatchSettings withEnabled({required bool enabled}) =>
       EventsWatchSettings(
         enabled: enabled,
@@ -86,7 +105,19 @@ final class EventsWatchSettings {
     enabled: enabled,
     token: token,
     acknowledgedExplanationVersion: currentExplanationVersion,
+    pausedForNoLibraries: pausedForNoLibraries,
   );
+
+  /// The settings with the no-libraries pause set or cleared. The token is
+  /// unchanged on purpose: a pause is not a new enable/disable intent, so
+  /// the worker must not discard pending alerts or re-baseline over it.
+  EventsWatchSettings withPausedForNoLibraries({required bool paused}) =>
+      EventsWatchSettings(
+        enabled: enabled,
+        token: token,
+        acknowledgedExplanationVersion: acknowledgedExplanationVersion,
+        pausedForNoLibraries: paused,
+      );
 
   /// True when this build's explanation must be shown before prompting.
   bool get needsExplanation =>
@@ -96,7 +127,8 @@ final class EventsWatchSettings {
   bool sameAs(EventsWatchSettings other) =>
       other.enabled == enabled &&
       other.token.sameAs(token) &&
-      other.acknowledgedExplanationVersion == acknowledgedExplanationVersion;
+      other.acknowledgedExplanationVersion == acknowledgedExplanationVersion &&
+      other.pausedForNoLibraries == pausedForNoLibraries;
 
   @override
   String toString() => 'EventsWatchSettings(enabled: $enabled, $token)';

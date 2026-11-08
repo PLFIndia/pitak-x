@@ -51,6 +51,7 @@ abstract final class EventsWatchJsonCodec {
     'enabled': settings.enabled,
     'token': _encodeToken(settings.token),
     'acknowledgedExplanationVersion': settings.acknowledgedExplanationVersion,
+    'pausedForNoLibraries': settings.pausedForNoLibraries,
   };
 
   /// Decodes a parsed JSON value into settings.
@@ -68,6 +69,7 @@ abstract final class EventsWatchJsonCodec {
       incarnation: token['incarnation'],
       epoch: token['epoch'],
       acknowledgedExplanationVersion: json['acknowledgedExplanationVersion'],
+      pausedForNoLibraries: json['pausedForNoLibraries'], // absent = false
     );
     if (settings == null) return const WatchDocumentCorrupt();
     return WatchDocumentPresent(settings);

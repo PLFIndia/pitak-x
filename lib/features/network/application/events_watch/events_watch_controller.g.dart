@@ -28,7 +28,7 @@ final eventsWatchIncarnationGeneratorProvider =
 // ignore: unused_element
 typedef EventsWatchIncarnationGeneratorRef = ProviderRef<IncarnationGenerator>;
 String _$eventsWatchControllerHash() =>
-    r'd538c94531f864d7aa866a0b20b814d4af1a1efb';
+    r'9a797217bfe0faaaa0eb6709c83480b45557ca8b';
 
 /// See the file header.
 ///

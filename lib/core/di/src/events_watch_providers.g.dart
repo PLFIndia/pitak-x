@@ -193,6 +193,33 @@ final eventsWatchClockProvider = Provider<WatchClock>.internal(
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef EventsWatchClockRef = ProviderRef<WatchClock>;
+String _$eventsWatchDebugRunNowHash() =>
+    r'67e13e2aad23b4e993f4d6857b5536bdaf5a548e';
+
+/// DEBUG BUILDS ONLY: the "run the check now" hook for device testing.
+///
+/// Null in release/profile builds and wherever the WorkManager scheduler is
+/// not bound, so no screen can offer the action there. This provider is the
+/// single gate; the UI only checks for null. See
+/// `WorkmanagerEventsWatchScheduler.debugRunNow` for why `adb` cannot force
+/// the periodic job.
+///
+/// Copied from [eventsWatchDebugRunNow].
+@ProviderFor(eventsWatchDebugRunNow)
+final eventsWatchDebugRunNowProvider =
+    Provider<EventsWatchDebugRunNow?>.internal(
+      eventsWatchDebugRunNow,
+      name: r'eventsWatchDebugRunNowProvider',
+      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+          ? null
+          : _$eventsWatchDebugRunNowHash,
+      dependencies: null,
+      allTransitiveDependencies: null,
+    );
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef EventsWatchDebugRunNowRef = ProviderRef<EventsWatchDebugRunNow?>;
 String _$eventsWatchBootstrapHash() =>
     r'298172f61796f3b698693a8559776c48780e98f1';
 

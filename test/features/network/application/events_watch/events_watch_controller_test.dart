@@ -121,17 +121,126 @@ void main() {
       expect((await view()).phase, EventsWatchPhase.notScheduled);
     });
 
-    test('ON with zero libraries cancels the job without a prompt and keeps '
-        'settings ON (Resume later)', () async {
+    test('ON with zero libraries cancels the job without a prompt, keeps '
+        'settings ON and records the pause under the SAME token', () async {
+      final on = EventsWatchSettings.initial(incA).withEnabled(enabled: true);
+      settings.doc = WatchDocumentPresent(on);
+      scheduler.state = WatchJobRegistration.registered;
+      expect((await view()).phase, EventsWatchPhase.noLibraries);
+      expect(scheduler.cancelCalls, 1);
+      final saved = settings.writes.single;
+      expect(saved.enabled, isTrue);
+      expect(saved.pausedForNoLibraries, isTrue);
+      expect(saved.token.sameAs(on.token), isTrue);
+      expect(permissionRequests, 0);
+
+      // A second empty reconcile does not rewrite the document.
+      await notifierOf().reconcile();
+      expect(settings.writes.length, 1);
+    });
+
+    test('a library saved after OUR no-libraries pause resumes automatically '
+        'and clears the pause; no prompt, no explanation', () async {
+      settings.doc = WatchDocumentPresent(
+        EventsWatchSettings.initial(
+          incA,
+        ).withExplanationAcknowledged().withEnabled(enabled: true),
+      );
+      scheduler.state = WatchJobRegistration.registered;
+      expect((await view()).phase, EventsWatchPhase.noLibraries);
+      expect(scheduler.state, WatchJobRegistration.notRegistered);
+
+      source.rows = [lib(1)];
+      await notifierOf().reconcile();
+
+      expect(current().phase, EventsWatchPhase.on);
+      expect(scheduler.registerCalls, 1);
+      expect(settings.current!.pausedForNoLibraries, isFalse);
+      expect(settings.current!.enabled, isTrue);
+      expect(permissionRequests, 0);
+    });
+
+    test('a missing registration WITHOUT our pause is still the explicit '
+        'Resume state (decision 14), even with libraries saved', () async {
+      source.rows = [lib(1)];
+      settings.doc = WatchDocumentPresent(
+        EventsWatchSettings.initial(incA).withEnabled(enabled: true),
+      );
+      scheduler.state = WatchJobRegistration.notRegistered;
+      expect((await view()).phase, EventsWatchPhase.notScheduled);
+      expect(scheduler.registerCalls, 0);
+      expect(settings.writes, isEmpty);
+    });
+
+    test('a failed pause save forgets the pause: the next library lands in '
+        'Resume, never auto-registers (fail closed)', () async {
       settings.doc = WatchDocumentPresent(
         EventsWatchSettings.initial(incA).withEnabled(enabled: true),
       );
       scheduler.state = WatchJobRegistration.registered;
+      settings.writeFailure = const StorageFailure('disk');
       expect((await view()).phase, EventsWatchPhase.noLibraries);
       expect(scheduler.cancelCalls, 1);
+
+      settings.writeFailure = null;
+      source.rows = [lib(1)];
+      await notifierOf().reconcile();
+      expect(current().phase, EventsWatchPhase.notScheduled);
+      expect(scheduler.registerCalls, 0);
+    });
+
+    test(
+      'an explicit disable ends the pause (new token, flag cleared)',
+      () async {
+        settings.doc = WatchDocumentPresent(
+          EventsWatchSettings.initial(
+            incA,
+          ).withEnabled(enabled: true).withPausedForNoLibraries(paused: true),
+        );
+        await view();
+        await notifierOf().disable();
+        expect(settings.current!.pausedForNoLibraries, isFalse);
+        expect(settings.current!.enabled, isFalse);
+      },
+    );
+
+    test('OFF + delivery blocked → blocked (derived, survives the resume '
+        'reconcile); OFF + deliverable → off; no libraries wins', () async {
+      source.rows = [lib(1)];
+      settings.doc = WatchDocumentPresent(
+        EventsWatchSettings.initial(incA).withEnabled(enabled: false),
+      );
+      notifier.deliveryState = NotificationDelivery.blocked;
+      expect((await view()).phase, EventsWatchPhase.blocked);
+
+      await notifierOf().reconcile(); // what a lifecycle resume triggers
+      expect(current().phase, EventsWatchPhase.blocked);
+
+      notifier.deliveryState = NotificationDelivery.deliverable;
+      await notifierOf().reconcile();
+      expect(current().phase, EventsWatchPhase.off);
+
+      notifier.deliveryState = NotificationDelivery.blocked;
+      source.rows = [];
+      await notifierOf().reconcile();
+      expect(current().phase, EventsWatchPhase.noLibraries);
+
       expect(settings.writes, isEmpty);
+      expect(scheduler.registerCalls, 0);
       expect(permissionRequests, 0);
     });
+
+    test(
+      'a delivery check error while OFF shows plain off, never blocked',
+      () async {
+        source.rows = [lib(1)];
+        settings.doc = WatchDocumentPresent(
+          EventsWatchSettings.initial(incA).withEnabled(enabled: false),
+        );
+        notifier.deliveryFailure = const UnexpectedFailure('plugin');
+        expect((await view()).phase, EventsWatchPhase.off);
+      },
+    );
 
     test('a revocation marker for the current token is consumed: OFF with a '
         'new token, job cancelled, alerts cleared → blocked', () async {

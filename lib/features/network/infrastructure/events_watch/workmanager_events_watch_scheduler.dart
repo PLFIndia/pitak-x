@@ -32,6 +32,12 @@ const String eventsWatchUniqueWorkName = 'dev.khoj.pitaka.events_watch';
 /// Dart task name handed to the background dispatcher.
 const String eventsWatchTaskName = 'dev.khoj.pitaka.events_watch.check';
 
+/// Unique name of the DEBUG-ONLY immediate one-off run. Deliberately
+/// different from [eventsWatchUniqueWorkName] so it can never replace or
+/// cancel the real periodic registration.
+const String eventsWatchDebugRunWorkName =
+    'dev.khoj.pitaka.events_watch.debug_run';
+
 /// Fixed interval (decision 3). WorkManager adds its own flex window.
 const Duration eventsWatchInterval = Duration(hours: 12);
 
@@ -52,6 +58,9 @@ abstract interface class WorkmanagerGateway {
 
   /// See `Workmanager.isScheduledByUniqueName` (authoritative).
   Future<bool> isScheduled();
+
+  /// See `Workmanager.registerOneOffTask`; debug builds only.
+  Future<void> registerOneOffNow();
 }
 
 /// Production gateway over the plugin singleton.
@@ -81,6 +90,15 @@ final class PluginWorkmanagerGateway implements WorkmanagerGateway {
   @override
   Future<bool> isScheduled() =>
       Workmanager().isScheduledByUniqueName(eventsWatchUniqueWorkName);
+
+  /// No constraints on purpose: the run must start right away, and an
+  /// offline device is itself a case the maintainer wants to observe.
+  @override
+  Future<void> registerOneOffNow() => Workmanager().registerOneOffTask(
+    eventsWatchDebugRunWorkName,
+    eventsWatchTaskName,
+    existingWorkPolicy: ExistingWorkPolicy.replace,
+  );
 }
 
 /// See the file header.
@@ -123,6 +141,26 @@ final class WorkmanagerEventsWatchScheduler implements EventsWatchScheduler {
               : WatchJobRegistration.notRegistered,
         );
       });
+
+  /// DEBUG BUILDS ONLY — enqueues one immediate run of the worker.
+  ///
+  /// Why this exists (verified in `work-runtime-2.9.0`, 2026-11-08):
+  /// `WorkerWrapper` refuses to run periodic work before its computed next
+  /// run time ("Delaying execution … before schedule") and, with a flex
+  /// window, the FIRST run time is `enqueue + interval − flex` = 11 h for
+  /// our registration. So `adb shell cmd jobscheduler run -f` never reaches
+  /// the Dart worker. A one-off request has no such guard; it carries the
+  /// same task name, so the dispatcher executes the real check in the real
+  /// background engine.
+  ///
+  /// Not confirmed by polling: a fast run may already have SUCCEEDED by the
+  /// first poll, which `isScheduledByUniqueName` reports as false. Reachable
+  /// only through `eventsWatchDebugRunNowProvider` (`kDebugMode`); not part
+  /// of the `EventsWatchScheduler` port.
+  Future<Either<Failure, Unit>> debugRunNow() => _guard(() async {
+    await _gateway.registerOneOffNow();
+    return right(unit);
+  });
 
   Future<Either<Failure, Unit>> _confirm({
     required bool expected,
