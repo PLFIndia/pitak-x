@@ -361,6 +361,33 @@ void main() {
       },
     );
 
+    test('no saved library → noLibraries: no prompt, no settings write, '
+        'nothing registered (PLAN.md §5)', () async {
+      await view();
+
+      await notifierOf().enable();
+
+      expect(current().phase, EventsWatchPhase.noLibraries);
+      expect(current().needsExplanation, isTrue);
+      expect(permissionRequests, 0);
+      expect(settings.writes, isEmpty);
+      expect(scheduler.registerCalls, 0);
+    });
+
+    test('an unreadable library list fails closed: storageError, no prompt, '
+        'no write, nothing registered', () async {
+      source.rows = [lib(1)];
+      await view();
+      source.snapshotFailure = const StorageFailure('busy');
+
+      await notifierOf().enable();
+
+      expect(current().phase, EventsWatchPhase.storageError);
+      expect(permissionRequests, 0);
+      expect(settings.writes, isEmpty);
+      expect(scheduler.registerCalls, 0);
+    });
+
     test('an ordinary resume after enable never prompts again', () async {
       source.rows = [lib(1)];
       await view();

@@ -119,9 +119,12 @@ class EventsWatchSettingsGroup extends ConsumerWidget {
       return controller.enable();
     }
 
+    // No saved library → nothing to turn on; the subtitle says how to fix
+    // it (save a library in Network). The controller refuses too.
     final canToggle = switch (view.phase) {
       EventsWatchPhase.updateRequired ||
-      EventsWatchPhase.settingsCorrupt => false,
+      EventsWatchPhase.settingsCorrupt ||
+      EventsWatchPhase.noLibraries => false,
       _ => true,
     };
 

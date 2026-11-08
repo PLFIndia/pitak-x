@@ -235,6 +235,22 @@ class EventsWatchController extends _$EventsWatchController {
     final current = await _currentOrInitial();
     if (current == null) return _view(EventsWatchPhase.storageError, status);
 
+    // Nothing to watch → nothing to enable (PLAN.md §5: an empty watched
+    // set never prompts; the first saved row enters setup). Checked BEFORE
+    // the permission prompt so no dialog, settings write or job ever
+    // happens for an empty list. The UI also disables the switch in this
+    // phase; this check covers any other caller (Resume, races). An
+    // unreadable list fails closed: no prompt either.
+    final count = await _watchedCount();
+    if (count == null) return _view(EventsWatchPhase.storageError, status);
+    if (count == 0) {
+      return _view(
+        EventsWatchPhase.noLibraries,
+        status,
+        needsExplanation: current.needsExplanation,
+      );
+    }
+
     // Explanation is acknowledged by reaching here (the UI showed it).
     final acknowledged = current.withExplanationAcknowledged();
 

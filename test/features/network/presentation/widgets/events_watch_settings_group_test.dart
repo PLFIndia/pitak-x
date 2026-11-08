@@ -141,6 +141,23 @@ void main() {
     expect(fake.calls, ['reset']);
   });
 
+  testWidgets('noLibraries: switch disabled, tapping does nothing, the '
+      'sentence says how to fix it', (tester) async {
+    await pump(
+      tester,
+      view(EventsWatchPhase.noLibraries, needsExplanation: true),
+    );
+    final tile = tester.widget<SwitchListTile>(find.byType(SwitchListTile));
+    expect(tile.onChanged, isNull);
+    expect(tile.value, isFalse);
+    expect(find.textContaining('Save a library in Network'), findsOneWidget);
+
+    await tester.tap(find.byType(SwitchListTile));
+    await tester.pumpAndSettle();
+    expect(find.text('Turn on'), findsNothing); // no explanation dialog
+    expect(fake.calls, isEmpty);
+  });
+
   testWidgets('reset tile asks for confirmation first', (tester) async {
     await pump(tester, view(EventsWatchPhase.on));
     await tester.tap(find.widgetWithText(ListTile, 'Reset event alerts'));

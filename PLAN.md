@@ -1,9 +1,13 @@
 # Background event notifications for bookmarked libraries
 
-- **Status:** Implemented 2026-11-07; all automated gates pass. Device
-  testing started 2026-11-08 and is BLOCKED on one open issue (see
-  "Handoff" at the end). Nothing is committed (§6).
-- **Updated:** 2026-11-07. Supersedes the consolidated review plan at
+- **Status (2026-11-08):** Implemented and committed (`bc8b019`, then
+  `102cc53`); automated gates pass. The device-test issue "no notification
+  after a caption change" is CLOSED (forced JobScheduler runs never reach
+  the Dart worker; see "Session 2026-11-08 (second)"). Still open: the
+  rest of the device matrix and the review findings listed in "Session
+  2026-11-08 (third)" at the end; two of them are fixed in the commit
+  after `102cc53` on branch `notifications` (PR #25).
+- **Updated:** 2026-11-08. Supersedes the consolidated review plan at
   `617cd53:PLAN.md`. Decisions 9, 12, 13, 14 were confirmed/amended by the
   maintainer in conversation; sizing decision 15 is new.
 - **Baseline:** `617cd53`; earlier borrower-limits plan: `bad362e:PLAN.md`.
@@ -403,8 +407,8 @@ the behavioral source of truth.
 
 ## Steps
 
-Implementation is not authorized yet. Before Step 0, ask whether to execute
-end-to-end or pause at each implementation decision.
+Implementation was approved end-to-end in conversation on 2026-11-07; the
+steps below are kept as the record of what was done.
 
 - [x] 0. Feasibility BEFORE the state store: baseline tests/analyze with
   pinned `fvm`; inspect current plugin/native WorkManager sources for
@@ -433,9 +437,10 @@ end-to-end or pause at each implementation decision.
   warm/cold routing; verify title provenance and app-lock in widget/device
   tests.
 - [x] 8. Update privacy/manifest/guides/changelog and ADR 0024 from template.
-- [x] 9. Automated gates run (results below). **Real-device matrix: not
-  run — no device in this session; owed by the maintainer.** Commit not
-  requested; ask before committing.
+- [x] 9. Automated gates run (results below). Real-device matrix: partly
+  run on 2026-11-08 ("Session 2026-11-08 (second)"); the remaining items
+  are listed under "Still owed" in that section. Committed as `bc8b019`
+  and `102cc53`.
 
 ## Out-of-scope observations
 
@@ -519,15 +524,15 @@ end-to-end or pause at each implementation decision.
 
 ### Owed by the maintainer
 
-- Real-device matrix (PLAN.md §8): process death, reboot, Android 13 prompt
-  vs pre-33, revoke → re-grant, Doze/battery saver, force-stop, cold-start
-  tap while locked, remove/re-add, update without reopening, Android 12L+
-  desugaring (if the crash appears, a WindowManager dependency needs
-  separate approval).
-- Commit (`git add -A && git commit -m "feat: background event alerts (ADR 0024)"`)
-  and a fastlane changelog entry at the next release.
+- Real-device matrix (PLAN.md §8): partly done on 2026-11-08; the
+  remaining items are under "Still owed" in "Session 2026-11-08 (second)".
+- [x] Commit — done as `bc8b019` (2026-11-08 01:40).
+- Fastlane changelog entry at the next release.
 
-## Handoff (2026-11-08, end of session)
+## Handoff (2026-11-08, first session) — HISTORY
+
+Kept for the record; superseded by the two sessions below. The "open
+issue" here is closed and the phone now runs the debug play build.
 
 ### Device state
 - OnePlus 9R (LE2101), Android 14 / API 34, serial `678c5642`, USB.
@@ -630,9 +635,9 @@ adb shell dumpsys package dev.khoj.pitaka | grep -E 'versionName|signatures=|POS
 
 Correction to the status line at the top: the feature WAS committed as
 `bc8b019` (2026-11-08 01:40, includes PLAN.md). This session's changes
-below are uncommitted on top of it.
+below were committed on top of it as `102cc53` (2026-11-08 12:36).
 
-### Changes made (uncommitted)
+### Changes made (committed as `102cc53`)
 - Debug-only device-testing hook (approved in conversation):
   `WorkmanagerGateway.registerOneOffNow()` +
   `WorkmanagerEventsWatchScheduler.debugRunNow()` (one-off request, same
@@ -744,10 +749,99 @@ in-memory only.
   `registerOneOffNow` are all tree-shaken (the `if (kDebugMode)` gate is
   a statement around a dedicated widget class for that reason); two
   inert label literals remain in the snapshot's string table.
-- Commit (`git add -A && git commit -m "feat(events-watch): debug run
-  hook, one-line captions, derived blocked phase, auto-resume after
-  no-libraries pause"`), excluding the four unrelated root `.md` notes
-  (`git add -A` would include them; use explicit paths or `git add -u`).
+- [x] Commit — done as `102cc53` (2026-11-08 12:36).
 - Reinstall a **release** build on the phone before any store upload test
   (the phone currently runs the debug-signed play flavor).
 - Fastlane changelog entry at the next release.
+
+## Session 2026-11-08 (third): review against the plan
+
+Read-only review of `bc8b019` + `102cc53` against this plan. Evidence:
+feature + architecture tests 251 passed; `flutter analyze` 0 issues.
+The plan is largely honoured (token identity, bounded stores, strict
+read-only source, fetch-outcome table, pending revalidation, stable ids,
+revocation marker, Resume, deadline, F-Droid gates).
+
+### Fixed this session (approved in conversation; committed after `102cc53`)
+- [x] **Enable with no saved library.** The switch stayed active in the
+  `noLibraries` phase, and `_enable` prompted for permission, saved ON
+  and registered a job for an empty list (against §5: "an empty watched
+  set cancels without a permission prompt; the first saved row enters
+  setup"). Now `EventsWatchController._enable` checks the strict watched
+  count BEFORE the prompt: 0 → `noLibraries` with no prompt, no settings
+  write, no registration; unreadable → `storageError`, no prompt. The
+  Settings switch is disabled in `noLibraries` (subtitle already says
+  "Save a library in Network…"). Tests: 2 controller cases, 1 widget
+  case.
+- [x] **PLAN.md out of date.** Header status, Steps preamble, Step 9,
+  both commit items and the first handoff (now marked HISTORY) corrected.
+- [x] Gates: `build_runner` (only the controller's generated hash
+  changed), `dart format` 0 changed, `flutter analyze lib test
+  integration_test` 0 issues, `test/features/network` +
+  `test/features/settings` + `test/architecture` 1334 passed (+3); full
+  `flutter test`: only the same 10 pre-existing golden pixel diffs in
+  `test/golden/key_screens_test.dart` fail.
+
+### Open review findings (NOT fixed; each needs a decision)
+
+Major:
+1. Decision 13 premise is false. `add_member_use_case.dart:128,146`
+   keeps a user-typed bookmark name and sets `fetchStatus: ok` after a
+   card's fingerprint verifies, so a private label can become the alert
+   title. `PRIVACY.md:398-399` ("never a name you typed") is untrue.
+2. `PRIVACY.md:411-413` says watch data is "deleted when you reset the
+   feature or remove the library". Nothing deletes it: reset rewrites
+   only settings, the state file waits for a worker run that never comes
+   while OFF, and removing the last library cancels the job. Root cause:
+   single-writer design has no purge path.
+3. "Hidden on the lock screen" (`PRIVACY.md:399-400`, explanation
+   dialog) rests on `visibility: private`
+   (`local_notifications_notifier.dart:164,193`), which (from memory,
+   unverified) still shows the alert and conceals content only when the
+   user hides sensitive content. Verify on device; `secret` or reword.
+4. `EventsWatchController.build()` runs `_reconcile()` outside the
+   `SerialOpQueue`, as soon as the relay subscribes — before unlock and
+   before `Workmanager().initialize`; it can overlap the relay's own
+   reconcile (stale read-modify-write of settings). The relay test uses a
+   fake controller and cannot catch this.
+5. Partial submission (`events_watch_run.dart` `_submit`): if library B
+   fails after A was shown, no summary is posted and A's pending is not
+   removed, so A re-alerts on retry (§4 says remove entries covered by
+   successful calls). No two-library test covers it.
+
+Minor:
+6. Mid-run guard: delivery-check error is a per-site failure (plan: stop
+   and retry); permission loss mid-run stops without the marker; no guard
+   before the result commit. Not in "Deviations".
+7. Cancellation targeting (Step 0 gate) not established:
+   `cancelByUniqueName` cancels whatever job is current; `_revoke`
+   self-cancels before `cancelAllFeatureAlerts()`, which probably never
+   runs once WorkManager stops the worker.
+8. A newer-schema STATE file is not surfaced (`_readStatus` → `none`);
+   §6 wants an update-required state.
+9. Blocked phase has text only, no system-settings action (§5).
+10. Worst-case state size at the hard caps (100 sites, 2048-char URLs,
+    200 pending) exceeds 512 KiB → every commit would fail. Unreachable
+    at realistic scale; no test proves the caps fit together.
+11. NEW (seen while fixing the zero-library case): with settings ON and
+    `pausedForNoLibraries`, the view is `noLibraries` and the switch shows
+    OFF, so the user cannot turn the paused ON state off from Settings,
+    and saving a library resumes alerts automatically. Pre-existing
+    (tapping used to call `enable`, never `disable`); not changed by this
+    fix. Possible direction: show the switch ON in that state and allow
+    only disable.
+
+Nits: unused `BoundedJsonDocumentFile.delete()` and
+`EventsWatchStatus.withheldSites`/`failedSites`; duplicate orphan doc
+comments (`events_watch_state.dart:131,133`, `site_watch_status.dart:70`);
+tap resolver uses Drift rows (permissive token mapping) instead of the
+strict source; stopped runs write no `lastRun`.
+
+### Still owed
+- [x] Committed (explicit paths; the four untracked root notes stay out)
+  and pushed to `notifications`, which re-runs CI on PR #25. Check the CI
+  result there.
+- Device matrix items listed under "Session 2026-11-08 (second) → Still
+  owed".
+- Decisions on the open findings above (Major 1–3 affect what users are
+  told).
