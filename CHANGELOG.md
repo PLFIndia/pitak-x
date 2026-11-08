@@ -14,6 +14,8 @@ heading as part of the `chore(release):` commit.
 
 ## [Unreleased]
 
+## [1.9.6] - 2026-11 (tag `1.9.6`, versionCode 38)
+
 ### Added
 - **Background event alerts (ADR 0024, Android only):** a WorkManager
   periodic job (about every 12 h, `NetworkType.connected`, battery-not-low)

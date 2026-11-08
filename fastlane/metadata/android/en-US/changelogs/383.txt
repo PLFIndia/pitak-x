@@ -1,0 +1,2 @@
+* Event alerts: get a notification when a library you saved posts or changes an event poster. Pitak checks about every 12 hours in the background, which may use mobile data. Turn it off any time in Settings > Data > Event alerts.
+* Optional lending limit per borrower (1 to 99 active loans, off by default): either warn before lending more, or refuse.
