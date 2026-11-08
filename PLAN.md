@@ -795,21 +795,27 @@ revocation marker, Resume, deadline, F-Droid gates).
 
 ### Open review findings (NOT fixed; each needs a decision)
 
-Major:
+Major (1–3: WORDING corrected before 1.9.6 — `PRIVACY.md` item 10 + a
+new 2026-11-08 change note, and the explanation dialog's lock-screen
+sentence. The BEHAVIOUR is unchanged and is now disclosed as it is;
+changing it still needs a decision):
 1. Decision 13 premise is false. `add_member_use_case.dart:128,146`
    keeps a user-typed bookmark name and sets `fetchStatus: ok` after a
    card's fingerprint verifies, so a private label can become the alert
-   title. `PRIVACY.md:398-399` ("never a name you typed") is untrue.
-2. `PRIVACY.md:411-413` says watch data is "deleted when you reset the
-   feature or remove the library". Nothing deletes it: reset rewrites
-   only settings, the state file waits for a worker run that never comes
-   while OFF, and removing the last library cancels the job. Root cause:
-   single-writer design has no purge path.
-3. "Hidden on the lock screen" (`PRIVACY.md:399-400`, explanation
-   dialog) rests on `visibility: private`
+   title until the next successful Refresh. Was: "never a name you typed".
+   Now disclosed as an exception. ADR 0024's rationale line still states
+   the old premise.
+2. Watch data was claimed "deleted when you reset the feature or remove
+   the library". Nothing deletes it: reset rewrites only settings, the
+   state file waits for a worker run that never comes while OFF, and
+   removing the last library cancels the job. Root cause: single-writer
+   design has no purge path. Now disclosed (off/reset/removal leave it
+   until the next check; clear storage/uninstall deletes it).
+3. "Hidden on the lock screen" rested on `visibility: private`
    (`local_notifications_notifier.dart:164,193`), which (from memory,
    unverified) still shows the alert and conceals content only when the
-   user hides sensitive content. Verify on device; `secret` or reword.
+   user hides sensitive content. Now worded as "follows your lock-screen
+   setting". Still verify on device; `secret` remains an option.
 4. `EventsWatchController.build()` runs `_reconcile()` outside the
    `SerialOpQueue`, as soon as the relay subscribes — before unlock and
    before `Workmanager().initialize`; it can overlap the relay's own

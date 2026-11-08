@@ -34,8 +34,9 @@ Future<EventsWatchExplanationChoice?> showEventsWatchExplanationDialog(
         "That site then sees your device's connection, like any website "
         'you visit — and that you follow that library.\n\n'
         'This uses a small amount of data, including on mobile networks. '
-        'Only the public caption is shown; alerts are hidden on the lock '
-        'screen. You can turn this off at any time in Settings.',
+        "Alerts show the poster's public caption. Whether they appear on "
+        "your lock screen follows your phone's lock-screen notification "
+        'settings. You can turn this off at any time in Settings.',
       ),
     ),
     actions: [

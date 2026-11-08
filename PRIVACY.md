@@ -1,6 +1,14 @@
 # Privacy Policy — Pitak
 
-_Effective date: 2026-11-07 · Publisher: Parallel Line Foundation_
+_Effective date: 2026-11-08 · Publisher: Parallel Line Foundation_
+
+_Changed 2026-11-08 — new **Event alerts** (Android, item 10). Once you have
+a saved library, Pitak explains them and asks; if you accept, it asks each
+library you saved for its public events file about every 12 hours, also while
+the app is closed, and notifies you about new or changed posters. Each of
+those sites sees the scheduled requests. Item 10 says exactly which name a
+notification shows, how your lock-screen setting affects it, and how long the
+small bookkeeping file stays on the device._
 
 _Changed 2026-11-06 — **Borrowed Items** adds maintainer-reviewed loan
 reminders. Template text is plaintext on this device and is not in the current
@@ -394,11 +402,20 @@ builds (item 8):
     cookies or credentials. Each site sees your device's IP address for that
     request, and — because the request repeats on a schedule — can infer that
     a device follows that library. When a poster appears or its caption
-    changes, Pitak shows a notification with the poster's public caption; the
-    notification title is the library's public name as published in its own
-    `library.json` (never a name you typed), and alerts are hidden on the lock
-    screen. The first check of a library only records what is there; it never
-    alerts about posters that already existed. Removed posters are not
+    changes, Pitak shows a notification with the poster's public caption. The
+    title is the library's name as saved in Pitak, used only after Pitak has
+    confirmed that library's own site (a successful refresh, or a card scan
+    whose fingerprint matched the site); otherwise the title is the generic
+    "New event at a saved library". A refresh replaces the saved name with the
+    one the library publishes in its `library.json`. One exception: if you
+    saved a library by address under a name you typed and then scanned its
+    card, your typed name is kept and can appear as the title until the next
+    successful refresh. Alerts are marked private: on a locked phone Android
+    hides their text only if your lock-screen setting hides sensitive
+    notification content; if it shows all notification content, the library
+    name and caption are visible on the lock screen. The first check of a
+    library only records what is there; it never alerts about posters that
+    already existed. Removed posters are not
     announced. Pitak cannot tell when an image file was replaced under the
     same name. Timing is best effort: Android may delay or skip checks under
     battery saving, Doze or manufacturer restrictions, and a check never runs
@@ -409,8 +426,14 @@ builds (item 8):
     app runs. What Pitak keeps for this: a small file with the addresses of
     the libraries it checks, a fingerprint of the posters it last saw, the
     site's `ETag`, and any alert not yet shown — in the app's private storage,
-    excluded from backups, and deleted when you reset the feature or remove
-    the library. No history of shown alerts is kept.
+    excluded from backups. Only the background check updates this file, so
+    it is not erased the moment you act: turning alerts off or resetting them
+    leaves it as it is until a check runs again with alerts on (after a reset
+    Pitak starts fresh and ignores what it saw before), and a removed
+    library's entry is dropped at the next check — if no saved library is
+    left, no check runs and the entry stays. Clearing Pitak's storage in
+    Android settings, or uninstalling the app, deletes it. No history of
+    shown alerts is kept.
 
 ## What Pitak does NOT do
 
