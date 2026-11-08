@@ -455,6 +455,17 @@ steps below are kept as the record of what was done.
 - Untracked notes at repo root (`item-reminder.md`, `reminder-fixes.md`,
   `reminder-issues1.md`, `remoteImport-issues.md`) are unrelated to this
   feature; the maintainer should file or remove them.
+- CI (seen 2026-11-08 on PR #25): the `fdroid-purity` job has no Gradle
+  cache, so every run downloads `gradle-8.14-all.zip` unauthenticated from
+  GitHub releases (services.gradle.org redirects there). During GitHub's
+  "timeouts for some unauthenticated users" incident that download
+  returned 504 three times and failed the gate before it checked
+  anything. Possible hardening: cache `~/.gradle/wrapper/dists` (or a
+  SHA-pinned Gradle setup action). Separately,
+  `android/gradle/wrapper/gradle-wrapper.properties` has no
+  `distributionSha256Sum`, so the downloaded Gradle is not
+  checksum-verified. Both are CI/supply-chain changes outside this
+  feature.
 
 ## Result
 
@@ -839,8 +850,13 @@ strict source; stopped runs write no `lastRun`.
 
 ### Still owed
 - [x] Committed (explicit paths; the four untracked root notes stay out)
-  and pushed to `notifications`, which re-runs CI on PR #25. Check the CI
-  result there.
+  and pushed to `notifications` as `0c96e48`, which re-ran CI on PR #25.
+- [x] CI on PR #25 (run 42469614050): all four jobs green on attempt 3 —
+  Flutter (analyze, format, test), Rust core, OSV scan, F-Droid flavor
+  purity ("fdroidReleaseRuntimeClasspath is clean" + positive control OK).
+  Attempts 1–2 (and the earlier `102cc53` run) failed only because the
+  Gradle download returned 504 during a GitHub incident (see
+  "Out-of-scope observations").
 - Device matrix items listed under "Session 2026-11-08 (second) → Still
   owed".
 - Decisions on the open findings above (Major 1–3 affect what users are
