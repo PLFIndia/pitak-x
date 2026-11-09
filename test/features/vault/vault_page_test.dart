@@ -15,8 +15,8 @@ import 'package:pitaka/features/vault/domain/entities/borrower.dart';
 import 'package:pitaka/features/vault/domain/entities/vault_data.dart';
 import 'package:pitaka/features/vault/domain/repositories/vault_repository.dart';
 import 'package:pitaka/features/vault/infrastructure/vault_store.dart';
-import 'package:pitaka/features/vault/presentation/pages/lending_rules_page.dart';
 import 'package:pitaka/features/vault/presentation/pages/vault_page.dart';
+import 'package:pitaka/features/vault/presentation/widgets/lending_rules_card.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../support/a11y.dart';
@@ -97,8 +97,11 @@ void main() {
     expect(find.textContaining('Enter your vault passphrase'), findsOneWidget);
   });
 
+  // The app bar carries only Lock (unlocked). Lending rules moved from an
+  // icon to an expandable card at the top of the borrower list; the Pending
+  // bell was retired (Borrowed Items covers overdue / due soon).
   for (final state in ['uninitialized', 'locked', 'unlocked']) {
-    testWidgets('Lending rules action navigates when $state', (tester) async {
+    testWidgets('app bar and lending-rules card when $state', (tester) async {
       final c = container(initialized: state != 'uninitialized');
       if (state == 'unlocked') {
         await c.read(vaultSessionControllerProvider.future);
@@ -110,21 +113,110 @@ void main() {
       await tester.pumpWidget(host(c));
       await tester.pumpAndSettle();
 
-      expect(find.byTooltip('Lending rules'), findsOneWidget);
+      expect(find.byTooltip('Lending rules'), findsNothing);
+      expect(find.byTooltip('Pending'), findsNothing);
+      expect(find.byIcon(Icons.notifications_none), findsNothing);
       if (state == 'unlocked') {
-        expect(find.byTooltip('Pending'), findsOneWidget);
         expect(find.byTooltip('Lock'), findsOneWidget);
-      } else {
-        expect(find.byTooltip('Pending'), findsNothing);
-        expect(find.byTooltip('Lock'), findsNothing);
-      }
+        expect(find.byType(LendingRulesCard), findsOneWidget);
+        expect(find.text('Lending rules'), findsOneWidget);
+        // The borrower list is still there, below the card.
+        expect(find.text('Asha'), findsOneWidget);
 
-      await tester.tap(find.byTooltip('Lending rules'));
-      await tester.pumpAndSettle();
-      expect(find.byType(LendingRulesPage), findsOneWidget);
-      expect(find.text('Limit items per borrower'), findsOneWidget);
+        await tester.tap(find.text('Lending rules'));
+        await tester.pumpAndSettle();
+        expect(find.text('Limit items per borrower'), findsOneWidget);
+      } else {
+        expect(find.byTooltip('Lock'), findsNothing);
+        expect(find.byType(LendingRulesCard), findsNothing);
+      }
     });
   }
+
+  testWidgets('an empty borrower list still shows the card and hint', (
+    tester,
+  ) async {
+    final c = container(initialized: true, data: VaultData.empty);
+    await c.read(vaultSessionControllerProvider.future);
+    await c
+        .read(vaultSessionControllerProvider.notifier)
+        .unlock(SecretBytes(Uint8List.fromList([1, 2, 3, 4, 5, 6, 7, 8])));
+    await tester.pumpWidget(host(c));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(LendingRulesCard), findsOneWidget);
+    expect(
+      find.text('No borrowers yet. Add your first one below.'),
+      findsOneWidget,
+    );
+  });
+
+  // Review 2026-11-09: the card used to be row 0 of a lazy ListView.builder,
+  // so scrolling a long borrower list threw it away with a half-typed rule.
+  // It is now a SliverToBoxAdapter, which stays mounted off-screen.
+  testWidgets('an unsaved lending-rule edit survives scrolling far away', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(400, 700);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final c = container(
+      initialized: true,
+      data: VaultData(
+        borrowers: [
+          for (var id = 1; id <= 60; id++)
+            Borrower(id: id, name: 'Borrower $id'),
+        ],
+        loans: const [],
+      ),
+    );
+    await c.read(vaultSessionControllerProvider.future);
+    await c
+        .read(vaultSessionControllerProvider.notifier)
+        .unlock(SecretBytes(Uint8List.fromList([1, 2, 3, 4, 5, 6, 7, 8])));
+    await tester.pumpWidget(host(c));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Lending rules'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byType(SwitchListTile));
+    await tester.pumpAndSettle();
+    const fieldKey = ValueKey('borrower-limit-field');
+    await tester.enterText(find.byKey(fieldKey), '7');
+    await tester.pump();
+
+    // The page's own scrollable (the text field has an inner one too).
+    final page = find
+        .descendant(
+          of: find.byType(CustomScrollView),
+          matching: find.byType(Scrollable),
+        )
+        .first;
+    await tester.scrollUntilVisible(
+      find.text('Borrower 60'),
+      500,
+      scrollable: page,
+    );
+    await tester.pumpAndSettle();
+    // Thousands of pixels away — far past the lazy-build cache — the card is
+    // off-screen but still mounted.
+    expect(find.byKey(fieldKey), findsNothing);
+    expect(find.byKey(fieldKey, skipOffstage: false), findsOneWidget);
+
+    await tester.scrollUntilVisible(
+      find.byKey(fieldKey),
+      -500,
+      scrollable: page,
+    );
+    await tester.pumpAndSettle();
+    final field = tester.widget<TextField>(
+      find.descendant(
+        of: find.byKey(fieldKey),
+        matching: find.byType(TextField),
+      ),
+    );
+    expect(field.controller!.text, '7');
+  });
 
   // Regression (review 2026-09-03, Blocker): the controller used to flip the
   // session to AsyncLoading during unlock, which UNMOUNTED this form; the

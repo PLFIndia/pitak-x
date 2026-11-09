@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -10,10 +11,12 @@ import 'package:pitaka/features/vault/application/vault_session_controller.dart'
 import 'package:pitaka/features/vault/domain/borrowed_items.dart';
 import 'package:pitaka/features/vault/domain/entities/vault_data.dart';
 import 'package:pitaka/features/vault/domain/entities/vault_session_state.dart';
+import 'package:pitaka/features/vault/infrastructure/prefs_reminder_template_store.dart';
 import 'package:pitaka/features/vault/presentation/pages/borrowed_items_page.dart';
 import 'package:pitaka/features/vault/presentation/pages/vault_page.dart';
 import 'package:pitaka/features/vault/presentation/widgets/borrowed_loan_grid_card.dart';
 import 'package:pitaka/features/vault/presentation/widgets/borrowed_loan_row.dart';
+import 'package:pitaka/features/vault/presentation/widgets/reminder_template_card.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 // Transitive test seam for the existing url_launcher dependency.
 // ignore: depend_on_referenced_packages
@@ -248,12 +251,13 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    // One page-wide scroll view (card + filters + loans) since 2026-11-09.
     final scrollable = find.descendant(
-      of: find.byType(ListView),
+      of: find.byType(CustomScrollView),
       matching: find.byType(Scrollable),
     );
     expect(scrollable, findsOneWidget);
-    await tester.drag(find.byType(ListView), const Offset(0, -300));
+    await tester.drag(find.byType(CustomScrollView), const Offset(0, -300));
     await tester.pumpAndSettle();
     final offset = tester.state<ScrollableState>(scrollable).position.pixels;
     expect(offset, greaterThan(0));
@@ -272,6 +276,99 @@ void main() {
 
     gate.complete();
     await tester.pumpAndSettle();
+  });
+
+  testWidgets('templates are picked in the card; the app bar has no actions', (
+    tester,
+  ) async {
+    await pumpBorrowedItems(
+      tester,
+      snapshot: BorrowedItemsSnapshot(
+        entries: [testEntry()],
+        unresolvedCount: 0,
+      ),
+    );
+    expect(find.byType(ReminderTemplateCard), findsOneWidget);
+    expect(find.widgetWithText(ChoiceChip, 'English'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byType(AppBar),
+        matching: find.byType(IconButton),
+      ),
+      findsNothing,
+    );
+    expect(find.byTooltip('Message templates'), findsNothing);
+  });
+
+  // Review 2026-11-09 (Major): the card sat in a Column above an Expanded
+  // list, so 21 template chips, or an expanded card on a landscape phone,
+  // overflowed. The page is one CustomScrollView now; these sizes all
+  // overflowed before the fix.
+  group('many templates on short screens', () {
+    // The domain maximum: 20 custom templates (+ built-in English = 21
+    // chips), each with a long-ish name and bodies, the first selected.
+    final manyTemplates = <String, Object>{
+      PrefsReminderTemplateStore.key: jsonEncode({
+        'version': 1,
+        'selectedTemplateId': 't0',
+        'customTemplates': [
+          for (var i = 0; i < 20; i++)
+            {
+              'id': 't$i',
+              'name': 'Template number $i for the club',
+              'overdueBody': '{{itemTitle}} ${'late ' * 60}{{dueDate}}',
+              'upcomingBody': '{{itemTitle}} ${'soon ' * 60}{{dueDate}}',
+              'noDueDateBody': '{{itemTitle}} ${'open ' * 60}',
+            },
+        ],
+      }),
+    };
+    final snapshot = BorrowedItemsSnapshot(
+      entries: [
+        testEntry(due: testNow - 1),
+        testEntry(loanId: 2, itemId: 3, title: 'Second'),
+      ],
+      unresolvedCount: 1,
+    );
+
+    for (final (name, size, scale) in [
+      ('phone portrait, list', const Size(412, 915), 1.0),
+      ('phone landscape, grid', const Size(915, 412), 1.0),
+      ('small phone, large text', const Size(320, 568), 1.3),
+    ]) {
+      testWidgets('$name: collapsed and expanded never overflow and the '
+          'loans stay reachable', (tester) async {
+        await pumpBorrowedItems(
+          tester,
+          snapshot: snapshot,
+          preferences: manyTemplates,
+          viewport: size,
+          textScaler: TextScaler.linear(scale),
+        );
+        expect(tester.takeException(), isNull);
+        expect(find.byType(ChoiceChip, skipOffstage: false), findsWidgets);
+
+        await tester.tap(find.text('Reminder message'));
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+        expect(
+          find.text('Template number 0 for the club · Custom'),
+          findsOneWidget,
+        );
+
+        final page = find.descendant(
+          of: find.byType(CustomScrollView),
+          matching: find.byType(Scrollable),
+        );
+        await tester.scrollUntilVisible(
+          find.byKey(const ValueKey('borrowed-loan-2')),
+          300,
+          scrollable: page,
+        );
+        expect(find.byKey(const ValueKey('borrowed-loan-2')), findsOneWidget);
+        expect(tester.takeException(), isNull);
+      });
+    }
   });
 
   testWidgets('out-of-range stored due date has a safe card label', (

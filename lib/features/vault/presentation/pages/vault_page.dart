@@ -3,10 +3,15 @@
 /// Drives [VaultSessionController]. Renders one of three states:
 ///  - uninitialized → "set up vault" (create + choose a passphrase);
 ///  - locked → "unlock" (enter the passphrase);
-///  - unlocked → the borrower list with add / edit / delete + a lock action.
+///  - unlocked → the lending-rules card, then the borrower list with add /
+///    edit / delete, plus a lock action in the app bar.
 ///
 /// Change-passphrase + biometric settings live under Settings → Security.
-/// Lending rules are always available; Pending (bell) + Lock are unlocked-only.
+/// Lending rules live on this screen as an expandable card (unlocked only:
+/// the locked screen is a passphrase form, where a settings card is noise).
+/// The former Pending (bell) page was retired: overdue / due-soon loans live
+/// in Borrowed Items, and items needing info are already marked in the
+/// library list.
 ///
 /// All crypto lives behind the controller; this widget only collects the
 /// passphrase via a secure field and forwards the resulting bytes. The vault
@@ -23,8 +28,7 @@ import 'package:pitaka/features/vault/domain/entities/borrower.dart';
 import 'package:pitaka/features/vault/domain/entities/vault_session_state.dart';
 import 'package:pitaka/features/vault/presentation/pages/borrower_edit_page.dart';
 import 'package:pitaka/features/vault/presentation/pages/borrower_profile_page.dart';
-import 'package:pitaka/features/vault/presentation/pages/lending_rules_page.dart';
-import 'package:pitaka/features/vault/presentation/pages/pending_page.dart';
+import 'package:pitaka/features/vault/presentation/widgets/lending_rules_card.dart';
 
 /// The persistent borrowers-vault screen.
 class VaultPage extends ConsumerWidget {
@@ -38,28 +42,13 @@ class VaultPage extends ConsumerWidget {
       appBar: AppBar(
         title: const Text('Borrowers vault'),
         actions: [
-          IconButton(
-            tooltip: 'Lending rules',
-            icon: const Icon(Icons.rule),
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(builder: (_) => const LendingRulesPage()),
-            ),
-          ),
-          if (async.valueOrNull is VaultUnlocked) ...[
-            IconButton(
-              tooltip: 'Pending',
-              icon: const Icon(Icons.notifications_none),
-              onPressed: () => Navigator.of(context).push(
-                MaterialPageRoute<void>(builder: (_) => const PendingPage()),
-              ),
-            ),
+          if (async.valueOrNull is VaultUnlocked)
             IconButton(
               tooltip: 'Lock',
               icon: const Icon(Icons.lock_outline),
               onPressed: () =>
                   ref.read(vaultSessionControllerProvider.notifier).lock(),
             ),
-          ],
         ],
       ),
       body: async.when(
@@ -362,12 +351,28 @@ class _BorrowerList extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // One scroll view of "slivers" (beginner note): the rules card first,
+    // then the borrowers, so the card scrolls away with a long list instead
+    // of pinning screen height. The card is a `SliverToBoxAdapter`, which
+    // stays mounted while scrolled off-screen — so a half-edited rule is
+    // not lost (a lazy `ListView.builder` row would be thrown away). The
+    // borrower rows stay lazily built in a `SliverList`.
     return Scaffold(
-      body: borrowers.isEmpty
-          ? const Center(
-              child: Text('No borrowers yet. Add your first one below.'),
+      body: CustomScrollView(
+        slivers: [
+          const SliverToBoxAdapter(child: LendingRulesCard()),
+          if (borrowers.isEmpty)
+            const SliverToBoxAdapter(
+              child: Padding(
+                padding: EdgeInsets.all(32),
+                child: Text(
+                  'No borrowers yet. Add your first one below.',
+                  textAlign: TextAlign.center,
+                ),
+              ),
             )
-          : ListView.builder(
+          else
+            SliverList.builder(
               itemCount: borrowers.length,
               itemBuilder: (context, i) {
                 final b = borrowers[i];
@@ -388,6 +393,10 @@ class _BorrowerList extends ConsumerWidget {
                 );
               },
             ),
+          // Bottom space so the FAB never covers the last row.
+          const SliverToBoxAdapter(child: SizedBox(height: 88)),
+        ],
+      ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _openEditor(context),
         icon: const Icon(Icons.person_add_alt_1),

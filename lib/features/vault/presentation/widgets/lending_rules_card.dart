@@ -1,4 +1,12 @@
-/// Device-local borrower lending rules; contains no borrower or loan data.
+/// Lending rules as an expandable card on the Borrowers vault screen.
+///
+/// Why a card and not an app-bar icon: a bare "rule" icon told users nothing
+/// about what was in force. The card header always shows the current rule
+/// ("Off" or "Max 3 · Warn") so the answer is visible without opening
+/// anything; expanding reveals the editor (the same form the former
+/// Lending rules page had — moved here, behaviour unchanged).
+///
+/// Device-local rules; contains no borrower or loan data.
 library;
 
 import 'package:flutter/material.dart';
@@ -7,49 +15,144 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pitaka/features/vault/application/lending_rules_controller.dart';
 import 'package:pitaka/features/vault/domain/borrower_limit_policy.dart';
 
-/// Editor for the optional per-borrower active-loan cap and its action.
-final class LendingRulesPage extends ConsumerWidget {
-  /// Creates the lending-rules editor.
-  const LendingRulesPage({super.key});
+/// The expandable lending-rules card. Collapsed by default.
+final class LendingRulesCard extends ConsumerStatefulWidget {
+  /// Creates the card.
+  const LendingRulesCard({super.key});
+
+  /// Test hook for the expand/collapse header.
+  static const headerKey = ValueKey('lending-rules-card-header');
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<LendingRulesCard> createState() => _LendingRulesCardState();
+}
+
+class _LendingRulesCardState extends ConsumerState<LendingRulesCard> {
+  /// Mirrors the tile's state so the chevron can rotate: `ExpansionTile`
+  /// draws its own arrow only when `trailing` is null, and the status pill
+  /// occupies `trailing`.
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
     final async = ref.watch(lendingRulesControllerProvider);
-    return Scaffold(
-      appBar: AppBar(title: const Text('Lending rules')),
-      body: async.when(
-        loading: () =>
-            const Center(child: CircularProgressIndicator.adaptive()),
-        error: (_, _) => const _LendingRulesForm(
-          key: ValueKey('unreadable-lending-rules'),
-          initialPolicy: BorrowerLimitPolicy.off,
-          unreadable: true,
+    return Card(
+      margin: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+      clipBehavior: Clip.antiAlias,
+      child: ExpansionTile(
+        key: LendingRulesCard.headerKey,
+        onExpansionChanged: (open) => setState(() => _expanded = open),
+        leading: const Icon(Icons.rule),
+        title: const Text('Lending rules'),
+        subtitle: const Text('One rule for every borrower'),
+        // The status pill is the whole point of the card: the rule in force
+        // is readable without expanding.
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _StatusPill(
+              label: async.when(
+                loading: () => '…',
+                error: (_, _) => 'Unreadable',
+                data: _statusLabel,
+              ),
+              error: async.hasError,
+            ),
+            const SizedBox(width: 4),
+            AnimatedRotation(
+              turns: _expanded ? 0.5 : 0,
+              duration: const Duration(milliseconds: 200),
+              child: const Icon(Icons.expand_more),
+            ),
+          ],
         ),
-        data: (policy) => _LendingRulesForm(
-          // A failed save keeps this identity and therefore the entered values.
-          key: ObjectKey(policy),
-          initialPolicy: policy,
+        shape: const Border(),
+        collapsedShape: const Border(),
+        childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        children: [
+          async.when(
+            loading: () => const Padding(
+              padding: EdgeInsets.all(16),
+              child: Center(child: CircularProgressIndicator.adaptive()),
+            ),
+            error: (_, _) => const LendingRulesForm(
+              key: ValueKey('unreadable-lending-rules'),
+              initialPolicy: BorrowerLimitPolicy.off,
+              unreadable: true,
+            ),
+            data: (policy) => LendingRulesForm(
+              // A failed save keeps this identity and therefore the entered
+              // values.
+              key: ObjectKey(policy),
+              initialPolicy: policy,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Plain words for the rule in force, e.g. "Off" or "Max 3 · Refuse".
+  static String _statusLabel(BorrowerLimitPolicy policy) {
+    final limit = policy.maxActiveLoans;
+    if (limit == null) return 'Off';
+    final action = switch (policy.action) {
+      BorrowerLimitAction.warn => 'Warn',
+      BorrowerLimitAction.refuse => 'Refuse',
+    };
+    return 'Max $limit · $action';
+  }
+}
+
+final class _StatusPill extends StatelessWidget {
+  const _StatusPill({required this.label, required this.error});
+
+  final String label;
+  final bool error;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+      decoration: BoxDecoration(
+        color: error ? scheme.errorContainer : scheme.primaryContainer,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        label,
+        style: Theme.of(context).textTheme.labelMedium?.copyWith(
+          color: error ? scheme.onErrorContainer : scheme.onPrimaryContainer,
         ),
       ),
     );
   }
 }
 
-class _LendingRulesForm extends ConsumerStatefulWidget {
-  const _LendingRulesForm({
+/// Editor for the optional per-borrower active-loan cap and its action.
+///
+/// Formerly `_LendingRulesForm` on the Lending rules page; public now so the
+/// card can host it. Validation, save and error copy are unchanged.
+final class LendingRulesForm extends ConsumerStatefulWidget {
+  /// Creates the form seeded with [initialPolicy]; [unreadable] shows the
+  /// recovery message for a document that could not be read.
+  const LendingRulesForm({
     required this.initialPolicy,
     this.unreadable = false,
     super.key,
   });
 
+  /// The policy the fields start from.
   final BorrowerLimitPolicy initialPolicy;
+
+  /// True when the stored document failed to load.
   final bool unreadable;
 
   @override
-  ConsumerState<_LendingRulesForm> createState() => _LendingRulesFormState();
+  ConsumerState<LendingRulesForm> createState() => _LendingRulesFormState();
 }
 
-class _LendingRulesFormState extends ConsumerState<_LendingRulesForm> {
+class _LendingRulesFormState extends ConsumerState<LendingRulesForm> {
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _limit;
   late bool _enabled;
@@ -115,8 +218,8 @@ class _LendingRulesFormState extends ConsumerState<_LendingRulesForm> {
     final scheme = Theme.of(context).colorScheme;
     return Form(
       key: _formKey,
-      child: ListView(
-        padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           if (widget.unreadable) ...[
             Text(
@@ -129,6 +232,7 @@ class _LendingRulesFormState extends ConsumerState<_LendingRulesForm> {
             'Set one rule for every borrower. Returned loans do not count.',
           ),
           SwitchListTile(
+            contentPadding: EdgeInsets.zero,
             title: const Text('Limit items per borrower'),
             subtitle: const Text('Off allows any number of active loans.'),
             value: _enabled,

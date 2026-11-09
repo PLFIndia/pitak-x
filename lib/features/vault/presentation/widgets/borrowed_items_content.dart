@@ -1,16 +1,26 @@
-/// Unlocked Borrowed Items content: template selector, filters and loan list.
+/// Unlocked Borrowed Items content: reminder-template card, filters and
+/// loan list, all in ONE scroll view.
+///
+/// Why one scroll view (beginner note): the template card can be tall (up
+/// to 21 template chips, plus three message bodies when expanded). When it
+/// sat in a `Column` above an `Expanded` loan list, a tall card on a short
+/// screen (a phone in landscape) had nowhere to go and the layout
+/// overflowed. In a `CustomScrollView` every part is a "sliver" of the same
+/// scrollable page, so the card simply scrolls away like everything else.
+/// The card sits in a `SliverToBoxAdapter`, which stays mounted while
+/// off-screen; the loans stay lazily built in a `SliverList` / `SliverGrid`.
 library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/layout/breakpoints.dart';
-import 'package:pitaka/features/vault/application/reminder_templates_controller.dart';
 import 'package:pitaka/features/vault/domain/borrowed_items.dart';
 import 'package:pitaka/features/vault/domain/loan_status.dart';
 import 'package:pitaka/features/vault/domain/value_objects/borrower_contact.dart';
 import 'package:pitaka/features/vault/presentation/widgets/borrowed_loan_grid_card.dart';
 import 'package:pitaka/features/vault/presentation/widgets/borrowed_loan_row.dart';
+import 'package:pitaka/features/vault/presentation/widgets/reminder_template_card.dart';
 
 /// User-visible active-loan filters.
 enum BorrowedItemsFilter {
@@ -93,94 +103,47 @@ final class BorrowedItemsContent extends ConsumerWidget {
               };
             })
             .toList(growable: false);
-        return Column(
-          children: [
-            const _TemplateSelector(),
-            _FilterChips(selected: filter, onChanged: onFilterChanged),
-            if (snapshot.unresolvedCount > 0)
-              _UnresolvedWarning(count: snapshot.unresolvedCount),
-            Expanded(
-              child: entries.isEmpty
-                  ? _EmptyFilteredOrUnresolved(
-                      isFiltered: filter != BorrowedItemsFilter.all,
-                      unresolvedCount: snapshot.unresolvedCount,
-                    )
-                  : _LoanList(
-                      entries: entries,
-                      busyLoanIds: busyLoanIds,
-                      onOpen: onOpen,
-                      onCall: onCall,
-                      onShare: onShare,
-                      onWhatsAppText: onWhatsAppText,
-                    ),
-            ),
-          ],
-        );
-      },
-    );
-  }
-}
-
-final class _TemplateSelector extends ConsumerWidget {
-  const _TemplateSelector();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final async = ref.watch(reminderTemplatesControllerProvider);
-    return async.when(
-      loading: () => const LinearProgressIndicator(),
-      error: (_, _) => Padding(
-        padding: const EdgeInsets.all(12),
-        child: Row(
-          children: [
-            const Expanded(child: Text("Couldn't load message templates.")),
-            TextButton(
-              onPressed: () =>
-                  ref.invalidate(reminderTemplatesControllerProvider),
-              child: const Text('Retry'),
-            ),
-          ],
-        ),
-      ),
-      data: (settings) {
-        final selected = settings.selectedTemplate;
-        return Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                selected == null
-                    ? 'Reminder template: unavailable — choose one'
-                    : 'Reminder template: ${selected.name}',
+        // The list/grid switch keys off the available width, exactly as
+        // before (`largeScreenMinWidth`), measured once for the whole view.
+        return LayoutBuilder(
+          builder: (context, constraints) => CustomScrollView(
+            // Keeps the scroll offset if this view is rebuilt from scratch.
+            key: const PageStorageKey('borrowed-items-scroll'),
+            slivers: [
+              const SliverToBoxAdapter(child: ReminderTemplateCard()),
+              SliverToBoxAdapter(
+                child: _FilterChips(
+                  selected: filter,
+                  onChanged: onFilterChanged,
+                ),
               ),
-              DropdownButton<String>(
-                isExpanded: true,
-                value: selected == null ? null : settings.selectedTemplateId,
-                hint: const Text('Choose a message template'),
-                items: [
-                  for (final template in settings.allTemplates)
-                    DropdownMenuItem(
-                      value: template.id,
-                      child: Text(template.name),
-                    ),
-                ],
-                onChanged: (id) async {
-                  if (id == null) return;
-                  final result = await ref
-                      .read(reminderTemplatesControllerProvider.notifier)
-                      .select(id);
-                  if (!context.mounted) return;
-                  result.match(
-                    (_) => ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text("Couldn't save the template selection."),
-                      ),
-                    ),
-                    (_) {},
-                  );
-                },
-              ),
+              if (snapshot.unresolvedCount > 0)
+                SliverToBoxAdapter(
+                  child: _UnresolvedWarning(count: snapshot.unresolvedCount),
+                ),
+              if (entries.isEmpty)
+                // Fills whatever height is left so the message stays
+                // centred, and scrolls with the rest when nothing is left.
+                SliverFillRemaining(
+                  hasScrollBody: false,
+                  child: _EmptyFilteredOrUnresolved(
+                    isFiltered: filter != BorrowedItemsFilter.all,
+                    unresolvedCount: snapshot.unresolvedCount,
+                  ),
+                )
+              else
+                SliverPadding(
+                  padding: const EdgeInsets.all(12),
+                  sliver: _LoanSliver(
+                    grid: constraints.maxWidth >= largeScreenMinWidth,
+                    entries: entries,
+                    busyLoanIds: busyLoanIds,
+                    onOpen: onOpen,
+                    onCall: onCall,
+                    onShare: onShare,
+                    onWhatsAppText: onWhatsAppText,
+                  ),
+                ),
             ],
           ),
         );
@@ -219,8 +182,11 @@ final class _FilterChips extends StatelessWidget {
   }
 }
 
-final class _LoanList extends StatelessWidget {
-  const _LoanList({
+/// The loans as a lazily built sliver: a grid on wide screens, a list on
+/// phones. Returns a sliver, so it must live inside a `CustomScrollView`.
+final class _LoanSliver extends StatelessWidget {
+  const _LoanSliver({
+    required this.grid,
     required this.entries,
     required this.busyLoanIds,
     required this.onOpen,
@@ -229,6 +195,8 @@ final class _LoanList extends StatelessWidget {
     required this.onWhatsAppText,
   });
 
+  /// True on wide screens (≥ `largeScreenMinWidth`): cover-card grid.
+  final bool grid;
   final List<BorrowedLoan> entries;
   final Set<int> busyLoanIds;
   final ValueChanged<BorrowedLoan> onOpen;
@@ -238,51 +206,42 @@ final class _LoanList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final grid = constraints.maxWidth >= largeScreenMinWidth;
-        if (grid) {
-          return GridView.builder(
-            key: const PageStorageKey('borrowed-items-grid'),
-            padding: const EdgeInsets.all(12),
-            gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-              maxCrossAxisExtent: 360,
-              mainAxisExtent: 480,
-              crossAxisSpacing: 12,
-              mainAxisSpacing: 12,
-            ),
-            itemCount: entries.length,
-            itemBuilder: (context, index) {
-              final entry = entries[index];
-              return BorrowedLoanGridCard(
-                key: ValueKey('borrowed-loan-${entry.loan.id}'),
-                entry: entry,
-                busy: busyLoanIds.contains(entry.loan.id),
-                onTap: () => onOpen(entry),
-                onCall: _callCallback(entry),
-                onShare: (buttonContext) => onShare(entry, buttonContext),
-                onWhatsAppText: _whatsAppTextCallback(entry),
-              );
-            },
+    if (grid) {
+      return SliverGrid.builder(
+        gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+          maxCrossAxisExtent: 360,
+          mainAxisExtent: 480,
+          crossAxisSpacing: 12,
+          mainAxisSpacing: 12,
+        ),
+        itemCount: entries.length,
+        itemBuilder: (context, index) {
+          final entry = entries[index];
+          return BorrowedLoanGridCard(
+            key: ValueKey('borrowed-loan-${entry.loan.id}'),
+            entry: entry,
+            busy: busyLoanIds.contains(entry.loan.id),
+            onTap: () => onOpen(entry),
+            onCall: _callCallback(entry),
+            onShare: (buttonContext) => onShare(entry, buttonContext),
+            onWhatsAppText: _whatsAppTextCallback(entry),
           );
-        }
-        return ListView.separated(
-          key: const PageStorageKey('borrowed-items-list'),
-          padding: const EdgeInsets.all(12),
-          itemCount: entries.length,
-          separatorBuilder: (_, _) => const SizedBox(height: 8),
-          itemBuilder: (context, index) {
-            final entry = entries[index];
-            return BorrowedLoanRow(
-              key: ValueKey('borrowed-loan-${entry.loan.id}'),
-              entry: entry,
-              busy: busyLoanIds.contains(entry.loan.id),
-              onTap: () => onOpen(entry),
-              onCall: _callCallback(entry),
-              onShare: (buttonContext) => onShare(entry, buttonContext),
-              onWhatsAppText: _whatsAppTextCallback(entry),
-            );
-          },
+        },
+      );
+    }
+    return SliverList.separated(
+      itemCount: entries.length,
+      separatorBuilder: (_, _) => const SizedBox(height: 8),
+      itemBuilder: (context, index) {
+        final entry = entries[index];
+        return BorrowedLoanRow(
+          key: ValueKey('borrowed-loan-${entry.loan.id}'),
+          entry: entry,
+          busy: busyLoanIds.contains(entry.loan.id),
+          onTap: () => onOpen(entry),
+          onCall: _callCallback(entry),
+          onShare: (buttonContext) => onShare(entry, buttonContext),
+          onWhatsAppText: _whatsAppTextCallback(entry),
         );
       },
     );

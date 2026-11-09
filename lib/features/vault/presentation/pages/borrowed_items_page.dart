@@ -12,7 +12,6 @@ import 'package:pitaka/features/vault/domain/borrowed_items.dart';
 import 'package:pitaka/features/vault/domain/entities/vault_session_state.dart';
 import 'package:pitaka/features/vault/domain/loan_reminder_preparation.dart';
 import 'package:pitaka/features/vault/domain/value_objects/borrower_contact.dart';
-import 'package:pitaka/features/vault/presentation/pages/reminder_templates_page.dart';
 import 'package:pitaka/features/vault/presentation/pages/vault_page.dart';
 import 'package:pitaka/features/vault/presentation/widgets/borrowed_items_content.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -34,20 +33,9 @@ class _BorrowedItemsPageState extends ConsumerState<BorrowedItemsPage> {
   Widget build(BuildContext context) {
     final session = ref.watch(vaultSessionControllerProvider);
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Borrowed Items'),
-        actions: [
-          IconButton(
-            tooltip: 'Message templates',
-            icon: const Icon(Icons.message_outlined),
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) => const ReminderTemplatesPage(),
-              ),
-            ),
-          ),
-        ],
-      ),
+      // No app-bar actions: message templates are picked and managed in the
+      // ReminderTemplateCard at the top of the unlocked content.
+      appBar: AppBar(title: const Text('Borrowed Items')),
       body: session.when(
         loading: () =>
             const Center(child: CircularProgressIndicator.adaptive()),

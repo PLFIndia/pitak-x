@@ -31,7 +31,6 @@ import 'package:pitaka/features/vault/domain/borrower_limit_policy_store.dart';
 import 'package:pitaka/features/vault/domain/borrower_profile.dart';
 import 'package:pitaka/features/vault/domain/entities/borrower.dart';
 import 'package:pitaka/features/vault/domain/entities/vault_session_state.dart';
-import 'package:pitaka/features/vault/domain/pending_snapshot.dart';
 import 'package:pitaka/features/vault/domain/reminder_template_store.dart';
 import 'package:pitaka/features/vault/domain/repositories/vault_repository.dart';
 import 'package:pitaka/features/vault/infrastructure/ffi_vault_repository.dart';
@@ -128,32 +127,6 @@ BorrowerProfile? borrowerProfile(BorrowerProfileRef ref, int borrowerId) {
   return buildBorrowerProfile(
     borrower: borrower,
     allLoans: session.data.loans,
-    now: now,
-  );
-}
-
-/// The vault-gated pending/reminders snapshot (#27b): overdue + due-soon loans
-/// (from the unlocked vault) and needs-metadata books (from the library), or
-/// null when the vault is locked. Recomputes when either source changes.
-///
-/// N04: watches [libraryControllerProvider] as the catalogue mutation signal
-/// (same pattern as [catalogueItemById]) — watching only the repository OBJECT
-/// never fired, so a needs-metadata edit, import or restore left the reminders
-/// stale — and the [nowTickProvider] tick, so overdue/due-soon buckets roll
-/// over while the screen stays open.
-@riverpod
-Future<PendingSnapshot?> pendingSnapshot(PendingSnapshotRef ref) async {
-  final session = ref.watch(vaultSessionControllerProvider).valueOrNull;
-  if (session is! VaultUnlocked) return null;
-  ref
-    ..watch(libraryControllerProvider)
-    ..watch(nowTickProvider);
-  final now = ref.watch(clockProvider)();
-  final repo = await ref.watch(catalogueItemRepositoryProvider.future);
-  final books = (await repo.getAll()).getOrElse((_) => const []);
-  return buildPendingSnapshot(
-    loans: session.data.loans,
-    books: books,
     now: now,
   );
 }

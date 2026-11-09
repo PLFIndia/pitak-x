@@ -466,34 +466,6 @@ class _BorrowerProfileProviderElement
   int get borrowerId => (origin as BorrowerProfileProvider).borrowerId;
 }
 
-String _$pendingSnapshotHash() => r'fdb2980d7fc2750f0be79db2348bd094b683221c';
-
-/// The vault-gated pending/reminders snapshot (#27b): overdue + due-soon loans
-/// (from the unlocked vault) and needs-metadata books (from the library), or
-/// null when the vault is locked. Recomputes when either source changes.
-///
-/// N04: watches [libraryControllerProvider] as the catalogue mutation signal
-/// (same pattern as [catalogueItemById]) — watching only the repository OBJECT
-/// never fired, so a needs-metadata edit, import or restore left the reminders
-/// stale — and the [nowTickProvider] tick, so overdue/due-soon buckets roll
-/// over while the screen stays open.
-///
-/// Copied from [pendingSnapshot].
-@ProviderFor(pendingSnapshot)
-final pendingSnapshotProvider =
-    AutoDisposeFutureProvider<PendingSnapshot?>.internal(
-      pendingSnapshot,
-      name: r'pendingSnapshotProvider',
-      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
-          ? null
-          : _$pendingSnapshotHash,
-      dependencies: null,
-      allTransitiveDependencies: null,
-    );
-
-@Deprecated('Will be removed in 3.0. Use Ref instead')
-// ignore: unused_element
-typedef PendingSnapshotRef = AutoDisposeFutureProviderRef<PendingSnapshot?>;
 String _$borrowerLimitPolicyStoreHash() =>
     r'a84758ecb4dd76bd9dc3cf3712cc9449f4766b31';
 

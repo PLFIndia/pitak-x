@@ -15,7 +15,7 @@
 /// stays open rolls from "Expiring soon" to "Lapsed" on the next tick, with
 /// no stored column that could drift. The tick re-runs `build` (one small
 /// LEFT JOIN query per minute while the page is open — the same trade-off
-/// `pendingSnapshot` makes for overdue loans).
+/// `borrowedItemsSnapshot` makes for overdue loans).
 ///
 /// S9 adds the shared catalogue-mutation signal: [libraryControllerProvider]
 /// is watched alongside the tick because imports, merges, restores and issue

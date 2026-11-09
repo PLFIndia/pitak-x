@@ -11,11 +11,9 @@ import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/vault/application/vault_session_controller.dart';
 import 'package:pitaka/features/vault/domain/entities/borrower.dart';
 import 'package:pitaka/features/vault/domain/entities/vault_data.dart';
-import 'package:pitaka/features/vault/domain/pending_snapshot.dart';
 import 'package:pitaka/features/vault/domain/repositories/vault_repository.dart';
 import 'package:pitaka/features/vault/infrastructure/vault_store.dart';
 import 'package:pitaka/features/vault/presentation/pages/borrower_edit_page.dart';
-import 'package:pitaka/features/vault/presentation/pages/pending_page.dart';
 
 import 'vault_repository_write_stub.dart';
 
@@ -43,56 +41,6 @@ void main() {
 
   setUp(() => tmp = Directory.systemTemp.createTempSync('item_wording_test'));
   tearDown(() => tmp.deleteSync(recursive: true));
-
-  testWidgets('S9: Pending labels a loan row as Item #id', (tester) async {
-    const snapshot = PendingSnapshot(
-      overdue: [Loan(id: 1, itemId: 7, borrowerId: 2, lentDate: 1)],
-      dueSoon: [],
-      staleMetadataBooks: [],
-    );
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          pendingSnapshotProvider.overrideWith((ref) async => snapshot),
-        ],
-        child: const MaterialApp(home: PendingPage()),
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    expect(find.text('Item #7'), findsOneWidget);
-    expect(find.text('Book #7'), findsNothing);
-  });
-
-  testWidgets('Pending safely labels an out-of-range stored due date', (
-    tester,
-  ) async {
-    const snapshot = PendingSnapshot(
-      overdue: [
-        Loan(
-          id: 1,
-          itemId: 7,
-          borrowerId: 2,
-          lentDate: 1,
-          dueDate: 8640000000000001,
-        ),
-      ],
-      dueSoon: [],
-      staleMetadataBooks: [],
-    );
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          pendingSnapshotProvider.overrideWith((ref) async => snapshot),
-        ],
-        child: const MaterialApp(home: PendingPage()),
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    expect(find.text('Due date unavailable'), findsOneWidget);
-    expect(tester.takeException(), isNull);
-  });
 
   testWidgets('S9: borrower edit labels a loan row as Item #id', (
     tester,

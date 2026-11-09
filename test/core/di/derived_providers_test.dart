@@ -259,27 +259,6 @@ void main() {
         'New title',
       );
     });
-
-    test('pendingSnapshot follows a needsMetadata edit', () async {
-      final repo = _FakeBookRepo([]);
-      final container = makeContainer(repo, vaultData: VaultData.empty);
-      final sub = container.listen(pendingSnapshotProvider, (_, __) {});
-      addTearDown(sub.close);
-      // The session builds asynchronously; await it so the first snapshot
-      // read is deterministic (the vault page does the same).
-      await container.read(vaultSessionControllerProvider.future);
-      await container.read(libraryControllerProvider.future);
-      final first = await container.read(pendingSnapshotProvider.future);
-      expect(first!.staleMetadataBooks, isEmpty);
-
-      repo.books.add(
-        const CatalogueItem(id: 1, title: 'Bare', needsMetadata: true),
-      );
-      await container.read(libraryControllerProvider.notifier).refresh();
-
-      final second = await container.read(pendingSnapshotProvider.future);
-      expect(second!.staleMetadataBooks.map((b) => b.title), ['Bare']);
-    });
   });
 
   group('N04 — time-based reminders follow the injected clock', () {
@@ -292,36 +271,6 @@ void main() {
     VaultData vaultWith(Loan loan) => VaultData(
       borrowers: const [Borrower(id: 1, name: 'Asha')],
       loans: [loan],
-    );
-
-    test(
-      'pendingSnapshot: due-soon becomes overdue when the tick fires',
-      () async {
-        var now = t0;
-        final container = makeContainer(
-          _FakeBookRepo([]),
-          vaultData: vaultWith(loanDueAt(t0 + hour)),
-          clock: () => now,
-        );
-        final sub = container.listen(pendingSnapshotProvider, (_, __) {});
-        addTearDown(sub.close);
-        await container.read(vaultSessionControllerProvider.future);
-
-        final before = await container.read(pendingSnapshotProvider.future);
-        expect(before!.overdue, isEmpty);
-        expect(before.dueSoon, hasLength(1));
-
-        // Time passes beyond the due date; the periodic tick fires (simulated
-        // here by invalidating the tick provider — same rebuild path).
-        now = t0 + 2 * hour;
-        container.invalidate(nowTickProvider);
-        // Invalidation schedules the rebuild; pump flushes the scheduler.
-        await container.pump();
-
-        final after = await container.read(pendingSnapshotProvider.future);
-        expect(after!.overdue, hasLength(1));
-        expect(after.dueSoon, isEmpty);
-      },
     );
 
     test('borrowerProfile: overdue rate follows the clock', () async {
