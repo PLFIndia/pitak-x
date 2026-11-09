@@ -16,16 +16,25 @@ heading as part of the `chore(release):` commit.
 
 ### Changed
 - **Availability tag colours (UI):** *Available* is green and *Not
-  available* is red in the in-app viewer and in the library list, the same
-  pair the published site uses (`assets/publish/index.html`). Before, both
-  tags shared one neutral container colour. One shared source,
+  available* is red in the in-app viewer, the same pair the published site
+  uses (`assets/publish/index.html`). Before, both tags shared one neutral
+  container colour. One shared source,
   `lib/core/theme/availability_colors.dart`, with a contrast test pinning
   every pair at ≥ 4.5:1 on both themes.
-- **Shelf location on catalogue cards (app only):** list rows and grid cards
-  show the item's shelf location as a bold line under the author (red when
-  the item is not available, dimmed like the title when it is removed), so
-  the shelf is readable without opening the item. Nothing changes on the published site — `location` was never
-  published.
+- **Library catalogue cards fit their text (app only):** the list row's
+  text now uses the full width beside the cover — a badge column used to
+  take half the space even when empty, cutting long titles. Titles get up
+  to 3 lines and authors up to 2. Below them, one line that wraps: the
+  shelf location (bold), the Issue / Removed / Needs info pills and
+  **Copies:** 2 · 1 out (the out count in red, only while the vault is
+  unlocked; replaces "×2"). The library no longer shows a "Not available"
+  pill: when every copy is out the shelf line turns red and its icon
+  becomes an "out" tray (screen readers hear ", not available"); with no
+  shelf set the line reads "Not available". Removed items are dimmed. On
+  tablets the grid keeps its cover pills, covers keep a fixed book shape,
+  and each cell's height is computed from the line caps at the user's
+  font size, so long text never overflows. The published pages keep their
+  Available / Not available tags; `location` is still never published.
 - **Borrowers vault:** lending rules moved from an app-bar icon to an
   expandable card at the top of the unlocked borrower list; the card header
   always shows the rule in force ("Off", "Max 3 · Warn"). The Pending
@@ -65,7 +74,15 @@ heading as part of the `chore(release):` commit.
 ### Tests
 - New: `availability_colors_test`, `published_item_badges_test`,
   `shelf_location_line_test`, `lending_rules_card_test`,
-  `reminder_template_card_test` (page tests ported case-for-case).
+  `reminder_template_card_test` (page tests ported case-for-case),
+  `copies_label_test`, `catalogue_grid_delegate_test`.
+- Regression (text fit): the row's title column is ≥ 75 % of the row (it
+  was 41 %); a title and author that the old half width cut now fit their
+  3 / 2 line caps; long everything at 1.0 / 1.3 / 2.0× text on a 320 dp
+  phone and in the tablet grid never overflows, and the grid cover keeps
+  its book shape; the grid's columns equal Flutter's own delegate at six
+  widths; the copies label is readable (≥ 4.5:1) on the list surface and
+  on its cover pill in both themes.
 - Regression: Borrowed Items with the maximum 21 template chips on phone
   portrait, landscape (grid) and a small phone at 1.3× text, collapsed and
   expanded, with the loans still reachable; an unsaved lending-rule edit
@@ -73,8 +90,9 @@ heading as part of the `chore(release):` commit.
   own screen-reader node; the shelf line's removed tone.
 - Goldens: the library, published-catalogue and vault-unlock PNGs (five
   files; the locked vault app bar no longer shows the Lending rules icon)
-  need regeneration on the Linux reference renderer (`update_goldens.yml`);
-  the fixture gives one row a shelf location so the new line is pinned.
+  are regenerated on the Linux reference renderer (`update_goldens.yml`);
+  the library pair again after the text-fit change. The fixture gives one
+  row a shelf location so the new line is pinned.
 
 ## [1.9.6] - 2026-11 (tag `1.9.6`, versionCode 38)
 

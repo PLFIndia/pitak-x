@@ -1,11 +1,19 @@
 /// A single library list row (presentation layer).
 ///
-/// Parity with Kotlin `LibraryScreen.BookRow`: title (2 lines), author, and the
-/// status badges — removed (dimmed + badge), needs-metadata, copy-count "×N",
-/// and the vault "Not available" badge (every copy is out on loan, shown only
-/// when the vault is unlocked so availability is known). Under the author,
-/// the shelf location when one is set ([ShelfLocationLine]) so the user can
-/// find the item without opening it.
+/// Layout (2026-11-09 text-fit redesign): the cover, then ONE text column
+/// that uses all the remaining width — title (up to 3 lines), author (up to
+/// 2 lines), and a bottom line that wraps: the shelf location
+/// ([ShelfLocationLine]), the status pills (kind, Removed, Needs info) and
+/// "**Copies:** 2 · 1 out" ([CopiesLabel]).
+///
+/// Why no badge column on the right any more (beginner note): it sat in a
+/// `Flexible` next to the text's `Expanded`, and Flutter splits free space
+/// between flex children by their flex factor — so the text got only half
+/// the space even when there were no badges, and long titles were cut short.
+///
+/// Availability (vault unlocked only) has no pill here: the shelf line turns
+/// red with an "out" icon when every copy is on loan, and the copies label
+/// counts partial loans. The published pages keep their own tags.
 ///
 /// S14 (ADR 0013): a non-book row also carries a KIND badge ("Issue" /
 /// "Bound volume" / "Other"), and a magazine issue without its own cover
@@ -17,11 +25,12 @@ library;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pitaka/core/di/providers.dart';
-import 'package:pitaka/core/theme/availability_colors.dart';
 import 'package:pitaka/core/widgets/item_cover.dart';
 import 'package:pitaka/features/library/domain/cover_owner.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/value_objects/item_kind.dart';
+import 'package:pitaka/features/library/presentation/widgets/catalogue_card_text.dart';
+import 'package:pitaka/features/library/presentation/widgets/copies_label.dart';
 import 'package:pitaka/features/library/presentation/widgets/shelf_location_line.dart';
 
 /// One tappable book row.
@@ -31,6 +40,7 @@ class CatalogueItemRow extends ConsumerWidget {
     required this.book,
     required this.onTap,
     this.unavailable = false,
+    this.copiesOut = 0,
     super.key,
   });
 
@@ -40,17 +50,25 @@ class CatalogueItemRow extends ConsumerWidget {
   /// Called when the row is tapped.
   final VoidCallback onTap;
 
-  /// True when every copy is out on loan (vault unlocked). Shows a badge.
+  /// True when every copy is out on loan (vault unlocked): the shelf line
+  /// turns red with the out icon.
   final bool unavailable;
+
+  /// Active loans for this item while the vault is unlocked (0 when none or
+  /// locked); shown as "· N out" next to the copy count.
+  final int copiesOut;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final textTheme = theme.textTheme;
-    // ONE predicate for "paint it as not available": the badge and the shelf
-    // line must never disagree. A removed item is dimmed instead.
-    final showUnavailable = unavailable && !book.removed;
+    // ONE rule for "paint it as not available"; a removed item is dimmed
+    // instead, never red (ShelfLocationTone.of applies the precedence).
+    final shelfTone = ShelfLocationTone.of(
+      removed: book.removed,
+      unavailable: unavailable,
+    );
     // Removed books are dimmed (visible-but-inert), mirroring Kotlin D39.
     final titleColor = book.removed
         ? scheme.onSurfaceVariant
@@ -78,15 +96,61 @@ class CatalogueItemRow extends ConsumerWidget {
         ? CoverOwners.periodical(inheritedUid)
         : CoverOwners.item(book.id);
 
+    // The bottom line, in reading order: where it is, what it is, how many.
+    final bottomLine = <Widget>[
+      if (ShelfLocationLine.isVisibleFor(
+        location: book.location,
+        tone: shelfTone,
+      ))
+        ShelfLocationLine(
+          location: book.location,
+          tone: shelfTone,
+          style: textTheme.bodyMedium,
+        ),
+      if (_kindLabel(book) case final label?)
+        // Kind badges use the surface-variant tones so they read as
+        // *classifiers*, not alerts — the status badges keep the stronger
+        // container colours.
+        _Badge(
+          label: label,
+          background: scheme.surfaceContainerHighest,
+          foreground: scheme.onSurfaceVariant,
+        ),
+      if (book.removed)
+        _Badge(
+          label: 'Removed',
+          background: scheme.errorContainer,
+          foreground: scheme.onErrorContainer,
+        ),
+      if (book.needsMetadata)
+        _Badge(
+          label: 'Needs info',
+          background: scheme.tertiaryContainer,
+          foreground: scheme.onTertiaryContainer,
+        ),
+      if (CopiesLabel.isVisibleFor(book.copyCount))
+        CopiesLabel(
+          copyCount: book.copyCount,
+          copiesOut: copiesOut,
+          style: textTheme.labelLarge,
+          color: scheme.onSurfaceVariant,
+        ),
+    ];
+
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(8),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
         child: Row(
+          // Top-aligned: with up to six text lines the cover belongs beside
+          // the title, not floating in the middle.
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             ItemCover(title: book.title, coverUrl: coverUrl, owner: coverOwner),
             const SizedBox(width: 12),
+            // The ONLY flexible child, so the text gets all the remaining
+            // width (see the library comment above).
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -94,7 +158,7 @@ class CatalogueItemRow extends ConsumerWidget {
                   Text(
                     book.title,
                     style: textTheme.titleMedium?.copyWith(color: titleColor),
-                    maxLines: 2,
+                    maxLines: CatalogueCardText.titleMaxLines,
                     overflow: TextOverflow.ellipsis,
                   ),
                   if (book.author != null && book.author!.trim().isNotEmpty)
@@ -103,65 +167,19 @@ class CatalogueItemRow extends ConsumerWidget {
                       style: textTheme.bodyMedium?.copyWith(
                         color: scheme.onSurfaceVariant,
                       ),
-                      maxLines: 1,
+                      maxLines: CatalogueCardText.authorMaxLines,
                       overflow: TextOverflow.ellipsis,
                     ),
-                  ShelfLocationLine(
-                    location: book.location,
-                    tone: ShelfLocationTone.of(
-                      removed: book.removed,
-                      unavailable: showUnavailable,
-                    ),
-                    style: textTheme.bodyMedium,
-                  ),
-                ],
-              ),
-            ),
-            // Trailing status markers. Constrained + wrapping so several badges
-            // (or large text scales) flow onto a second line instead of
-            // overflowing the row off-screen.
-            Flexible(
-              child: Wrap(
-                alignment: WrapAlignment.end,
-                spacing: 8,
-                runSpacing: 4,
-                children: [
-                  if (_kindLabel(book) case final label?)
-                    // Kind badges use the surface-variant tones so they read
-                    // as *classifiers*, not alerts — the status badges keep
-                    // the stronger container colours.
-                    _Badge(
-                      label: label,
-                      background: scheme.surfaceContainerHighest,
-                      foreground: scheme.onSurfaceVariant,
-                    ),
-                  if (book.removed)
-                    _Badge(
-                      label: 'Removed',
-                      background: scheme.errorContainer,
-                      foreground: scheme.onErrorContainer,
-                    ),
-                  if (showUnavailable)
-                    _Badge(
-                      label: 'Not available',
-                      background: AvailabilityColors.unavailableBackground(
-                        theme.brightness,
-                      ),
-                      foreground: AvailabilityColors.unavailableForeground(
-                        theme.brightness,
-                      ),
-                    ),
-                  if (book.needsMetadata)
-                    _Badge(
-                      label: 'Needs info',
-                      background: scheme.tertiaryContainer,
-                      foreground: scheme.onTertiaryContainer,
-                    ),
-                  if (book.copyCount > 1)
-                    Text(
-                      '×${book.copyCount}',
-                      style: textTheme.labelLarge?.copyWith(
-                        color: scheme.primary,
+                  if (bottomLine.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      // Wraps: a long shelf takes its own line(s) and the
+                      // pills flow onto the next line only when needed.
+                      child: Wrap(
+                        spacing: 8,
+                        runSpacing: 4,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: bottomLine,
                       ),
                     ),
                 ],

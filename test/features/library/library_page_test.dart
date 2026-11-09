@@ -138,9 +138,13 @@ class _NoPeriodicals implements PeriodicalRepository {
       throw UnimplementedError('${invocation.memberName} not used here');
 }
 
-Widget _app(CatalogueItemRepository repo) {
+Widget _app(
+  CatalogueItemRepository repo, {
+  List<Override> extraOverrides = const [],
+}) {
   return ProviderScope(
     overrides: [
+      ...extraOverrides,
       catalogueItemRepositoryProvider.overrideWith((ref) async => repo),
       periodicalRepositoryProvider.overrideWith(
         (ref) async => _NoPeriodicals(),
@@ -183,9 +187,41 @@ void main() {
     expect(find.text('The Hobbit'), findsOneWidget);
     expect(find.text('Dune'), findsOneWidget);
     expect(find.text('Old Tales'), findsOneWidget);
-    // copyCount > 1 badge and removed badge are visible.
-    expect(find.text('×3'), findsOneWidget);
+    // Copies label (copyCount > 1) and removed badge are visible.
+    expect(find.text('Copies: 3'), findsOneWidget);
     expect(find.text('Removed'), findsOneWidget);
+  });
+
+  // 2026-11-09: the page feeds the vault's active-loan counts to the rows —
+  // a partial count on the copies label, "not available" on the shelf line
+  // when every copy is out.
+  testWidgets('unlocked vault counts reach the rows', (tester) async {
+    await tester.pumpWidget(
+      _app(
+        _FakeBookRepo(books),
+        extraOverrides: [
+          activeLoanCountsProvider.overrideWith((ref) => {1: 1, 2: 1}),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Copies: 3 · 1 out'), findsOneWidget);
+    // Dune has one copy and it is out: the not-available shelf line.
+    expect(find.text('Not available'), findsOneWidget);
+    expect(find.byIcon(Icons.outbox), findsOneWidget);
+  });
+
+  testWidgets('a locked vault shows no loan counts', (tester) async {
+    await tester.pumpWidget(
+      _app(
+        _FakeBookRepo(books),
+        extraOverrides: [activeLoanCountsProvider.overrideWith((ref) => null)],
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Copies: 3'), findsOneWidget);
+    expect(find.textContaining(' out'), findsNothing);
+    expect(find.byIcon(Icons.outbox), findsNothing);
   });
 
   testWidgets('typing a query filters the list (debounced)', (tester) async {

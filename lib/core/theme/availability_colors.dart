@@ -1,9 +1,10 @@
 /// Brightness-aware colours for the *Available* / *Not available* tags.
 ///
-/// Why one shared class: the tag appears in three places — the in-app
-/// viewer's badges (network feature), the library list's "Not available"
-/// pill and the shelf-location line (library feature). Before this file each
-/// place picked its own container colour, so *Available* and *Not available*
+/// Why one shared class: the colours appear in several places — the in-app
+/// viewer's Available / Not available badges (network feature), and in the
+/// library (which has no availability pill) the red "not available" shelf
+/// line and the red "N out" of the copies label. Before this file each place
+/// picked its own container colour, so *Available* and *Not available*
 /// looked identical. The published web site already fixed the vocabulary
 /// (`assets/publish/index.html`, `.avail-available` / `.avail-out`): green
 /// for Available, red for Not available. These values mirror those hexes so

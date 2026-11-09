@@ -31,6 +31,7 @@ import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/presentation/pages/add_book_page.dart';
 import 'package:pitaka/features/library/presentation/pages/catalogue_item_detail_page.dart';
 import 'package:pitaka/features/library/presentation/widgets/add_sheet.dart';
+import 'package:pitaka/features/library/presentation/widgets/catalogue_grid_delegate.dart';
 import 'package:pitaka/features/library/presentation/widgets/catalogue_item_grid_card.dart';
 import 'package:pitaka/features/library/presentation/widgets/catalogue_item_row.dart';
 import 'package:pitaka/features/library/presentation/widgets/empty_library_state.dart';
@@ -249,8 +250,11 @@ class _BookList extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final books = window.books;
     // Active-loan counts are non-null only when the vault is unlocked; the
-    // "Not available" badge is hidden otherwise (availability unknown).
+    // red "not available" shelf line and the "· N out" copies count are
+    // hidden otherwise (availability unknown, nothing is guessed).
     final activeCounts = ref.watch(activeLoanCountsProvider);
+
+    int copiesOutOf(CatalogueItem book) => activeCounts?[book.id] ?? 0;
 
     bool unavailableOf(CatalogueItem book) =>
         activeCounts != null &&
@@ -293,21 +297,20 @@ class _BookList extends ConsumerWidget {
                 SliverPadding(
                   padding: const EdgeInsets.all(16),
                   sliver: SliverGrid.builder(
-                    gridDelegate:
-                        const SliverGridDelegateWithMaxCrossAxisExtent(
-                          // Target column width; Flutter picks the column
-                          // count that fits.
-                          maxCrossAxisExtent: 200,
-                          mainAxisExtent: 280,
-                          crossAxisSpacing: 12,
-                          mainAxisSpacing: 12,
-                        ),
+                    // Cell height = book-shaped cover + the text block at
+                    // its line caps and the user's font size, so long
+                    // titles never overflow (CatalogueGridDelegate).
+                    gridDelegate: CatalogueGridDelegate(
+                      reservedTextHeight:
+                          CatalogueItemGridCard.reservedTextHeight(context),
+                    ),
                     itemCount: books.length,
                     itemBuilder: (context, index) {
                       final book = books[index];
                       return CatalogueItemGridCard(
                         book: book,
                         unavailable: unavailableOf(book),
+                        copiesOut: copiesOutOf(book),
                         onTap: () => openDetail(book),
                       );
                     },
@@ -332,6 +335,7 @@ class _BookList extends ConsumerWidget {
                     return CatalogueItemRow(
                       book: book,
                       unavailable: unavailableOf(book),
+                      copiesOut: copiesOutOf(book),
                       onTap: () => openDetail(book),
                     );
                   },

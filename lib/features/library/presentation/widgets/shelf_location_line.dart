@@ -1,15 +1,26 @@
-/// The one-line shelf location shown on library list rows and grid cards.
+/// The shelf-location line shown on library list rows and grid cards — the
+/// "where is it, and can I get it?" line.
 ///
 /// Purpose: let the user see *where* an item is without opening it. A small
 /// icon plus bold text, because a bare "A3" under an author line is
-/// ambiguous and a "Shelf:" prefix on every card is noise. The icon carries
-/// no meaning on its own: screen readers get the full "Shelf location: A3".
+/// ambiguous and a "Shelf:" prefix on every card is noise. Screen readers
+/// get the full meaning ("Shelf location: A3").
 ///
-/// Colour follows [ShelfLocationTone]: the same red as the "Not available"
-/// tag ([AvailabilityColors]) when every copy is out on loan, so the two
-/// signals agree; dimmed like the title when the item is removed; otherwise
-/// the ordinary `onSurface` text colour — not literal black, which would
-/// vanish in the dark theme.
+/// It also carries availability in the library (there is no separate
+/// "Not available" pill there any more; the published pages keep theirs).
+/// When every copy is out on loan the line turns the "Not available" red
+/// ([AvailabilityColors]) AND the icon changes from a shelf to an "out" tray.
+/// Why both (beginner note): colour alone can't carry meaning — people with
+/// colour blindness may not see red — so the icon gives a second, shape-based
+/// signal, and screen readers hear ", not available". An item with no shelf
+/// set still needs the signal, so the line then reads "Not available".
+///
+/// A removed item is dimmed like its title, never red.
+///
+/// The line sizes to its content (it does not stretch to the full width), so
+/// a caller can place pills right after it in a `Wrap`; a location longer
+/// than the available width wraps onto a second line
+/// (`ShelfLocationLine.maxLines`).
 ///
 /// Shelf location is private library-operations data (`CatalogueItem.location`
 /// is stripped at publish); this widget only ever renders inside the app.
@@ -25,7 +36,7 @@ enum ShelfLocationTone {
   /// Ordinary text colour.
   normal,
 
-  /// Every copy is out on loan: the "Not available" red.
+  /// Every copy is out on loan: the "Not available" red and the out icon.
   unavailable,
 
   /// The item is removed (visible-but-inert): dimmed like its title.
@@ -42,9 +53,10 @@ enum ShelfLocationTone {
   }
 }
 
-/// The shelf-location line, or nothing when [location] is blank.
+/// The shelf-location line, the "Not available" fallback, or nothing.
 class ShelfLocationLine extends StatelessWidget {
-  /// Creates the line for [location]; renders nothing when it is null/blank.
+  /// Creates the line for [location] in [tone]; see [isVisibleFor] for when
+  /// it renders anything at all.
   const ShelfLocationLine({
     required this.location,
     required this.tone,
@@ -55,20 +67,39 @@ class ShelfLocationLine extends StatelessWidget {
   /// The item's free-form shelf location.
   final String? location;
 
-  /// Which colour the line takes (see [ShelfLocationTone]).
+  /// Which colour and icon the line takes (see [ShelfLocationTone]).
   final ShelfLocationTone tone;
 
   /// Base text style (row: `bodyMedium`, grid: `bodySmall`); weight and
   /// colour are applied here so both callers look the same.
   final TextStyle? style;
 
+  /// The most lines the location text may take before "…". The grid uses
+  /// this to reserve height, so it is the single source of truth.
+  static const int maxLines = 2;
+
+  /// Fallback text when no shelf is set but every copy is out.
+  static const String notAvailableLabel = 'Not available';
+
   /// Icon size relative to the text so it reads as part of the line.
   static const double _iconSize = 14;
 
+  /// Whether the line shows anything: a shelf is set, or (with no shelf)
+  /// every copy is out. Callers use it to skip an empty bottom line.
+  static bool isVisibleFor({
+    required String? location,
+    required ShelfLocationTone tone,
+  }) =>
+      (location?.trim().isNotEmpty ?? false) ||
+      tone == ShelfLocationTone.unavailable;
+
   @override
   Widget build(BuildContext context) {
-    final text = location?.trim() ?? '';
-    if (text.isEmpty) return const SizedBox.shrink();
+    if (!isVisibleFor(location: location, tone: tone)) {
+      return const SizedBox.shrink();
+    }
+    final shelf = location?.trim() ?? '';
+    final out = tone == ShelfLocationTone.unavailable;
     final theme = Theme.of(context);
     final color = switch (tone) {
       ShelfLocationTone.normal => theme.colorScheme.onSurface,
@@ -77,28 +108,37 @@ class ShelfLocationLine extends StatelessWidget {
       ),
       ShelfLocationTone.removed => theme.colorScheme.onSurfaceVariant,
     };
+    final text = shelf.isEmpty ? notAvailableLabel : shelf;
+    final semantics = shelf.isEmpty
+        ? notAvailableLabel
+        : 'Shelf location: $shelf${out ? ', not available' : ''}';
     return Semantics(
-      label: 'Shelf location: $text',
+      label: semantics,
       excludeSemantics: true,
-      child: Padding(
-        padding: const EdgeInsets.only(top: 2),
-        child: Row(
-          children: [
-            Icon(Icons.shelves, size: _iconSize, color: color),
-            const SizedBox(width: 4),
-            Expanded(
-              child: Text(
-                text,
-                style: style?.copyWith(
-                  color: color,
-                  fontWeight: FontWeight.w600,
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
+      child: Row(
+        // Content-sized, so pills can sit right after a short shelf name.
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            // Nudges the icon onto the first text line's centre.
+            padding: const EdgeInsets.only(top: 2),
+            child: Icon(
+              out ? Icons.outbox : Icons.shelves,
+              size: _iconSize,
+              color: color,
             ),
-          ],
-        ),
+          ),
+          const SizedBox(width: 4),
+          Flexible(
+            child: Text(
+              text,
+              style: style?.copyWith(color: color, fontWeight: FontWeight.w600),
+              maxLines: maxLines,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
       ),
     );
   }

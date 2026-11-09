@@ -35,6 +35,7 @@ void main() {
   Widget host(
     CatalogueItem book, {
     bool unavailable = false,
+    int copiesOut = 0,
     List<Periodical> periodicals = const [],
   }) => ProviderScope(
     overrides: [
@@ -53,6 +54,7 @@ void main() {
             child: CatalogueItemGridCard(
               book: book,
               unavailable: unavailable,
+              copiesOut: copiesOut,
               onTap: () {},
             ),
           ),
@@ -116,7 +118,49 @@ void main() {
       host(const CatalogueItem(title: 'Dune', copyCount: 4)),
     );
     await tester.pump();
-    expect(find.text('×4'), findsOneWidget);
+    expect(find.text('Copies: 4'), findsOneWidget);
+  });
+
+  testWidgets('the copies pill counts copies out on loan', (tester) async {
+    await tester.pumpWidget(
+      host(const CatalogueItem(title: 'Dune', copyCount: 4), copiesOut: 1),
+    );
+    await tester.pump();
+    expect(find.text('Copies: 4 · 1 out'), findsOneWidget);
+  });
+
+  testWidgets('not available: no pill; red shelf line with the out icon', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      host(
+        const CatalogueItem(title: 'Dune', location: 'A3'),
+        unavailable: true,
+      ),
+    );
+    await tester.pump();
+    expect(find.text('Not available'), findsNothing);
+    expect(find.byIcon(Icons.outbox), findsOneWidget);
+  });
+
+  testWidgets('not available with no shelf set shows the fallback line', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      host(const CatalogueItem(title: 'Dune'), unavailable: true),
+    );
+    await tester.pump();
+    expect(find.text('Not available'), findsOneWidget);
+    expect(find.byIcon(Icons.outbox), findsOneWidget);
+  });
+
+  testWidgets('line caps: title 3, author 2', (tester) async {
+    await tester.pumpWidget(
+      host(const CatalogueItem(title: 'Dune', author: 'Herbert')),
+    );
+    await tester.pump();
+    expect(tester.widget<Text>(find.text('Dune')).maxLines, 3);
+    expect(tester.widget<Text>(find.text('Herbert')).maxLines, 2);
   });
 
   testWidgets('a removed book shows Removed, not Not available', (
@@ -181,6 +225,6 @@ void main() {
     // No RenderFlex/overflow exception was thrown during layout.
     expect(tester.takeException(), isNull);
     expect(find.text('Needs info'), findsOneWidget);
-    expect(find.text('×12'), findsOneWidget);
+    expect(find.text('Copies: 12'), findsOneWidget);
   });
 }

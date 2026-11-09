@@ -80,6 +80,82 @@ void main() {
     expect(find.bySemanticsLabel('Shelf location: A3'), findsOneWidget);
   });
 
+  group('not available (no pill in the library: the line says it)', () {
+    testWidgets('out icon instead of the shelf icon, so colour is not the '
+        'only signal', (tester) async {
+      await tester.pumpWidget(
+        host(
+          AppTheme.light,
+          location: 'A3',
+          tone: ShelfLocationTone.unavailable,
+        ),
+      );
+      expect(find.byIcon(Icons.outbox), findsOneWidget);
+      expect(find.byIcon(Icons.shelves), findsNothing);
+      expect(
+        find.bySemanticsLabel('Shelf location: A3, not available'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('no shelf set: the line reads "Not available"', (tester) async {
+      await tester.pumpWidget(
+        host(
+          AppTheme.light,
+          location: '  ',
+          tone: ShelfLocationTone.unavailable,
+        ),
+      );
+      expect(find.text('Not available'), findsOneWidget);
+      expect(find.byIcon(Icons.outbox), findsOneWidget);
+      expect(find.bySemanticsLabel('Not available'), findsOneWidget);
+    });
+
+    testWidgets('a removed item never shows the fallback', (tester) async {
+      await tester.pumpWidget(
+        host(AppTheme.light, location: null, tone: ShelfLocationTone.removed),
+      );
+      expect(find.byType(Text), findsNothing);
+    });
+
+    test('isVisibleFor: a shelf, or every copy out', () {
+      expect(
+        ShelfLocationLine.isVisibleFor(
+          location: 'A3',
+          tone: ShelfLocationTone.normal,
+        ),
+        isTrue,
+      );
+      expect(
+        ShelfLocationLine.isVisibleFor(
+          location: null,
+          tone: ShelfLocationTone.unavailable,
+        ),
+        isTrue,
+      );
+      expect(
+        ShelfLocationLine.isVisibleFor(
+          location: ' ',
+          tone: ShelfLocationTone.normal,
+        ),
+        isFalse,
+      );
+      expect(
+        ShelfLocationLine.isVisibleFor(
+          location: null,
+          tone: ShelfLocationTone.removed,
+        ),
+        isFalse,
+      );
+    });
+  });
+
+  testWidgets('a long location wraps to at most 2 lines', (tester) async {
+    await tester.pumpWidget(host(AppTheme.light, location: 'A3'));
+    expect(lineText(tester).maxLines, ShelfLocationLine.maxLines);
+    expect(ShelfLocationLine.maxLines, 2);
+  });
+
   for (final MapEntry(key: name, value: theme) in <String, ThemeData>{
     'light': AppTheme.light,
     'dark': AppTheme.dark,
