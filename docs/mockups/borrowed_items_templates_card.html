@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Mockup: Borrowed Items – Message templates as expandable card</title>
+<style>
+  :root {
+    --primary: #4355b9; --on-primary: #fff;
+    --primary-container: #dee0ff; --on-primary-container: #00105c;
+    --surface: #fbf8fd; --surface-low: #f5f2f7; --surface-high: #e9e7ec;
+    --on-surface: #1b1b1f; --on-surface-variant: #46464f; --outline: #c7c5d0;
+    --error: #ba1a1a;
+  }
+  body { margin: 0; padding: 24px; background: #e5e5ea; font-family: Roboto, system-ui, sans-serif; color: var(--on-surface); }
+  h2 { font-weight: 500; margin: 0 0 8px; }
+  p.note { max-width: 760px; color: #444; font-size: 14px; }
+  .row { display: flex; gap: 32px; flex-wrap: wrap; align-items: flex-start; }
+  .row > div { width: 360px; }
+  .phone { width: 360px; background: var(--surface); border-radius: 24px; box-shadow: 0 8px 24px rgba(0,0,0,.18); overflow: hidden; position: relative; }
+  .appbar { height: 64px; display: flex; align-items: center; padding: 0 8px 0 16px; font-size: 22px; }
+  .appbar .sp { flex: 1; }
+  .ic { width: 40px; height: 40px; display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; font-size: 20px; color: var(--on-surface-variant); }
+  .body { padding: 8px 16px 24px; }
+  .chips { display: flex; gap: 8px; flex-wrap: wrap; margin: 4px 0 12px; }
+  .chip { font-size: 13px; padding: 6px 12px; border: 1px solid var(--outline); border-radius: 8px; }
+  .chip.on { background: var(--primary-container); border-color: transparent; color: var(--on-primary-container); }
+  .card { border-radius: 12px; background: var(--surface-low); margin-bottom: 12px; overflow: hidden; }
+  .card .hdr { display: flex; align-items: center; gap: 12px; padding: 12px 16px; cursor: pointer; }
+  .card .hdr .t { font-size: 15px; }
+  .card .hdr .s { font-size: 13px; color: var(--on-surface-variant); margin-top: 2px; }
+  .card .hdr .grow { flex: 1; }
+  .chev { transition: transform .2s; }
+  .card.open .chev { transform: rotate(180deg); }
+  .card .content { display: none; padding: 0 12px 12px; }
+  .card.open .content { display: block; }
+  .radio { display: flex; align-items: center; gap: 12px; padding: 10px 4px; }
+  .radio .dot { width: 20px; height: 20px; border-radius: 50%; border: 2px solid var(--outline); box-sizing: border-box; flex-shrink: 0; }
+  .radio .dot.on { border-color: var(--primary); box-shadow: inset 0 0 0 4px var(--surface-low), inset 0 0 0 10px var(--primary); }
+  .radio .n { flex: 1; font-size: 15px; }
+  .radio .n .k { font-size: 12px; color: var(--on-surface-variant); }
+  .lnk { font-size: 13px; color: var(--primary); padding: 6px 8px; }
+  .warn { font-size: 12px; color: var(--on-surface-variant); background: var(--surface-high); border-radius: 8px; padding: 8px 10px; margin: 0 0 8px; }
+  .foot { display: flex; justify-content: space-between; align-items: center; padding-top: 4px; }
+  .loan { border-radius: 12px; background: var(--surface-low); padding: 12px; margin-bottom: 10px; display: flex; gap: 12px; }
+  .cover { width: 44px; height: 64px; border-radius: 6px; background: linear-gradient(135deg,#9fa8da,#5c6bc0); flex-shrink: 0; }
+  .loan .t { font-size: 15px; }
+  .loan .m { font-size: 13px; color: var(--on-surface-variant); }
+  .loan .due { font-size: 12px; margin-top: 6px; color: var(--error); }
+  .acts { display: flex; gap: 4px; margin-top: 8px; }
+  .acts span { font-size: 18px; width: 36px; height: 36px; display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; background: var(--surface-high); }
+  .label { font-weight: 500; margin: 0 0 8px; }
+  .sub { color: #444; font-size: 13px; margin: 0 0 12px; max-width: 360px; }
+  .pill { font-size: 12px; padding: 2px 10px; border-radius: 999px; background: var(--primary-container); color: var(--on-primary-container); white-space: nowrap; }
+</style>
+</head>
+<body>
+<h2>Borrowed Items — "Message templates" as an expandable card</h2>
+<p class="note">
+  The <code>message</code> icon in the app bar disappears. What people actually do on this screen is
+  <i>pick which language/template goes out</i>; add/edit/duplicate/delete is rare. So the card handles the
+  common case inline (choose a template) and hands off the rare case to the existing full manager page.
+  Click a card header to toggle.
+</p>
+
+<div class="row">
+
+<!-- ================= OPTION A ================= -->
+<div>
+  <p class="label">Option A — Picker card: radio list inline, "Manage" link for the rest</p>
+  <p class="sub">Header shows the selected template name ("Reminder · Hindi"). Expanded: radio list of all
+     templates, the unencrypted-storage note, and a <b>Manage templates</b> link to the existing page for
+     add/edit/duplicate/delete. Selecting a radio saves immediately (that is already how the manager page works).</p>
+  <div class="phone">
+    <div class="appbar">Borrowed Items <span class="sp"></span></div>
+    <div class="body">
+      <div class="card open" onclick="this.classList.toggle('open')">
+        <div class="hdr">
+          <span class="ic" style="width:auto;height:auto">💬</span>
+          <div class="grow">
+            <div class="t">Reminder message</div>
+            <div class="s">Sending as: <b>Hindi (custom)</b></div>
+          </div>
+          <span class="chev">⌄</span>
+        </div>
+        <div class="content" onclick="event.stopPropagation()">
+          <div class="radio"><span class="dot"></span><div class="n">English<div class="k">Built-in · read-only</div></div></div>
+          <div class="radio"><span class="dot on"></span><div class="n">Hindi<div class="k">Custom</div></div></div>
+          <div class="radio"><span class="dot"></span><div class="n">Marathi<div class="k">Custom</div></div></div>
+          <p class="warn">Templates are stored unencrypted on this device and are not in the library backup. Do not include private details.</p>
+          <div class="foot">
+            <span class="lnk">＋ Add template</span>
+            <span class="lnk">Manage templates ›</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="chips"><span class="chip on">All</span><span class="chip">Overdue</span><span class="chip">Due soon</span><span class="chip">Open-ended</span></div>
+
+      <div class="loan"><div class="cover"></div><div style="flex:1">
+        <div class="t">Malgudi Days</div><div class="m">Anita Rao</div><div class="due">Overdue · due 2 Nov</div>
+        <div class="acts"><span>📞</span><span>🟢</span><span>⇪</span></div></div></div>
+      <div class="loan"><div class="cover" style="background:linear-gradient(135deg,#ffcc80,#fb8c00)"></div><div style="flex:1">
+        <div class="t">The God of Small Things</div><div class="m">Dev Sharma</div><div class="due" style="color:var(--on-surface-variant)">Due 11 Nov</div>
+        <div class="acts"><span>📞</span><span>🟢</span><span>⇪</span></div></div></div>
+    </div>
+  </div>
+</div>
+
+<!-- ================= OPTION B ================= -->
+<div>
+  <p class="label">Option B — Chip picker: one row of language chips, card expands for details</p>
+  <p class="sub">Collapsed header is itself the picker: a horizontal row of template chips (English / Hindi / Marathi).
+     Tapping a chip selects it — zero extra taps for the main job. Expanding shows the full text preview of the selected
+     template with Edit / Duplicate / Delete (custom only), Add, and the storage note. The separate manager page becomes
+     unnecessary and could be removed later.</p>
+  <div class="phone">
+    <div class="appbar">Borrowed Items <span class="sp"></span></div>
+    <div class="body">
+      <div class="card open" onclick="this.classList.toggle('open')">
+        <div class="hdr" style="flex-wrap:wrap; row-gap:8px">
+          <div class="grow" style="display:flex; align-items:center; gap:8px">
+            <span>💬</span><span class="t">Reminder message</span>
+          </div>
+          <span class="chev">⌄</span>
+          <div class="chips" style="width:100%; margin:0" onclick="event.stopPropagation()">
+            <span class="chip">English</span><span class="chip on">Hindi</span><span class="chip">Marathi</span><span class="chip" style="border-style:dashed">＋</span>
+          </div>
+        </div>
+        <div class="content" onclick="event.stopPropagation()">
+          <div style="font-size:12px; color:var(--on-surface-variant); margin:4px 0 6px">Hindi · Custom</div>
+          <div style="font-size:13px; background:var(--surface); border-radius:8px; padding:10px; line-height:1.45; border:1px solid var(--outline)">
+            नमस्ते {borrower}, "{title}" की वापसी की तारीख {due} थी। कृपया इसे जल्द लौटाएँ। धन्यवाद — {library}
+          </div>
+          <div class="foot" style="margin-top:6px">
+            <div><span class="lnk">Edit</span><span class="lnk">Duplicate</span><span class="lnk" style="color:var(--error)">Delete</span></div>
+          </div>
+          <p class="warn" style="margin-top:8px">Stored unencrypted on this device · not in the library backup.</p>
+        </div>
+      </div>
+
+      <div class="chips"><span class="chip on">All</span><span class="chip">Overdue</span><span class="chip">Due soon</span><span class="chip">Open-ended</span></div>
+
+      <div class="loan"><div class="cover"></div><div style="flex:1">
+        <div class="t">Malgudi Days</div><div class="m">Anita Rao</div><div class="due">Overdue · due 2 Nov</div>
+        <div class="acts"><span>📞</span><span>🟢</span><span>⇪</span></div></div></div>
+      <div class="loan"><div class="cover" style="background:linear-gradient(135deg,#ffcc80,#fb8c00)"></div><div style="flex:1">
+        <div class="t">The God of Small Things</div><div class="m">Dev Sharma</div><div class="due" style="color:var(--on-surface-variant)">Due 11 Nov</div>
+        <div class="acts"><span>📞</span><span>🟢</span><span>⇪</span></div></div></div>
+    </div>
+  </div>
+</div>
+
+</div>
+</body>
+</html>

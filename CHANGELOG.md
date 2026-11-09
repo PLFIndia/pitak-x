@@ -14,6 +14,40 @@ heading as part of the `chore(release):` commit.
 
 ## [Unreleased]
 
+### Changed
+- **Availability tag colours (UI):** *Available* is green and *Not
+  available* is red in the in-app viewer and in the library list, the same
+  pair the published site uses (`assets/publish/index.html`). Before, both
+  tags shared one neutral container colour. One shared source,
+  `lib/core/theme/availability_colors.dart`, with a contrast test pinning
+  every pair at ≥ 4.5:1 on both themes.
+- **Shelf location on catalogue cards (app only):** list rows and grid cards
+  show the item's shelf location as a bold line under the author (red when
+  the item is not available, dimmed like the title when it is removed), so
+  the shelf is readable without opening the item. Nothing changes on the published site — `location` was never
+  published.
+- **Borrowers vault:** lending rules moved from an app-bar icon to an
+  expandable card at the top of the unlocked borrower list; the card header
+  always shows the rule in force ("Off", "Max 3 · Warn"). The Pending
+  (bell) page was retired: overdue and due-soon loans live in Borrowed
+  Items, and items needing info are already marked in the library list.
+  The app bar keeps only Lock. The card and the borrowers share one scroll
+  view, so a half-edited rule survives scrolling a long list.
+- **Borrowed Items:** the message-template dropdown and the app-bar
+  "Message templates" action were replaced by one expandable "Reminder
+  message" card. Its header is the picker (one chip per template, plus
+  Add); the body previews the selected template's three messages and, for
+  custom templates, offers Edit / Duplicate / Delete. The separate Message
+  templates page is gone; its "Reset to built-in" recovery lives in the
+  card's error state. The card, filters and loans scroll as one page
+  (`CustomScrollView`), so many templates or a short landscape screen can
+  no longer overflow the layout.
+
+### Removed
+- `PendingPage`, `pendingSnapshotProvider` and the `PendingSnapshot` domain
+  helper (no remaining callers); `LendingRulesPage` and
+  `ReminderTemplatesPage` (replaced by the cards above).
+
 ### Security
 - **RUSTSEC-2026-0459 / CVE-2026-119375 (SQLite < 3.54.0, crafted `-wal`
   page size):** a reviewed, time-boxed exception until **2026-12-09**
@@ -27,6 +61,19 @@ heading as part of the `chore(release):` commit.
   archive-supplied companion files, now pinned by a test. The Dart-side
   SQLite (3.52.0, end-of-life `sqlite3_flutter_libs`) is noted as a
   follow-up. Analysis: `docs/plans/sec-rustsec-2026-0459.md`.
+
+### Tests
+- New: `availability_colors_test`, `published_item_badges_test`,
+  `shelf_location_line_test`, `lending_rules_card_test`,
+  `reminder_template_card_test` (page tests ported case-for-case).
+- Regression: Borrowed Items with the maximum 21 template chips on phone
+  portrait, landscape (grid) and a small phone at 1.3× text, collapsed and
+  expanded, with the loans still reachable; an unsaved lending-rule edit
+  survives scrolling 60 borrowers away and back; each template chip is its
+  own screen-reader node; the shelf line's removed tone.
+- Goldens: the library and published-catalogue PNGs need regeneration on
+  the Linux reference renderer (`update_goldens.yml`); the fixture gives
+  one row a shelf location so the new line is pinned.
 
 ## [1.9.6] - 2026-11 (tag `1.9.6`, versionCode 38)
 

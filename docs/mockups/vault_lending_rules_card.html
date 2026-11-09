@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Mockup: Borrowers vault – Lending rules as expandable card</title>
+<style>
+  :root {
+    --primary: #4355b9; --on-primary: #fff;
+    --primary-container: #dee0ff; --on-primary-container: #00105c;
+    --surface: #fbf8fd; --surface-low: #f5f2f7; --surface-high: #e9e7ec;
+    --on-surface: #1b1b1f; --on-surface-variant: #46464f; --outline: #c7c5d0;
+    --error: #ba1a1a;
+  }
+  body { margin: 0; padding: 24px; background: #e5e5ea; font-family: Roboto, system-ui, sans-serif; color: var(--on-surface); }
+  h2 { font-weight: 500; margin: 0 0 8px; }
+  p.note { max-width: 760px; color: #444; font-size: 14px; }
+  .row { display: flex; gap: 32px; flex-wrap: wrap; align-items: flex-start; }
+  .row > div { width: 360px; }
+  .phone { width: 360px; background: var(--surface); border-radius: 24px; box-shadow: 0 8px 24px rgba(0,0,0,.18); overflow: hidden; }
+  .appbar { height: 64px; display: flex; align-items: center; padding: 0 8px 0 16px; font-size: 22px; }
+  .appbar .sp { flex: 1; }
+  .ic { width: 40px; height: 40px; display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; font-size: 22px; color: var(--on-surface-variant); }
+  .body { padding: 8px 16px 96px; }
+  .card { border-radius: 12px; background: var(--surface-low); margin-bottom: 12px; overflow: hidden; }
+  .card .hdr { display: flex; align-items: center; gap: 12px; padding: 14px 16px; cursor: pointer; }
+  .card .hdr .t { font-size: 16px; }
+  .card .hdr .s { font-size: 13px; color: var(--on-surface-variant); margin-top: 2px; }
+  .card .hdr .grow { flex: 1; }
+  .chev { transition: transform .2s; }
+  .card.open .chev { transform: rotate(180deg); }
+  .card .content { display: none; padding: 0 16px 16px; }
+  .card.open .content { display: block; }
+  .pill { font-size: 12px; padding: 2px 10px; border-radius: 999px; background: var(--primary-container); color: var(--on-primary-container); white-space: nowrap; }
+  .pill.off { background: var(--surface-high); color: var(--on-surface-variant); }
+  .switchrow { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; }
+  .switchrow .l { font-size: 15px; }
+  .switchrow .d { font-size: 12px; color: var(--on-surface-variant); }
+  .switch { width: 52px; height: 32px; border-radius: 16px; background: var(--primary); position: relative; flex-shrink: 0; }
+  .switch::after { content: ""; position: absolute; width: 24px; height: 24px; border-radius: 50%; background: #fff; top: 4px; right: 4px; }
+  .switch.off { background: var(--surface-high); border: 2px solid var(--outline); box-sizing: border-box; }
+  .switch.off::after { background: var(--outline); left: 4px; right: auto; width: 16px; height: 16px; top: 6px; }
+  .field { margin: 12px 0; border: 1px solid var(--outline); border-radius: 4px; padding: 14px 12px 10px; position: relative; font-size: 16px; }
+  .field label { position: absolute; top: -8px; left: 10px; background: var(--surface-low); font-size: 12px; color: var(--on-surface-variant); padding: 0 4px; }
+  .seg { display: flex; border: 1px solid var(--outline); border-radius: 999px; overflow: hidden; margin: 12px 0 8px; }
+  .seg div { flex: 1; text-align: center; padding: 8px; font-size: 14px; }
+  .seg .on { background: var(--primary-container); color: var(--on-primary-container); }
+  .hint { font-size: 13px; color: var(--on-surface-variant); margin: 0 0 12px; }
+  .btn { display: inline-block; padding: 10px 24px; border-radius: 999px; background: var(--primary); color: var(--on-primary); font-size: 14px; }
+  .btn.text { background: none; color: var(--primary); padding-left: 12px; padding-right: 12px; }
+  .section { font-size: 13px; color: var(--on-surface-variant); margin: 20px 0 6px; letter-spacing: .3px; }
+  .tile { display: flex; align-items: center; padding: 12px 0; gap: 12px; }
+  .tile .n { flex: 1; }
+  .tile .n .c { font-size: 13px; color: var(--on-surface-variant); }
+  .fab { position: absolute; right: 16px; bottom: 16px; background: var(--primary-container); color: var(--on-primary-container); border-radius: 16px; padding: 14px 20px; font-size: 14px; display: flex; gap: 8px; align-items: center; box-shadow: 0 3px 8px rgba(0,0,0,.2); }
+  .phone { position: relative; }
+  .label { font-weight: 500; margin: 0 0 8px; }
+  .sub { color: #444; font-size: 13px; margin: 0 0 12px; max-width: 360px; }
+</style>
+</head>
+<body>
+<h2>Borrowers vault — "Lending rules" as an expandable card</h2>
+<p class="note">
+  Both options remove the <code>rule</code> icon and the bell from the app bar (only <b>Lock</b> stays).
+  The rules live on the screen itself, collapsed by default, showing the current rule in the header so
+  users see what is in force without opening anything. Click a card header to toggle.
+</p>
+
+<div class="row">
+
+<!-- ================= OPTION A ================= -->
+<div>
+  <p class="label">Option A — Settings-style card above the list</p>
+  <p class="sub">Card sits at the top, always visible. Header shows a status pill ("Off" / "Max 3 · Warn").
+     Save button inside the card. Familiar "settings card" pattern.</p>
+  <div class="phone">
+    <div class="appbar">Borrowers vault <span class="sp"></span><span class="ic">🔒</span></div>
+    <div class="body">
+      <div class="card open" onclick="this.classList.toggle('open')">
+        <div class="hdr">
+          <span class="ic" style="width:auto;height:auto">📏</span>
+          <div class="grow">
+            <div class="t">Lending rules</div>
+            <div class="s">One rule for every borrower</div>
+          </div>
+          <span class="pill">Max 3 · Warn</span>
+          <span class="chev">⌄</span>
+        </div>
+        <div class="content" onclick="event.stopPropagation()">
+          <div class="switchrow">
+            <div><div class="l">Limit items per borrower</div><div class="d">Off allows any number of active loans.</div></div>
+            <div class="switch"></div>
+          </div>
+          <div class="field"><label>Maximum active loans</label>3</div>
+          <div class="seg"><div class="on">Warn</div><div>Refuse</div></div>
+          <p class="hint">At the limit, ask before lending. You can still lend anyway.</p>
+          <span class="btn">Save</span>
+        </div>
+      </div>
+
+      <div class="section">BORROWERS</div>
+      <div class="tile"><div class="n">Anita Rao<div class="c">+91 98xxx xxxxx</div></div><span class="ic">🗑</span></div>
+      <div class="tile"><div class="n">Dev Sharma<div class="c">dev@example.org</div></div><span class="ic">🗑</span></div>
+      <div class="tile"><div class="n">Priya K</div><span class="ic">🗑</span></div>
+    </div>
+    <div class="fab">👤+ Add borrower</div>
+  </div>
+</div>
+
+<!-- ================= OPTION B ================= -->
+<div>
+  <p class="label">Option B — Compact banner, expands inline, auto-saves</p>
+  <p class="sub">Thinner single-line header: "Lending rules · Off" or "Lending rules · Max 3, warn". No Save
+     button: each change saves immediately with a small "Saved" tick (switch/segment are one-tap settings; the
+     number field saves on blur). Less chrome, less to explain.</p>
+  <div class="phone">
+    <div class="appbar">Borrowers vault <span class="sp"></span><span class="ic">🔒</span></div>
+    <div class="body">
+      <div class="card" style="background:var(--surface-high)" onclick="this.classList.toggle('open')">
+        <div class="hdr" style="padding:10px 16px">
+          <div class="grow"><div class="t" style="font-size:14px">Lending rules · <span class="pill off" style="font-size:11px">Off</span></div></div>
+          <span class="chev">⌄</span>
+        </div>
+        <div class="content" onclick="event.stopPropagation()">
+          <p class="hint" style="margin-top:4px">Set one rule for every borrower. Returned loans do not count.</p>
+          <div class="switchrow">
+            <div><div class="l">Limit items per borrower</div></div>
+            <div class="switch off"></div>
+          </div>
+          <div style="opacity:.45; pointer-events:none">
+            <div class="field"><label>Maximum active loans</label>3</div>
+            <div class="seg"><div class="on">Warn</div><div>Refuse</div></div>
+          </div>
+          <p class="hint" style="margin:4px 0 0; color:#2e7d32">✓ Saved</p>
+        </div>
+      </div>
+
+      <div class="tile" style="margin-top:8px"><div class="n">Anita Rao<div class="c">+91 98xxx xxxxx</div></div><span class="ic">🗑</span></div>
+      <div class="tile"><div class="n">Dev Sharma<div class="c">dev@example.org</div></div><span class="ic">🗑</span></div>
+      <div class="tile"><div class="n">Priya K</div><span class="ic">🗑</span></div>
+    </div>
+    <div class="fab">👤+ Add borrower</div>
+  </div>
+</div>
+
+</div>
+</body>
+</html>
