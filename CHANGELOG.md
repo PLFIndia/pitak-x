@@ -14,6 +14,8 @@ heading as part of the `chore(release):` commit.
 
 ## [Unreleased]
 
+## [1.9.7] - 2026-11 (tag `1.9.7`, versionCode 39)
+
 ### Changed
 - **Availability tag colours (UI):** *Available* is green and *Not
   available* is red in the in-app viewer, the same pair the published site

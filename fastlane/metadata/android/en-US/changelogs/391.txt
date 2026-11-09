@@ -1,0 +1,4 @@
+* Library list: titles and authors use the full width of the card, with the shelf location and copies shown underneath; Available is green and Not available is red.
+* Borrowers vault: lending rules are now a card at the top of the borrower list, showing the rule in force.
+* Borrowed Items: reminder message templates live in a card at the top; the separate Pending and Message templates pages are gone.
+* How Pitak works guides updated to match.
