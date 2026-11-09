@@ -865,5 +865,11 @@ strict source; stopped runs write no `lastRun`.
   "Out-of-scope observations").
 - Device matrix items listed under "Session 2026-11-08 (second) → Still
   owed".
-- Decisions on the open findings above (Major 1–3 affect what users are
-  told).
+- Decisions on the open findings above (Major 1–3 are now disclosed
+  accurately; their behaviour is unchanged).
+- [x] 1.9.6+38 Play bundle built and verified from `fee39f3` with
+  `tool/release_build.sh` (evidence in `CHANGELOG.md`).
+- [x] Uploaded to Google Play by the maintainer (2026-11-08).
+- Signed tag `1.9.6`, push and F-Droid follow-up remain maintainer-owned,
+  as do the manual RELEASING.md §6.1 steps 6–7 (TalkBack walk,
+  cleared-install integration test).

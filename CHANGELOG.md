@@ -16,6 +16,19 @@ heading as part of the `chore(release):` commit.
 
 ## [1.9.6] - 2026-11 (tag `1.9.6`, versionCode 38)
 
+Release sentinel (`tool/release_build.sh --sentinel`):
+`pausedForNoLibraries`.
+
+AAB sha256: `90c7f5e601c7a8d1ae7b35266a25c6890115ed823a14a82e1fe4a21617c9b60e`.
+The 199-second `tool/release_build.sh` build (its own `flutter clean`, locked
+dependencies, Rust for three ABIs and Dart AOT; 186.6 s in Gradle) passed
+upload-signature (`pitak-upload`), package/version and fresh arm64
+Dart-sentinel verification. Built from `notifications` at HEAD `fee39f3`;
+`pubspec.lock` was unchanged. Every 64-bit native `LOAD` alignment was at
+least 16 KiB (`armeabi-v7a` `libpitak_crypto.so` and `libsqlite3.so` remain
+4 KiB, as §7 allows for 32-bit); the bundle config enables uncompressed
+native libraries with 16 KiB page alignment and `extractNativeLibs=false`.
+
 ### Added
 - **Background event alerts (ADR 0024, Android only):** a WorkManager
   periodic job (about every 12 h, `NetworkType.connected`, battery-not-low)
