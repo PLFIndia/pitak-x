@@ -1,9 +1,9 @@
 # sec: RUSTSEC-2026-0459 / CVE-2026-119375 (SQLite < 3.54.0, WAL page-size)
 
-- **Status (2026-11-09, end of session):** investigation done; exception +
-  invariant test implemented in the working tree (NOT committed, branch
-  not pushed), awaiting maintainer go-ahead to commit / PR / merge. Session
-  handoff: `docs/plans/handoff-2026-11-09.md`.
+- **Status (2026-11-09, 13:10 UTC): DONE.** Exception + invariant test
+  merged into `main` as `5afedfc` (PR #28, all four CI jobs green incl.
+  OSV). PR #26 then rebased onto it and merged (`ff340de`). The only open
+  item is the follow-up in §Result: the exception expires **2026-12-09**.
 - **Branch:** `sec/rustsec-2026-0459` from `main` (`f170556`). PR #26
   (UI polish) is held until this is on `main` and #26's CI is green
   (maintainer decision 2026-11-09, option 2).
@@ -111,8 +111,32 @@ first point so the exception's justification cannot silently rot.
       HEAD).
 - [x] 3. CHANGELOG (Security); `dart format` clean, `dart analyze` 0
       issues, `flutter test --exclude-tags golden` 6267 passed.
-- [ ] 4. Commit (`sec:`), push, PR → `main`, CI green, merge.
-- [ ] 5. Re-run #26's CI against the new `main`; merge #26.
+- [x] 4. Commit (`sec:`), push, PR → `main`, CI green, merge.
+      Committed `5afedfc`; PR #28; CI run 42604210227 (Flutter, Rust
+      core, F-Droid, OSV all pass); fast-forwarded `f170556..5afedfc`.
+- [x] 5. Re-run #26's CI against the new `main`; merge #26.
+      `ui-polish` rebased onto `5afedfc` (one CHANGELOG conflict, both
+      sides kept), force-pushed with lease; CI green on `ff340de`
+      (run 42610926398; Linux goldens byte-identical to the committed
+      PNGs); fast-forwarded `5afedfc..ff340de`.
+
+## Result
+
+- `cargo deny` and OSV pass on `main` with a documented, time-boxed
+  exception; the restore pipeline's "never writes archive-supplied
+  companion files" invariant is pinned by
+  `test/features/backup/restore_backup_test.dart`.
+- **Follow-up, hard deadline 2026-12-09** (OSV `ignoreUntil`): when a
+  `libsqlite3-sys` release bundles SQLCipher on SQLite ≥ 3.54 (rusqlite
+  PR #1932), bump `rusqlite` 0.32 → 0.41+ / `libsqlite3-sys` 0.30 → 0.39+
+  (API changes expected; MSRV not a blocker), then remove BOTH exceptions
+  (`rust/deny.toml`, `rust/osv-scanner.toml`). If no release exists by
+  then, either extend `ignoreUntil` with a fresh review note or take the
+  dependency on `sqlcipher-src 420` directly — decide, do not let CI fail
+  silently.
+- Still unflagged by scanners and still open: Dart-side SQLite 3.52.0 via
+  EOL `sqlite3_flutter_libs` (migration to `sqlite3` 3.x native assets;
+  check F-Droid purity, `docs/RELEASING.md` §2).
 
 ## Out-of-scope observations
 
