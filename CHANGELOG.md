@@ -31,6 +31,15 @@ and `libflutter.so` 0x10000, the rest 0x4000; `armeabi-v7a`
 32-bit). `bundletool dump config` was not run on this machine (bundletool
 not installed). Uploaded to Play Console by the maintainer on 2026-11-09.
 
+Tag `1.9.7` (object `6979220`, at `c1c154b`) was created through the
+GitHub API and is annotated but **unsigned** — a maintainer-approved
+exception to RELEASING §3: the release key's passphrase was not available
+on the build machine. `tool/release_build.sh --verify` refuses this tag by
+design and was not run for the tag step; the bundle itself was verified
+before the tag. Neither store checks the tag signature (F-Droid rebuilds
+the tagged commit and signs with its own key; Play App Signing re-signs
+the bundle). The signing rule stays in force for the next release.
+
 ### Changed
 - **Availability tag colours (UI):** *Available* is green and *Not
   available* is red in the in-app viewer, the same pair the published site
