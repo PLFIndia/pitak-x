@@ -71,9 +71,10 @@ heading as part of the `chore(release):` commit.
   expanded, with the loans still reachable; an unsaved lending-rule edit
   survives scrolling 60 borrowers away and back; each template chip is its
   own screen-reader node; the shelf line's removed tone.
-- Goldens: the library and published-catalogue PNGs need regeneration on
-  the Linux reference renderer (`update_goldens.yml`); the fixture gives
-  one row a shelf location so the new line is pinned.
+- Goldens: the library, published-catalogue and vault-unlock PNGs (five
+  files; the locked vault app bar no longer shows the Lending rules icon)
+  need regeneration on the Linux reference renderer (`update_goldens.yml`);
+  the fixture gives one row a shelf location so the new line is pinned.
 
 ## [1.9.6] - 2026-11 (tag `1.9.6`, versionCode 38)
 
