@@ -210,8 +210,9 @@ appears on your web page.
   your catalogue.
 - A book whose ISBN is already in your library is not added twice — Pitak
   only marks the wish as purchased.
-- Scanning only reads the barcode. Pitak goes online only when you tap
-  **Look up details**.
+- By default, scanning only reads the barcode; Pitak goes online when you
+  tap **Look up details**. To search immediately after scanning, turn on
+  **Settings → Appearance → Library → Look up ISBN after scanning**.
 
 `[ Open Wishlist → ]`
 
@@ -572,26 +573,33 @@ without opening the vault.
 
 **Returns and reminders**
 
-- **☰ → Borrowers vault**, tap the borrower, tap **Edit** → **Return** next
-  to the item.
-- The bell icon (**Pending**) on the vault screen lists overdue loans, loans
-  due soon, and items missing details.
+- **☰ → Borrowers vault**, tap the borrower, then **Return** next to the
+  item.
+- **☰ → Borrowed Items** lists every active loan; filter **Overdue**,
+  **Due soon (72 hours)** or **No due date**. In the Library list, items
+  missing details are marked **Needs info**.
+- To send a reminder, open the **Reminder message** card at the top of
+  Borrowed Items, pick a template (or **Add** your own), then tap the share
+  icon on the loan. Pitak prepares the message; you choose the app and tap
+  Send yourself.
 - Add a phone or email on a borrower's page and you get **Call**,
   **WhatsApp** and **Email** buttons there.
-- **☰ → Borrowed Items** shows every active loan with its cover, title,
-  borrower and due status. Filter **All**, **Overdue**, **Due soon (72 hours)**
-  or **No due date**; tap **Call** when a phone is available.
-- The generic share action on a borrowed item prepares the selected message
-  template and local cover in the OS share flow. You choose WhatsApp and the
-  conversation, review, then tap Send yourself. The separate WhatsApp icon
-  opens the borrower's conversation with only text prefilled when a phone is
-  available; it does not read the cover. Titles and due dates use WhatsApp
-  bold markers, and user-visible dates use full month names. Neither action
-  sends automatically. Blank/remote covers offer text only; a broken local
-  cover stops image sharing instead of sending raw bytes.
-- **Message templates** opens named templates in any language, with separate
-  overdue, upcoming and no-due-date messages. Templates are plaintext on this
-  device and are not in the current backup, so do not include private details.
+
+**Lending rules**
+
+The **Lending rules** card at the top of the unlocked vault sets one rule
+for every borrower: **Limit items per borrower** with a **Maximum active
+loans** number, and whether Pitak should **Warn** (ask, but still let you
+lend) or **Refuse** at the limit. The card header always shows the rule in
+force, such as **Off** or **Max 3 · Warn**. Returned loans do not count.
+
+*Copy notes (not in the app, 2026-11-09, PR #26):* the Pending (bell) page,
+the Lending rules page and the Message templates page were retired; their
+content lives in Borrowed Items and the two cards above. The share icon
+prepares the selected template and the local cover in the OS share flow;
+the separate WhatsApp icon opens the borrower's conversation with text only.
+Neither sends automatically. Templates are plaintext on this device and are
+not in the backup, so do not put private details in one.
 
 **Good to know**
 
@@ -716,7 +724,8 @@ have no books of its own.
 | Passphrase ≥ 8 chars, never stored, no reset | `VaultSessionController.minPassphraseLength`; vault page copy |
 | Biometric unlock is opt-in; app-lock is a screen cover, not encryption | `settings_page.dart` Security section; ADR 0006 |
 | No auto-lock | ADR 0006 |
-| Lend: existing/new borrower, optional due date; Return on borrower Edit page; Pending = overdue/due soon/missing metadata | `lend_book_page.dart`, `borrower_edit_page.dart`, `pending_page.dart` |
+| Lend: existing/new borrower, optional due date; Return on the borrower's profile page (and on Edit); overdue / due soon live in Borrowed Items, missing metadata = **Needs info** badge in the Library list (Pending page retired, PR #26) | `lend_book_page.dart`, `borrower_profile_page.dart`, `borrowed_items_page.dart`, `catalogue_item_row.dart` |
+| Lending rules = expandable card on the unlocked vault: limit per borrower, Warn / Refuse, header shows the rule in force; reminder templates = expandable **Reminder message** card on Borrowed Items | `lending_rules_card.dart`, `reminder_template_card.dart` |
 | Call / WhatsApp / Email buttons from phone/email fields | `borrower_profile_page.dart` |
 | Borrowed Items = one card per active loan, shared urgency/date rules, owner-less covers, strict reads, per-loan busy state and lock aborts | `borrowed_items_page.dart`; `BuildBorrowedItemsSnapshot`; `loan_status.dart`; ADR 0022 |
 | Unicode templates use three status bodies and two placeholders; plaintext preferences are not in backup; generic share and direct WhatsApp text are never sent/delivery claims | `reminder_template.dart`; `PrefsReminderTemplateStore`; `PrepareLoanReminderUseCase`; `file_share.dart`; ADR 0022 |

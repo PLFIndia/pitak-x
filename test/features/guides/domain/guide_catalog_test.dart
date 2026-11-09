@@ -96,7 +96,10 @@ void main() {
       GuideId.map: [0, 6, 3, 3],
       // S11 (plan CV6): "what is inside" gained the publishing-record line.
       GuideId.backup: [0, 6, 4, 2, 3, 1, 1, 1, 2],
-      GuideId.vault: [0, 3, 3, 3, 3],
+      // 2026-11-09 (PR #26 retired the Pending page): "Returns and
+      // reminders" has 4 bullets (Return, Borrowed Items, Reminder message
+      // card, contact buttons) and a "Lending rules" paragraph follows.
+      GuideId.vault: [0, 3, 3, 4, 1, 3],
       // ADR 0024: "Event alerts (Android)" paragraphs (2) before the end.
       GuideId.network: [0, 1, 2, 5, 2, 0],
     };

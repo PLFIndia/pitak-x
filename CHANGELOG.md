@@ -51,6 +51,11 @@ heading as part of the `chore(release):` commit.
   card's error state. The card, filters and loans scroll as one page
   (`CustomScrollView`), so many templates or a short landscape screen can
   no longer overflow the layout.
+- **How Pitak works:** the vault guide now points to Borrowed Items, the
+  Reminder message card and the Lending rules card instead of the retired
+  Pending page, and Return no longer goes through Edit; the wishlist guide
+  gives the real path to **Look up ISBN after scanning** (Settings →
+  Appearance → Library).
 
 ### Removed
 - `PendingPage`, `pendingSnapshotProvider` and the `PendingSnapshot` domain

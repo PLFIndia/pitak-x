@@ -137,7 +137,8 @@ const Guide wishlistGuide = Guide(
         'only marks the wish as purchased.',
     'By default, scanning only reads the barcode; Pitak goes online when you '
         'tap **Look up details**. To search immediately after scanning, turn '
-        'on **Settings → Library → Look up ISBN after scanning**.',
+        'on **Settings → Appearance → Library → Look up ISBN after '
+        'scanning**.',
   ],
   destination: GuideDestination.wishlist,
   destinationLabel: 'Open Wishlist',
@@ -179,12 +180,28 @@ const Guide vaultGuide = Guide(
     GuideBullets(
       title: 'Returns and reminders',
       bullets: [
-        '**☰ → Borrowers vault**, tap the borrower, tap **Edit** → **Return** '
-            'next to the item.',
-        'The bell icon (**Pending**) on the vault screen lists overdue loans, '
-            'loans due soon, and items missing details.',
+        '**☰ → Borrowers vault**, tap the borrower, then **Return** next to '
+            'the item.',
+        '**☰ → Borrowed Items** lists every active loan; filter **Overdue**, '
+            '**Due soon (72 hours)** or **No due date**. In the Library '
+            'list, items missing details are marked **Needs info**.',
+        'To send a reminder, open the **Reminder message** card at the top '
+            'of Borrowed Items, pick a template (or **Add** your own), then '
+            'tap the share icon on the loan. Pitak prepares the message; you '
+            'choose the app and tap Send yourself.',
         "Add a phone or email on a borrower's page and you get **Call**, "
             '**WhatsApp** and **Email** buttons there.',
+      ],
+    ),
+    GuideParagraphs(
+      title: 'Lending rules',
+      paragraphs: [
+        'The **Lending rules** card at the top of the unlocked vault sets one '
+            'rule for every borrower: **Limit items per borrower** with a '
+            '**Maximum active loans** number, and whether Pitak should '
+            '**Warn** (ask, but still let you lend) or **Refuse** at the '
+            'limit. The card header always shows the rule in force, such as '
+            '**Off** or **Max 3 · Warn**. Returned loans do not count.',
       ],
     ),
   ],
