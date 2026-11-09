@@ -5,3 +5,13 @@
 id = "GHSA-qwgh-2vcv-g2f7"
 ignoreUntil = 2027-01-29
 reason = "Argon2 0.6 uses fixed block-buffer 0.12.1. The remaining 0.10.4 is only through flutter_rust_bridge_macros' compile-time md-5 0.10.6 (also in upstream's newest beta). The advisory requires catching a compression/generator panic and reusing that buffer; Pitak has no catch_unwind and does not execute attacker-controlled proc macros."
+
+# SQLite < 3.54.0 WAL page-size read (CVE-2026-119375). HARD expiry: this
+# date makes the OSV job fail again and forces a re-review; the matching
+# cargo-deny entry in deny.toml has no expiry of its own. Remove both as soon
+# as a libsqlite3-sys release bundles SQLCipher on SQLite >= 3.54.0 (rusqlite
+# PR #1932). Analysis: docs/plans/sec-rustsec-2026-0459.md.
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0459"
+ignoreUntil = 2026-12-09
+reason = "No fixed crate for SQLCipher builds yet: libsqlite3-sys 0.39.x pins sqlcipher-src =419.0.6 (SQLite 3.53.4, still affected), so the suggested 0.39 upgrade would hide, not fix, it; rusqlite PR #1932 (SQLCipher 4.20 / SQLite 3.54.1) is pending. Exposure needs a crafted DB + sibling -wal from a less trusted party; the app never writes archive-supplied companion files (restore stages only books.db / wishlist.db / borrowers.db into a fresh dir; pinned by restore_backup_test) and never sets WAL mode on the vault."

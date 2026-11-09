@@ -42,6 +42,24 @@ class _FakeVault with VaultWriteUnsupported implements VaultRepository {
   }) async => _result;
 }
 
+/// A fake vault that runs [onOpen] with the path it is asked to open, so a
+/// test can inspect the disk at the exact moment the vault would open it.
+class _ProbeVault with VaultWriteUnsupported implements VaultRepository {
+  _ProbeVault(this.onOpen);
+  final void Function(String dbPath) onOpen;
+  int opens = 0;
+  @override
+  Future<Either<Failure, VaultData>> unlockAndRead({
+    required SecretBytes passphrase,
+    required String blob,
+    required String dbPath,
+  }) async {
+    opens++;
+    onOpen(dbPath);
+    return right(VaultData.empty);
+  }
+}
+
 /// An [AppDatabase] whose FTS rebuild always fails, for the restore
 /// rollback regression (REVIEW_FINDINGS_2 S10). M02: opened on the BUILDER
 /// generation's catalogue copy, where restore now does its writes.
@@ -397,6 +415,70 @@ void main() {
     final books = await db.select(db.books).get();
     expect(books.single.itemUid, 'keep');
   });
+
+  // RUSTSEC-2026-0459 / CVE-2026-119375: SQLite < 3.54.0 can leak process
+  // memory when it opens a database together with a CRAFTED `-wal` of a
+  // different page size. The time-boxed exception in rust/deny.toml and
+  // rust/osv-scanner.toml rests on THIS invariant: a backup archive can never
+  // place a companion file next to a database the app opens.
+  test(
+    'archive-supplied -wal / -shm / -journal files never reach the disk',
+    () async {
+      const companions = ['-wal', '-shm', '-journal'];
+      // 0x377f0682 is SQLite's WAL magic: these look like real WAL files.
+      const walLike = [0x37, 0x7f, 0x06, 0x82, 0, 0x2d, 0xe2, 0x18, 1, 2, 3];
+      final zip = archive({
+        'manifest.json': utf8.encode(manifest(hasBackupBlob: true)),
+        'books.db': buildBooksDb(),
+        'wishlist.db': buildWishlistDb(),
+        'borrowers.db': [10, 20, 30, 40],
+        'backup_blob': utf8.encode('salt.iv.ct'),
+        for (final db in ['books.db', 'wishlist.db', 'borrowers.db'])
+          for (final suffix in companions) '$db$suffix': walLike,
+      });
+
+      // Every open is checked at the moment it happens.
+      final found = <String>[];
+      void checkSiblings(String dbPath) {
+        for (final suffix in companions) {
+          if (File('$dbPath$suffix').existsSync()) found.add('$dbPath$suffix');
+        }
+      }
+
+      var legacyOpens = 0;
+      final vault = _ProbeVault(checkSiblings);
+      final r = gen.restorer(
+        vault: vault,
+        guard: FakeReplacementGuard(),
+        openLegacyDb: (path) {
+          legacyOpens++;
+          checkSiblings(path);
+          return sqlite3.open(path, mode: OpenMode.readOnly);
+        },
+      );
+      final p = pass();
+      final result = await r.restore(archiveBytes: zip, passphrase: p);
+      p.dispose();
+
+      expect(result.isRight(), isTrue, reason: '$result');
+      // The probes really ran: the vault and both legacy DBs were opened.
+      expect(vault.opens, 1);
+      expect(legacyOpens, greaterThanOrEqualTo(2));
+      expect(found, isEmpty);
+      // And no archive companion was installed anywhere afterwards either.
+      final strays = tmp
+          .listSync(recursive: true)
+          .whereType<File>()
+          .map((f) => f.uri.pathSegments.last)
+          .where(
+            (name) => RegExp(
+              r'^(books|wishlist|borrowers)\.db-(wal|shm|journal)$',
+            ).hasMatch(name),
+          )
+          .toList();
+      expect(strays, isEmpty);
+    },
+  );
 
   test('C1: persists the restored vault to the live VaultStore', () async {
     // The fake vault doesn't open the DB, so its exact bytes are opaque here;

@@ -5,9 +5,12 @@ import 'package:path/path.dart' as p;
 import 'package:pitaka/core/database/app_database.dart';
 import 'package:pitaka/core/storage/data_generations.dart';
 import 'package:pitaka/features/backup/infrastructure/restore_backup.dart';
+import 'package:pitaka/features/backup/infrastructure/restore_legacy_read.dart';
 import 'package:pitaka/features/library/domain/catalogue_replacement_guard.dart';
 import 'package:pitaka/features/vault/domain/repositories/vault_repository.dart';
 import 'package:pitaka/features/vault/infrastructure/vault_store.dart';
+import 'package:sqlite3/common.dart';
+import 'package:sqlite3/sqlite3.dart';
 
 /// A real on-disk data generation for restore tests (M02).
 ///
@@ -53,6 +56,7 @@ final class GenerationFixture {
     required CatalogueReplacementGuard guard,
     Future<DataGeneration> Function(DataGeneration)? activate,
     CatalogueOpener? openCatalogue,
+    LegacyDbOpener? openLegacyDb,
   }) => RestoreBackup(
     vault: vault,
     generations: generations,
@@ -66,12 +70,17 @@ final class GenerationFixture {
           return now;
         },
     openCatalogue: openCatalogue ?? _defaultOpen,
+    openLegacyDb: openLegacyDb ?? _defaultLegacyOpen,
     workDir: p.join(docsDir, 'restore_work'),
     replacementGuard: guard,
   );
 
   static AppDatabase _defaultOpen(String path) =>
       AppDatabase(NativeDatabase(File(path)));
+
+  /// Same as production's default legacy opener (read-only).
+  static CommonDatabase _defaultLegacyOpen(String path) =>
+      sqlite3.open(path, mode: OpenMode.readOnly);
 
   /// The generation currently named by `CURRENT` (re-read from disk).
   DataGeneration current() => generations.open();

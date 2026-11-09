@@ -14,6 +14,20 @@ heading as part of the `chore(release):` commit.
 
 ## [Unreleased]
 
+### Security
+- **RUSTSEC-2026-0459 / CVE-2026-119375 (SQLite < 3.54.0, crafted `-wal`
+  page size):** a reviewed, time-boxed exception until **2026-12-09**
+  (`rust/osv-scanner.toml` `ignoreUntil` fails CI again on that date;
+  mirrored in `rust/deny.toml`). The vault's SQLCipher bundles SQLite
+  3.45.3; no crate release yet bundles SQLCipher on SQLite ≥ 3.54 (the
+  scanner's suggested `libsqlite3-sys` 0.39 still ships SQLite 3.53.4 for
+  SQLCipher builds, so it would hide the finding without fixing it;
+  rusqlite PR #1932 is pending). Exposure needs a crafted database plus a
+  sibling `-wal` from a less trusted party; restore never writes
+  archive-supplied companion files, now pinned by a test. The Dart-side
+  SQLite (3.52.0, end-of-life `sqlite3_flutter_libs`) is noted as a
+  follow-up. Analysis: `docs/plans/sec-rustsec-2026-0459.md`.
+
 ## [1.9.6] - 2026-11 (tag `1.9.6`, versionCode 38)
 
 Release sentinel (`tool/release_build.sh --sentinel`):
