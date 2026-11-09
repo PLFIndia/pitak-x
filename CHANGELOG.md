@@ -16,6 +16,21 @@ heading as part of the `chore(release):` commit.
 
 ## [1.9.7] - 2026-11 (tag `1.9.7`, versionCode 39)
 
+Release sentinel (`tool/release_build.sh --sentinel`):
+`ask, but still let you lend`.
+
+AAB sha256: `9f35237ce30ebfeece65844e07cb1d9a175242b0227c50e55e9d05a050bbbc6e`.
+The 183-second `tool/release_build.sh` build (its own `flutter clean`, locked
+dependencies, Rust for three ABIs and Dart AOT; 171.4 s in Gradle) passed
+upload-signature (`pitak-upload`), package/version and fresh arm64
+Dart-sentinel verification. Built from `main` at the release commit
+`4e0e14c`; `pubspec.lock` was unchanged. Every 64-bit native `LOAD`
+alignment was at least 16 KiB (`llvm-readelf -l`, NDK 28.2: `libapp.so`
+and `libflutter.so` 0x10000, the rest 0x4000; `armeabi-v7a`
+`libpitak_crypto.so` and `libsqlite3.so` remain 4 KiB, as §7 allows for
+32-bit). `bundletool dump config` was not run on this machine (bundletool
+not installed). Uploaded to Play Console by the maintainer on 2026-11-09.
+
 ### Changed
 - **Availability tag colours (UI):** *Available* is green and *Not
   available* is red in the in-app viewer, the same pair the published site

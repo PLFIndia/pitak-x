@@ -10,9 +10,8 @@ a **library network** (pins on a map, hub/member cards).
 
 > **Status:** published on **F-Droid** (`dev.khoj.pitaka.fdroid`) and
 > **Google Play** (`dev.khoj.pitaka`). Current source version is **1.9.7+39**
-> (`pubspec.yaml`). The 1.9.7 Play bundle is being built from the release
-> commit; the signed 1.9.7 tag, Play upload and F-Droid follow-up remain
-> maintainer-owned.
+> (`pubspec.yaml`). The 1.9.7 Play bundle is built, verified and uploaded;
+> the signed 1.9.7 tag and the F-Droid follow-up remain maintainer-owned.
 > F-Droid builds from signed tags on its own schedule, so its index may lag.
 > Manual device/TalkBack and store-rollout follow-up remain maintainer-owned.
 >
