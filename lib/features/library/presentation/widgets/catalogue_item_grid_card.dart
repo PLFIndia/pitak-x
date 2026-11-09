@@ -4,16 +4,19 @@
 /// by the library grid on tablets/desktops. Same data and tap contract as the
 /// row, but status markers (Removed / Not available / Needs info / copy-count)
 /// are shown as small overlay pills on the cover so the title/author text below
-/// stays uncluttered. Pure presentation — no business logic.
+/// stays uncluttered. The shelf location, when set, is the last text line
+/// ([ShelfLocationLine]). Pure presentation — no business logic.
 library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pitaka/core/di/providers.dart';
+import 'package:pitaka/core/theme/availability_colors.dart';
 import 'package:pitaka/core/widgets/item_cover.dart';
 import 'package:pitaka/features/library/domain/cover_owner.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/value_objects/item_kind.dart';
+import 'package:pitaka/features/library/presentation/widgets/shelf_location_line.dart';
 
 /// One tappable book card for the wide-screen grid.
 class CatalogueItemGridCard extends ConsumerWidget {
@@ -36,8 +39,12 @@ class CatalogueItemGridCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final scheme = Theme.of(context).colorScheme;
-    final textTheme = Theme.of(context).textTheme;
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final textTheme = theme.textTheme;
+    // ONE predicate for "paint it as not available" (pill + shelf line), the
+    // same rule as CatalogueItemRow.
+    final showUnavailable = unavailable && !book.removed;
     // Removed books are dimmed (visible-but-inert), mirroring Kotlin D39.
     final titleColor = book.removed
         ? scheme.onSurfaceVariant
@@ -111,11 +118,17 @@ class CatalogueItemGridCard extends ConsumerWidget {
                             background: scheme.errorContainer,
                             foreground: scheme.onErrorContainer,
                           ),
-                        if (unavailable && !book.removed)
+                        if (showUnavailable)
                           _Pill(
                             label: 'Not available',
-                            background: scheme.secondaryContainer,
-                            foreground: scheme.onSecondaryContainer,
+                            background:
+                                AvailabilityColors.unavailableBackground(
+                                  theme.brightness,
+                                ),
+                            foreground:
+                                AvailabilityColors.unavailableForeground(
+                                  theme.brightness,
+                                ),
                           ),
                         if (book.needsMetadata)
                           _Pill(
@@ -151,6 +164,14 @@ class CatalogueItemGridCard extends ConsumerWidget {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
+            ShelfLocationLine(
+              location: book.location,
+              tone: ShelfLocationTone.of(
+                removed: book.removed,
+                unavailable: showUnavailable,
+              ),
+              style: textTheme.bodySmall,
+            ),
           ],
         ),
       ),

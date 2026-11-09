@@ -9,6 +9,7 @@ import 'package:pitaka/features/library/domain/cover_owner.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/value_objects/item_details.dart';
 import 'package:pitaka/features/library/presentation/widgets/catalogue_item_grid_card.dart';
+import 'package:pitaka/features/library/presentation/widgets/shelf_location_line.dart';
 import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
 import 'package:pitaka/features/periodicals/domain/repositories/periodical_repository.dart';
 
@@ -67,6 +68,47 @@ void main() {
     await tester.pump();
     expect(find.text('The Hobbit'), findsOneWidget);
     expect(find.text('Tolkien'), findsOneWidget);
+  });
+
+  testWidgets('shows the shelf location as the last text line', (tester) async {
+    await tester.pumpWidget(
+      host(
+        const CatalogueItem(title: 'Hobbit', author: 'Tolkien', location: 'A3'),
+      ),
+    );
+    expect(find.text('A3'), findsOneWidget);
+    // The tappable parent merges its children's labels into one node, so
+    // match the fragment, not the whole label.
+    expect(find.bySemanticsLabel(RegExp('Shelf location: A3')), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('shelf line tone follows the pill rule (removed never red)', (
+    tester,
+  ) async {
+    ShelfLocationTone tone() =>
+        tester.widget<ShelfLocationLine>(find.byType(ShelfLocationLine)).tone;
+
+    await tester.pumpWidget(
+      host(const CatalogueItem(title: 'Hobbit', location: 'A3')),
+    );
+    expect(tone(), ShelfLocationTone.normal);
+
+    await tester.pumpWidget(
+      host(
+        const CatalogueItem(title: 'Hobbit', location: 'A3'),
+        unavailable: true,
+      ),
+    );
+    expect(tone(), ShelfLocationTone.unavailable);
+
+    await tester.pumpWidget(
+      host(
+        const CatalogueItem(title: 'Hobbit', location: 'A3', removed: true),
+        unavailable: true,
+      ),
+    );
+    expect(tone(), ShelfLocationTone.removed);
   });
 
   testWidgets('shows the copy-count pill when copyCount > 1', (tester) async {
@@ -128,6 +170,7 @@ void main() {
         const CatalogueItem(
           title: 'A Tremendously Long Book Title That Would Wrap Many Lines',
           author: 'An Equally Long Author Name For Good Measure',
+          location: 'Back room, second cupboard, third shelf from the top',
           copyCount: 12,
           needsMetadata: true,
         ),

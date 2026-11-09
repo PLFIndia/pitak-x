@@ -10,10 +10,13 @@
 ///  - "Other" is labelled as such and never shows availability;
 ///  - availability is a coarse tag, *Available* or *Not available* (ADR 0019;
 ///    "All out" retired) — the words never promise a live loan, and the page
-///    says when the tag was last updated.
+///    says when the tag was last updated. The two tags use the same green /
+///    red pair as the published web site ([AvailabilityColors]) so a reader
+///    can tell them apart at a glance, not only by reading.
 library;
 
 import 'package:flutter/material.dart';
+import 'package:pitaka/core/theme/availability_colors.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/network/domain/entities/published_catalogue.dart';
 
@@ -52,12 +55,12 @@ class PublishedItemBadges extends StatelessWidget {
     final availability = item.availability;
     if (availability != null) {
       badges.add(
-        _Badge(
-          label: availability == PublishedAvailability.available
-              ? 'Available'
-              : 'Not available',
-          emphasised: true,
-        ),
+        availability == PublishedAvailability.available
+            ? const _Badge(label: 'Available', tone: _BadgeTone.available)
+            : const _Badge(
+                label: 'Not available',
+                tone: _BadgeTone.unavailable,
+              ),
       );
     }
     if (badges.isEmpty) return const SizedBox.shrink();
@@ -65,33 +68,48 @@ class PublishedItemBadges extends StatelessWidget {
   }
 }
 
+/// How a badge is coloured. An enum rather than a bool so a third state can
+/// never be expressed by accident: a badge is a neutral classifier (kind,
+/// age) or one of the two availability tags.
+enum _BadgeTone { neutral, available, unavailable }
+
 /// One compact badge. Rendered as text with a tinted container so the badges
 /// wrap instead of overflowing, and so screen readers read the label directly
 /// (no icon-only meaning).
 class _Badge extends StatelessWidget {
-  const _Badge({required this.label, this.emphasised = false});
+  const _Badge({required this.label, this.tone = _BadgeTone.neutral});
 
   final String label;
-  final bool emphasised;
+  final _BadgeTone tone;
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final brightness = theme.brightness;
+    final (Color background, Color foreground) = switch (tone) {
+      _BadgeTone.neutral => (
+        scheme.surfaceContainerHighest,
+        scheme.onSurfaceVariant,
+      ),
+      _BadgeTone.available => (
+        AvailabilityColors.availableBackground(brightness),
+        AvailabilityColors.availableForeground(brightness),
+      ),
+      _BadgeTone.unavailable => (
+        AvailabilityColors.unavailableBackground(brightness),
+        AvailabilityColors.unavailableForeground(brightness),
+      ),
+    };
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
       decoration: BoxDecoration(
-        color: emphasised
-            ? scheme.secondaryContainer
-            : scheme.surfaceContainerHighest,
+        color: background,
         borderRadius: BorderRadius.circular(999),
       ),
       child: Text(
         label,
-        style: Theme.of(context).textTheme.labelSmall?.copyWith(
-          color: emphasised
-              ? scheme.onSecondaryContainer
-              : scheme.onSurfaceVariant,
-        ),
+        style: theme.textTheme.labelSmall?.copyWith(color: foreground),
       ),
     );
   }

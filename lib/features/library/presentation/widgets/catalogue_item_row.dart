@@ -3,7 +3,9 @@
 /// Parity with Kotlin `LibraryScreen.BookRow`: title (2 lines), author, and the
 /// status badges — removed (dimmed + badge), needs-metadata, copy-count "×N",
 /// and the vault "Not available" badge (every copy is out on loan, shown only
-/// when the vault is unlocked so availability is known).
+/// when the vault is unlocked so availability is known). Under the author,
+/// the shelf location when one is set ([ShelfLocationLine]) so the user can
+/// find the item without opening it.
 ///
 /// S14 (ADR 0013): a non-book row also carries a KIND badge ("Issue" /
 /// "Bound volume" / "Other"), and a magazine issue without its own cover
@@ -15,10 +17,12 @@ library;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pitaka/core/di/providers.dart';
+import 'package:pitaka/core/theme/availability_colors.dart';
 import 'package:pitaka/core/widgets/item_cover.dart';
 import 'package:pitaka/features/library/domain/cover_owner.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/value_objects/item_kind.dart';
+import 'package:pitaka/features/library/presentation/widgets/shelf_location_line.dart';
 
 /// One tappable book row.
 class CatalogueItemRow extends ConsumerWidget {
@@ -41,8 +45,12 @@ class CatalogueItemRow extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final scheme = Theme.of(context).colorScheme;
-    final textTheme = Theme.of(context).textTheme;
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final textTheme = theme.textTheme;
+    // ONE predicate for "paint it as not available": the badge and the shelf
+    // line must never disagree. A removed item is dimmed instead.
+    final showUnavailable = unavailable && !book.removed;
     // Removed books are dimmed (visible-but-inert), mirroring Kotlin D39.
     final titleColor = book.removed
         ? scheme.onSurfaceVariant
@@ -98,6 +106,14 @@ class CatalogueItemRow extends ConsumerWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
+                  ShelfLocationLine(
+                    location: book.location,
+                    tone: ShelfLocationTone.of(
+                      removed: book.removed,
+                      unavailable: showUnavailable,
+                    ),
+                    style: textTheme.bodyMedium,
+                  ),
                 ],
               ),
             ),
@@ -125,11 +141,15 @@ class CatalogueItemRow extends ConsumerWidget {
                       background: scheme.errorContainer,
                       foreground: scheme.onErrorContainer,
                     ),
-                  if (unavailable && !book.removed)
+                  if (showUnavailable)
                     _Badge(
                       label: 'Not available',
-                      background: scheme.secondaryContainer,
-                      foreground: scheme.onSecondaryContainer,
+                      background: AvailabilityColors.unavailableBackground(
+                        theme.brightness,
+                      ),
+                      foreground: AvailabilityColors.unavailableForeground(
+                        theme.brightness,
+                      ),
                     ),
                   if (book.needsMetadata)
                     _Badge(

@@ -9,6 +9,7 @@ import 'package:pitaka/features/library/domain/cover_owner.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/value_objects/item_details.dart';
 import 'package:pitaka/features/library/presentation/widgets/catalogue_item_row.dart';
+import 'package:pitaka/features/library/presentation/widgets/shelf_location_line.dart';
 import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
 import 'package:pitaka/features/periodicals/domain/repositories/periodical_repository.dart';
 
@@ -90,6 +91,51 @@ void main() {
     expect(find.text('Not available'), findsNothing);
   });
 
+  testWidgets('shows the shelf location under the author', (tester) async {
+    await tester.pumpWidget(
+      host(
+        const CatalogueItem(title: 'Hobbit', author: 'Tolkien', location: 'A3'),
+      ),
+    );
+    expect(find.text('A3'), findsOneWidget);
+    // The tappable parent merges its children's labels into one node, so
+    // match the fragment, not the whole label.
+    expect(find.bySemanticsLabel(RegExp('Shelf location: A3')), findsOneWidget);
+  });
+
+  testWidgets('shelf line tone follows the badge rule (removed never red)', (
+    tester,
+  ) async {
+    ShelfLocationTone tone() =>
+        tester.widget<ShelfLocationLine>(find.byType(ShelfLocationLine)).tone;
+
+    await tester.pumpWidget(
+      host(const CatalogueItem(title: 'Hobbit', location: 'A3')),
+    );
+    expect(tone(), ShelfLocationTone.normal);
+
+    await tester.pumpWidget(
+      host(
+        const CatalogueItem(title: 'Hobbit', location: 'A3'),
+        unavailable: true,
+      ),
+    );
+    expect(tone(), ShelfLocationTone.unavailable);
+
+    await tester.pumpWidget(
+      host(
+        const CatalogueItem(title: 'Hobbit', location: 'A3', removed: true),
+        unavailable: true,
+      ),
+    );
+    expect(tone(), ShelfLocationTone.removed);
+  });
+
+  testWidgets('no shelf line when the location is unset', (tester) async {
+    await tester.pumpWidget(host(const CatalogueItem(title: 'Hobbit')));
+    expect(find.byIcon(Icons.shelves), findsNothing);
+  });
+
   testWidgets('long title + multiple badges does not overflow a narrow row', (
     tester,
   ) async {
@@ -103,6 +149,7 @@ void main() {
         const CatalogueItem(
           title: 'An Extremely Long Book Title That On Its Own Fills The Row',
           author: 'A Long Author Name As Well',
+          location: 'Back room, second cupboard, third shelf from the top',
           copyCount: 99,
           needsMetadata: true,
         ),

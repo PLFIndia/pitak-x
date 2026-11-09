@@ -73,7 +73,15 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   const books = [
-    CatalogueItem(id: 1, title: 'The Hobbit', author: 'Tolkien', copyCount: 3),
+    // One row carries a shelf location so the goldens pin the bold shelf
+    // line under the author; the other book has none (the line is hidden).
+    CatalogueItem(
+      id: 1,
+      title: 'The Hobbit',
+      author: 'Tolkien',
+      copyCount: 3,
+      location: 'Shelf A3',
+    ),
     CatalogueItem(id: 2, title: 'Dune', author: 'Herbert'),
     // ADR 0013 U1: the row badges — an issue ("Issue") and an other item
     // ("Other"). A plain book carries no badge, so without these rows the
