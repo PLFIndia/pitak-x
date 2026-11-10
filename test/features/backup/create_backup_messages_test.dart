@@ -163,6 +163,14 @@ void main() {
     });
   });
 
+  test('the sentence about older versions (decision D12)', () {
+    expect(
+      backupNeedsThisVersionMessage,
+      'A backup made with this version may not open in an older version of '
+      'Pitak. Update Pitak on the other phone before you restore there.',
+    );
+  });
+
   group('cover pictures that were left out (decision D10)', () {
     test('one item', () {
       expect(

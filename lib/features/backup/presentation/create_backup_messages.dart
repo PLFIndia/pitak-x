@@ -16,6 +16,17 @@ import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/core/text/display_number.dart';
 import 'package:pitaka/features/backup/domain/backup_overflow.dart';
 
+/// Shown on the create-backup page before a backup is made (decision D12).
+///
+/// Why (beginner note): the backup format may gain things an older Pitak
+/// does not know (more covers, larger files). The app promises one
+/// direction only: a backup made by an OLDER version restores in a newer
+/// one. For the other direction the honest thing is to say so up front,
+/// and to say what to do about it.
+const String backupNeedsThisVersionMessage =
+    'A backup made with this version may not open in an older version of '
+    'Pitak. Update Pitak on the other phone before you restore there.';
+
 /// The sentence without numbers. Used when a failure does not say which
 /// limit was hit or gives no numbers; it is still true.
 const String backupTooLargeFallbackMessage =

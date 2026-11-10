@@ -36,6 +36,12 @@ final class HostileEntry {
     this.compressedOverride,
     this.versionMadeBy = 20,
     this.externalAttributes = 0,
+    this.nameBytes,
+    this.localNameBytes,
+    this.localExtra = const [],
+    this.centralComment = const [],
+    this.dataDescriptor = false,
+    this.localHeaderOffsetOverride,
   });
 
   /// Central-directory filename (the authoritative one).
@@ -77,22 +83,54 @@ final class HostileEntry {
 
   /// Central external attributes (UNIX mode lives in the high 16 bits).
   final int externalAttributes;
+
+  /// Raw bytes of the name in BOTH headers instead of UTF-8 of [name]
+  /// (null = UTF-8 of [name]). Lets a test write a name that is not UTF-8.
+  final List<int>? nameBytes;
+
+  /// Raw bytes of the name in the LOCAL header only (null = same as the
+  /// central one). Lets the two headers disagree about the name.
+  final List<int>? localNameBytes;
+
+  /// Raw bytes written as the LOCAL header's extra field.
+  final List<int> localExtra;
+
+  /// Raw bytes written as the central record's comment.
+  final List<int> centralComment;
+
+  /// Write the entry the way a streaming writer does (Java's
+  /// `ZipOutputStream`): flag bit 3 set, CRC and sizes zero in the local
+  /// header, and a data descriptor with the true values after the body.
+  final bool dataDescriptor;
+
+  /// Lie about where the local header is (central record only).
+  final int? localHeaderOffsetOverride;
 }
 
 /// Writes [entries] as a ZIP, applying every lie requested, plus optional
 /// EOCD-level lies.
+///
+/// [prefix] is written in front of the archive WITHOUT adjusting any offset
+/// (the shape of a file with something glued in front of it).
+/// [junkAfterDirectory] is written between the last central record and the
+/// EOCD; the EOCD's directory size stays truthful unless overridden, so the
+/// junk is a gap the directory does not claim.
 Uint8List buildHostileZip(
   List<HostileEntry> entries, {
   int? eocdEntryCount,
   int? eocdCentralDirectorySize,
   int? eocdCentralDirectoryOffset,
   List<int> eocdComment = const [],
+  List<int> prefix = const [],
+  List<int> junkAfterDirectory = const [],
 }) {
   final out = BytesBuilder(copy: false);
   final centralRecords = <_CentralRecord>[];
 
   for (final e in entries) {
-    final nameBytes = utf8.encode(e.name);
+    final nameBytes = e.nameBytes ?? utf8.encode(e.name);
+    final localNameBytes = e.localNameBytes ?? nameBytes;
+    final flags = e.dataDescriptor ? e.flags | 0x08 : e.flags;
     final body =
         e.compressedOverride ??
         (e.deflate ? io.ZLibEncoder(raw: true).convert(e.data) : e.data);
@@ -100,38 +138,53 @@ Uint8List buildHostileZip(
     final crc = e.declaredCrc32 ?? getCrc32(e.data);
     final csize = e.declaredCompressedSize ?? body.length;
     final usize = e.declaredUncompressedSize ?? e.data.length;
-    final localCrc = e.localHeaderOverrides?['crc32'] ?? crc;
-    final localCsize = e.localHeaderOverrides?['compressedSize'] ?? csize;
-    final localUsize = e.localHeaderOverrides?['uncompressedSize'] ?? usize;
+    // A streaming writer does not know these three when it writes the local
+    // header, so it writes zeros there and the truth after the body.
+    final unknown = e.dataDescriptor ? 0 : null;
+    final localCrc = e.localHeaderOverrides?['crc32'] ?? unknown ?? crc;
+    final localCsize =
+        e.localHeaderOverrides?['compressedSize'] ?? unknown ?? csize;
+    final localUsize =
+        e.localHeaderOverrides?['uncompressedSize'] ?? unknown ?? usize;
 
     final localOffset = out.length;
     final local = ByteData(30)
       ..setUint32(0, 0x04034b50, Endian.little)
       ..setUint16(4, 20, Endian.little) // version needed
-      ..setUint16(6, e.flags, Endian.little)
+      ..setUint16(6, flags, Endian.little)
       ..setUint16(8, method, Endian.little)
       ..setUint16(10, 0, Endian.little) // time
       ..setUint16(12, 0x21, Endian.little) // date (1980-01-01)
       ..setUint32(14, localCrc, Endian.little)
       ..setUint32(18, localCsize, Endian.little)
       ..setUint32(22, localUsize, Endian.little)
-      ..setUint16(26, nameBytes.length, Endian.little)
-      ..setUint16(28, 0, Endian.little); // extra length
+      ..setUint16(26, localNameBytes.length, Endian.little)
+      ..setUint16(28, e.localExtra.length, Endian.little);
     out
       ..add(local.buffer.asUint8List())
-      ..add(nameBytes)
+      ..add(localNameBytes)
+      ..add(e.localExtra)
       ..add(body);
+    if (e.dataDescriptor) {
+      final descriptor = ByteData(16)
+        ..setUint32(0, 0x08074b50, Endian.little)
+        ..setUint32(4, crc, Endian.little)
+        ..setUint32(8, csize, Endian.little)
+        ..setUint32(12, usize, Endian.little);
+      out.add(descriptor.buffer.asUint8List());
+    }
 
     centralRecords.add(
       _CentralRecord(
         nameBytes: nameBytes,
-        flags: e.flags,
+        flags: flags,
         method: method,
         crc: crc,
         csize: csize,
         usize: usize,
-        localOffset: localOffset,
+        localOffset: e.localHeaderOffsetOverride ?? localOffset,
         extra: e.centralExtra,
+        comment: e.centralComment,
         versionMadeBy: e.versionMadeBy,
         externalAttributes: e.externalAttributes,
       ),
@@ -153,7 +206,7 @@ Uint8List buildHostileZip(
       ..setUint32(24, r.usize, Endian.little)
       ..setUint16(28, r.nameBytes.length, Endian.little)
       ..setUint16(30, r.extra.length, Endian.little)
-      ..setUint16(32, 0, Endian.little) // comment length
+      ..setUint16(32, r.comment.length, Endian.little)
       ..setUint16(34, 0, Endian.little) // disk number start
       ..setUint16(36, 0, Endian.little) // internal attrs
       ..setUint32(38, r.externalAttributes, Endian.little)
@@ -161,9 +214,11 @@ Uint8List buildHostileZip(
     out
       ..add(header.buffer.asUint8List())
       ..add(r.nameBytes)
-      ..add(r.extra);
+      ..add(r.extra)
+      ..add(r.comment);
   }
   final cdSize = out.length - cdOffset;
+  out.add(junkAfterDirectory);
 
   final eocd = ByteData(22)
     ..setUint32(0, 0x06054b50, Endian.little)
@@ -177,7 +232,9 @@ Uint8List buildHostileZip(
   out
     ..add(eocd.buffer.asUint8List())
     ..add(eocdComment);
-  return out.takeBytes();
+  final archive = out.takeBytes();
+  if (prefix.isEmpty) return archive;
+  return Uint8List.fromList([...prefix, ...archive]);
 }
 
 /// Raw-deflate stream that inflates to [size] zero bytes while being only a
@@ -196,9 +253,11 @@ final class _CentralRecord {
     required this.usize,
     required this.localOffset,
     required this.extra,
+    required this.comment,
     required this.versionMadeBy,
     required this.externalAttributes,
   });
+  final List<int> comment;
   final List<int> nameBytes;
   final int flags;
   final int method;

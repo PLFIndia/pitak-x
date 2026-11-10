@@ -23,7 +23,7 @@ Uint8List _zip(Map<String, List<int>> entries) {
   entries.forEach(
     (name, data) => archive.addFile(ArchiveFile(name, data.length, data)),
   );
-  return Uint8List.fromList(ZipEncoder().encode(archive)!);
+  return Uint8List.fromList(ZipEncoder().encode(archive));
 }
 
 /// A v4 document: one title, one issue of it, both naming the same cover leaf.

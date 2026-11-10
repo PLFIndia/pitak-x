@@ -113,6 +113,28 @@ void main() {
     expect(find.textContaining('publishing setup'), findsNothing);
   });
 
+  // Decision D12: a backup made by a newer Pitak need not open in an older
+  // one. The user is told BEFORE the backup is made, not after.
+  testWidgets('D12: says before the backup that an older Pitak may not open '
+      'it', (tester) async {
+    await tester.pumpWidget(page());
+    expect(
+      find.text(
+        'A backup made with this version may not open in an older version '
+        'of Pitak. Update Pitak on the other phone before you restore there.',
+      ),
+      findsOneWidget,
+    );
+    // It sits above the button: visible without having made a backup.
+    final sentence = tester.getTopLeft(
+      find.textContaining('may not open in an older version'),
+    );
+    final button = tester.getTopLeft(
+      find.widgetWithText(FilledButton, 'Create backup'),
+    );
+    expect(sentence.dy, lessThan(button.dy));
+  });
+
   testWidgets('plan CV6: a record that could not be carried is named', (
     tester,
   ) async {

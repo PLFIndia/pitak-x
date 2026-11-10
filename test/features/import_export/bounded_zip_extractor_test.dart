@@ -15,7 +15,7 @@ void main() {
     entries.forEach((name, data) {
       archive.addFile(ArchiveFile(name, data.length, data));
     });
-    return Uint8List.fromList(ZipEncoder().encode(archive)!);
+    return Uint8List.fromList(ZipEncoder().encode(archive));
   }
 
   group('hasZipLocalFileHeader', () {
@@ -151,7 +151,7 @@ void main() {
       // the ACTUAL-length check must still enforce the cap.
       final archive = Archive()
         ..addFile(ArchiveFile('x.bin', 1, List<int>.generate(64, (i) => i)));
-      final bytes = Uint8List.fromList(ZipEncoder().encode(archive)!);
+      final bytes = Uint8List.fromList(ZipEncoder().encode(archive));
       expect(
         () => BoundedZipExtractor.extract(
           bytes,

@@ -57,11 +57,15 @@ void main() {
     /// therefore acceptable in domain:
     ///  - `fpdart` — functional result types;
     ///  - `crypto` — hashing (the Git blob SHA-1 is domain protocol logic);
-    ///  - `archive` — pure-Dart zip codec used by `bounded_zip_extractor`,
-    ///    whose decode LIMITS (byte caps, entry counts) are the domain's
-    ///    defensive policy. M05 kept it here on purpose: the extractor uses
-    ///    the package's pure-Dart `Inflate.stream` (not the `dart:io` native
-    ///    inflater) so the budgeted decode stays platform-free.
+    ///  - `archive` — used by `bounded_zip_extractor`, whose decode LIMITS
+    ///    (byte caps, entry counts) are the domain's defensive policy. M05
+    ///    kept it here on purpose: the extractor uses the package's pure-Dart
+    ///    `Inflate.stream` (not the `dart:io` native inflater) so the
+    ///    budgeted decode stays platform-free. Since `archive` 4 the
+    ///    package's main library ALSO exports `dart:io` classes, so "the
+    ///    package is pure" is no longer true by itself: the next test
+    ///    limits the domain to the five pure names it needs (ADR 0009,
+    ///    amendment of 2026-11-10).
     /// Rendering engines (`pdf`), path contexts (`path`), plugins and
     /// frameworks are all forbidden here (N14).
     const allowedPackages = {'fpdart', 'crypto', 'archive'};
@@ -109,6 +113,63 @@ void main() {
           'Domain must stay pure Dart (AGENTS.md §3.1, N14 allowlist). '
           'Violations:\n${violations.join('\n')}',
     );
+  });
+
+  test('domain takes only the inflater and the CRC from package:archive', () {
+    // ADR 0009, amendment of 2026-11-10 (backup rework BR2). The domain
+    // reads the ZIP container itself (`zip_container.dart`); from the
+    // package it may use the pure-Dart inflater with its in-memory streams
+    // and the CRC function, nothing else. `archive` 4 exports file-backed
+    // classes (`dart:io`) and a ZIP reader whose verdicts change between
+    // versions from the same library, so the import must NAME what it
+    // takes.
+    const allowedNames = {
+      'Inflate',
+      'InputMemoryStream',
+      'InputStream',
+      'OutputMemoryStream',
+      'getCrc32',
+    };
+    final archiveImport = RegExp(
+      r"import\s+'package:archive/([^']*)'\s*([^;]*);",
+    );
+    final violations = <String>[];
+    var imports = 0;
+    for (final file in layerFiles('/domain/')) {
+      for (final match in archiveImport.allMatches(file.readAsStringSync())) {
+        imports++;
+        final library = match.group(1)!;
+        final rest = match.group(2)!.trim();
+        if (library != 'archive.dart') {
+          violations.add('${file.path}: imports package:archive/$library');
+          continue;
+        }
+        if (!rest.startsWith('show ')) {
+          violations.add('${file.path}: import without a show list');
+          continue;
+        }
+        final names = rest
+            .substring('show '.length)
+            .split(',')
+            .map((name) => name.trim())
+            .where((name) => name.isNotEmpty);
+        for (final name in names) {
+          if (!allowedNames.contains(name)) {
+            violations.add('${file.path}: takes $name from package:archive');
+          }
+        }
+      }
+    }
+    expect(
+      violations,
+      isEmpty,
+      reason:
+          'Domain may take only $allowedNames from package:archive '
+          '(ADR 0009). Violations:\n${violations.join('\n')}',
+    );
+    // The rule is about a real import: if the extractor stops importing
+    // the package, drop `archive` from the allow-list above instead.
+    expect(imports, 1, reason: 'expected exactly one domain import');
   });
 
   test('application and presentation import no infrastructure', () {

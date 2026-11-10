@@ -41,8 +41,8 @@
 ///    it drags a `NativeFinalizer` along and the send fails at runtime — so
 ///    there is deliberately no `openDatabase` constructor seam any more;
 ///  - covers are streamed into the encoder ONE AT A TIME
-///    (`ZipEncoder.startEncode` / `addFile` / `endEncode`, verified in
-///    `archive` 3.6.1), so peak memory is one cover plus the growing ZIP,
+///    (`ZipEncoder.startEncode` / `add` / `endEncode`, verified in
+///    `archive` 4.6.0), so peak memory is one cover plus the growing ZIP,
 ///    not every cover plus every deflated copy plus the ZIP.
 ///
 /// **The writer refuses what the reader refuses (S5, BR3).** Every entry is
@@ -314,15 +314,15 @@ class BackupArchiveWriter implements BackupArchiveBuilder {
       final refusal = backupRefusalFor(entries, job.limits);
       if (refusal != null) return _refused(refusal);
 
-      // Incremental encoding: each addFile deflates ONE entry, appends it to
+      // Incremental encoding: each `add` deflates ONE entry, appends it to
       // `out` and drops the compressed copy, so nothing but the growing ZIP
       // is retained between entries. `content()` reads a file only now, and
       // throws if it is no longer the size the pre-flight judged.
-      final out = OutputStream();
+      final out = OutputMemoryStream();
       final encoder = ZipEncoder()..startEncode(out);
       for (final entry in entries) {
         final content = entry.content();
-        encoder.addFile(ArchiveFile(entry.name, content.length, content));
+        encoder.add(ArchiveFile(entry.name, content.length, content));
       }
       encoder.endEncode();
 

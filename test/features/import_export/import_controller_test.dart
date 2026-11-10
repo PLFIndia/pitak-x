@@ -278,7 +278,7 @@ void main() {
           utf8.encode(libraryJson),
         ),
       );
-    final zipBytes = Uint8List.fromList(ZipEncoder().encode(archive)!);
+    final zipBytes = Uint8List.fromList(ZipEncoder().encode(archive));
     // Sanity: the bytes really start with the ZIP magic.
     expect(zipBytes.sublist(0, 4), [0x50, 0x4B, 0x03, 0x04]);
 

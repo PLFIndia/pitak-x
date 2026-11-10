@@ -166,7 +166,7 @@ void main() {
   Uint8List archive(Map<String, List<int>> entries) {
     final a = Archive();
     entries.forEach((k, v) => a.addFile(ArchiveFile(k, v.length, v)));
-    return Uint8List.fromList(ZipEncoder().encode(a)!);
+    return Uint8List.fromList(ZipEncoder().encode(a));
   }
 
   String manifest({

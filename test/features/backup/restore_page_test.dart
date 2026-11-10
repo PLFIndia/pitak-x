@@ -220,7 +220,7 @@ Uint8List _vaultArchive() {
     ..addFile(ArchiveFile('manifest.json', manifest.length, manifest))
     ..addFile(ArchiveFile('backup_blob', blob.length, blob))
     ..addFile(ArchiveFile('borrowers.db', borrowersDb.length, borrowersDb));
-  return Uint8List.fromList(ZipEncoder().encode(a)!);
+  return Uint8List.fromList(ZipEncoder().encode(a));
 }
 
 Uint8List _archive({
@@ -241,7 +241,7 @@ Uint8List _archive({
     ..addFile(
       ArchiveFile('manifest.json', manifest.length, utf8.encode(manifest)),
     );
-  return Uint8List.fromList(ZipEncoder().encode(a)!);
+  return Uint8List.fromList(ZipEncoder().encode(a));
 }
 
 void main() {
@@ -627,7 +627,7 @@ void main() {
         ..addFile(ArchiveFile('manifest.json', manifest.length, manifest))
         ..addFile(ArchiveFile('identity.json', identity.length, identity))
         ..addFile(ArchiveFile('network.json', network.length, network));
-      return Uint8List.fromList(ZipEncoder().encode(a)!);
+      return Uint8List.fromList(ZipEncoder().encode(a));
     }
 
     testWidgets('inspection names the identity and lists the network', (
@@ -664,7 +664,7 @@ void main() {
         ..addFile(
           ArchiveFile('identity.json', badIdentity.length, badIdentity),
         );
-      final zip = Uint8List.fromList(ZipEncoder().encode(a)!);
+      final zip = Uint8List.fromList(ZipEncoder().encode(a));
 
       await tester.pumpWidget(wrap(zip));
       await pick(tester);

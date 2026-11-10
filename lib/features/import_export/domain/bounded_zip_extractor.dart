@@ -26,9 +26,11 @@
 ///    `readDirectoryEnd`, BSD-3) and reject a declared entry count over
 ///    `maxEntries`, a central directory over `maxCentralDirectoryBytes` or
 ///    outside the input, and any zip64 marker — all before any header is
-///    parsed. Headers are then read with `ZipDirectory.read`, never
-///    `ZipDecoder.decodeBytes`, because the latter inflates symlink entries
-///    while building its result (unbounded, before we could check anything).
+///    parsed. The directory and the entry headers are then read by our own
+///    `zip_container.dart`, never by `ZipDecoder.decodeBytes`: the latter
+///    inflates symlink entries while building its result (unbounded, before
+///    we could check anything), and what the package's reader accepts
+///    changes between its versions.
 /// 3. **Declared sizes** — the attacker-supplied central-directory sizes are
 ///    used only as an early reject (per entry and as a running total).
 /// 4. **Streaming inflate with a budget** — deflate entries are inflated
@@ -37,9 +39,16 @@
 ///    `min(maxEntryBytes, maxTotalBytes − totalSoFar)`. The native
 ///    `ZLibDecoder` the package uses by default has no output cap, which is
 ///    why we do not call `entry.content`.
-/// 5. **CRC-32** — verified against the central directory. Neither inflater
-///    throws on a corrupt deflate stream (verified on the pinned SDK: it just
-///    returns garbage), so this is the only integrity check we have.
+/// 5. **End mark and CRC-32** — the inflater does not throw on a corrupt
+///    deflate stream (it stops and returns what it has). So a deflate stream
+///    must reach its end mark, and the content's CRC-32 must equal the one
+///    in the central directory. Together they are the integrity check.
+///
+/// `package:archive` is used for three things only: the inflater, the CRC
+/// function and (in the backup writer) the ZIP encoder. `archive` 4's
+/// inflater writes through FOUR methods of its output stream, and writes
+/// into a sink of its own unless the sink is its in-memory stream; see
+/// [_BudgetedSink] before changing either.
 ///
 /// Encrypted entries, compression methods other than store/deflate, and zip64
 /// are refused: our writer never produces them, and each is an attack surface
@@ -52,7 +61,11 @@ library;
 
 import 'dart:typed_data';
 
-import 'package:archive/archive.dart';
+// Only these five names: the inflater with its streams, and the CRC
+// function. Everything else about a ZIP is read by `zip_container.dart`.
+import 'package:archive/archive.dart'
+    show Inflate, InputMemoryStream, InputStream, OutputMemoryStream, getCrc32;
+import 'package:pitaka/features/import_export/domain/zip_container.dart';
 import 'package:pitaka/features/import_export/domain/zip_limits.dart';
 
 // `ZipLimits` moved to its own file (BR3). Re-exported so every file that
@@ -117,8 +130,14 @@ abstract final class BoundedZipExtractor {
       );
     }
 
-    // 2. EOCD pre-check — count and directory size before ZipDecoder runs.
-    final eocd = _ZipEndOfCentralDirectory.locate(bytes);
+    // 2. EOCD pre-check — count and directory size before any header is
+    //    read.
+    final ZipEndRecord eocd;
+    try {
+      eocd = ZipContainer.locateEndRecord(bytes);
+    } on ZipContainerException catch (e) {
+      throw BoundedExtractionException('Could not read ZIP: ${e.message}');
+    }
     if (eocd.isZip64) {
       throw const BoundedExtractionException(
         'Archive uses zip64, which Pitak archives never do',
@@ -142,47 +161,52 @@ abstract final class BoundedZipExtractor {
       );
     }
 
-    // Parse the directory and local headers ONLY. We deliberately do not use
-    // `ZipDecoder.decodeBytes`: while building its `Archive` it inflates any
-    // entry whose central header marks it a UNIX symlink (to read the link
-    // target) — through the unbounded native path, before any caller check
-    // could run. `ZipDirectory.read` is the same parsing step without that
-    // side effect; compressed bodies stay VIEWS over `bytes` until we inflate
-    // them ourselves below.
-    final ZipDirectory directory;
+    // Read the directory and every entry header ONLY (`zip_container.dart`).
+    // Nothing is inflated or copied here: each entry's compressed content
+    // stays a VIEW over `bytes` until we inflate it ourselves below. As
+    // before BR2, the whole container is read before the first entry is
+    // unpacked, so a damaged header anywhere refuses the file up front.
+    final headers = <ZipDirectoryEntry>[];
+    final bodies = <ZipBodyRange>[];
     try {
-      directory = ZipDirectory.read(InputStream(bytes));
+      for (final header in ZipContainer.directory(bytes, eocd)) {
+        // Belt and braces: the EOCD count is attacker-supplied too, so the
+        // real count is checked here, while the records are being read.
+        if (headers.length == caps.maxEntries) {
+          throw BoundedExtractionException(
+            'Archive has too many entries (>${caps.maxEntries})',
+          );
+        }
+        headers.add(header);
+      }
+      for (final header in headers) {
+        bodies.add(ZipContainer.body(bytes, header));
+      }
+    } on BoundedExtractionException {
+      rethrow;
+    } on ZipContainerException catch (e) {
+      throw BoundedExtractionException('Could not read ZIP: ${e.message}');
     } on Object catch (e) {
-      // `on Object`, not `on Exception`: the archive package throws
-      // `RangeError` (an Error, not an Exception) on a truncated or bit-flipped
-      // central directory, and `ArchiveException` on other corruption. Any
-      // throw from the decoder means "this is not a readable archive" — the
-      // caller must get ONE typed failure, never a crash from a bad file.
+      // `on Object`, not `on Exception`: every read in the container reader
+      // is bounds-checked, but should one ever be missed it surfaces as a
+      // `RangeError` (an Error, not an Exception). A bad file must give the
+      // caller ONE typed failure, never a crash.
       throw BoundedExtractionException('Could not read ZIP: $e');
     }
 
     final out = <String, Uint8List>{};
     var totalBytes = 0;
     var declaredTotalBytes = 0;
-    var entryCount = 0;
 
-    for (final header in directory.fileHeaders) {
-      entryCount++;
-      // Belt and braces: the EOCD count is attacker-supplied too, so the
-      // real count is re-checked here.
-      if (entryCount > caps.maxEntries) {
-        throw BoundedExtractionException(
-          'Archive has too many entries (>${caps.maxEntries})',
-        );
-      }
-
+    for (var index = 0; index < headers.length; index++) {
+      final header = headers[index];
       final leaf = _validatedLeafName(header, out);
 
       // 3a. Features we never produce and therefore refuse to decode.
-      if ((header.generalPurposeBitFlag & _flagEncrypted) != 0) {
+      if ((header.flags & _flagEncrypted) != 0) {
         throw BoundedExtractionException("Archive entry '$leaf' is encrypted");
       }
-      final method = header.compressionMethod;
+      final method = header.method;
       if (method != _methodStore && method != _methodDeflate) {
         throw BoundedExtractionException(
           "Archive entry '$leaf' uses unsupported compression method $method",
@@ -190,7 +214,7 @@ abstract final class BoundedZipExtractor {
       }
 
       // 3b. Early reject on the attacker-declared sizes before inflating.
-      final declaredSize = header.uncompressedSize ?? 0;
+      final declaredSize = header.uncompressedSize;
       if (declaredSize > caps.maxEntryBytes) {
         throw BoundedExtractionException(
           "Archive entry '$leaf' exceeds per-entry cap "
@@ -210,17 +234,17 @@ abstract final class BoundedZipExtractor {
       final budget = remainingTotal < caps.maxEntryBytes
           ? remainingTotal
           : caps.maxEntryBytes;
-      final raw = header.file?.rawContent;
-      if (raw == null) {
-        throw BoundedExtractionException(
-          "Archive entry '$leaf' has no content",
-        );
-      }
+      final raw = bodies[index];
       final Uint8List content;
       try {
         content = method == _methodDeflate
             ? _inflateBounded(raw, budget, inflatedBytesProbe)
-            : _copyStoredBounded(raw, budget, inflatedBytesProbe);
+            : _copyStoredBounded(
+                raw,
+                header.compressedSize,
+                budget,
+                inflatedBytesProbe,
+              );
       } on _BudgetExceeded catch (e) {
         // Say which cap was hit so the message stays truthful.
         if (e.attempted > caps.maxEntryBytes) {
@@ -241,9 +265,9 @@ abstract final class BoundedZipExtractor {
         );
       }
 
-      // 5. Integrity: the central-directory CRC is the only detector of a
-      //    corrupt body (the inflaters return garbage silently).
-      if (getCrc32(content) != (header.crc32 ?? -1)) {
+      // 5. Integrity: the central-directory CRC detects a corrupt body
+      //    (a deflate stream that stopped early was refused above).
+      if (getCrc32(content) != header.crc32) {
         throw BoundedExtractionException(
           "Archive entry '$leaf' failed its checksum",
         );
@@ -264,10 +288,10 @@ abstract final class BoundedZipExtractor {
   /// device, ...), mirroring what `ZipDecoder` would have classified — but
   /// refused instead of followed.
   static String _validatedLeafName(
-    ZipFileHeader header,
+    ZipDirectoryEntry header,
     Map<String, Uint8List> seen,
   ) {
-    final rawName = header.filename;
+    final rawName = header.name;
     if (!_isRegularFile(header)) {
       throw BoundedExtractionException(
         "Archive contains a directory entry: '$rawName'",
@@ -299,10 +323,10 @@ abstract final class BoundedZipExtractor {
   /// 16 bits of the external attributes; anything but "regular" (0x8000) or
   /// "unspecified" (0x0000) is not a plain file. For other hosts only a
   /// trailing slash marks a directory.
-  static bool _isRegularFile(ZipFileHeader header) {
-    if (header.filename.endsWith('/')) return false;
+  static bool _isRegularFile(ZipDirectoryEntry header) {
+    if (header.name.endsWith('/')) return false;
     if ((header.versionMadeBy >> 8) == 3) {
-      final mode = (header.externalFileAttributes ?? 0) >> 16;
+      final mode = header.externalAttributes >> 16;
       final fileType = mode & 0xF000;
       return fileType == 0x8000 || fileType == 0x0000;
     }
@@ -311,32 +335,57 @@ abstract final class BoundedZipExtractor {
 
   /// Streams a raw-deflate body through the pure-Dart inflater into a sink
   /// that refuses to grow past [budget]. Returns an exact-size copy.
+  ///
+  /// A deflate stream carries its own end mark (a block flagged "last"), and
+  /// the stream MUST reach it. `archive` 4's inflater does not throw on
+  /// damaged data: it stops and keeps what it has. Without this rule a
+  /// broken stream would be accepted whenever the file's checksum was made
+  /// to match the part that came out. (STRICTER than before BR2, where only
+  /// a read past the end of the file refused such a stream.)
+  ///
+  /// The declared compressed size may point beyond the file ([ZipBodyRange]
+  /// not `complete`): the stream is then read up to the end of the file, and
+  /// the same rule decides.
   static Uint8List _inflateBounded(
-    InputStreamBase raw,
+    ZipBodyRange raw,
     int budget,
     void Function(int)? probe,
   ) {
     final sink = _BudgetedSink(budget);
+    final Inflate inflater;
     try {
-      Inflate.stream(raw, sink);
+      inflater = Inflate.stream(InputMemoryStream(raw.bytes), output: sink);
     } finally {
       probe?.call(sink.length);
+    }
+    if (!inflater.isFinished) {
+      throw const FormatException('deflate stream has no end mark');
     }
     return Uint8List.fromList(sink.getBytes());
   }
 
   /// Stored entries are already bytes; the "inflate" is a bounded copy.
+  ///
+  /// [declaredLength] is the size the directory claims. It is compared with
+  /// the budget BEFORE anything is copied. A stored entry whose declared
+  /// size points beyond the file is refused: it has no end mark of its own.
+  /// (STRICTER than before BR2: the old reader took the rest of the file and
+  /// left the verdict to the checksum.)
   static Uint8List _copyStoredBounded(
-    InputStreamBase raw,
+    ZipBodyRange raw,
+    int declaredLength,
     int budget,
     void Function(int)? probe,
   ) {
-    final length = raw.length;
-    if (length > budget) {
+    if (declaredLength > budget) {
       probe?.call(0);
-      throw _BudgetExceeded(length);
+      throw _BudgetExceeded(declaredLength);
     }
-    final copy = Uint8List.fromList(raw.toUint8List());
+    if (!raw.complete) {
+      probe?.call(0);
+      throw const FormatException('stored data ends before its size');
+    }
+    final copy = Uint8List.fromList(raw.bytes);
     probe?.call(copy.length);
     return copy;
   }
@@ -352,16 +401,36 @@ final class _BudgetExceeded implements Exception {
   final int attempted;
 }
 
-/// An `OutputStream` that throws BEFORE growing past [budget].
+/// An in-memory output stream that throws BEFORE growing past [budget].
 ///
-/// `Inflate.stream` writes through `writeByte`, `writeBytes` and
-/// `writeInputStream` only (and reads back via `subset`, which we inherit).
 /// Checking `length + incoming` ahead of the write means the underlying
 /// buffer never allocates for bytes we are about to reject — this is the
 /// "output cap before allocation" the M05 finding asks for. The base class's
 /// doubling growth still applies below the budget, so the transient buffer
 /// is at most ~2× the real entry size.
-final class _BudgetedSink extends OutputStream {
+///
+/// THREE THINGS TO KNOW BEFORE CHANGING THIS CLASS. They were read in the
+/// source of `archive` 4.6.0, and `archive_sink_protocol_test.dart` fails
+/// when that source changes, so that the reading is repeated:
+///
+///  1. **It must extend `OutputMemoryStream`.** `Inflate` writes straight
+///     into an `OutputMemoryStream`. Into any OTHER kind of output stream it
+///     writes through a buffer of its own and hands the data on only after a
+///     whole deflate block, by which time the budget has been passed.
+///  2. **Every write path is guarded.** The inflater writes literal bytes
+///     (`writeByte`), stored blocks (`writeStream`) and repeated data
+///     (`writeBackReference`, new in `archive` 4). The other writers of the
+///     base class (`writeBytes`, `writeRange`, `writeUint16/32/64`) end in
+///     one of the guarded methods. A highly repetitive file expands almost
+///     only through `writeBackReference`: leave that one unguarded and a
+///     small file unpacks without limit.
+///  3. **Nothing else may move `length`**, which IS the count the budget is
+///     checked against. `reserve` (allocate a size somebody announces) does
+///     nothing here, and `clear` and `reset` are refused.
+///
+/// The inflater itself refuses repeated data that points in front of what
+/// was written (it stops; the entry then fails for its missing end mark).
+final class _BudgetedSink extends OutputMemoryStream {
   _BudgetedSink(this.budget) : super(size: _initialCapacity(budget));
 
   /// Do not pre-allocate the whole budget for tiny entries; do not start
@@ -382,84 +451,31 @@ final class _BudgetedSink extends OutputStream {
   }
 
   @override
-  void writeBytes(List<int> bytes, [int? len]) {
-    _guard(len ?? bytes.length);
-    super.writeBytes(bytes, len);
+  void writeBytes(List<int> bytes, {int? length}) {
+    _guard(length ?? bytes.length);
+    super.writeBytes(bytes, length: length);
   }
 
   @override
-  void writeInputStream(InputStreamBase stream) {
+  void writeStream(InputStream stream) {
     _guard(stream.length);
-    super.writeInputStream(stream);
+    super.writeStream(stream);
   }
-}
 
-/// The ZIP end-of-central-directory (EOCD) record, located and parsed by us
-/// so its counts can be checked BEFORE `package:archive` builds anything.
-///
-/// Adapted from Go `archive/zip` `readDirectoryEnd` / `findSignatureInBlock`
-/// (`src/archive/zip/reader.go`, BSD-3-Clause, The Go Authors): search
-/// backwards for the signature within the last 64 KiB + 22 bytes — the
-/// spec's maximum comment length plus the fixed record — and accept a hit
-/// only if its comment length fits the remaining bytes. `package:archive`
-/// instead scans the entire input backwards, which is O(n) on hostile data
-/// and accepts a signature anywhere.
-final class _ZipEndOfCentralDirectory {
-  const _ZipEndOfCentralDirectory({
-    required this.recordOffset,
-    required this.entryCount,
-    required this.centralDirectorySize,
-    required this.centralDirectoryOffset,
-  });
-
-  static const int _signature = 0x06054b50;
-  static const int _fixedLength = 22;
-  static const int _maxCommentLength = 0xFFFF;
-
-  /// Where the record starts in the input.
-  final int recordOffset;
-
-  /// Declared number of central-directory records (attacker-supplied).
-  final int entryCount;
-
-  /// Declared byte size of the central directory (attacker-supplied).
-  final int centralDirectorySize;
-
-  /// Declared offset of the central directory (attacker-supplied).
-  final int centralDirectoryOffset;
-
-  /// True when any field carries the zip64 "see the zip64 record" marker.
-  bool get isZip64 =>
-      entryCount == 0xFFFF ||
-      centralDirectorySize == 0xFFFFFFFF ||
-      centralDirectoryOffset == 0xFFFFFFFF;
-
-  /// Finds and parses the EOCD, or throws [BoundedExtractionException].
-  static _ZipEndOfCentralDirectory locate(Uint8List bytes) {
-    if (bytes.length < _fixedLength) {
-      throw const BoundedExtractionException(
-        'Could not read ZIP: file is too small to be an archive',
-      );
-    }
-    final data = ByteData.sublistView(bytes);
-    final lowest = bytes.length - _fixedLength - _maxCommentLength;
-    final start = lowest < 0 ? 0 : lowest;
-    for (var i = bytes.length - _fixedLength; i >= start; i--) {
-      if (data.getUint32(i, Endian.little) != _signature) continue;
-      final commentLength = data.getUint16(i + 20, Endian.little);
-      if (i + _fixedLength + commentLength > bytes.length) {
-        // Truncated comment: not a real record (Go treats this the same way).
-        continue;
-      }
-      return _ZipEndOfCentralDirectory(
-        recordOffset: i,
-        entryCount: data.getUint16(i + 10, Endian.little),
-        centralDirectorySize: data.getUint32(i + 12, Endian.little),
-        centralDirectoryOffset: data.getUint32(i + 16, Endian.little),
-      );
-    }
-    throw const BoundedExtractionException(
-      'Could not read ZIP: no end-of-central-directory record',
-    );
+  @override
+  void writeBackReference(int distance, int count) {
+    _guard(count);
+    super.writeBackReference(distance, count);
   }
+
+  @override
+  void reserve(int total) {
+    // Deliberately nothing: never allocate on an announced size.
+  }
+
+  @override
+  void clear() => throw StateError('the budgeted sink cannot be cleared');
+
+  @override
+  void reset() => throw StateError('the budgeted sink cannot be reset');
 }

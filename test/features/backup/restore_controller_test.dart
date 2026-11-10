@@ -198,7 +198,7 @@ void main() {
       ..addFile(ArchiveFile('manifest.json', manifest.length, manifest))
       ..addFile(ArchiveFile('backup_blob', blob.length, blob))
       ..addFile(ArchiveFile('borrowers.db', borrowersDb.length, borrowersDb));
-    return Uint8List.fromList(ZipEncoder().encode(a)!);
+    return Uint8List.fromList(ZipEncoder().encode(a));
   }
 
   test('maps a corrupt archive to AsyncError(BackupCorruptFailure)', () async {
@@ -311,7 +311,7 @@ void main() {
     );
     final a = Archive()
       ..addFile(ArchiveFile('manifest.json', manifest.length, manifest));
-    final zip = Uint8List.fromList(ZipEncoder().encode(a)!);
+    final zip = Uint8List.fromList(ZipEncoder().encode(a));
 
     await container
         .read(restoreControllerProvider.notifier)
@@ -337,7 +337,7 @@ void main() {
       );
       final a = Archive()
         ..addFile(ArchiveFile('manifest.json', manifest.length, manifest));
-      return Uint8List.fromList(ZipEncoder().encode(a)!);
+      return Uint8List.fromList(ZipEncoder().encode(a));
     }
 
     test('flags cleared before the switch, then the lane is told', () async {
@@ -410,7 +410,7 @@ void main() {
         final bytes = utf8.encode(publishState);
         a.addFile(ArchiveFile('publish_state.json', bytes.length, bytes));
       }
-      return Uint8List.fromList(ZipEncoder().encode(a)!);
+      return Uint8List.fromList(ZipEncoder().encode(a));
     }
 
     List<Override> publishOverrides(PublishStateAdopter adopter) => [
@@ -530,7 +530,7 @@ void main() {
       );
       final a = Archive()
         ..addFile(ArchiveFile('manifest.json', manifest.length, manifest));
-      return Uint8List.fromList(ZipEncoder().encode(a)!);
+      return Uint8List.fromList(ZipEncoder().encode(a));
     }
 
     test('a dangling logo reference is cleared after a restore', () async {
@@ -942,7 +942,7 @@ void main() {
         ..addFile(ArchiveFile('manifest.json', manifest.length, manifest))
         ..addFile(ArchiveFile('identity.json', identity.length, identity))
         ..addFile(ArchiveFile('network.json', network.length, network));
-      return Uint8List.fromList(ZipEncoder().encode(a)!);
+      return Uint8List.fromList(ZipEncoder().encode(a));
     }
 
     /// Holds the autoDispose restore chain alive for the whole test

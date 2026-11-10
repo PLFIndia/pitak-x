@@ -171,6 +171,15 @@ class _CreateBackupPageState extends ConsumerState<CreateBackupPage> {
             'backup private.',
             style: Theme.of(context).textTheme.bodySmall,
           ),
+          const SizedBox(height: 12),
+          // Decision D12 (backup rework): a backup made by a newer Pitak
+          // need not open in an older one, and the user is told so BEFORE
+          // the backup is made. The other direction is a promise: an older
+          // backup always opens in a newer Pitak.
+          Text(
+            backupNeedsThisVersionMessage,
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
           const SizedBox(height: 24),
           FilledButton.icon(
             onPressed: _busy ? null : _createAndSave,

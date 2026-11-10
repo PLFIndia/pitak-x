@@ -141,10 +141,11 @@ These fail the build; change them deliberately, never to "make it pass".
 
 | Test | Enforces |
 |------|----------|
-| `test/architecture/domain_purity_test.dart` | domain imports only the allow-list (pure Dart, `fpdart`, `crypto`, `archive` — ADR 0009); `application/` performs no platform IO (`dart:io`, `dart:isolate`, `path`, `http`, `drift`, prefs, secure storage) |
+| `test/architecture/domain_purity_test.dart` | domain imports only the allow-list (pure Dart, `fpdart`, `crypto`, `archive` — ADR 0009), and from `archive` only the inflater, its in-memory streams and the CRC function; `application/` performs no platform IO (`dart:io`, `dart:isolate`, `path`, `http`, `drift`, prefs, secure storage) |
 | `test/architecture/layer_boundaries_test.dart` | no `presentation → infrastructure` imports; no `flutter/material` in `application`; no `print`/`debugPrint` outside `lib/core/platform/app_log.dart`; no `flutter_map` under `core/di` or `application/`; **file-size ratchet** (a file may not grow past its recorded line budget without an explicit allow-list entry — split it instead) |
 | `test/architecture/catalogue_item_validation_gate_test.dart` | every `CatalogueItem` construction site goes through `CatalogueItem.validate` (ADR 0004; the entity was `Book` until 2026-10) |
 | `test/core/database/migration_test.dart` | a drift schema snapshot exists for the current `schemaVersion`; every past version migrates forward with data intact (§5.4) |
+| `test/architecture/archive_sink_protocol_test.dart` | the ZIP output budget still fits `package:archive`: the three package files that decide how the inflater writes are pinned by content (a package update that touches them fails until they are read again), and the extractor's sink still guards every write path (ADR 0009, amendment) |
 | `test/architecture/cover_files_immutable_test.dart` | a stored cover file never changes once saved (ADR 0020 Decision 1): every file that reaches the covers folder is reviewed, readers write nothing, and the four writers are pinned to fresh names, a not-yet-live generation, or a move that never overwrites |
 
 ---
@@ -168,8 +169,9 @@ lib/
     di/                   providers.dart + src/<feature>_providers.dart
     error/                sealed Failure hierarchy
     images/               image_downscaler.dart — single choke point for every
-                          decoded image (size caps from the header, EXIF/GPS stripped,
-                          frame 0 only, runs in Isolate.run)
+                          decoded image (size caps from the header, EXIF/GPS and the
+                          colour profile stripped, transparency dropped without
+                          blending, frame 0 only, runs in Isolate.run)
     network/              bounded_http_fetcher.dart (size cap, deadline, ≤3 re-validated
                           redirects), app_user_agent.dart, osm_tiles.dart,
                           workers_dev_url.dart (the ONE workers.dev grammar, shared
@@ -427,7 +429,12 @@ to false** (the `hasX` forward-compat pattern):
   item kind in the Room shape, so a build older than ADR 0013 restores
   magazine issues and other items as plain books (it ignores the two
   kind entries above); a flag-less archive restores exactly as before.
-- Hostile-input bounds on read: bounded ZIP extraction (ADR 0009); W2
+- Hostile-input bounds on read: bounded ZIP extraction (ADR 0009). The
+  extractor reads the ZIP container (end record, directory, entry headers)
+  with its own code, `zip_container.dart`, and uses `package:archive` only
+  to inflate and to compute the CRC; a deflate stream must reach its end
+  mark and the CRC must match. What the reader decides for odd containers
+  is recorded in `bounded_zip_extractor_container_test.dart`. W2
   `item_kinds.json` / `periodicals.json` entries are capped at 4 MiB of UTF-8
   bytes and 100,000 rows in each `kinds`, `periodicals`, or `issues`
   collection (the codec constants are authoritative; equality is accepted).
@@ -505,7 +512,7 @@ to false** (the `hasX` forward-compat pattern):
 | Rows per Refresh run | ≤ 500 (stop discovering, report); discovery ≤ 2 hops | `NetworkDiscoveryPlan` |
 | Concurrency | 4 in-flight fetches | `RefreshNetworkUseCase` |
 | QR payload | ≤ 512 bytes; URL validated before fragment | `LibraryCardPayload` |
-| Images | reject > 8192 px / > 40 Mpx from the header; frame 0 only; JPEG out at the caller's size: 400×600 q80 by default, 240×360 q70 for a cover photographed in the app, 1080×1440 q80 for an event poster | `ImageDownscaler`, `PhotoCoverRecipe` |
+| Images | reject > 8192 px / > 40 Mpx from the header, and the decoder's own pixel limit is set to the same 40 Mpx; frame 0 only; JPEG out at the caller's size: 400×600 q80 by default, 240×360 q70 for a cover photographed in the app, 1080×1440 q80 for an event poster. The output carries no EXIF block and no colour profile, and transparency is dropped without blending, so it does not change with the `image` package (two SHA-256 pins in `image_downscaler_test.dart`) | `ImageDownscaler`, `PhotoCoverRecipe` |
 | Publish target URL | derived from the sealed target's identity parts, cross-checked against the stored one; never accepted as an arbitrary `{host, url}` pair | `PublishTarget`, `PrefsPublishHostStore` |
 | Publish read-back body | marker ≤ 4 KiB; `library.json` / `events.json` ≤ 64 KiB; catalogue by its own rule; exact expected origin and site directory, **no** redirect followed, one `?rb=` buster allowed | `BoundedPublishedSiteVerifier`, `PublishedSiteUrlPolicy.readBackUrl` |
 | Cloudflare API body | ≤ 1 MiB streamed, cancelled over cap; string-aware depth ≤ 16 **before** `jsonDecode`; endpoint-specific string/list/map bounds; whitelisted fields only | `CloudflareJson`, `HttpCloudflareApi` |
