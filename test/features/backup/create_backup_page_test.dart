@@ -15,6 +15,7 @@ import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/core/platform/file_share.dart';
 import 'package:pitaka/features/backup/application/create_backup_use_case.dart';
+import 'package:pitaka/features/backup/domain/backup_progress.dart';
 import 'package:pitaka/features/backup/domain/create_backup_result.dart';
 import 'package:pitaka/features/backup/presentation/pages/create_backup_page.dart';
 
@@ -43,6 +44,7 @@ class _FakeCreateBackup implements CreateBackupUseCase {
     List<String> coversLeftOut = const [],
     this.gate,
     this.events,
+    this.error,
   }) : _result = result.map(
          (bytes) => CreateBackupResult(
            path: _fakeBackupPath,
@@ -62,12 +64,30 @@ class _FakeCreateBackup implements CreateBackupUseCase {
 
   final _Events? events;
 
+  /// When given, the build throws it instead of returning (after [gate]).
+  final Object? error;
+
   /// The results handed back through [discard], in order.
   final List<CreateBackupResult> discarded = [];
 
+  /// The progress listener of the latest call (BR4 rider 3). A test calls
+  /// [report] to play the builder that packs cover pictures.
+  BackupProgressListener? _onProgress;
+
+  /// Reports "[done] of [total] covers" to the page, as the running build
+  /// would.
+  void report(int done, int total) => _onProgress!(
+    BackupProgress.tryCreate(coversDone: done, coversTotal: total)!,
+  );
+
   @override
-  Future<Either<Failure, CreateBackupResult>> call() async {
+  Future<Either<Failure, CreateBackupResult>> call({
+    BackupProgressListener? onProgress,
+  }) async {
+    _onProgress = onProgress;
     await gate?.future;
+    final e = error;
+    if (e != null) Error.throwWithStackTrace(e, StackTrace.current);
     return _result;
   }
 
@@ -83,12 +103,20 @@ class _FakeCreateBackup implements CreateBackupUseCase {
 
 /// Share-sheet fake: a fixed outcome, or throws like a crashing plugin.
 class _FakeShare implements FileShareService {
-  _FakeShare({this.outcome = ShareOutcome.success, this.error, this.events});
+  _FakeShare({
+    this.outcome = ShareOutcome.success,
+    this.error,
+    this.events,
+    this.gate,
+  });
 
   /// Not final: one test changes the outcome between two runs.
   ShareOutcome outcome;
   final Object? error;
   final _Events? events;
+
+  /// When given, the share sheet "stays open" until it completes.
+  final Completer<void>? gate;
 
   /// The (path, MIME type) of every file handed to the share sheet.
   final List<({String path, String mimeType})> files = [];
@@ -101,6 +129,7 @@ class _FakeShare implements FileShareService {
   }) async {
     files.add((path: path, mimeType: mimeType));
     events?.add('share');
+    await gate?.future;
     final e = error;
     if (e != null) Error.throwWithStackTrace(e, StackTrace.current);
     return outcome;
@@ -622,6 +651,196 @@ void main() {
 
       expect(useCase.discarded, isEmpty);
       expect(tester.takeException(), isNull);
+    });
+  });
+
+  // BR4 rider 3 (the backup part of review finding P4-M7): a large backup
+  // spends its time packing cover pictures, and a spinner alone does not
+  // say whether anything is still happening. One line under the button
+  // counts the covers. The fake use case plays the build: it waits at a
+  // gate, and the test reports progress "from inside" it.
+  group('BR4 rider 3 — progress while the cover pictures are packed', () {
+    final line = find.byKey(const Key('backup-progress'));
+    const handedOver =
+        'Backup handed to the selected app; confirm it was saved or sent.';
+
+    bool buttonEnabled(WidgetTester tester) =>
+        tester.widget<FilledButton>(find.byType(FilledButton)).enabled;
+
+    /// Shows the page with [useCase] and taps the button. The build then
+    /// waits at the use case's gate.
+    Future<void> startBuild(
+      WidgetTester tester,
+      _FakeCreateBackup useCase, {
+      _FakeShare? share,
+    }) async {
+      await tester.pumpWidget(page(useCase: useCase, share: share));
+      await tester.tap(find.widgetWithText(FilledButton, 'Create backup'));
+      await tester.pump();
+    }
+
+    testWidgets('before the first report, and for a library without cover '
+        'pictures, there is only the spinner', (tester) async {
+      final gate = Completer<void>();
+      final useCase = _FakeCreateBackup(
+        right(Uint8List.fromList([1])),
+        gate: gate,
+      );
+      await startBuild(tester, useCase);
+
+      expect(line, findsNothing);
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+      expect(find.text('Creating…'), findsOneWidget);
+
+      // No report ever comes (no covers): the backup finishes without the
+      // line having been shown.
+      gate.complete();
+      await tester.pumpAndSettle();
+      expect(line, findsNothing);
+      expect(find.text(handedOver), findsOneWidget);
+    });
+
+    testWidgets('a report shows "Cover 1,234 of 9,000" under the button, and '
+        'the next report replaces it', (tester) async {
+      final gate = Completer<void>();
+      final useCase = _FakeCreateBackup(
+        right(Uint8List.fromList([1])),
+        gate: gate,
+      );
+      await startBuild(tester, useCase);
+
+      useCase.report(1234, 9000);
+      await tester.pump();
+
+      expect(tester.widget<Text>(line).data, 'Cover 1,234 of 9,000');
+      final buttonBottom = tester.getBottomLeft(find.byType(FilledButton)).dy;
+      expect(tester.getTopLeft(line).dy, greaterThan(buttonBottom));
+      // The spinner stays, and the button stays locked: still one backup.
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+      expect(buttonEnabled(tester), isFalse);
+
+      useCase.report(9000, 9000);
+      await tester.pump();
+
+      expect(line, findsOneWidget);
+      expect(tester.widget<Text>(line).data, 'Cover 9,000 of 9,000');
+
+      gate.complete();
+      await tester.pumpAndSettle();
+    });
+
+    testWidgets('the line is removed as soon as the build is over, while '
+        'the share sheet is still open', (tester) async {
+      final buildGate = Completer<void>();
+      final shareGate = Completer<void>();
+      final useCase = _FakeCreateBackup(
+        right(Uint8List.fromList([1])),
+        gate: buildGate,
+      );
+      final share = _FakeShare(gate: shareGate);
+      await startBuild(tester, useCase, share: share);
+      useCase.report(3, 3);
+      await tester.pump();
+      expect(line, findsOneWidget);
+
+      buildGate.complete();
+      await tester.pump();
+
+      expect(share.files, hasLength(1), reason: 'the share sheet is open');
+      expect(line, findsNothing);
+      expect(buttonEnabled(tester), isFalse, reason: 'not finished yet');
+
+      shareGate.complete();
+      await tester.pumpAndSettle();
+      expect(line, findsNothing);
+      expect(find.text(handedOver), findsOneWidget);
+      expect(buttonEnabled(tester), isTrue);
+    });
+
+    testWidgets('the line is removed when the build fails', (tester) async {
+      final gate = Completer<void>();
+      final useCase = _FakeCreateBackup(
+        left(const StorageFailure('x')),
+        gate: gate,
+      );
+      await startBuild(tester, useCase);
+      useCase.report(2, 5);
+      await tester.pump();
+      expect(line, findsOneWidget);
+
+      gate.complete();
+      await tester.pumpAndSettle();
+
+      expect(line, findsNothing);
+      expect(
+        find.text('Could not build the backup. Please try again.'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('the line is removed when the build throws after a report', (
+      tester,
+    ) async {
+      final gate = Completer<void>();
+      final useCase = _FakeCreateBackup(
+        right(Uint8List.fromList([1])),
+        gate: gate,
+        error: StateError('disk went away'),
+      );
+      await startBuild(tester, useCase);
+      useCase.report(2, 5);
+      await tester.pump();
+      expect(line, findsOneWidget);
+
+      gate.complete();
+      await tester.pumpAndSettle();
+
+      expect(line, findsNothing);
+      expect(
+        find.text('Something went wrong creating the backup.'),
+        findsOneWidget,
+      );
+      expect(buttonEnabled(tester), isTrue);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('a report that arrives after the page was left is dropped', (
+      tester,
+    ) async {
+      // The build goes on in its worker when the user leaves the page. A
+      // report for a page that is gone must not touch it.
+      final gate = Completer<void>();
+      final useCase = _FakeCreateBackup(
+        right(Uint8List.fromList([1])),
+        gate: gate,
+      );
+      await startBuild(tester, useCase);
+      await tester.pumpWidget(const SizedBox());
+
+      useCase.report(1, 2);
+      gate.complete();
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      expect(useCase.discarded, hasLength(1), reason: 'still given back');
+    });
+
+    testWidgets('meets accessibility guidelines while the line is shown', (
+      tester,
+    ) async {
+      final gate = Completer<void>();
+      final useCase = _FakeCreateBackup(
+        right(Uint8List.fromList([1])),
+        gate: gate,
+      );
+      await startBuild(tester, useCase);
+      useCase.report(1234, 9000);
+      await tester.pump();
+
+      await expectMeetsA11yGuidelines(tester);
+
+      gate.complete();
+      await tester.pumpAndSettle();
     });
   });
 }

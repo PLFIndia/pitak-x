@@ -39,6 +39,7 @@ import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/backup/domain/backup_archive_builder.dart';
 import 'package:pitaka/features/backup/domain/backup_identity.dart';
+import 'package:pitaka/features/backup/domain/backup_progress.dart';
 import 'package:pitaka/features/backup/domain/backup_work_area.dart';
 import 'package:pitaka/features/backup/domain/create_backup_result.dart';
 import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
@@ -95,7 +96,14 @@ class CreateBackupUseCase {
   /// Builds the archive, or a [Failure] if the catalog can't be read. The
   /// identity and network entries never turn the result into a Left — see
   /// the library doc.
-  Future<Either<Failure, CreateBackupResult>> call() async {
+  ///
+  /// [onProgress] (BR4 rider 3) is handed to the builder as it is: it is
+  /// told how many cover pictures are packed, of how many, a few times a
+  /// second, and never again once this call has returned. Reading the
+  /// catalogue, which comes first, reports nothing.
+  Future<Either<Failure, CreateBackupResult>> call({
+    BackupProgressListener? onProgress,
+  }) async {
     final booksResult = await books.getAllForInterchange();
     final allBooks = booksResult.toNullable();
     if (allBooks == null) {
@@ -150,6 +158,7 @@ class CreateBackupUseCase {
         identityJson: identityJson,
         networkJson: networkJson,
         publishStateJson: publishStateEntry.json,
+        onProgress: onProgress,
       );
       handedOver = built.isRight();
       return built.map(

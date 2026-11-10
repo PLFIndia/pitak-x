@@ -1,6 +1,7 @@
-/// The sentences the create-backup page shows when a backup is refused or
-/// had to leave something out (presentation layer, AGENTS.md §5: typed
-/// failures in, safe text out, never raw exception text).
+/// The sentences the create-backup page shows when a backup is refused,
+/// had to leave something out, or is still being packed (presentation
+/// layer, AGENTS.md §5: typed failures in, safe text out, never raw
+/// exception text).
 ///
 /// WHY THIS FILE EXISTS (beginner note): the writer refuses to build a
 /// backup its own reader could not restore (BR3). "Too large" alone leaves
@@ -15,6 +16,7 @@ library;
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/core/text/display_number.dart';
 import 'package:pitaka/features/backup/domain/backup_overflow.dart';
+import 'package:pitaka/features/backup/domain/backup_progress.dart';
 
 /// Shown on the create-backup page before a backup is made (decision D12).
 ///
@@ -34,6 +36,16 @@ const String backupTooLargeFallbackMessage =
     'Nothing was exported.';
 
 const String _nothingExported = 'Nothing was exported.';
+
+/// The line under the button while the cover pictures of a backup are
+/// being packed (BR4 rider 3): "Cover 1,234 of 9,000".
+///
+/// Covers are what a large backup spends its time on, so their count is
+/// the honest measure of how far it is. Both numbers are grouped in threes
+/// like every other number on this page.
+String backupProgressMessage(BackupProgress progress) =>
+    'Cover ${formatCount(progress.coversDone)} of '
+    '${formatCount(progress.coversTotal)}';
 
 /// The sentence for a refused backup.
 ///

@@ -6,6 +6,7 @@ import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/backup/application/create_backup_use_case.dart';
 import 'package:pitaka/features/backup/domain/backup_archive_builder.dart';
 import 'package:pitaka/features/backup/domain/backup_identity.dart';
+import 'package:pitaka/features/backup/domain/backup_progress.dart';
 import 'package:pitaka/features/backup/domain/backup_work_area.dart';
 import 'package:pitaka/features/backup/domain/create_backup_result.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
@@ -385,6 +386,47 @@ void main() {
     });
   });
 
+  // BR4 rider 3: the page wants to show "Cover 1,234 of 9,000". The use
+  // case does not count anything itself; it hands the listener on.
+  group('BR4 rider 3 — progress', () {
+    BackupProgress progress(int done, int total) =>
+        BackupProgress.tryCreate(coversDone: done, coversTotal: total)!;
+
+    test('what the builder reports reaches the listener, in order', () async {
+      final reporting = _ReportingWriter([progress(1, 3), progress(3, 3)]);
+      final create = CreateBackupUseCase(
+        books: _Books(),
+        wishlist: _Wishlist(),
+        periodicals: _Periodicals(),
+        writer: reporting,
+        workArea: workArea,
+        namespace: _Namespace(right(identity)),
+        network: _Network([row]),
+        publishState: _PublishState(right(null)),
+      );
+      final seen = <String>[];
+
+      final result = await create(onProgress: (p) => seen.add('$p'));
+
+      expect(result.isRight(), isTrue);
+      expect(seen, ['BackupProgress(1 of 3)', 'BackupProgress(3 of 3)']);
+    });
+
+    test('the builder gets the very listener the caller gave', () async {
+      void listener(BackupProgress _) {}
+
+      await useCase()(onProgress: listener);
+
+      expect(writer.calls.single.onProgress, same(listener));
+    });
+
+    test('without a listener the builder gets none', () async {
+      await useCase()();
+
+      expect(writer.calls.single.onProgress, isNull);
+    });
+  });
+
   test('no cover left out is the normal case', () async {
     final r = (await useCase()()).getOrElse((f) => fail('left: $f'));
     expect(r.coversLeftOut, isEmpty);
@@ -534,12 +576,14 @@ class _Call {
     required this.networkJson,
     required this.periodicals,
     required this.publishStateJson,
+    required this.onProgress,
   });
   final String workDir;
   final String? identityJson;
   final String? networkJson;
   final List<Periodical> periodicals;
   final String? publishStateJson;
+  final BackupProgressListener? onProgress;
 }
 
 /// Records the §3.4 entry strings and the work folder; reports a finished
@@ -557,6 +601,7 @@ class _RecordingWriter implements BackupArchiveBuilder {
     required String? identityJson,
     required String? networkJson,
     required String? publishStateJson,
+    BackupProgressListener? onProgress,
   }) async {
     calls.add(
       _Call(
@@ -565,8 +610,34 @@ class _RecordingWriter implements BackupArchiveBuilder {
         networkJson: networkJson,
         periodicals: periodicals,
         publishStateJson: publishStateJson,
+        onProgress: onProgress,
       ),
     );
+    return right(BuiltBackup(path: '$workDir/$_fakeFileName', sizeBytes: 3));
+  }
+}
+
+/// Builds fine and reports [reports] on the way, like the real writer does
+/// while it packs cover pictures (BR4 rider 3).
+class _ReportingWriter implements BackupArchiveBuilder {
+  _ReportingWriter(this.reports);
+  final List<BackupProgress> reports;
+
+  @override
+  Future<Either<Failure, BuiltBackup>> build({
+    required List<CatalogueItem> books,
+    required List<WishlistBook> wishlist,
+    required List<Periodical> periodicals,
+    required String workDir,
+    required int exportedAt,
+    required String? identityJson,
+    required String? networkJson,
+    required String? publishStateJson,
+    BackupProgressListener? onProgress,
+  }) async {
+    for (final report in reports) {
+      onProgress?.call(report);
+    }
     return right(BuiltBackup(path: '$workDir/$_fakeFileName', sizeBytes: 3));
   }
 }
@@ -583,6 +654,7 @@ class _ThrowingWriter implements BackupArchiveBuilder {
     required String? identityJson,
     required String? networkJson,
     required String? publishStateJson,
+    BackupProgressListener? onProgress,
   }) => throw StateError('disk went away');
 }
 
@@ -601,6 +673,7 @@ class _LeavingOutWriter implements BackupArchiveBuilder {
     required String? identityJson,
     required String? networkJson,
     required String? publishStateJson,
+    BackupProgressListener? onProgress,
   }) async => right(
     BuiltBackup(
       path: '$workDir/$_fakeFileName',
@@ -623,6 +696,7 @@ class _TooLargeWriter implements BackupArchiveBuilder {
     required String? identityJson,
     required String? networkJson,
     required String? publishStateJson,
+    BackupProgressListener? onProgress,
   }) async {
     calls++;
     return left(const BackupTooLargeFailure('itemKindsTooLarge'));

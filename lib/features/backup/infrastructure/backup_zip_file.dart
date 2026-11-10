@@ -49,18 +49,34 @@ typedef PackedBackup = ({int sizeBytes, bool inPlace});
 /// the checks judged ([PlannedBackupEntry.bytes]), or when the disk is
 /// full. The caller deletes [partPath] in that case; [finalPath] is never
 /// created.
+///
+/// [onCoverPacked] (BR4 rider 3, progress) is called after EVERY cover
+/// picture that went into the ZIP, with the running count and the number
+/// of cover pictures among [entries]. Never called when there is none.
+/// Whoever passes it decides how many of these calls to pass on.
 PackedBackup packBackupZip({
   required List<PlannedBackupEntry> entries,
   required String partPath,
   required String finalPath,
   required int maxArchiveBytes,
+  void Function(int coversDone, int coversTotal)? onCoverPacked,
 }) {
+  var coversTotal = 0;
+  for (final entry in entries) {
+    if (entry.isCover) coversTotal++;
+  }
+  var coversDone = 0;
+
   final out = OutputFileStream(partPath);
   final int written;
   try {
     final encoder = ZipEncoder()..startEncode(out);
     for (final entry in entries) {
       _add(encoder, entry);
+      if (entry.isCover) {
+        coversDone++;
+        onCoverPacked?.call(coversDone, coversTotal);
+      }
     }
     encoder.endEncode();
     written = out.length;

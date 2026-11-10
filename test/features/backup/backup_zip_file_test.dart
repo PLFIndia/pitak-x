@@ -299,4 +299,67 @@ void main() {
       expect(Directory(finalPath).listSync(), isEmpty);
     });
   });
+
+  // BR4 rider 3: the packer counts the cover pictures it has written, so
+  // that the page can say "Cover 1,234 of 9,000". It reports EVERY cover;
+  // how many of these reports are passed on is decided by its caller
+  // (`backup_progress_port_test.dart`).
+  group('counting the covers (progress)', () {
+    late List<(int, int)> counted;
+
+    setUp(() => counted = []);
+
+    PackedBackup packCounting(List<PlannedBackupEntry> entries) =>
+        packBackupZip(
+          entries: entries,
+          partPath: partPath,
+          finalPath: finalPath,
+          maxArchiveBytes: limits.maxArchiveBytes,
+          onCoverPacked: (done, total) => counted.add((done, total)),
+        );
+
+    test('one call after every cover, with the running count and the '
+        'number of covers; other entries do not count', () {
+      final packed = packCounting([
+        text('manifest.json', rows(10)),
+        database('books.db', rows(1000)),
+        cover('a.jpg', noise(100)),
+        cover('b.jpg', noise(200, seed: 2)),
+        cover('c.jpg', noise(300, seed: 3)),
+        text('network.json', rows(10)),
+      ]);
+
+      expect(packed.inPlace, isTrue);
+      expect(counted, [(1, 3), (2, 3), (3, 3)]);
+      expect(readBack(), hasLength(6), reason: 'the archive is unchanged');
+    });
+
+    test('a backup without covers is never counted', () {
+      packCounting([
+        text('manifest.json', rows(10)),
+        database('books.db', rows(1000)),
+      ]);
+
+      expect(counted, isEmpty);
+    });
+
+    test('a cover is counted when it is IN the archive: one that fails is '
+        'not', () {
+      expect(
+        () => packCounting([
+          cover('a.jpg', noise(100)),
+          PlannedBackupEntry(
+            'cover_gone.jpg',
+            3,
+            File('${tmp.path}/gone.jpg').readAsBytesSync,
+          ),
+          cover('c.jpg', noise(300, seed: 3)),
+        ]),
+        throwsA(isA<FileSystemException>()),
+      );
+
+      expect(counted, [(1, 3)]);
+      expect(File(finalPath).existsSync(), isFalse);
+    });
+  });
 }

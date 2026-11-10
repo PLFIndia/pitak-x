@@ -43,7 +43,11 @@
 ///  - the ZIP is written straight to a FILE (`backup_zip_file.dart`, BR4):
 ///    one cover is in memory at a time and the databases are read from
 ///    disk in small pieces, so the memory needed no longer grows with the
-///    size of the backup.
+///    size of the backup;
+///  - progress (BR4 rider 3) comes back as messages through a port
+///    (`backup_progress_port.dart`): "covers done, of total", a few times a
+///    second. The port is opened and closed in `build`; only its sending
+///    end travels in the job.
 ///
 /// **The files of one build (BR4).** `workDir` belongs to the caller and is
 /// used by this one build only. Inside it:
@@ -87,6 +91,7 @@ import 'package:pitaka/features/backup/domain/backup_file_name.dart';
 import 'package:pitaka/features/backup/domain/backup_limits.dart';
 import 'package:pitaka/features/backup/domain/backup_manifest.dart';
 import 'package:pitaka/features/backup/domain/backup_overflow.dart';
+import 'package:pitaka/features/backup/domain/backup_progress.dart';
 import 'package:pitaka/features/backup/infrastructure/backup_entry_bounds.dart';
 import 'package:pitaka/features/backup/infrastructure/backup_extras_reader.dart'
     show
@@ -95,6 +100,7 @@ import 'package:pitaka/features/backup/infrastructure/backup_extras_reader.dart'
         networkEntryName,
         publishStateEntryName;
 import 'package:pitaka/features/backup/infrastructure/backup_preflight.dart';
+import 'package:pitaka/features/backup/infrastructure/backup_progress_port.dart';
 import 'package:pitaka/features/backup/infrastructure/backup_room_databases.dart';
 import 'package:pitaka/features/backup/infrastructure/backup_zip_file.dart';
 import 'package:pitaka/features/backup/infrastructure/item_details_archive_codec.dart';
@@ -143,6 +149,7 @@ typedef _BackupJob = ({
   String? networkJson,
   String? publishStateJson,
   BackupLimits limits,
+  SendPort? progressPort,
 });
 
 /// Builds a `.pitabak` archive as a file.
@@ -186,6 +193,9 @@ class BackupArchiveWriter implements BackupArchiveBuilder {
   /// guaranteed sendable; they are two `existsSync` calls, a tiny file read
   /// (the blob is ciphertext that already lives as a plain file) and the
   /// copy of the vault database, which `dart:io` does off this isolate.
+  ///
+  /// [onProgress]: see [BackupArchiveBuilder.build]. It is called here, on
+  /// the calling isolate, for the reports the worker sends.
   @override
   Future<Either<Failure, BuiltBackup>> build({
     required List<CatalogueItem> books,
@@ -196,6 +206,7 @@ class BackupArchiveWriter implements BackupArchiveBuilder {
     required String? identityJson,
     required String? networkJson,
     required String? publishStateJson,
+    BackupProgressListener? onProgress,
   }) async {
     final scratch = Directory(p.join(workDir, _scratchDirName));
     // The name is made from the manifest's time and nothing else, so no
@@ -204,6 +215,12 @@ class BackupArchiveWriter implements BackupArchiveBuilder {
       workDir,
       backupFileName(DateTime.fromMillisecondsSinceEpoch(exportedAt)),
     );
+    // Rider 3: the worker reports to this port. Opened only when somebody
+    // listens, as the LAST step before the `try`, whose `finally` closes it
+    // on every way out (nothing in between can fail and leave it open).
+    final progress = onProgress == null
+        ? null
+        : BackupProgressReceiver(onProgress);
     try {
       // Fresh on purpose: nothing of an earlier build may slip into this one.
       if (scratch.existsSync()) await scratch.delete(recursive: true);
@@ -231,12 +248,14 @@ class BackupArchiveWriter implements BackupArchiveBuilder {
         networkJson: networkJson,
         publishStateJson: publishStateJson,
         limits: limits,
+        progressPort: progress?.sendPort,
       ));
       return _toEither(outcome, finalPath);
     } finally {
       // On EVERY way out: success, refusal, or an error on either isolate.
-      // If this removal itself fails, the build fails with it and the
-      // caller discards the whole `workDir`.
+      // The port first: closing it cannot fail. If the removal fails, the
+      // build fails with it and the caller discards the whole `workDir`.
+      progress?.close();
       if (scratch.existsSync()) await scratch.delete(recursive: true);
     }
   }
@@ -385,11 +404,17 @@ class BackupArchiveWriter implements BackupArchiveBuilder {
     // its final name only when it is complete (`backup_zip_file.dart`). A
     // file is read only when its turn comes, and the build fails as a whole
     // if it is no longer the size the pre-flight judged.
+    final progressPort = job.progressPort;
     final packed = packBackupZip(
       entries: entries,
       partPath: p.join(job.scratchDir, _unfinishedZipName),
       finalPath: job.finalPath,
       maxArchiveBytes: job.limits.maxArchiveBytes,
+      // Rider 3: the packer counts every cover; the reporter passes on at
+      // most ten counts a second, and always the last one.
+      onCoverPacked: progressPort == null
+          ? null
+          : BackupProgressReporter.toPort(progressPort).coverPacked,
     );
     if (!packed.inPlace) {
       return _refused((

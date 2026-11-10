@@ -492,6 +492,16 @@ to false** (the `hasX` forward-compat pattern):
   a run this app session is using is never swept. On Android the share
   plugin offers its own copy of the file, which it removes at the next
   share.
+- Progress while a backup is built (review finding P4-M7, the backup part
+  only). `packBackupZip` counts every cover it has written. In the worker,
+  `BackupProgressReporter` passes on at most ten counts a second and always
+  the last one, as two whole numbers through a port
+  (`backup_progress_port.dart`). `BackupArchiveWriter.build` opens that port
+  only when a listener is given and closes it on every way out; the calling
+  isolate turns each message into a checked `BackupProgress` (backup
+  domain). The page shows "Cover 1,234 of 9,000" under its button until
+  the build has returned. Reading the catalogue, the vault copy and the
+  databases report nothing: the spinner alone. There is no Cancel.
 - A cover file above the per-cover cap does not fail the backup: it is left
   out, the item stays inside, and the page names the items (count, first
   three titles). An oversized file that no item refers to is skipped without

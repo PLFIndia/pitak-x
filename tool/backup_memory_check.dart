@@ -33,6 +33,7 @@ import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:pitaka/features/backup/domain/backup_limits.dart';
+import 'package:pitaka/features/backup/domain/backup_progress.dart';
 import 'package:pitaka/features/backup/infrastructure/backup_archive_writer.dart';
 import 'package:pitaka/features/import_export/domain/zip_container.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
@@ -96,6 +97,11 @@ Future<void> main(List<String> arguments) async {
       'Building a backup of $coverCount covers of $coverBytes bytes and a '
       '${_megabytes(vaultMebibytes * _mebibyte)} vault file...',
     );
+    // The app's page always listens for progress (BR4 rider 3), so this
+    // check listens too: it then measures the path the app really takes,
+    // and shows how few reports a large backup sends.
+    var reports = 0;
+    BackupProgress? lastReport;
     final clock = Stopwatch()..start();
     final result = await writer.build(
       books: const [CatalogueItem(id: 1, title: 'One book')],
@@ -106,6 +112,10 @@ Future<void> main(List<String> arguments) async {
       identityJson: null,
       networkJson: null,
       publishStateJson: null,
+      onProgress: (progress) {
+        reports++;
+        lastReport = progress;
+      },
     );
     clock.stop();
 
@@ -127,17 +137,28 @@ Future<void> main(List<String> arguments) async {
     final entries = ZipContainer.locateEndRecord(tail).entryCount;
     // manifest, books.db, wishlist.db, borrowers.db, backup_blob + covers.
     final expected = coverCount + 5;
+    // The last report must be the full count (none at all without covers).
+    final last = lastReport;
+    final progressComplete = coverCount == 0
+        ? last == null
+        : last != null &&
+              last.coversDone == coverCount &&
+              last.coversTotal == coverCount;
+    final lastText = last == null
+        ? 'none'
+        : '${last.coversDone} of ${last.coversTotal}';
 
     stdout
       ..writeln('Time:            ${clock.elapsedMilliseconds} ms')
       ..writeln('Backup file:     ${_megabytes(built.sizeBytes)}')
       ..writeln('Entries:         $entries (expected $expected)')
+      ..writeln('Progress:        $reports report(s), the last: $lastText')
       ..writeln('Peak memory:     ${_megabytes(ProcessInfo.maxRss)}')
       ..writeln(
         'Left in the run: '
         '${Directory('${root.path}/run').listSync().length} file(s)',
       );
-    if (entries != expected || built.sizeBytes != length) {
+    if (entries != expected || built.sizeBytes != length || !progressComplete) {
       stderr.writeln('The backup is not what was expected.');
       exitCode = 1;
     }

@@ -7,6 +7,7 @@ library;
 
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/features/backup/domain/backup_progress.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
 import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
@@ -90,6 +91,13 @@ abstract interface class BackupArchiveBuilder {
   /// SQLite files, reading every cover and packing the lot — seconds of
   /// work for a large library. Implementations are expected to do that off
   /// the calling isolate so the UI keeps painting.
+  ///
+  /// [onProgress] (BR4 rider 3) is told how many cover pictures are packed,
+  /// of how many: at most about ten times a second, and once more when the
+  /// last one is in. It is called on the isolate that called `build`, and
+  /// never again once the returned future has completed. A library without
+  /// cover pictures, and a build that is refused before packing starts,
+  /// report nothing. Null means nobody wants to know.
   Future<Either<Failure, BuiltBackup>> build({
     required List<CatalogueItem> books,
     required List<WishlistBook> wishlist,
@@ -99,5 +107,6 @@ abstract interface class BackupArchiveBuilder {
     required String? identityJson,
     required String? networkJson,
     required String? publishStateJson,
+    BackupProgressListener? onProgress,
   });
 }

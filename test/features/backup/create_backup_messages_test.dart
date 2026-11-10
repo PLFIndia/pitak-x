@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/backup/domain/backup_overflow.dart';
+import 'package:pitaka/features/backup/domain/backup_progress.dart';
 import 'package:pitaka/features/backup/presentation/create_backup_messages.dart';
 
 /// BR3: one plain sentence per reason a backup was refused, with the two
@@ -169,6 +170,23 @@ void main() {
       'A backup made with this version may not open in an older version of '
       'Pitak. Update Pitak on the other phone before you restore there.',
     );
+  });
+
+  group('the progress line (BR4 rider 3)', () {
+    String line(int done, int total) => backupProgressMessage(
+      BackupProgress.tryCreate(coversDone: done, coversTotal: total)!,
+    );
+
+    test('both numbers are grouped in threes', () {
+      expect(line(1234, 9000), 'Cover 1,234 of 9,000');
+      expect(line(12345, 1000000), 'Cover 12,345 of 1,000,000');
+    });
+
+    test('small numbers, the first and the last cover', () {
+      expect(line(1, 1), 'Cover 1 of 1');
+      expect(line(1, 999), 'Cover 1 of 999');
+      expect(line(999, 999), 'Cover 999 of 999');
+    });
   });
 
   group('cover pictures that were left out (decision D10)', () {

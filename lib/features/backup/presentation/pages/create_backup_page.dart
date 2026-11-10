@@ -10,6 +10,11 @@
 /// gives it back (`useCase.discard`) on every path: after the share sheet
 /// has returned, whatever happened there, and at once when the screen is
 /// already gone. The file is a plain copy of the whole library.
+///
+/// BR4 rider 3: while the cover pictures are being packed, one line under
+/// the button says how far the build is ("Cover 1,234 of 9,000"). Before
+/// the first report, and for a library without cover pictures, the spinner
+/// in the button is all there is, as before. There is no Cancel.
 library;
 
 import 'package:flutter/material.dart';
@@ -17,6 +22,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/core/platform/file_share.dart';
+import 'package:pitaka/features/backup/domain/backup_progress.dart';
 import 'package:pitaka/features/backup/presentation/create_backup_messages.dart';
 
 /// Screen that creates and saves a backup archive.
@@ -44,6 +50,11 @@ class _CreateBackupPageState extends ConsumerState<CreateBackupPage> {
   /// large for a backup and was left out. The items themselves are inside.
   List<String> _coversLeftOut = const [];
 
+  /// BR4 rider 3: how many cover pictures the running build has packed, of
+  /// how many. Null before the first report and once the build is over
+  /// (so there is nothing to reset when the next backup starts).
+  BackupProgress? _progress;
+
   bool get _missingAnything =>
       _missingIdentity || _missingNetwork || _missingPublishState;
 
@@ -58,6 +69,14 @@ class _CreateBackupPageState extends ConsumerState<CreateBackupPage> {
     if (missing.length < 2) return missing.join();
     return '${missing.sublist(0, missing.length - 1).join(', ')} and '
         '${missing.last}';
+  }
+
+  /// Shows a report of the running build (BR4 rider 3). The build calls
+  /// this a few times a second while it packs cover pictures.
+  void _showProgress(BackupProgress progress) {
+    // The build goes on when this screen is left, and may still report.
+    if (!mounted) return;
+    setState(() => _progress = progress);
   }
 
   Future<void> _createAndSave() async {
@@ -82,7 +101,11 @@ class _CreateBackupPageState extends ConsumerState<CreateBackupPage> {
       // used once this screen is gone, but the file must still be given
       // back then.
       final useCase = await ref.read(createBackupUseCaseProvider.future);
-      final result = await useCase();
+      final result = await useCase(onProgress: _showProgress);
+      // The build is over, whatever came of it: the line under the button
+      // has nothing more to say. What follows (the share sheet, or the
+      // error) speaks for itself.
+      if (mounted) setState(() => _progress = null);
 
       await result.match(
         (failure) async {
@@ -139,6 +162,7 @@ class _CreateBackupPageState extends ConsumerState<CreateBackupPage> {
       if (mounted) {
         setState(() {
           _busy = false;
+          _progress = null;
           _error = 'Something went wrong creating the backup.';
         });
       }
@@ -206,6 +230,15 @@ class _CreateBackupPageState extends ConsumerState<CreateBackupPage> {
                 : const Icon(Icons.save_alt),
             label: Text(_busy ? 'Creating…' : 'Create backup'),
           ),
+          // BR4 rider 3: how far the build is, once it packs cover pictures.
+          if (_progress case final progress?) ...[
+            const SizedBox(height: 8),
+            Text(
+              backupProgressMessage(progress),
+              key: const Key('backup-progress'),
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ],
           if (_done) ...[
             const SizedBox(height: 16),
             Text(
