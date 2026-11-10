@@ -27,12 +27,14 @@ class _FakeCreateBackup implements CreateBackupUseCase {
     bool includesIdentity = true,
     bool includesNetwork = true,
     bool missingPublishState = false,
+    List<String> coversLeftOut = const [],
   }) : _result = result.map(
          (bytes) => CreateBackupResult(
            bytes: bytes,
            includesIdentity: includesIdentity,
            includesNetwork: includesNetwork,
            missingPublishState: missingPublishState,
+           coversLeftOut: coversLeftOut,
          ),
        );
 
@@ -49,7 +51,8 @@ class _FakeCreateBackup implements CreateBackupUseCase {
 class _FakeShare implements FileShareService {
   _FakeShare({this.outcome = ShareOutcome.success, this.error});
 
-  final ShareOutcome outcome;
+  /// Not final: one test changes the outcome between two runs.
+  ShareOutcome outcome;
   final Object? error;
 
   @override
@@ -215,6 +218,151 @@ void main() {
       ),
       findsNothing,
     );
+  });
+
+  // BR3: a refusal that carries its numbers gets the sentence for its limit.
+  // (Every sentence is tested in create_backup_messages_test.dart; this
+  // proves the page shows it.)
+  testWidgets('BR3: too many cover pictures are named with both numbers', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      page(
+        useCase: _FakeCreateBackup(
+          left(const BackupTooLargeFailure('tooManyCovers', 4300, 4086)),
+        ),
+      ),
+    );
+    await tester.tap(find.widgetWithText(FilledButton, 'Create backup'));
+    await tester.pumpAndSettle();
+    expect(
+      find.text(
+        'This library has 4,300 cover pictures; a backup can hold 4,086. '
+        'Nothing was exported.',
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.text(
+        'Backup handed to the selected app; confirm it was saved or sent.',
+      ),
+      findsNothing,
+    );
+    expect(
+      tester.widget<FilledButton>(find.byType(FilledButton)).enabled,
+      isTrue,
+    );
+  });
+
+  group('BR3 (D10): cover pictures that were left out', () {
+    const sentenceForFive =
+        'Note: the cover pictures of 5 items are too large for a backup and '
+        'are not inside. The items themselves are inside:';
+
+    testWidgets('five items: the count, the first three titles, and how '
+        'many more', (tester) async {
+      await tester.pumpWidget(
+        page(
+          useCase: _FakeCreateBackup(
+            right(Uint8List.fromList([1])),
+            coversLeftOut: const ['Alpha', 'Beta', 'Gamma', 'Delta', 'Eta'],
+          ),
+        ),
+      );
+      await tester.tap(find.widgetWithText(FilledButton, 'Create backup'));
+      await tester.pumpAndSettle();
+
+      // The backup itself completed.
+      expect(
+        find.text(
+          'Backup handed to the selected app; confirm it was saved or sent.',
+        ),
+        findsOneWidget,
+      );
+      expect(find.text(sentenceForFive), findsOneWidget);
+      expect(find.text('• Alpha'), findsOneWidget);
+      expect(find.text('• Beta'), findsOneWidget);
+      expect(find.text('• Gamma'), findsOneWidget);
+      expect(find.textContaining('Delta'), findsNothing);
+      expect(find.textContaining('Eta'), findsNothing);
+      expect(find.text('and 2 more'), findsOneWidget);
+      await expectMeetsA11yGuidelines(tester);
+    });
+
+    testWidgets('one item: singular wording and no "more" line', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        page(
+          useCase: _FakeCreateBackup(
+            right(Uint8List.fromList([1])),
+            coversLeftOut: const ['Alpha'],
+          ),
+        ),
+      );
+      await tester.tap(find.widgetWithText(FilledButton, 'Create backup'));
+      await tester.pumpAndSettle();
+      expect(
+        find.text(
+          'Note: the cover picture of 1 item is too large for a backup and '
+          'is not inside. The item itself is inside:',
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('• Alpha'), findsOneWidget);
+      expect(find.textContaining('more'), findsNothing);
+    });
+
+    testWidgets('a very long title stays on one line', (tester) async {
+      await tester.pumpWidget(
+        page(
+          useCase: _FakeCreateBackup(
+            right(Uint8List.fromList([1])),
+            coversLeftOut: ['A very long title ${'word ' * 400}'],
+          ),
+        ),
+      );
+      await tester.tap(find.widgetWithText(FilledButton, 'Create backup'));
+      await tester.pumpAndSettle();
+      final title = tester.widget<Text>(
+        find.textContaining('A very long title'),
+      );
+      expect(title.maxLines, 1);
+      expect(title.overflow, TextOverflow.ellipsis);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('nothing left out: no note', (tester) async {
+      await tester.pumpWidget(
+        page(useCase: _FakeCreateBackup(right(Uint8List.fromList([1])))),
+      );
+      await tester.tap(find.widgetWithText(FilledButton, 'Create backup'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('cover picture'), findsNothing);
+    });
+
+    testWidgets('the note is gone when the next backup starts', (tester) async {
+      // The note belongs to ONE finished backup. A second run whose share
+      // sheet is dismissed must not keep showing the first run's titles.
+      final share = _FakeShare();
+      await tester.pumpWidget(
+        page(
+          useCase: _FakeCreateBackup(
+            right(Uint8List.fromList([1])),
+            coversLeftOut: const ['Alpha'],
+          ),
+          share: share,
+        ),
+      );
+      await tester.tap(find.widgetWithText(FilledButton, 'Create backup'));
+      await tester.pumpAndSettle();
+      expect(find.text('• Alpha'), findsOneWidget);
+
+      share.outcome = ShareOutcome.dismissed;
+      await tester.tap(find.widgetWithText(FilledButton, 'Create backup'));
+      await tester.pumpAndSettle();
+      expect(find.text('• Alpha'), findsNothing);
+    });
   });
 
   testWidgets('N11: a throwing share plugin shows a safe error and frees the '

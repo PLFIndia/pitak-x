@@ -206,7 +206,10 @@ void main() {
       // merge_library_use_case.dart left this list on 2026-10-24 (magazine
       // remediation S4): the per-row resolution apply moved to
       // merge_resolution_applier.dart (516 → <500).
-      'lib/features/import_export/domain/bounded_zip_extractor.dart': 521,
+      // bounded_zip_extractor.dart left this list on 2026-11-10 (backup
+      // rework BR3): `ZipLimits` moved to zip_limits.dart, where the backup
+      // caps are built from `BackupLimits` (521 → <500). The extraction
+      // code itself did not change.
       // setup_cloudflare_site.dart left this list on 2026-10-29 (Cloudflare
       // fix plan 0.4): the subdomain commands moved to
       // setup_cloudflare_subdomain.dart and the typed attempt boundary to

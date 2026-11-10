@@ -18,6 +18,11 @@
 /// The website publishing record (`publish_state.json`, ADR 0014 amendment,
 /// plan CV6) follows the same best-effort rule, through the publish
 /// feature's [PublishStateBackupSource] port.
+///
+/// BR3: each of the three best-effort entries is also checked against the
+/// size cap its RESTORE decoder enforces. An entry the reader would drop is
+/// left out here and reported like an unreadable one, so the page never
+/// claims something travels inside that a restore would not bring back.
 library;
 
 import 'dart:convert';
@@ -128,11 +133,12 @@ class CreateBackupUseCase {
         publishStateJson: publishStateEntry.json,
       );
       return built.map(
-        (bytes) => CreateBackupResult(
-          bytes: bytes,
+        (built) => CreateBackupResult(
+          bytes: built.bytes,
           includesIdentity: identityJson != null,
           includesNetwork: networkJson != null,
           missingPublishState: publishStateEntry.missing,
+          coversLeftOut: built.coversLeftOut,
         ),
       );
     } on Object catch (e) {
@@ -140,22 +146,32 @@ class CreateBackupUseCase {
     }
   }
 
-  /// `identity.json` content, or null when the identity cannot be read.
+  /// `identity.json` content, or null when the identity cannot be read or
+  /// is larger than the reader accepts ([BackupIdentity.maxBytes]).
   Future<String?> _gatherIdentity() async {
     try {
       final current = await namespace.current();
       return current.match(
         (_) => null,
-        (identity) => BackupIdentity.encode(
-          id: identity.id,
-          name: identity.name,
-          publishedFingerprint: identity.publishedFingerprint,
+        (identity) => _ifWithin(
+          BackupIdentity.maxBytes,
+          BackupIdentity.encode(
+            id: identity.id,
+            name: identity.name,
+            publishedFingerprint: identity.publishedFingerprint,
+          ),
         ),
       );
     } on Object {
       return null; // best-effort: never block the catalogue backup
     }
   }
+
+  /// [json] when its UTF-8 form is at most [maxBytes] long, otherwise null
+  /// (the entry is left out). "At most" mirrors the restore reader, which
+  /// accepts an entry exactly at its cap.
+  static String? _ifWithin(int maxBytes, String json) =>
+      utf8.encode(json).length <= maxBytes ? json : null;
 
   /// `publish_state.json` content (null when there is none to carry or it
   /// cannot be carried) and whether a record that exists was left out.
@@ -182,10 +198,14 @@ class CreateBackupUseCase {
     }
   }
 
-  /// `network.json` content, or null when the list cannot be read.
+  /// `network.json` content, or null when the list cannot be read or is
+  /// larger than the reader accepts ([NetworkArchiveCodec.maxBytes]).
   Future<String?> _gatherNetwork() async {
     try {
-      return NetworkArchiveCodec.encode(await network.loadAll());
+      return _ifWithin(
+        NetworkArchiveCodec.maxBytes,
+        NetworkArchiveCodec.encode(await network.loadAll()),
+      );
     } on Object {
       return null; // best-effort: never block the catalogue backup
     }

@@ -443,8 +443,32 @@ to false** (the `hasX` forward-compat pattern):
   checks both W2 entries before creating a scratch directory, SQLite file, or
   archive bytes. An entry exactly at a cap is readable; anything larger fails
   creation with `BackupTooLargeFailure`, never a backup that its own reader
-  would silently downgrade. The worker OUTCOME is plain data only (`Uint8List`
-  or a `BackupEntryOverflow` code), which the calling isolate maps to `Either`.
+  would silently downgrade. The worker OUTCOME is plain data only (the bytes
+  with the titles of left-out covers, or a `BackupOverflow` code with two
+  numbers), which the calling isolate maps to `Either`.
+- The writer refuses what the reader refuses (review finding P1-M1). One
+  value, `BackupLimits` (backup domain), holds the numbers of a backup:
+  4,086 covers plus 10 other entries (4,096 entries), 500 MiB of content,
+  4 MiB per cover, 200 MiB per database, 4 MiB for a text entry without a
+  decoder cap. `ZipLimits.pitakaBackup` is built from it, so writer and
+  reader cannot drift apart. `backupEntryCap` maps an entry name to its cap
+  and uses the decoders' own constants where they exist. After the two
+  SQLite files are written and before the ZIP is started, the writer
+  measures every entry without reading a cover (`backup_preflight.dart`) and
+  refuses, in this order: more covers than fit, one entry above its cap, too
+  much content in total. The finished file is checked against the archive
+  cap. Exactly at a limit is accepted. A refusal carries a code, the actual
+  number and the limit, leaves no work folder, and the page turns it into
+  one sentence with both numbers in the same unit.
+- A cover file above the per-cover cap does not fail the backup: it is left
+  out, the item stays inside, and the page names the items (count, first
+  three titles). An oversized file that no item refers to is skipped without
+  a note. An entry is read only when it goes into the ZIP; if its size then
+  differs from the measured one, the build fails as a whole. The three
+  best-effort entries (`identity.json`, `network.json`,
+  `publish_state.json`) are checked against their decoder caps in the use
+  case; an oversized one is left out and reported like an unreadable one.
+  The reader itself still applies one 200 MiB cap per entry.
 - Restore adjustment counters preserve units. `issueEntriesDropped` counts
   decode-time raw-entry drops and decoded entries left unconsulted because
   their UID is absent from `books.db` or belongs to a non-issue row.

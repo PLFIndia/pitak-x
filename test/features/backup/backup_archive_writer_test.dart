@@ -104,7 +104,10 @@ void main() {
       networkJson: networkJson,
       publishStateJson: publishStateJson,
     );
-    return result.getOrElse((f) => fail('build refused a fitting archive: $f'));
+    // BR3: the Right is now a `BuiltBackup` (bytes + what was left out).
+    return result
+        .getOrElse((f) => fail('build refused a fitting archive: $f'))
+        .bytes;
   }
 
   test('writes a manifest reflecting no vault when none exists', () async {
@@ -472,7 +475,7 @@ void main() {
           networkJson: null,
           publishStateJson: null,
         )
-        .then((r) => r.getOrElse((f) => fail('unexpected left: $f')));
+        .then((r) => r.getOrElse((f) => fail('unexpected left: $f')).bytes);
     final archive = unzip(bytes);
     expect(entry(archive, 'borrowers.db'), Uint8List.fromList([9, 9, 9]));
     expect(utf8.decode(entry(archive, 'backup_blob')!), 'salt.iv.ct');
@@ -535,7 +538,9 @@ void main() {
         publishStateJson: null,
       );
       final firedAt = await fired.future;
-      final bytes = (await work).getOrElse((f) => fail('unexpected left: $f'));
+      final bytes = (await work)
+          .getOrElse((f) => fail('unexpected left: $f'))
+          .bytes;
       final total = sw.elapsedMilliseconds;
       expect(bytes, isNotEmpty);
       expect(
@@ -565,7 +570,7 @@ void main() {
               networkJson: null,
               publishStateJson: null,
             )
-            .then((r) => r.getOrElse((f) => fail('unexpected left: $f')));
+            .then((r) => r.getOrElse((f) => fail('unexpected left: $f')).bytes);
         final archive = unzip(bytes);
         final coverNames = [
           for (final f in archive.files)

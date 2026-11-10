@@ -42,7 +42,8 @@ void main() {
                 networkJson: null,
                 publishStateJson: PublishStateBackupCodec.encode(state),
               ))
-              .getOrElse((f) => fail('unexpected: $f'));
+              .getOrElse((f) => fail('unexpected: $f'))
+              .bytes;
 
       final files = BoundedZipExtractor.extract(bytes);
       final manifest = parseBackupManifest(

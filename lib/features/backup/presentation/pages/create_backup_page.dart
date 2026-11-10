@@ -11,6 +11,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/core/platform/file_share.dart';
+import 'package:pitaka/features/backup/presentation/create_backup_messages.dart';
 
 /// Screen that creates and saves a backup archive.
 class CreateBackupPage extends ConsumerStatefulWidget {
@@ -32,6 +33,10 @@ class _CreateBackupPageState extends ConsumerState<CreateBackupPage> {
   bool _missingIdentity = false;
   bool _missingNetwork = false;
   bool _missingPublishState = false;
+
+  /// BR3 (decision D10): titles of the items whose cover picture is too
+  /// large for a backup and was left out. The items themselves are inside.
+  List<String> _coversLeftOut = const [];
 
   bool get _missingAnything =>
       _missingIdentity || _missingNetwork || _missingPublishState;
@@ -57,6 +62,7 @@ class _CreateBackupPageState extends ConsumerState<CreateBackupPage> {
       _missingIdentity = false;
       _missingNetwork = false;
       _missingPublishState = false;
+      _coversLeftOut = const [];
     });
 
     // N11: the use-case provider build, the archive build and the share
@@ -105,6 +111,7 @@ class _CreateBackupPageState extends ConsumerState<CreateBackupPage> {
               _missingIdentity = !result.includesIdentity;
               _missingNetwork = !result.includesNetwork;
               _missingPublishState = result.missingPublishState;
+              _coversLeftOut = result.coversLeftOut;
               if (outcome == ShareOutcome.unavailable) {
                 _error = 'Sharing is unavailable on this device.';
               }
@@ -126,11 +133,10 @@ class _CreateBackupPageState extends ConsumerState<CreateBackupPage> {
 
   static String _messageFor(Failure f) => switch (f) {
     StorageFailure() => 'Could not build the backup. Please try again.',
-    // S5 (L5): the catalogue is bigger than the format the app can read back.
-    // Say exactly that — nothing was exported, and retrying will not help.
-    BackupTooLargeFailure() =>
-      'This catalogue is too large for this backup format. '
-          'Nothing was exported.',
+    // S5 (L5), BR3: the library is bigger than the app can read back. Say
+    // exactly which limit, with the numbers — nothing was exported, and
+    // retrying will not help.
+    BackupTooLargeFailure() => backupTooLargeMessage(f),
     _ => 'Something went wrong creating the backup.',
   };
 
@@ -192,6 +198,10 @@ class _CreateBackupPageState extends ConsumerState<CreateBackupPage> {
                 style: Theme.of(context).textTheme.bodySmall,
               ),
             ],
+            if (_coversLeftOut.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              _CoversLeftOutNote(titles: _coversLeftOut),
+            ],
           ],
           if (_error != null) ...[
             const SizedBox(height: 16),
@@ -199,6 +209,39 @@ class _CreateBackupPageState extends ConsumerState<CreateBackupPage> {
           ],
         ],
       ),
+    );
+  }
+}
+
+/// Says which items' cover pictures are NOT inside the finished backup
+/// (BR3, decision D10): one sentence, the first few titles, and how many
+/// more there are.
+class _CoversLeftOutNote extends StatelessWidget {
+  const _CoversLeftOutNote({required this.titles});
+
+  /// One title per item whose cover picture was left out. Never empty.
+  final List<String> titles;
+
+  @override
+  Widget build(BuildContext context) {
+    final style = Theme.of(context).textTheme.bodySmall;
+    final more = coversLeftOutMoreMessage(titles.length);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(coversLeftOutMessage(titles.length), style: style),
+        // One line per title, shortened by the Text widget itself. A title
+        // can be very long, and cutting a string by hand can split a letter
+        // in scripts that build one letter from several code units.
+        for (final title in titles.take(coversLeftOutTitlesShown))
+          Text(
+            '• $title',
+            style: style,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        if (more != null) Text(more, style: style),
+      ],
     );
   }
 }

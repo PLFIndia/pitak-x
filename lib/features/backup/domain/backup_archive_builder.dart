@@ -13,6 +13,23 @@ import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
 import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
 
+/// What a finished build hands back: the archive, and what it had to leave
+/// out (BR3, decision D10).
+final class BuiltBackup {
+  /// Creates the result of a build.
+  const BuiltBackup({required this.bytes, this.coversLeftOut = const []});
+
+  /// The `.pitabak` archive bytes.
+  final Uint8List bytes;
+
+  /// Titles of the items whose cover picture is NOT inside, because the
+  /// picture file is larger than a backup can hold for one cover. The items
+  /// themselves are inside; after a restore they show the letter placeholder.
+  /// One title per item (books, wishlist entries, magazine titles). Empty in
+  /// the normal case.
+  final List<String> coversLeftOut;
+}
+
 /// Builds a `.pitabak` archive from the current catalog + vault artifacts.
 // ignore: one_member_abstracts
 abstract interface class BackupArchiveBuilder {
@@ -44,11 +61,18 @@ abstract interface class BackupArchiveBuilder {
   /// 4 MiB / row bounds — the writer must never emit a file its own reader
   /// downgrades. No partial archive is returned in that case.
   ///
+  /// The same failure is returned (BR3) INSTEAD of an archive the reader
+  /// would refuse to open: too many cover pictures, too much content, or a
+  /// single part above its cap. The failure carries which limit, the actual
+  /// number and the limit. A cover picture that is too large by itself does
+  /// not fail the build: it is left out and reported in
+  /// [BuiltBackup.coversLeftOut].
+  ///
   /// Asynchronous on purpose (N10-c): building a backup means writing two
   /// SQLite files, reading every cover and deflating the lot — seconds of
   /// work for a large library. Implementations are expected to do that off
   /// the calling isolate so the UI keeps painting.
-  Future<Either<Failure, Uint8List>> build({
+  Future<Either<Failure, BuiltBackup>> build({
     required List<CatalogueItem> books,
     required List<WishlistBook> wishlist,
     required List<Periodical> periodicals,

@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -9,6 +10,7 @@ import 'package:pitaka/features/backup/domain/backup_identity.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
 import 'package:pitaka/features/network/domain/entities/network_library.dart';
+import 'package:pitaka/features/network/domain/network_archive_codec.dart';
 import 'package:pitaka/features/network/domain/repositories/network_repository.dart';
 import 'package:pitaka/features/network/domain/value_objects/library_fingerprint.dart';
 import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
@@ -160,6 +162,118 @@ void main() {
     expect(tooLarge.calls, 1);
   });
 
+  // BR3: an optional entry the RESTORE reader would drop for its size is
+  // left out by the use case and reported with the existing flags, so the
+  // page never claims something travels inside that would not come back.
+  group('BR3 — optional entries are checked against the reader caps', () {
+    /// An identity whose encoded entry is exactly [bytes] long.
+    LibraryIdentity identityOfEncodedSize(int bytes) {
+      final overhead = BackupIdentity.encode(id: identity.id, name: '').length;
+      return LibraryIdentity(id: identity.id, name: 'n' * (bytes - overhead));
+    }
+
+    /// A saved-libraries list whose encoded entry is exactly [bytes] long.
+    List<NetworkLibrary> networkOfEncodedSize(int bytes) {
+      NetworkLibrary rowWithUrl(String url) =>
+          NetworkLibrary(id: 1, siteUrl: url);
+      final overhead = NetworkArchiveCodec.encode([rowWithUrl('')]).length;
+      return [rowWithUrl('u' * (bytes - overhead))];
+    }
+
+    test('identity.json exactly at its cap is inside', () async {
+      final result = await useCase(
+        namespace: _Namespace(
+          right(identityOfEncodedSize(BackupIdentity.maxBytes)),
+        ),
+      )();
+      final r = result.getOrElse((f) => fail('unexpected left: $f'));
+      expect(r.includesIdentity, isTrue);
+      expect(
+        utf8.encode(writer.calls.single.identityJson!),
+        hasLength(BackupIdentity.maxBytes),
+      );
+    });
+
+    test('identity.json one byte over is left out and flagged; the backup '
+        'still happens', () async {
+      final result = await useCase(
+        namespace: _Namespace(
+          right(identityOfEncodedSize(BackupIdentity.maxBytes + 1)),
+        ),
+      )();
+      final r = result.getOrElse((f) => fail('unexpected left: $f'));
+      expect(r.includesIdentity, isFalse);
+      expect(r.includesNetwork, isTrue);
+      expect(writer.calls.single.identityJson, isNull);
+    });
+
+    test('the identity cap counts UTF-8 bytes, not characters', () async {
+      // A name of two-byte letters: fewer characters than the cap, more
+      // bytes than the cap.
+      final result = await useCase(
+        namespace: _Namespace(
+          right(
+            LibraryIdentity(
+              id: identity.id,
+              name: 'é' * (BackupIdentity.maxBytes ~/ 2),
+            ),
+          ),
+        ),
+      )();
+      final r = result.getOrElse((f) => fail('unexpected left: $f'));
+      expect(r.includesIdentity, isFalse);
+      expect(writer.calls.single.identityJson, isNull);
+    });
+
+    test('network.json exactly at its cap is inside', () async {
+      final result = await useCase(
+        network: _Network(networkOfEncodedSize(NetworkArchiveCodec.maxBytes)),
+      )();
+      final r = result.getOrElse((f) => fail('unexpected left: $f'));
+      expect(r.includesNetwork, isTrue);
+      expect(
+        utf8.encode(writer.calls.single.networkJson!),
+        hasLength(NetworkArchiveCodec.maxBytes),
+      );
+    });
+
+    test('network.json one byte over is left out and flagged; the backup '
+        'still happens', () async {
+      final result = await useCase(
+        network: _Network(
+          networkOfEncodedSize(NetworkArchiveCodec.maxBytes + 1),
+        ),
+      )();
+      final r = result.getOrElse((f) => fail('unexpected left: $f'));
+      expect(r.includesNetwork, isFalse);
+      expect(r.includesIdentity, isTrue);
+      expect(writer.calls.single.networkJson, isNull);
+    });
+  });
+
+  // BR3 (decision D10): the builder names the items whose cover picture it
+  // had to leave out; the use case hands the names on to the page.
+  test('titles of left-out covers reach the result', () async {
+    final withLeftOut = CreateBackupUseCase(
+      books: _Books(),
+      wishlist: _Wishlist(),
+      periodicals: _Periodicals(),
+      writer: _LeavingOutWriter(const ['Big picture', 'Bigger picture']),
+      workDir: 'unused-by-the-fake',
+      namespace: _Namespace(right(identity)),
+      network: _Network([row]),
+      publishState: _PublishState(right(null)),
+    );
+    final r = (await withLeftOut()).getOrElse((f) => fail('left: $f'));
+    expect(r.coversLeftOut, ['Big picture', 'Bigger picture']);
+    expect(r.bytes, [1, 2, 3]);
+  });
+
+  test('no cover left out is the normal case', () async {
+    final r = (await useCase()()).getOrElse((f) => fail('left: $f'));
+    expect(r.coversLeftOut, isEmpty);
+  });
+
   test(
     'a periodicals read failure is a Left (no partial backup, W2)',
     () async {
@@ -276,7 +390,7 @@ class _RecordingWriter implements BackupArchiveBuilder {
   final List<_Call> calls = [];
 
   @override
-  Future<Either<Failure, Uint8List>> build({
+  Future<Either<Failure, BuiltBackup>> build({
     required List<CatalogueItem> books,
     required List<WishlistBook> wishlist,
     required List<Periodical> periodicals,
@@ -294,15 +408,38 @@ class _RecordingWriter implements BackupArchiveBuilder {
         publishStateJson: publishStateJson,
       ),
     );
-    return right(Uint8List.fromList(const [1, 2, 3]));
+    return right(BuiltBackup(bytes: Uint8List.fromList(const [1, 2, 3])));
   }
+}
+
+/// Builds fine, but reports cover pictures it had to leave out (D10).
+class _LeavingOutWriter implements BackupArchiveBuilder {
+  _LeavingOutWriter(this.coversLeftOut);
+  final List<String> coversLeftOut;
+
+  @override
+  Future<Either<Failure, BuiltBackup>> build({
+    required List<CatalogueItem> books,
+    required List<WishlistBook> wishlist,
+    required List<Periodical> periodicals,
+    required String workDir,
+    required int exportedAt,
+    required String? identityJson,
+    required String? networkJson,
+    required String? publishStateJson,
+  }) async => right(
+    BuiltBackup(
+      bytes: Uint8List.fromList(const [1, 2, 3]),
+      coversLeftOut: coversLeftOut,
+    ),
+  );
 }
 
 class _TooLargeWriter implements BackupArchiveBuilder {
   int calls = 0;
 
   @override
-  Future<Either<Failure, Uint8List>> build({
+  Future<Either<Failure, BuiltBackup>> build({
     required List<CatalogueItem> books,
     required List<WishlistBook> wishlist,
     required List<Periodical> periodicals,

@@ -69,7 +69,7 @@ void main() {
             networkJson: null,
             publishStateJson: null,
           )
-          .then((r) => r.getOrElse((f) => fail('unexpected left: $f')));
+          .then((r) => r.getOrElse((f) => fail('unexpected left: $f')).bytes);
 
   Future<void> existing({bool returned = false}) async {
     await h.books.insert(_book);

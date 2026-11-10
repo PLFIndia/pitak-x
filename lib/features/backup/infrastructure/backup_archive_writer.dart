@@ -35,14 +35,21 @@
 /// facts the worker needs (paths, "is there a vault", the ciphertext blob
 /// string) into a [_BackupJob] and ships that across. Two consequences worth
 /// knowing before you change this file:
-///  - the worker opens SQLite ITSELF through [_openSqlite] (a top-level
-///    function). The `sqlite3.open` tear-off cannot be sent to an isolate —
+///  - the worker opens SQLite ITSELF (a top-level function in
+///    `backup_room_databases.dart`, where the two SQLite files are
+///    written). The `sqlite3.open` tear-off cannot be sent to an isolate —
 ///    it drags a `NativeFinalizer` along and the send fails at runtime — so
 ///    there is deliberately no `openDatabase` constructor seam any more;
 ///  - covers are streamed into the encoder ONE AT A TIME
 ///    (`ZipEncoder.startEncode` / `addFile` / `endEncode`, verified in
 ///    `archive` 3.6.1), so peak memory is one cover plus the growing ZIP,
 ///    not every cover plus every deflated copy plus the ZIP.
+///
+/// **The writer refuses what the reader refuses (S5, BR3).** Every entry is
+/// measured and checked against [BackupLimits] before the ZIP is started
+/// (`backup_preflight.dart`), and the finished file is checked once more. A
+/// library that does not fit gets a typed refusal with the numbers, never a
+/// backup that cannot be restored.
 library;
 
 import 'dart:convert';
@@ -55,49 +62,41 @@ import 'package:fpdart/fpdart.dart';
 import 'package:path/path.dart' as p;
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/backup/domain/backup_archive_builder.dart';
+import 'package:pitaka/features/backup/domain/backup_limits.dart';
 import 'package:pitaka/features/backup/domain/backup_manifest.dart';
+import 'package:pitaka/features/backup/domain/backup_overflow.dart';
 import 'package:pitaka/features/backup/infrastructure/backup_entry_bounds.dart';
 import 'package:pitaka/features/backup/infrastructure/backup_extras_reader.dart'
-    show publishStateEntryName;
+    show
+        identityEntryName,
+        manifestEntryName,
+        networkEntryName,
+        publishStateEntryName;
+import 'package:pitaka/features/backup/infrastructure/backup_preflight.dart';
+import 'package:pitaka/features/backup/infrastructure/backup_room_databases.dart';
 import 'package:pitaka/features/backup/infrastructure/item_details_archive_codec.dart';
+import 'package:pitaka/features/backup/infrastructure/restore_covers_builder.dart'
+    show coverEntryPrefix;
+import 'package:pitaka/features/backup/infrastructure/restore_legacy_read.dart'
+    show booksDbEntryName, wishlistDbEntryName;
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/value_objects/item_details.dart';
 import 'package:pitaka/features/library/domain/value_objects/item_kind.dart';
 import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
 import 'package:pitaka/features/vault/domain/vault_artifacts_store.dart';
 import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
-import 'package:sqlite3/common.dart';
-import 'package:sqlite3/sqlite3.dart';
 
-/// Stable archive entry names (mirror of the restore reader's contract).
-const String _manifestEntry = 'manifest.json';
-const String _booksDbEntry = 'books.db';
-const String _wishlistDbEntry = 'wishlist.db';
-const String _borrowersDbEntry = 'borrowers.db';
-const String _backupBlobEntry = 'backup_blob';
-const String _coverEntryPrefix = 'cover_';
-// docs/ARCHITECTURE.md §5.5: the library identity + the saved-libraries list,
-// plain JSON, announced by the hasIdentity/hasNetwork manifest flags.
-const String _identityEntry = 'identity.json';
-const String _networkEntry = 'network.json';
-// ADR 0014 amendment (plan CV6): `publish_state.json`, announced by
-// hasPublishState. Its name lives in `backup_extras_reader.dart`.
-// ADR 0014 W2: the item-kind entries. Their names live in
-// `item_details_archive_codec.dart`, shared with the restore reader.
+// The archive entry names are the restore reader's own constants (imported
+// above; the vault pair lives in `backup_entry_bounds.dart`), so the writer,
+// the reader and the table of size caps share one set of names.
 
-/// Room identity contract (from app/schemas) so the Kotlin app accepts our DBs.
-const int _booksDbVersion = 9;
-const String _booksIdentityHash = 'f4f033ebb290bd84fc04bd3d303d0e5f';
-const int _wishlistDbVersion = 1;
-const String _wishlistIdentityHash = 'ef4bdbbc39ca94fef44d980ecc902f28';
-
-/// Opens (creating) a SQLite database file at [path]. Top-level on purpose:
-/// the worker isolate calls it, and each isolate lazily builds its own
-/// `sqlite3` binding, so no FFI handle ever has to cross the isolate boundary.
-CommonDatabase _openSqlite(String path) => sqlite3.open(path);
-
-/// What the worker hands back: exact archive bytes, or one overflow code.
-typedef _BuildOutcome = ({Uint8List? bytes, BackupEntryOverflow? overflow});
+/// What the worker hands back: the exact archive bytes with the titles of
+/// the items whose cover was left out, or one refusal. Plain data only.
+typedef _BuildOutcome = ({
+  Uint8List? bytes,
+  List<String> coversLeftOut,
+  BackupRefusal? refusal,
+});
 
 /// Everything the worker isolate needs, as plain sendable data (paths,
 /// strings, ints, entity lists). No closures, no `ref`, no FFI handles.
@@ -118,6 +117,7 @@ typedef _BackupJob = ({
   String? identityJson,
   String? networkJson,
   String? publishStateJson,
+  BackupLimits limits,
 });
 
 /// Builds a `.pitabak` archive as bytes.
@@ -125,10 +125,12 @@ class BackupArchiveWriter implements BackupArchiveBuilder {
   /// Creates the writer.
   ///
   /// [vaultStore] locates the persistent vault artifacts; [coversDir] is where
-  /// user cover images live.
+  /// user cover images live. [limits] is what one backup can hold; the app
+  /// uses the default, tests pass small limits.
   const BackupArchiveWriter({
     required this.vaultStore,
     required this.coversDir,
+    this.limits = BackupLimits.current,
   });
 
   /// Persistent vault locations (DB + blob), copied verbatim when present.
@@ -136,6 +138,10 @@ class BackupArchiveWriter implements BackupArchiveBuilder {
 
   /// Directory holding user cover images (`covers/<leaf>`).
   final String coversDir;
+
+  /// What one backup can hold (BR3). The reader's caps are built from the
+  /// same value, so what this writer accepts, the reader accepts.
+  final BackupLimits limits;
 
   /// Builds the archive bytes from [books] + [wishlist] + [periodicals],
   /// including the vault and covers when present. [workDir] is a scratch
@@ -148,7 +154,7 @@ class BackupArchiveWriter implements BackupArchiveBuilder {
   /// guaranteed sendable; they are two `existsSync` calls and a tiny file
   /// read, and the blob is ciphertext that already lives as a plain file.
   @override
-  Future<Either<Failure, Uint8List>> build({
+  Future<Either<Failure, BuiltBackup>> build({
     required List<CatalogueItem> books,
     required List<WishlistBook> wishlist,
     required List<Periodical> periodicals,
@@ -173,6 +179,7 @@ class BackupArchiveWriter implements BackupArchiveBuilder {
       identityJson: identityJson,
       networkJson: networkJson,
       publishStateJson: publishStateJson,
+      limits: limits,
     );
     return Isolate.run(
       () => _buildInWorker(job),
@@ -182,11 +189,20 @@ class BackupArchiveWriter implements BackupArchiveBuilder {
 
   /// Maps the worker's plain outcome to the typed result ON THIS ISOLATE —
   /// no [Failure] object ever crosses the boundary (S5).
-  static Either<Failure, Uint8List> _toEither(_BuildOutcome outcome) {
-    final bytes = outcome.bytes;
-    if (bytes != null) return right(bytes);
-    return left(BackupTooLargeFailure(outcome.overflow!.name));
+  static Either<Failure, BuiltBackup> _toEither(_BuildOutcome outcome) {
+    final refusal = outcome.refusal;
+    if (refusal != null) {
+      return left(
+        BackupTooLargeFailure(refusal.code.name, refusal.actual, refusal.limit),
+      );
+    }
+    return right(
+      BuiltBackup(bytes: outcome.bytes!, coversLeftOut: outcome.coversLeftOut),
+    );
   }
+
+  static _BuildOutcome _refused(BackupRefusal refusal) =>
+      (bytes: null, coversLeftOut: const [], refusal: refusal);
 
   /// The whole build, run inside the worker isolate. Static so it cannot
   /// accidentally capture `this` (and with it the non-sendable store).
@@ -218,40 +234,49 @@ class BackupArchiveWriter implements BackupArchiveBuilder {
     // reader cannot drift apart. This runs FIRST — pure in-memory work — so an
     // oversized catalogue is refused before a single file is created.
     if (itemKindsJson != null) {
-      final overflow = overflowOf(
+      final refusal = overflowOf(
         json: itemKindsJson,
         rows: itemKindRowCount(job.books),
-        tooLarge: BackupEntryOverflow.itemKindsTooLarge,
-        tooManyRows: BackupEntryOverflow.itemKindsTooManyRows,
+        tooLarge: BackupOverflow.itemKindsTooLarge,
+        tooManyRows: BackupOverflow.itemKindsTooManyRows,
       );
-      if (overflow != null) return (bytes: null, overflow: overflow);
+      if (refusal != null) return _refused(refusal);
     }
     if (periodicalsJson != null) {
-      final overflow = overflowOf(
+      final refusal = overflowOf(
         json: periodicalsJson,
         rows: periodicalEntryRowCount(job.periodicals, job.books),
-        tooLarge: BackupEntryOverflow.periodicalsTooLarge,
-        tooManyRows: BackupEntryOverflow.periodicalsTooManyRows,
+        tooLarge: BackupOverflow.periodicalsTooLarge,
+        tooManyRows: BackupOverflow.periodicalsTooManyRows,
       );
-      if (overflow != null) return (bytes: null, overflow: overflow);
+      if (refusal != null) return _refused(refusal);
     }
 
     final work = Directory(job.workDir);
     if (work.existsSync()) work.deleteSync(recursive: true);
     work.createSync(recursive: true);
     try {
-      final booksDbPath = p.join(work.path, _booksDbEntry);
-      final wishlistDbPath = p.join(work.path, _wishlistDbEntry);
-      _writeBooksDb(booksDbPath, job.books);
-      _writeWishlistDb(wishlistDbPath, job.wishlist);
+      final booksDbPath = p.join(work.path, booksDbEntryName);
+      final wishlistDbPath = p.join(work.path, wishlistDbEntryName);
+      writeRoomBooksDb(booksDbPath, job.books);
+      writeRoomWishlistDb(wishlistDbPath, job.wishlist);
 
-      final coverFiles = _coverFiles(job.coversDir);
+      // BR3 (D10): a cover larger than the reader's cap is left out and its
+      // item named. Only sizes are looked at here; no cover is opened yet.
+      final covers = selectBackupCovers(
+        files: _coverFiles(job.coversDir),
+        maxCoverBytes: job.limits.maxCoverBytes,
+        books: job.books,
+        wishlist: job.wishlist,
+        periodicals: job.periodicals,
+      );
+      final blob = job.hasVault ? job.blob : null;
 
       final manifest = BackupManifest(
         exportedAt: job.exportedAt,
         hasBorrowers: job.hasVault,
-        hasBackupBlob: job.hasVault && job.blob != null,
-        hasCovers: coverFiles.isNotEmpty,
+        hasBackupBlob: blob != null,
+        hasCovers: covers.kept.isNotEmpty,
         hasIdentity: job.identityJson != null,
         hasNetwork: job.networkJson != null,
         hasItemKinds: itemKindsJson != null,
@@ -259,226 +284,91 @@ class BackupArchiveWriter implements BackupArchiveBuilder {
         hasPublishState: job.publishStateJson != null,
       );
 
+      // Every entry, in archive order, measured but not yet read. The JSON
+      // entries are plain text in the clear (the documented honest limit of
+      // the format — README › Backup); `publish_state.json` never holds a
+      // token (the caller's codec has none).
+      final entries = <PlannedBackupEntry>[
+        _text(manifestEntryName, manifest.toJson()),
+        _file(booksDbEntryName, booksDbPath),
+        _file(wishlistDbEntryName, wishlistDbPath),
+        if (job.hasVault) _file(borrowersDbEntryName, job.vaultDbPath!),
+        if (blob != null) _text(backupBlobEntryName, blob),
+        for (final cover in covers.kept)
+          _file(
+            coverEntryPrefix + cover.leaf,
+            p.join(job.coversDir, cover.leaf),
+            cover.bytes,
+          ),
+        if (job.identityJson case final json?) _text(identityEntryName, json),
+        if (job.networkJson case final json?) _text(networkEntryName, json),
+        if (itemKindsJson != null) _text(itemKindsEntryName, itemKindsJson),
+        if (periodicalsJson != null)
+          _text(periodicalsEntryName, periodicalsJson),
+        if (job.publishStateJson case final json?)
+          _text(publishStateEntryName, json),
+      ];
+
+      // BR3 pre-flight: refuse what the reader would refuse to open, BEFORE
+      // the ZIP is started and before a single cover is read.
+      final refusal = backupRefusalFor(entries, job.limits);
+      if (refusal != null) return _refused(refusal);
+
       // Incremental encoding: each addFile deflates ONE entry, appends it to
       // `out` and drops the compressed copy, so nothing but the growing ZIP
-      // is retained between entries.
+      // is retained between entries. `content()` reads a file only now, and
+      // throws if it is no longer the size the pre-flight judged.
       final out = OutputStream();
-      final encoder = ZipEncoder()
-        ..startEncode(out)
-        ..addFile(_entry(_manifestEntry, _utf8(manifest.toJson())))
-        ..addFile(_entry(_booksDbEntry, File(booksDbPath).readAsBytesSync()))
-        ..addFile(
-          _entry(_wishlistDbEntry, File(wishlistDbPath).readAsBytesSync()),
-        );
-
-      if (job.hasVault) {
-        encoder.addFile(
-          _entry(_borrowersDbEntry, File(job.vaultDbPath!).readAsBytesSync()),
-        );
-        final blob = job.blob;
-        if (blob != null) {
-          encoder.addFile(_entry(_backupBlobEntry, _utf8(blob)));
-        }
-      }
-      for (final f in coverFiles) {
-        encoder.addFile(
-          _entry(_coverEntryPrefix + p.basename(f.path), f.readAsBytesSync()),
-        );
-      }
-      // §3.4 additions, plain JSON in the clear (the documented honest
-      // limit of the format — README › Backup).
-      if (job.identityJson case final identityJson?) {
-        encoder.addFile(_entry(_identityEntry, _utf8(identityJson)));
-      }
-      if (job.networkJson case final networkJson?) {
-        encoder.addFile(_entry(_networkEntry, _utf8(networkJson)));
-      }
-      // W2 additions, plain JSON like the §3.4 entries above (same honest
-      // limit of the format).
-      if (itemKindsJson case final itemKindsJson?) {
-        encoder.addFile(_entry(itemKindsEntryName, _utf8(itemKindsJson)));
-      }
-      if (periodicalsJson case final periodicalsJson?) {
-        encoder.addFile(_entry(periodicalsEntryName, _utf8(periodicalsJson)));
-      }
-      // ADR 0014 amendment: public site identities + the cover salt, plain
-      // like the entries above; never a token (the caller's codec has none).
-      if (job.publishStateJson case final publishStateJson?) {
-        encoder.addFile(_entry(publishStateEntryName, _utf8(publishStateJson)));
+      final encoder = ZipEncoder()..startEncode(out);
+      for (final entry in entries) {
+        final content = entry.content();
+        encoder.addFile(ArchiveFile(entry.name, content.length, content));
       }
       encoder.endEncode();
 
       // `getBytes()` is a view over an over-allocated buffer; copy to exact
       // size so the caller (and the share sheet) hold only the real archive.
-      return (bytes: Uint8List.fromList(out.getBytes()), overflow: null);
+      final bytes = Uint8List.fromList(out.getBytes());
+      // The reader also caps the FILE size. Names and the ZIP directory add
+      // a little to the content, so this can only be known at the end.
+      if (bytes.length > job.limits.maxArchiveBytes) {
+        return _refused((
+          code: BackupOverflow.archiveTooLarge,
+          actual: bytes.length,
+          limit: job.limits.maxArchiveBytes,
+        ));
+      }
+      return (bytes: bytes, coversLeftOut: covers.leftOutTitles, refusal: null);
     } finally {
       if (work.existsSync()) work.deleteSync(recursive: true);
     }
   }
 
-  /// Cover files under [coversDir], sorted by name; empty when none.
-  static List<File> _coverFiles(String coversDir) {
+  /// Cover files under [coversDir] with their sizes, sorted by name; empty
+  /// when none. Only the folder listing is read: no cover is opened.
+  static List<CoverFileSize> _coverFiles(String coversDir) {
     final dir = Directory(coversDir);
     if (!dir.existsSync()) return const [];
-    final files = dir.listSync().whereType<File>().toList()
-      ..sort((a, b) => p.basename(a.path).compareTo(p.basename(b.path)));
-    return files;
+    return [
+      for (final file in dir.listSync().whereType<File>())
+        (leaf: p.basename(file.path), bytes: file.lengthSync()),
+    ]..sort((a, b) => a.leaf.compareTo(b.leaf));
   }
 
-  /// Writes a Room-compatible `books.db` with the books table and the Room
-  /// identity row. No FTS mirror is written (see class doc / the inline note):
-  /// the bundled SQLite lacks the FTS4 module and restore never reads it.
-  static void _writeBooksDb(String path, List<CatalogueItem> books) {
-    final db = _openSqlite(path);
-    try {
-      db
-        ..execute('PRAGMA user_version = $_booksDbVersion')
-        ..execute(
-          'CREATE TABLE IF NOT EXISTS `books` ( '
-          '`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `book_uid` TEXT, '
-          '`title` TEXT NOT NULL, `title_transliteration` TEXT, `author` TEXT, '
-          "`title_sort` TEXT NOT NULL DEFAULT '', "
-          "`author_sort` TEXT NOT NULL DEFAULT '', "
-          '`isbn` TEXT, `publisher` TEXT, `published_year` INTEGER, '
-          '`genre` TEXT, `cover_url` TEXT, `page_count` INTEGER, '
-          '`language` TEXT, `notes` TEXT, `location` TEXT, `source_type` TEXT, '
-          '`source_detail` TEXT, `age_group` INTEGER, '
-          '`added_date` INTEGER NOT NULL, '
-          '`copy_count` INTEGER NOT NULL DEFAULT 1, '
-          '`needs_metadata` INTEGER NOT NULL DEFAULT 0, '
-          '`removed` INTEGER NOT NULL DEFAULT 0, `removed_at` INTEGER, '
-          '`added_by` TEXT)',
-        );
-      // NOTE: no `books_fts` FTS4 mirror is written. The bundled on-device
-      // SQLite (sqlite3_flutter_libs) has FTS5 only, so `USING FTS4` would
-      // throw `no such module: fts4` and abort the backup. Our restore reader
-      // never
-      // reads this table — it rebuilds Drift's FTS independently — so omitting
-      // it is correct for Pitak↔Pitak and Kotlin→Flutter restore.
-
-      final stmt = db.prepare(
-        'INSERT INTO `books`( '
-        'id, book_uid, title, title_transliteration, author, title_sort, '
-        'author_sort, isbn, publisher, published_year, genre, cover_url, '
-        'page_count, language, notes, location, source_type, source_detail, '
-        'age_group, added_date, copy_count, needs_metadata, removed, '
-        'removed_at, added_by) '
-        'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
-      );
-      try {
-        for (final b in books) {
-          stmt.execute([
-            b.id,
-            b.itemUid,
-            b.title,
-            b.titleTransliteration,
-            b.author,
-            '', // title_sort: NOT NULL DEFAULT '' (Room recomputes on use)
-            '', // author_sort
-            b.isbn,
-            b.publisher,
-            b.publishedYear,
-            b.genre,
-            b.coverUrl,
-            b.pageCount,
-            b.language,
-            b.notes,
-            b.location,
-            b.sourceType?.token,
-            b.sourceDetail,
-            b.ageGroup?.token,
-            b.addedDate,
-            b.copyCount,
-            _boolInt(b.needsMetadata),
-            _boolInt(b.removed),
-            b.removedAt,
-            b.addedBy,
-          ]);
-        }
-      } finally {
-        stmt.dispose();
-      }
-
-      _writeRoomMaster(db, _booksIdentityHash);
-    } finally {
-      db.dispose();
-    }
+  /// A text entry: already in memory, so its size is exact.
+  static PlannedBackupEntry _text(String name, String text) {
+    final bytes = Uint8List.fromList(utf8.encode(text));
+    return PlannedBackupEntry(name, bytes.length, () => bytes);
   }
 
-  /// Writes a Room-compatible `wishlist.db` with the wishlist_books table and
-  /// the Room identity row.
-  static void _writeWishlistDb(String path, List<WishlistBook> wishlist) {
-    final db = _openSqlite(path);
-    try {
-      db
-        ..execute('PRAGMA user_version = $_wishlistDbVersion')
-        ..execute(
-          'CREATE TABLE IF NOT EXISTS `wishlist_books` ( '
-          '`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, '
-          '`title` TEXT NOT NULL, `title_transliteration` TEXT, `author` TEXT, '
-          '`isbn` TEXT, `publisher` TEXT, `published_year` INTEGER, '
-          '`cover_url` TEXT, `price_estimate` REAL, '
-          '`priority` INTEGER NOT NULL DEFAULT 1, `notes` TEXT, '
-          '`source` TEXT NOT NULL, `added_date` INTEGER NOT NULL, '
-          '`purchased` INTEGER NOT NULL DEFAULT 0, `purchased_date` INTEGER, '
-          '`needs_metadata` INTEGER NOT NULL DEFAULT 0)',
-        );
-      final stmt = db.prepare(
-        'INSERT INTO `wishlist_books`( '
-        'id, title, title_transliteration, author, isbn, publisher, '
-        'published_year, cover_url, price_estimate, priority, notes, source, '
-        'added_date, purchased, purchased_date, needs_metadata) '
-        'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
-      );
-      try {
-        for (final w in wishlist) {
-          stmt.execute([
-            w.id,
-            w.title,
-            w.titleTransliteration,
-            w.author,
-            w.isbn,
-            w.publisher,
-            w.publishedYear,
-            w.coverUrl,
-            w.priceEstimate,
-            w.priority,
-            w.notes,
-            w.source.token,
-            w.addedDate,
-            _boolInt(w.purchased),
-            w.purchasedDate,
-            _boolInt(w.needsMetadata),
-          ]);
-        }
-      } finally {
-        stmt.dispose();
-      }
-      _writeRoomMaster(db, _wishlistIdentityHash);
-    } finally {
-      db.dispose();
-    }
+  /// A file entry: measured now ([bytes] when the caller already knows the
+  /// size), read only when its turn in the ZIP comes.
+  static PlannedBackupEntry _file(String name, String path, [int? bytes]) {
+    final file = File(path);
+    return PlannedBackupEntry(
+      name,
+      bytes ?? file.lengthSync(),
+      file.readAsBytesSync,
+    );
   }
-
-  /// Writes Room's `room_master_table` identity row so Room's open-time
-  /// integrity check passes (id=42 is Room's fixed sentinel row).
-  static void _writeRoomMaster(CommonDatabase db, String identityHash) {
-    db
-      ..execute(
-        'CREATE TABLE IF NOT EXISTS room_master_table '
-        '(id INTEGER PRIMARY KEY, identity_hash TEXT)',
-      )
-      ..execute(
-        'INSERT OR REPLACE INTO room_master_table(id, identity_hash) '
-        "VALUES (42, '$identityHash')",
-      );
-  }
-
-  /// Room stores booleans as INTEGER 0/1.
-  static int _boolInt(bool v) => v ? 1 : 0;
-
-  static ArchiveFile _entry(String name, Uint8List bytes) =>
-      ArchiveFile(name, bytes.length, bytes);
-
-  static Uint8List _utf8(String s) => Uint8List.fromList(utf8.encode(s));
 }

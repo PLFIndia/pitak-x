@@ -53,6 +53,11 @@ library;
 import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
+import 'package:pitaka/features/import_export/domain/zip_limits.dart';
+
+// `ZipLimits` moved to its own file (BR3). Re-exported so every file that
+// imports the extractor still sees it.
+export 'package:pitaka/features/import_export/domain/zip_limits.dart';
 
 /// True when [bytes] starts with the ZIP local-file-header magic
 /// (`50 4B 03 04`, "PK\x03\x04"). Used to content-sniff a picked file as a
@@ -65,67 +70,6 @@ bool hasZipLocalFileHeader(List<int> bytes) =>
     bytes[1] == 0x4B && // 'K'
     bytes[2] == 0x03 &&
     bytes[3] == 0x04;
-
-/// Size/count caps for [BoundedZipExtractor.extract].
-class ZipLimits {
-  /// Creates limits; all values must be positive and total ≥ per-entry.
-  ///
-  /// [maxArchiveBytes] defaults to `maxTotalBytes + 4 MiB`: an honest archive
-  /// is never much larger than the content it is allowed to hold (deflate
-  /// expands incompressible data by only a few bytes per block), so the slack
-  /// only needs to cover names and directory records. A caller may set it
-  /// LOWER to bound buffering more tightly than the content caps.
-  /// [maxCentralDirectoryBytes] defaults to `maxEntries × 1 KiB`: a flat
-  /// archive with short names needs ~50–100 bytes per record.
-  ZipLimits({
-    required this.maxEntryBytes,
-    required this.maxTotalBytes,
-    required this.maxEntries,
-    int? maxArchiveBytes,
-    int? maxCentralDirectoryBytes,
-  }) : maxArchiveBytes = maxArchiveBytes ?? maxTotalBytes + _headerSlackBytes,
-       maxCentralDirectoryBytes =
-           maxCentralDirectoryBytes ?? maxEntries * _bytesPerDirectoryRecord,
-       assert(maxEntryBytes > 0, 'maxEntryBytes must be positive'),
-       assert(maxTotalBytes > 0, 'maxTotalBytes must be positive'),
-       assert(maxEntries > 0, 'maxEntries must be positive'),
-       assert(
-         maxTotalBytes >= maxEntryBytes,
-         'maxTotalBytes must be >= maxEntryBytes',
-       ),
-       assert((maxArchiveBytes ?? 1) > 0, 'maxArchiveBytes must be positive'),
-       assert(
-         (maxCentralDirectoryBytes ?? 1) > 0,
-         'maxCentralDirectoryBytes must be positive',
-       );
-
-  static const int _headerSlackBytes = 4 * 1024 * 1024;
-  static const int _bytesPerDirectoryRecord = 1024;
-
-  /// Max decompressed bytes for any single entry.
-  final int maxEntryBytes;
-
-  /// Max sum of decompressed bytes across all entries.
-  final int maxTotalBytes;
-
-  /// Max number of entries.
-  final int maxEntries;
-
-  /// Max size of the compressed archive itself (the picked file). Enforced by
-  /// the pickers while reading and again by the extractor.
-  final int maxArchiveBytes;
-
-  /// Max size of the ZIP central directory (all entry headers together),
-  /// checked from the EOCD record before any header is parsed.
-  final int maxCentralDirectoryBytes;
-
-  /// Defaults for the Pitaka backup/bundle format (`PITAKA_BACKUP_LIMITS`).
-  static final ZipLimits pitakaBackup = ZipLimits(
-    maxEntryBytes: 200 * 1024 * 1024, // 200 MiB
-    maxTotalBytes: 500 * 1024 * 1024, // 500 MiB
-    maxEntries: 4096,
-  );
-}
 
 /// Thrown on any limit violation or structural anomaly (zip-slip, empty name,
 /// nested name, duplicate, directory entry). Distinct from IO errors so callers
