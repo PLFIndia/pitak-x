@@ -7,7 +7,7 @@ part of 'form_cover_controller.dart';
 // **************************************************************************
 
 String _$formCoverControllerHash() =>
-    r'333e578daa509b90138b7f86dd59f548a86fb048';
+    r'ed4f2eef946f399e2db42c8941bc3b23a9e40020';
 
 /// Stores captured cover bytes for a not-yet-saved form.
 ///

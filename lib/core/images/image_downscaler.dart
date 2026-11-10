@@ -2,9 +2,18 @@
 ///
 /// Port of Kotlin `ImagePipeline.downscaleForPublish`: fit within a max
 /// width×height (book aspect, default 400×600) preserving aspect ratio, then
-/// re-encode as JPEG at a fixed quality (default 80). Used both for the stored
-/// book cover (camera capture) and the published cover bundle, so a captured
-/// photo never lands at multi-megapixel size on disk or in a git push.
+/// re-encode as JPEG at a fixed quality (default 80), so a picture never
+/// lands at multi-megapixel size on disk or on a published site.
+///
+/// Where each size applies (the caller chooses; this file only holds the
+/// shared default):
+///  - the default, 400×600 at quality 80: the publish step (the local cover
+///    reader and the bounded remote-cover download), a remote cover saved to
+///    the phone through that same download (an ISBN look-up), the library
+///    logo, and covers fetched from a published site;
+///  - 240×360 at quality 70: a cover photographed in the app. The two capture
+///    controllers pass the numbers of `PhotoCoverRecipe` (library domain);
+///  - 1080×1440: event posters (`events_providers.dart`).
 ///
 /// All EXIF metadata (including GPS) is stripped before encoding — see the
 /// comment in [ImageDownscaler.downscaleJpeg].

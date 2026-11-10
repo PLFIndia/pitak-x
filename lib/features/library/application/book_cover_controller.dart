@@ -16,6 +16,7 @@ import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/core/images/image_downscaler.dart';
 import 'package:pitaka/features/library/application/library_controller.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
+import 'package:pitaka/features/library/domain/photo_cover_recipe.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 part 'book_cover_controller.g.dart';
@@ -40,7 +41,14 @@ class BookCoverController extends _$BookCoverController {
   ) async {
     // Worker isolate (N10-a): a fresh camera capture is a multi-megapixel
     // decode + resize; on the UI isolate that froze the detail page.
-    final jpeg = await ImageDownscaler.downscaleJpegAsync(rawBytes);
+    // The size and quality come from the one photo-cover recipe, shared with
+    // `FormCoverController`, so both capture paths store the same picture.
+    final jpeg = await ImageDownscaler.downscaleJpegAsync(
+      rawBytes,
+      maxW: PhotoCoverRecipe.maxWidth,
+      maxH: PhotoCoverRecipe.maxHeight,
+      quality: PhotoCoverRecipe.jpegQuality,
+    );
     if (jpeg == null) {
       return left(const ValidationFailure('image could not be decoded'));
     }

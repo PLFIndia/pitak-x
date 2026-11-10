@@ -481,7 +481,7 @@ to false** (the `hasX` forward-compat pattern):
 | Rows per Refresh run | ≤ 500 (stop discovering, report); discovery ≤ 2 hops | `NetworkDiscoveryPlan` |
 | Concurrency | 4 in-flight fetches | `RefreshNetworkUseCase` |
 | QR payload | ≤ 512 bytes; URL validated before fragment | `LibraryCardPayload` |
-| Images | reject > 8192 px / > 40 Mpx from the header; frame 0 only; 400×600 q80 JPEG out | `ImageDownscaler` |
+| Images | reject > 8192 px / > 40 Mpx from the header; frame 0 only; JPEG out at the caller's size: 400×600 q80 by default, 240×360 q70 for a cover photographed in the app, 1080×1440 q80 for an event poster | `ImageDownscaler`, `PhotoCoverRecipe` |
 | Publish target URL | derived from the sealed target's identity parts, cross-checked against the stored one; never accepted as an arbitrary `{host, url}` pair | `PublishTarget`, `PrefsPublishHostStore` |
 | Publish read-back body | marker ≤ 4 KiB; `library.json` / `events.json` ≤ 64 KiB; catalogue by its own rule; exact expected origin and site directory, **no** redirect followed, one `?rb=` buster allowed | `BoundedPublishedSiteVerifier`, `PublishedSiteUrlPolicy.readBackUrl` |
 | Cloudflare API body | ≤ 1 MiB streamed, cancelled over cap; string-aware depth ≤ 16 **before** `jsonDecode`; endpoint-specific string/list/map bounds; whitelisted fields only | `CloudflareJson`, `HttpCloudflareApi` |
@@ -971,6 +971,15 @@ loan never rebuilds the catalogue or reads a cover.
   source names one picture for good, which is what lets a publish skip a
   cover it already put online (§5.8). Enforced by
   `cover_files_immutable_test.dart`.
+- **A photographed cover is small on purpose** (decision of 2026-11-10). A
+  cover taken with the camera is stored at most 240 × 360 at JPEG quality 70
+  (`PhotoCoverRecipe`, used by both capture controllers): it only has to show
+  what the item looks like, and thousands of them must fit into one backup.
+  A downloaded ISBN cover and the library logo keep the shared default of
+  `ImageDownscaler` (400 × 600, q80). Covers already on the phone are not
+  re-encoded. The publish recipe is unchanged and never enlarges a picture,
+  so a photographed cover is published at the size it was stored and no new
+  `PublishCoverRendition.current` is needed (§5.8).
 - **Availability has its own lane** (ADR 0019, §5.9). The coarse *Available /
   Not available* tag is the only public data that changes all day, so it is a
   separate tiny file published by itself after a loan or return, bound to the
