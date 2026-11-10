@@ -22,7 +22,7 @@ argon2 = { version = "0.6", default-features = false, features = ["alloc"] }
 aes-gcm = "0.10"
 zeroize = { version = "1", features = ["zeroize_derive"] }
 subtle = "2"
-base64 = "0.22"
+base64 = "0.23"
 
 [dependencies.rusqlite]
 version = "0.32"
