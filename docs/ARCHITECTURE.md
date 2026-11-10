@@ -446,13 +446,14 @@ to false** (the `hasX` forward-compat pattern):
   decoder empties, a target whose URL disagrees with its parts) makes the
   whole entry unreadable (`PublishStateBackupCodec`). The writer re-decodes it
   before including it, so it never emits an entry its reader refuses.
-- The writer mirrors the W2 reader's `maxBytes` / `maxRows`: it encodes and
-  checks both W2 entries before creating a scratch directory, SQLite file, or
-  archive bytes. An entry exactly at a cap is readable; anything larger fails
+- The writer mirrors the W2 reader's `maxBytes` / `maxRows`: its worker
+  encodes and checks both W2 entries before it writes a SQLite file or
+  starts the ZIP. An entry exactly at a cap is readable; anything larger fails
   creation with `BackupTooLargeFailure`, never a backup that its own reader
-  would silently downgrade. The worker OUTCOME is plain data only (the bytes
-  with the titles of left-out covers, or a `BackupOverflow` code with two
-  numbers), which the calling isolate maps to `Either`.
+  would silently downgrade. The worker OUTCOME is plain data only (the size
+  of the finished file with the titles of left-out covers, or a
+  `BackupOverflow` code with two numbers), which the calling isolate maps to
+  `Either`.
 - The writer refuses what the reader refuses (review finding P1-M1). One
   value, `BackupLimits` (backup domain), holds the numbers of a backup:
   4,086 covers plus 10 other entries (4,096 entries), 500 MiB of content,
@@ -465,8 +466,32 @@ to false** (the `hasX` forward-compat pattern):
   refuses, in this order: more covers than fit, one entry above its cap, too
   much content in total. The finished file is checked against the archive
   cap. Exactly at a limit is accepted. A refusal carries a code, the actual
-  number and the limit, leaves no work folder, and the page turns it into
-  one sentence with both numbers in the same unit.
+  number and the limit, leaves nothing in its work folder, and the page
+  turns it into one sentence with both numbers in the same unit.
+- The backup is written straight to a **file**, never held in memory
+  (review finding P3-B1). `packBackupZip` (`backup_zip_file.dart`) writes
+  text entries deflated from memory, each cover read whole and **stored**
+  (one in memory at a time), and each database **streamed** from its file
+  and deflated, with its sizes behind the data (a ZIP "data descriptor",
+  which the reader accepts). The vault database is copied into the scratch
+  folder first (`VaultArtifactsStore.snapshotDatabaseTo`), so every
+  database is packed from a file nothing else can write. The ZIP gets its
+  final name, `Pitak-backup-<date>-<time>.pitabak` (`backupFileName`), only
+  when it is complete and within the archive cap.
+- Where a backup is built and who removes it (`BackupWorkArea`, a domain
+  port; `FileBackupWorkArea`): each build gets its own folder
+  `<temp>/backup_work/run-<random>/` under the app's temporary directory.
+  The writer removes its `scratch/` subfolder on every way out. The use
+  case discards the run when the build fails; after a build the page shares
+  the file by path (`FileShareService.shareFile`) and discards the run when
+  the share call has returned, whatever the outcome, or at once when the
+  page is gone. A sweep before every build and once per app start
+  (`staleBackupWorkSweep`) removes what a killed app left, including the
+  `<Documents>/backup_create_work` folder of older versions. Only a real
+  directory named `run-…` directly under `backup_work` is ever deleted, and
+  a run this app session is using is never swept. On Android the share
+  plugin offers its own copy of the file, which it removes at the next
+  share.
 - A cover file above the per-cover cap does not fail the backup: it is left
   out, the item stays inside, and the page names the items (count, first
   three titles). An oversized file that no item refers to is skipped without

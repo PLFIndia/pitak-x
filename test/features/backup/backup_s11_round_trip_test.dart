@@ -184,7 +184,10 @@ void main() {
 
       final create = await h.container.read(createBackupUseCaseProvider.future);
       final backup = _unwrap(await create());
-      expect(backup.bytes, isNotEmpty);
+      // BR4: the backup is a file now; the restore below still takes bytes.
+      final backupBytes = File(backup.path).readAsBytesSync();
+      expect(backupBytes, isNotEmpty);
+      expect(backup.sizeBytes, backupBytes.length);
 
       // Make restore prove its input came from the archive, not from surviving
       // live state. The changed live vault must also be replaced by the
@@ -208,7 +211,7 @@ void main() {
       final restorer = await h.container.read(restoreBackupProvider.future);
       final passphrase = ReplacementHarness.secret();
       final result = await restorer.restore(
-        archiveBytes: backup.bytes,
+        archiveBytes: backupBytes,
         passphrase: passphrase,
       );
       passphrase.dispose();
@@ -330,8 +333,15 @@ void main() {
         expect(failure, isA<StorageFailure>());
       }
       expect(result.toNullable(), isNull);
+      // BR4: backups are built under the app's temporary folder (the
+      // harness points it at `app_temp`). The old Documents folder is
+      // never written, and no run folder was even asked for.
       expect(
         Directory('${h.directory.path}/backup_create_work').existsSync(),
+        isFalse,
+      );
+      expect(
+        Directory('${h.directory.path}/app_temp').existsSync(),
         isFalse,
         reason: 'the strict Drift read refuses before writer scratch work',
       );

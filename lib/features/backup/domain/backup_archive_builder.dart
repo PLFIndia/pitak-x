@@ -5,22 +5,33 @@
 /// (`infrastructure/backup_archive_writer.dart`).
 library;
 
-import 'dart:typed_data';
-
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
 import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
 
-/// What a finished build hands back: the archive, and what it had to leave
-/// out (BR3, decision D10).
+/// What a finished build hands back: where the archive FILE is, how large
+/// it is, and what it had to leave out (BR3, decision D10).
+///
+/// A file and not bytes since BR4: a backup can be hundreds of megabytes,
+/// and holding it in memory to pass it on is what made large libraries
+/// fail. The file lies in the `workDir` the caller gave to
+/// [BackupArchiveBuilder.build], and the caller deletes it when done.
 final class BuiltBackup {
   /// Creates the result of a build.
-  const BuiltBackup({required this.bytes, this.coversLeftOut = const []});
+  const BuiltBackup({
+    required this.path,
+    required this.sizeBytes,
+    this.coversLeftOut = const [],
+  });
 
-  /// The `.pitabak` archive bytes.
-  final Uint8List bytes;
+  /// Absolute path of the finished `.pitabak` file. Its file name is the
+  /// name the user sees when the backup is shared.
+  final String path;
+
+  /// Size of that file in bytes.
+  final int sizeBytes;
 
   /// Titles of the items whose cover picture is NOT inside, because the
   /// picture file is larger than a backup can hold for one cover. The items
@@ -33,11 +44,18 @@ final class BuiltBackup {
 /// Builds a `.pitabak` archive from the current catalog + vault artifacts.
 // ignore: one_member_abstracts
 abstract interface class BackupArchiveBuilder {
-  /// Builds the archive bytes from [books] + [wishlist] + [periodicals],
-  /// including the vault and covers when present. [workDir] is a scratch
-  /// directory for transient files; [exportedAt] stamps the manifest (epoch
-  /// millis). The returned future completes with an error on IO failure so
-  /// the caller can fail closed.
+  /// Builds the archive FILE from [books] + [wishlist] + [periodicals],
+  /// including the vault and covers when present. [exportedAt] stamps the
+  /// manifest (epoch millis) and names the file. The returned future
+  /// completes with an error on IO failure so the caller can fail closed.
+  ///
+  /// [workDir] is a folder the CALLER owns and that nothing else uses (one
+  /// per build). The contract since BR4:
+  ///  - after a success it holds exactly one file, the finished backup
+  ///    ([BuiltBackup.path]);
+  ///  - after a refusal or an error it holds nothing of this build.
+  /// The builder cleans up its own temporary files in both cases. Removing
+  /// the folder and the finished backup is the caller's job.
   ///
   /// [periodicals] is EVERY magazine title (removed included — its issues may
   /// still exist, ADR 0013 D8). Together with the kinds/details already
@@ -69,7 +87,7 @@ abstract interface class BackupArchiveBuilder {
   /// [BuiltBackup.coversLeftOut].
   ///
   /// Asynchronous on purpose (N10-c): building a backup means writing two
-  /// SQLite files, reading every cover and deflating the lot — seconds of
+  /// SQLite files, reading every cover and packing the lot — seconds of
   /// work for a large library. Implementations are expected to do that off
   /// the calling isolate so the UI keeps painting.
   Future<Either<Failure, BuiltBackup>> build({

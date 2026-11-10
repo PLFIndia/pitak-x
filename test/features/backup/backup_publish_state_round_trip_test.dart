@@ -28,7 +28,7 @@ void main() {
       final covers = Directory('${tmp.path}/covers')..createSync();
       File('${covers.path}/0b1f-uuid.jpg').writeAsBytesSync([1, 2, 3]);
       final state = archivedState();
-      final bytes =
+      final built =
           (await BackupArchiveWriter(
                 vaultStore: VaultStore(baseDir: '${tmp.path}/novault'),
                 coversDir: covers.path,
@@ -42,8 +42,9 @@ void main() {
                 networkJson: null,
                 publishStateJson: PublishStateBackupCodec.encode(state),
               ))
-              .getOrElse((f) => fail('unexpected: $f'))
-              .bytes;
+              .getOrElse((f) => fail('unexpected: $f'));
+      // BR4: the writer hands back a file; this reader still takes bytes.
+      final bytes = File(built.path).readAsBytesSync();
 
       final files = BoundedZipExtractor.extract(bytes);
       final manifest = parseBackupManifest(

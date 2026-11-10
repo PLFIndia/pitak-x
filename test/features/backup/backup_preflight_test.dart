@@ -179,6 +179,72 @@ void main() {
     });
   });
 
+  // BR4: a database is fed to the ZIP from its file in small pieces. The
+  // plan keeps only the PATH; the pre-flight judges it by its measured size
+  // like any other entry and still opens no file.
+  group('PlannedBackupEntry.streamed', () {
+    test('carries the name, the measured size and the path', () {
+      const entry = PlannedBackupEntry.streamed('books.db', 4096, '/s/b.db');
+      expect(entry.name, 'books.db');
+      expect(entry.bytes, 4096);
+      expect(entry.streamPath, '/s/b.db');
+    });
+
+    test('an entry that is read whole has no path', () {
+      final entry = PlannedBackupEntry('manifest.json', 0, () => Uint8List(0));
+      expect(entry.streamPath, isNull);
+    });
+
+    test('has no content in memory: asking for it is a bug and fails', () {
+      const entry = PlannedBackupEntry.streamed('books.db', 4096, '/s/b.db');
+      expect(
+        entry.content,
+        throwsA(
+          isA<StateError>().having(
+            (e) => e.message,
+            'message',
+            contains('books.db'),
+          ),
+        ),
+      );
+    });
+
+    test('counts against the limits like any other entry', () {
+      const limits = BackupLimits(
+        maxCovers: 3,
+        maxContentBytes: 1000,
+        maxCoverBytes: 100,
+        maxDatabaseBytes: 400,
+        maxTextEntryBytes: 50,
+      );
+      // No file exists at these paths: the pre-flight must not look.
+      expect(
+        backupRefusalFor(const [
+          PlannedBackupEntry.streamed('books.db', 400, '/nowhere/books.db'),
+        ], limits),
+        isNull,
+      );
+      expect(
+        backupRefusalFor(const [
+          PlannedBackupEntry.streamed('books.db', 401, '/nowhere/books.db'),
+        ], limits),
+        (code: BackupOverflow.catalogueTooLarge, actual: 401, limit: 400),
+      );
+    });
+  });
+
+  group('PlannedBackupEntry.isCover', () {
+    test('is decided by the entry name, the way the reader does it', () {
+      PlannedBackupEntry named(String name) =>
+          PlannedBackupEntry(name, 0, () => Uint8List(0));
+      expect(named('cover_a.jpg').isCover, isTrue);
+      expect(named('cover_').isCover, isTrue);
+      expect(named('books.db').isCover, isFalse);
+      expect(named('manifest.json').isCover, isFalse);
+      expect(named('my_cover_a.jpg').isCover, isFalse);
+    });
+  });
+
   group('backupRefusalFor', () {
     // Small limits, each cap different, so the code and the numbers of a
     // refusal show which rule fired.

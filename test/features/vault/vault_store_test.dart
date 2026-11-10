@@ -55,6 +55,59 @@ void main() {
     expect(store.clear, returnsNormally);
   });
 
+  // BR4: a backup packs a private COPY of the vault database, so that
+  // nothing can write the file while it is being read into the archive.
+  group('snapshotDatabaseTo (the copy a backup packs)', () {
+    late String target;
+
+    setUp(() {
+      final scratch = Directory(p.join(tmp.path, 'scratch'))..createSync();
+      target = p.join(scratch.path, 'borrowers.db');
+    });
+
+    test('copies the database byte for byte and leaves the original '
+        'alone', () async {
+      File(store.dbPath).writeAsBytesSync([1, 2, 3, 4]);
+      store.writeBlob('salt.iv.ct');
+
+      await store.snapshotDatabaseTo(target);
+
+      expect(File(target).readAsBytesSync(), [1, 2, 3, 4]);
+      expect(File(store.dbPath).readAsBytesSync(), [1, 2, 3, 4]);
+      expect(store.readBlob(), 'salt.iv.ct');
+    });
+
+    test('copies the database file only', () async {
+      File(store.dbPath).writeAsBytesSync([1]);
+      store
+        ..writeBlob('salt.iv.ct')
+        ..writeBioBlob('bio.iv.ct');
+
+      await store.snapshotDatabaseTo(target);
+
+      expect(
+        Directory(p.dirname(target)).listSync().map((e) => p.basename(e.path)),
+        ['borrowers.db'],
+      );
+    });
+
+    test('a database without content is copied as it is', () async {
+      File(store.dbPath).writeAsBytesSync(const []);
+
+      await store.snapshotDatabaseTo(target);
+
+      expect(File(target).readAsBytesSync(), isEmpty);
+    });
+
+    test('fails when the database is gone, and writes nothing', () async {
+      await expectLater(
+        store.snapshotDatabaseTo(target),
+        throwsA(isA<FileSystemException>()),
+      );
+      expect(File(target).existsSync(), isFalse);
+    });
+  });
+
   group('atomic blob writes (review 2026-09-03, Blocker)', () {
     test('writeBlob leaves no temp file and the live blob is complete', () {
       store

@@ -18,6 +18,7 @@
 library;
 
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -355,20 +356,30 @@ Future<String> attachSmokeCover(WidgetTester tester) async {
 /// test cannot complete. Calling the provider still exercises FFI, SQLCipher
 /// and real file IO, and returns bytes that can be restored after a deliberate
 /// destructive interval.
+///
+/// BR4: the use case hands back a FILE in the app's private temporary
+/// folder. The restore still takes bytes, so the file is read here and then
+/// given back, the way the Create-backup page does after sharing.
 Future<Uint8List> createSmokeBackup(WidgetTester tester) async {
   final createUseCase = await appContainer(
     tester,
   ).read(createBackupUseCaseProvider.future);
   final backupResult = await createUseCase();
-  // The use case returns the archive bytes plus honest content flags
-  // (identity / network list included or not); only the bytes matter here.
+  // The use case returns the archive file plus honest content flags
+  // (identity / network list included or not); only the archive matters here.
   final backup = backupResult.toNullable();
   expect(
     backup,
     isNotNull,
     reason: 'backup creation failed on device: $backupResult',
   );
-  return backup!.bytes;
+  try {
+    final bytes = File(backup!.path).readAsBytesSync();
+    expect(bytes.length, backup.sizeBytes);
+    return bytes;
+  } finally {
+    await createUseCase.discard(backup!);
+  }
 }
 
 /// Restores [archiveBytes] through the production RestoreController.

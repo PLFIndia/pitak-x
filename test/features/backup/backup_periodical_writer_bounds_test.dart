@@ -48,6 +48,12 @@ void main() {
     expect(failure, isA<BackupTooLargeFailure>());
     expect((failure! as BackupTooLargeFailure).detail, 'periodicalsTooLarge');
     expect(result.toNullable(), isNull);
-    expect(Directory('${tmp.path}/work_big_periodicals').existsSync(), isFalse);
+    // BR4: the writer makes its scratch folder before the worker starts and
+    // removes it on every way out, so the work folder is left empty.
+    final work = Directory('${tmp.path}/work_big_periodicals');
+    expect(
+      work.existsSync() ? work.listSync() : const <FileSystemEntity>[],
+      isEmpty,
+    );
   });
 }

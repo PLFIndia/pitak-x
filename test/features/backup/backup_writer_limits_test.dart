@@ -92,6 +92,14 @@ void main() {
     return (result: result, work: work);
   }
 
+  /// The names of everything a build left in its work folder.
+  List<String> leftIn(Directory work) => work.existsSync()
+      ? [
+          for (final entity in work.listSync())
+            entity.uri.pathSegments.lastWhere((s) => s.isNotEmpty),
+        ]
+      : const [];
+
   /// The build succeeded AND the reader accepts the archive under the caps
   /// derived from the same [limits]. Returns the unpacked entries.
   Map<String, Uint8List> accepted(
@@ -99,15 +107,23 @@ void main() {
     BackupLimits limits,
   ) {
     final built = run.result.getOrElse((f) => fail('refused: $f'));
-    expect(run.work.existsSync(), isFalse, reason: 'work folder left behind');
+    // BR4: the build hands back a FILE in its work folder, and leaves
+    // nothing else there.
+    final file = File(built.path);
+    expect(
+      leftIn(run.work),
+      [file.uri.pathSegments.last],
+      reason: 'only the finished backup may be left in the work folder',
+    );
+    expect(built.sizeBytes, file.lengthSync());
     return BoundedZipExtractor.extract(
-      built.bytes,
+      file.readAsBytesSync(),
       limits: ZipLimits.forBackup(limits),
     );
   }
 
   /// The build was refused with [code] and the two numbers, returned no
-  /// archive and left no work folder.
+  /// archive and left nothing in its work folder.
   void refused(
     ({Either<Failure, BuiltBackup> result, Directory work}) run,
     BackupOverflow code, {
@@ -121,7 +137,7 @@ void main() {
     expect(tooLarge.detail, code.name);
     expect(tooLarge.actual, actual);
     expect(tooLarge.limit, limit);
-    expect(run.work.existsSync(), isFalse, reason: 'work folder left behind');
+    expect(leftIn(run.work), isEmpty, reason: 'the work folder is not empty');
   }
 
   int contentOf(Map<String, Uint8List> files) =>
@@ -441,7 +457,7 @@ void main() {
     }
     final measuredRun = await build(BackupLimits.current);
     final content = contentOf(accepted(measuredRun, BackupLimits.current));
-    final archive = measuredRun.result.toNullable()!.bytes.length;
+    final archive = measuredRun.result.toNullable()!.sizeBytes;
     expect(archive, greaterThan(content));
 
     BackupLimits withArchiveRoom(int maxArchiveBytes) => BackupLimits(
@@ -534,7 +550,9 @@ void main() {
       expect(files, hasLength(4096));
       expect(files, hasLength(ZipLimits.pitakaBackup.maxEntries));
       expect(
-        BoundedZipExtractor.extract(run.result.toNullable()!.bytes),
+        BoundedZipExtractor.extract(
+          File(run.result.toNullable()!.path).readAsBytesSync(),
+        ),
         hasLength(4096),
       );
 

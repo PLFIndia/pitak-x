@@ -8,8 +8,9 @@
 /// the writer find that out first and say so, with the numbers.
 ///
 /// Everything in this file is PURE: it gets names and sizes and gives back a
-/// decision. It opens no file. The writer does the file work and asks here,
-/// which keeps the rules easy to test with small limits and no disk.
+/// decision. It opens no file (a streamed entry carries only the PATH of
+/// its file). The writer does the file work and asks here, which keeps the
+/// rules easy to test with small limits and no disk.
 ///
 /// In its own file because the writer is close to the 500-line ceiling.
 library;
@@ -93,10 +94,26 @@ CoverSelection selectBackupCovers({
 /// thousands of covers. Measuring them is cheap; reading them is not. So the
 /// writer first describes every entry, lets [backupRefusalFor] decide, and
 /// reads a file only when it is about to go into the ZIP.
+///
+/// Two kinds of entry since BR4:
+///  - one that is read WHOLE when its turn comes (the default constructor):
+///    a text entry that is in memory anyway, or one cover picture, which is
+///    small;
+///  - one that is STREAMED from a file ([PlannedBackupEntry.streamed]): a
+///    database, which can be far too large to hold in memory. Only its path
+///    is kept here; the ZIP writer reads it in small pieces.
 final class PlannedBackupEntry {
-  /// Creates a planned entry. The third argument fetches the content; it is
-  /// called once, by [content].
-  const PlannedBackupEntry(this.name, this.bytes, this._read);
+  /// Creates an entry that is read whole. The third argument fetches the
+  /// content; it is called once, by [content].
+  const PlannedBackupEntry(this.name, this.bytes, Uint8List Function() read)
+    : _read = read,
+      streamPath = null;
+
+  /// Creates an entry that is fed to the ZIP from the file at [path], in
+  /// small pieces. [bytes] is the file's size as measured for the checks.
+  const PlannedBackupEntry.streamed(this.name, this.bytes, String path)
+    : _read = null,
+      streamPath = path;
 
   /// The entry's name inside the archive.
   final String name;
@@ -104,14 +121,32 @@ final class PlannedBackupEntry {
   /// The entry's size in bytes, as measured for the checks.
   final int bytes;
 
-  final Uint8List Function() _read;
+  /// The file a streamed entry is read from. Null for an entry that is
+  /// read whole.
+  final String? streamPath;
 
-  /// The entry's content. Throws a [StateError] when it is not exactly
-  /// [bytes] long: the file changed after it was measured, so the checks no
-  /// longer describe it. The build then fails as a whole (fail closed) and
-  /// can simply be run again.
+  final Uint8List Function()? _read;
+
+  /// Whether this entry is a cover picture (by its name, the one rule the
+  /// reader also uses).
+  bool get isCover => name.startsWith(coverEntryPrefix);
+
+  /// The content of an entry that is read whole. Throws a [StateError] when
+  /// it is not exactly [bytes] long: the file changed after it was measured,
+  /// so the checks no longer describe it. The build then fails as a whole
+  /// (fail closed) and can simply be run again.
+  ///
+  /// Also throws a [StateError] for a streamed entry, which has no content
+  /// in memory by design.
   Uint8List content() {
-    final content = _read();
+    final read = _read;
+    if (read == null) {
+      throw StateError(
+        'Backup entry "$name" is streamed from a file; it has no content '
+        'in memory',
+      );
+    }
+    final content = read();
     if (content.length != bytes) {
       throw StateError(
         'Backup entry "$name" changed size while the backup was being built',
@@ -141,7 +176,7 @@ BackupRefusal? backupRefusalFor(
 ) {
   var covers = 0;
   for (final entry in entries) {
-    if (entry.name.startsWith(coverEntryPrefix)) covers++;
+    if (entry.isCover) covers++;
   }
   if (covers > limits.maxCovers) {
     return (

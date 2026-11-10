@@ -69,7 +69,12 @@ void main() {
             networkJson: null,
             publishStateJson: null,
           )
-          .then((r) => r.getOrElse((f) => fail('unexpected left: $f')).bytes);
+          // BR4: the writer hands back a file; the restore takes bytes.
+          .then(
+            (r) => File(
+              r.getOrElse((f) => fail('unexpected left: $f')).path,
+            ).readAsBytesSync(),
+          );
 
   Future<void> existing({bool returned = false}) async {
     await h.books.insert(_book);

@@ -79,6 +79,17 @@ final class VaultStore implements VaultArtifactsStore {
     clearBioBlob();
   }
 
+  /// Copies `borrowers.db` to [targetPath] for the backup (BR4).
+  ///
+  /// Asynchronous on purpose: the caller is the UI isolate, and a vault
+  /// file can be large. `File.copy` does the work off that isolate, so the
+  /// screen keeps painting. The file is opaque ciphertext; nothing here
+  /// reads it.
+  @override
+  Future<void> snapshotDatabaseTo(String targetPath) async {
+    await File(dbPath).copy(targetPath);
+  }
+
   /// Reads the wrapped-key blob, or null if no vault is set up.
   ///
   /// Trims surrounding whitespace so a trailing newline (if any) never reaches

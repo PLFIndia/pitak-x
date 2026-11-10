@@ -147,6 +147,11 @@ class ReplacementHarness {
           (ref) async => MemoryKeysReset().reset,
         ),
         appDocsDirProvider.overrideWith((ref) async => directory),
+        // BR4: a backup is built under the app's temporary folder. A folder
+        // inside this harness's own directory, so `close` removes it too.
+        appTempDirProvider.overrideWith(
+          (ref) async => Directory('${directory.path}/app_temp'),
+        ),
         if (!generations) ...[
           // The real coversDir resolves through the active data generation,
           // whose startup adoption would MOVE this harness's hand-placed flat

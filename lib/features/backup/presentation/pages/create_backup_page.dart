@@ -4,6 +4,12 @@
 /// and covers when present) and hands it to the system share sheet. All work
 /// happens behind the create-backup use case; this screen only triggers it and
 /// reports the hand-off/failure.
+///
+/// BR4: the archive is a FILE in a private folder of the app. From the
+/// moment the use case returns it, this screen is responsible for it and
+/// gives it back (`useCase.discard`) on every path: after the share sheet
+/// has returned, whatever happened there, and at once when the screen is
+/// already gone. The file is a plain copy of the whole library.
 library;
 
 import 'package:flutter/material.dart';
@@ -69,53 +75,63 @@ class _CreateBackupPageState extends ConsumerState<CreateBackupPage> {
     // plugin can all throw unexpectedly — fail closed with safe copy and a
     // reset busy flag instead of an unhandled async error + stuck spinner.
     // The operation deliberately does NOT survive navigation: the share
-    // sheet needs the user present, so a popped page simply drops the result.
+    // sheet needs the user present, so a popped page shares nothing. Only
+    // the clean-up of the finished file survives (BR4).
     try {
+      // `useCase` is kept in a local variable ON PURPOSE: `ref` cannot be
+      // used once this screen is gone, but the file must still be given
+      // back then.
       final useCase = await ref.read(createBackupUseCaseProvider.future);
       final result = await useCase();
-      if (!mounted) return;
 
       await result.match(
         (failure) async {
+          // Nothing to give back: a failed build left no file.
+          if (!mounted) return;
           setState(() {
             _busy = false;
             _error = _messageFor(failure);
           });
         },
         (result) async {
-          final now = DateTime.now();
-          final stamp =
-              '${now.year}${_two(now.month)}${_two(now.day)}-'
-              '${_two(now.hour)}${_two(now.minute)}${_two(now.second)}';
-          final fileName = 'Pitak-backup-$stamp.pitabak';
-          final box = context.findRenderObject() as RenderBox?;
-          final origin = (box != null && box.hasSize)
-              ? box.localToGlobal(Offset.zero) & box.size
-              : null;
-          final outcome = await ref
-              .read(fileShareServiceProvider)
-              .shareBytes(
-                bytes: result.bytes,
-                fileName: fileName,
-                // .pitabak is an opaque encrypted archive — generic binary.
-                mimeType: 'application/octet-stream',
-                sharePositionOrigin: origin,
-              );
-          if (mounted) {
-            setState(() {
-              _busy = false;
-              _done = outcome == ShareOutcome.success;
-              // §7 S6: the identity/network entries are best-effort — when
-              // one is missing the backup still completed, and the user is
-              // told plainly what is NOT inside.
-              _missingIdentity = !result.includesIdentity;
-              _missingNetwork = !result.includesNetwork;
-              _missingPublishState = result.missingPublishState;
-              _coversLeftOut = result.coversLeftOut;
-              if (outcome == ShareOutcome.unavailable) {
-                _error = 'Sharing is unavailable on this device.';
-              }
-            });
+          // From here on this screen owns the finished file. `finally`
+          // gives it back on EVERY way out of this block.
+          try {
+            if (!mounted) return;
+            final box = context.findRenderObject() as RenderBox?;
+            final origin = (box != null && box.hasSize)
+                ? box.localToGlobal(Offset.zero) & box.size
+                : null;
+            // The file already has the name the user should see
+            // (`Pitak-backup-<date>-<time>.pitabak`); the writer made it.
+            final outcome = await ref
+                .read(fileShareServiceProvider)
+                .shareFile(
+                  path: result.path,
+                  // .pitabak is an opaque archive — generic binary.
+                  mimeType: 'application/octet-stream',
+                  sharePositionOrigin: origin,
+                );
+            if (mounted) {
+              setState(() {
+                _busy = false;
+                _done = outcome == ShareOutcome.success;
+                // §7 S6: the identity/network entries are best-effort —
+                // when one is missing the backup still completed, and the
+                // user is told plainly what is NOT inside.
+                _missingIdentity = !result.includesIdentity;
+                _missingNetwork = !result.includesNetwork;
+                _missingPublishState = result.missingPublishState;
+                _coversLeftOut = result.coversLeftOut;
+                if (outcome == ShareOutcome.unavailable) {
+                  _error = 'Sharing is unavailable on this device.';
+                }
+              });
+            }
+          } finally {
+            // The share plugin works on its own copy, so ours is no longer
+            // needed once the call above has returned or thrown.
+            await useCase.discard(result);
           }
         },
       );
@@ -128,8 +144,6 @@ class _CreateBackupPageState extends ConsumerState<CreateBackupPage> {
       }
     }
   }
-
-  static String _two(int n) => n.toString().padLeft(2, '0');
 
   static String _messageFor(Failure f) => switch (f) {
     StorageFailure() => 'Could not build the backup. Please try again.',

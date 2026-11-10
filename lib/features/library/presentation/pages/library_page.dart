@@ -119,7 +119,12 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
     // keepAlive provider makes this a genuine one-shot; `listen` (not watch)
     // so the sweep's completion never rebuilds the page.
     if (booksAsync.hasValue) {
-      ref.listen(orphanCoverSweepProvider, (_, _) {});
+      ref
+        ..listen(orphanCoverSweepProvider, (_, _) {})
+        // Same one-shot pattern (backup rework BR4): remove what a backup
+        // left in the app's temporary folder when the app was killed in
+        // the middle of it. That file is a plain copy of the whole library.
+        ..listen(staleBackupWorkSweepProvider, (_, _) {});
     }
 
     return Scaffold(

@@ -1,6 +1,6 @@
 /// What a built backup actually carries (backup domain, docs/ARCHITECTURE.md §3 network).
 ///
-/// The archive bytes plus the truth about the two OPTIONAL entries: the
+/// The archive file plus the truth about the two OPTIONAL entries: the
 /// library identity and the saved-libraries list are gathered best-effort —
 /// a failure to read them must never block a catalogue backup, so the use
 /// case proceeds without them and reports the omission here. The create page
@@ -10,23 +10,31 @@
 /// The same honesty rule covers cover pictures (BR3, decision D10): a picture
 /// too large for a backup is left out, and the items it belongs to are named
 /// here so the page can say so.
+///
+/// Since BR4 the archive is a FILE in a private folder of the app, not
+/// bytes in memory. Whoever receives this result must hand it back to
+/// `CreateBackupUseCase.discard` when done, so the file does not stay
+/// behind: it is a plain copy of the whole library.
 library;
-
-import 'dart:typed_data';
 
 /// The built archive plus its honest content flags.
 final class CreateBackupResult {
   /// Creates the result.
   const CreateBackupResult({
-    required this.bytes,
+    required this.path,
+    required this.sizeBytes,
     required this.includesIdentity,
     required this.includesNetwork,
     this.missingPublishState = false,
     this.coversLeftOut = const [],
   });
 
-  /// The `.pitabak` archive bytes.
-  final Uint8List bytes;
+  /// Absolute path of the finished `.pitabak` file. Its file name is the
+  /// name the user sees in the share sheet.
+  final String path;
+
+  /// Size of that file in bytes.
+  final int sizeBytes;
 
   /// Whether `identity.json` made it into the archive.
   final bool includesIdentity;

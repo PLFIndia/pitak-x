@@ -8,6 +8,7 @@ import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/core/theme/app_theme.dart';
 import 'package:pitaka/features/app_update/domain/app_update_policy.dart';
+import 'package:pitaka/features/backup/domain/backup_work_area.dart';
 import 'package:pitaka/features/library/domain/catalogue_item_page.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/library_query.dart';
@@ -18,6 +19,20 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../support/a11y.dart';
 import '../app_update/fake_app_update_service.dart';
+
+/// Counts the sweeps asked of it (backup rework BR4); touches no disk.
+class _CountingWorkArea implements BackupWorkArea {
+  int sweeps = 0;
+
+  @override
+  Future<Either<Failure, Unit>> sweep() async {
+    sweeps++;
+    return right(unit);
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
 
 /// In-memory repo: [getAll] returns [_all]; a search page returns only titles
 /// that contain the query (case-insensitive), mimicking the FTS5 contract
@@ -179,6 +194,34 @@ void main() {
     CatalogueItem(id: 2, title: 'Dune', author: 'Herbert'),
     CatalogueItem(id: 3, title: 'Old Tales', removed: true),
   ];
+
+  // BR4: a backup that was killed half-way leaves a plain copy of the
+  // library in the app's temporary folder. The Library screen, the first
+  // screen of every start, has it removed: once, after the list has loaded.
+  testWidgets('BR4: stale backup files are swept once, after the list has '
+      'loaded', (tester) async {
+    final workArea = _CountingWorkArea();
+    final repo = _GatedRepo(books)..gate = Completer<void>();
+    await tester.pumpWidget(
+      _app(
+        repo,
+        extraOverrides: [
+          backupWorkAreaProvider.overrideWith((ref) async => workArea),
+        ],
+      ),
+    );
+    await tester.pump();
+    expect(workArea.sweeps, 0, reason: 'not before the first paint of rows');
+
+    repo.gate!.complete();
+    await tester.pumpAndSettle();
+    expect(workArea.sweeps, 1);
+
+    // Rebuilding the screen does not sweep again in the same app session.
+    await _enterQuery(tester, 'dune');
+    await _enterQuery(tester, '');
+    expect(workArea.sweeps, 1);
+  });
 
   testWidgets('renders all books newest-first on load', (tester) async {
     await tester.pumpWidget(_app(_FakeBookRepo(books)));
@@ -585,6 +628,24 @@ Finder _bookList() => find.descendant(
   of: find.byType(CustomScrollView),
   matching: find.byType(Scrollable),
 );
+
+/// Fake whose page reads wait on [gate] until it is completed, so the screen
+/// can be looked at before the list has loaded.
+class _GatedRepo extends _FakeBookRepo {
+  _GatedRepo(super.all);
+  Completer<void>? gate;
+
+  @override
+  Future<Either<Failure, CatalogueItemPage>> page(
+    LibraryQuery query, {
+    required int limit,
+    int offset = 0,
+  }) async {
+    final waitFor = gate;
+    if (waitFor != null && !waitFor.isCompleted) await waitFor.future;
+    return super.page(query, limit: limit, offset: offset);
+  }
+}
 
 /// Fake whose SECOND page read waits on [gate], so the in-flight footer can
 /// be observed.

@@ -4,6 +4,7 @@
 /// spinner stuck forever.
 library;
 
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -19,8 +20,20 @@ import 'package:pitaka/features/backup/presentation/pages/create_backup_page.dar
 
 import '../../support/a11y.dart';
 
+/// Where the fake use case says the finished backup is. No file is written:
+/// the share sheet is a fake too.
+const String _fakeBackupPath =
+    '/fake/backup_work/run-1/Pitak-backup-20260101-000000.pitabak';
+
+/// What happened, in order, across the two fakes of one test (BR4: the file
+/// must be given back AFTER sharing, not before).
+typedef _Events = List<String>;
+
 /// Use-case fake: returns a fixed result. The collaborator fields are never
 /// touched — `noSuchMethod` throws if that ever changes.
+///
+/// The first argument is still "the archive" as bytes, so the tests read as
+/// before; since BR4 the result carries a path and the size instead.
 class _FakeCreateBackup implements CreateBackupUseCase {
   _FakeCreateBackup(
     Either<Failure, Uint8List> result, {
@@ -28,9 +41,12 @@ class _FakeCreateBackup implements CreateBackupUseCase {
     bool includesNetwork = true,
     bool missingPublishState = false,
     List<String> coversLeftOut = const [],
+    this.gate,
+    this.events,
   }) : _result = result.map(
          (bytes) => CreateBackupResult(
-           bytes: bytes,
+           path: _fakeBackupPath,
+           sizeBytes: bytes.length,
            includesIdentity: includesIdentity,
            includesNetwork: includesNetwork,
            missingPublishState: missingPublishState,
@@ -40,8 +56,26 @@ class _FakeCreateBackup implements CreateBackupUseCase {
 
   final Either<Failure, CreateBackupResult> _result;
 
+  /// When given, the build waits for it: a test can then act "while the
+  /// backup is being built".
+  final Completer<void>? gate;
+
+  final _Events? events;
+
+  /// The results handed back through [discard], in order.
+  final List<CreateBackupResult> discarded = [];
+
   @override
-  Future<Either<Failure, CreateBackupResult>> call() async => _result;
+  Future<Either<Failure, CreateBackupResult>> call() async {
+    await gate?.future;
+    return _result;
+  }
+
+  @override
+  Future<void> discard(CreateBackupResult result) async {
+    discarded.add(result);
+    events?.add('discard');
+  }
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
@@ -49,12 +83,31 @@ class _FakeCreateBackup implements CreateBackupUseCase {
 
 /// Share-sheet fake: a fixed outcome, or throws like a crashing plugin.
 class _FakeShare implements FileShareService {
-  _FakeShare({this.outcome = ShareOutcome.success, this.error});
+  _FakeShare({this.outcome = ShareOutcome.success, this.error, this.events});
 
   /// Not final: one test changes the outcome between two runs.
   ShareOutcome outcome;
   final Object? error;
+  final _Events? events;
 
+  /// The (path, MIME type) of every file handed to the share sheet.
+  final List<({String path, String mimeType})> files = [];
+
+  @override
+  Future<ShareOutcome> shareFile({
+    required String path,
+    required String mimeType,
+    Rect? sharePositionOrigin,
+  }) async {
+    files.add((path: path, mimeType: mimeType));
+    events?.add('share');
+    final e = error;
+    if (e != null) Error.throwWithStackTrace(e, StackTrace.current);
+    return outcome;
+  }
+
+  // BR4: a backup is shared as a FILE. Holding it in memory to share it is
+  // exactly what the rework removed, so this must never be called.
   @override
   Future<ShareOutcome> shareBytes({
     required Uint8List bytes,
@@ -62,11 +115,7 @@ class _FakeShare implements FileShareService {
     required String mimeType,
     String? text,
     Rect? sharePositionOrigin,
-  }) async {
-    final e = error;
-    if (e != null) Error.throwWithStackTrace(e, StackTrace.current);
-    return outcome;
-  }
+  }) => throw UnimplementedError();
 
   @override
   Future<ShareOutcome> shareText(String text, {Rect? sharePositionOrigin}) =>
@@ -443,5 +492,136 @@ void main() {
     );
     await tester.pumpAndSettle();
     await expectMeetsA11yGuidelines(tester);
+  });
+
+  // BR4: the backup is a FILE in a private folder of the app, a plain copy
+  // of the whole library. The page shares it by its path and gives it back
+  // on every way out, so that it never stays behind.
+  group('BR4 — the finished file is shared by path and always given back', () {
+    Future<void> createBackup(WidgetTester tester) async {
+      await tester.tap(find.widgetWithText(FilledButton, 'Create backup'));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('the path goes to the share sheet as a generic binary, and '
+        'the file is given back after sharing', (tester) async {
+      final events = <String>[];
+      final useCase = _FakeCreateBackup(
+        right(Uint8List.fromList([1, 2, 3])),
+        events: events,
+      );
+      final share = _FakeShare(events: events);
+      await tester.pumpWidget(page(useCase: useCase, share: share));
+      await createBackup(tester);
+
+      expect(share.files, [
+        (path: _fakeBackupPath, mimeType: 'application/octet-stream'),
+      ]);
+      expect(useCase.discarded, hasLength(1));
+      expect(useCase.discarded.single.path, _fakeBackupPath);
+      expect(events, ['share', 'discard']);
+    });
+
+    for (final outcome in [ShareOutcome.dismissed, ShareOutcome.unavailable]) {
+      testWidgets('the file is given back once when sharing ends as '
+          '${outcome.name}', (tester) async {
+        final useCase = _FakeCreateBackup(right(Uint8List.fromList([1])));
+        await tester.pumpWidget(
+          page(
+            useCase: useCase,
+            share: _FakeShare(outcome: outcome),
+          ),
+        );
+        await createBackup(tester);
+
+        expect(useCase.discarded, hasLength(1));
+      });
+    }
+
+    testWidgets('the file is given back once when the share plugin throws', (
+      tester,
+    ) async {
+      final useCase = _FakeCreateBackup(right(Uint8List.fromList([1])));
+      await tester.pumpWidget(
+        page(
+          useCase: useCase,
+          share: _FakeShare(error: StateError('plugin exploded')),
+        ),
+      );
+      await createBackup(tester);
+
+      expect(useCase.discarded, hasLength(1));
+      expect(
+        find.text('Something went wrong creating the backup.'),
+        findsOneWidget,
+      );
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('a second backup gives back its own file too', (tester) async {
+      final useCase = _FakeCreateBackup(right(Uint8List.fromList([1])));
+      await tester.pumpWidget(page(useCase: useCase));
+      await createBackup(tester);
+      await createBackup(tester);
+
+      expect(useCase.discarded, hasLength(2));
+    });
+
+    testWidgets('a failed build shares nothing and has nothing to give back', (
+      tester,
+    ) async {
+      final useCase = _FakeCreateBackup(left(const StorageFailure('x')));
+      final share = _FakeShare();
+      await tester.pumpWidget(page(useCase: useCase, share: share));
+      await createBackup(tester);
+
+      expect(share.files, isEmpty);
+      expect(useCase.discarded, isEmpty);
+      expect(
+        find.text('Could not build the backup. Please try again.'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('a page that was left while the backup was being built '
+        'gives the file back and shares nothing', (tester) async {
+      final gate = Completer<void>();
+      final useCase = _FakeCreateBackup(
+        right(Uint8List.fromList([1])),
+        gate: gate,
+      );
+      final share = _FakeShare();
+      await tester.pumpWidget(page(useCase: useCase, share: share));
+      await tester.tap(find.widgetWithText(FilledButton, 'Create backup'));
+      await tester.pump();
+
+      // The user leaves: the page is removed while the build still runs.
+      await tester.pumpWidget(const SizedBox());
+      gate.complete();
+      await tester.pumpAndSettle();
+
+      expect(share.files, isEmpty);
+      expect(useCase.discarded, hasLength(1));
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('a page that was left before a FAILED build returned does '
+        'nothing more', (tester) async {
+      final gate = Completer<void>();
+      final useCase = _FakeCreateBackup(
+        left(const StorageFailure('x')),
+        gate: gate,
+      );
+      await tester.pumpWidget(page(useCase: useCase));
+      await tester.tap(find.widgetWithText(FilledButton, 'Create backup'));
+      await tester.pump();
+
+      await tester.pumpWidget(const SizedBox());
+      gate.complete();
+      await tester.pumpAndSettle();
+
+      expect(useCase.discarded, isEmpty);
+      expect(tester.takeException(), isNull);
+    });
   });
 }

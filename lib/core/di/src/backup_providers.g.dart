@@ -6,15 +6,67 @@ part of 'backup_providers.dart';
 // RiverpodGenerator
 // **************************************************************************
 
+String _$backupWorkAreaHash() => r'a28d6f9ee8616bd719f813886d65799ce364bd38';
+
+/// The private folders backups are built in (backup rework BR4): one new
+/// folder per build under the app's temporary directory, and the one place
+/// that removes them again.
+///
+/// keepAlive (justified): this object remembers which folders are IN USE by
+/// a build of this app session, so that a sweep never deletes a backup that
+/// is being written or shared. An auto-disposed instance would forget that
+/// between two reads.
+///
+/// Copied from [backupWorkArea].
+@ProviderFor(backupWorkArea)
+final backupWorkAreaProvider = FutureProvider<BackupWorkArea>.internal(
+  backupWorkArea,
+  name: r'backupWorkAreaProvider',
+  debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+      ? null
+      : _$backupWorkAreaHash,
+  dependencies: null,
+  allTransitiveDependencies: null,
+);
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef BackupWorkAreaRef = FutureProviderRef<BackupWorkArea>;
+String _$staleBackupWorkSweepHash() =>
+    r'd50a26337f78227eda1aa7b07506ab38d1c9420d';
+
+/// One-time clean-up per app start: removes what a backup left behind when
+/// the app was killed in the middle of it (a plain copy of the library).
+/// Triggered next to the cover sweep, by the Library screen's first build.
+///
+/// keepAlive (justified): "once per app session" is the whole point, as for
+/// `orphanCoverSweep`. The result is not shown anywhere: when something
+/// could not be removed, the next start (and the next backup) tries again.
+///
+/// Copied from [staleBackupWorkSweep].
+@ProviderFor(staleBackupWorkSweep)
+final staleBackupWorkSweepProvider = FutureProvider<void>.internal(
+  staleBackupWorkSweep,
+  name: r'staleBackupWorkSweepProvider',
+  debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+      ? null
+      : _$staleBackupWorkSweepHash,
+  dependencies: null,
+  allTransitiveDependencies: null,
+);
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef StaleBackupWorkSweepRef = FutureProviderRef<void>;
 String _$createBackupUseCaseHash() =>
-    r'2fc9aceac0680e14c01df42797f1219facae104c';
+    r'02ce8031adc2ea873fda9f3d69b410e561281ba0';
 
 /// Creates a `.pitabak` backup of the whole local catalog (#28B): Room-format
 /// books/wishlist written from Drift, the persistent vault copied verbatim, and
 /// covers bundled — plus the library identity and the saved-libraries list
 /// (docs/ARCHITECTURE.md §3 network) and the website publishing record (plan
-/// CV6), all gathered best-effort. Returns the archive bytes for the UI to
-/// save.
+/// CV6), all gathered best-effort. Returns where the finished archive file
+/// is, for the UI to share and then discard.
 ///
 /// Copied from [createBackupUseCase].
 @ProviderFor(createBackupUseCase)

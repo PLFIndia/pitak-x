@@ -28,6 +28,14 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../periodicals/application/periodical_fakes.dart';
 
 class _FakeShare implements FileShareService {
+  // This screen never shares a file by path (only the backup does, BR4).
+  @override
+  Future<ShareOutcome> shareFile({
+    required String path,
+    required String mimeType,
+    Rect? sharePositionOrigin,
+  }) => throw UnimplementedError();
+
   @override
   Future<ShareOutcome> shareText(String text, {Rect? sharePositionOrigin}) =>
       throw UnimplementedError();

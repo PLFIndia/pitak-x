@@ -29,6 +29,17 @@ abstract interface class VaultArtifactsStore {
   /// key blob exists — a real vault is never deleted here. Idempotent.
   void discardOrphanDatabase();
 
+  /// Copies the encrypted vault database, as it is on disk right now, to
+  /// [targetPath]: a file in a folder the caller owns (backup rework BR4).
+  ///
+  /// The backup packs this copy instead of the live file, because nothing
+  /// else can write the copy while it is being read. Only the main database
+  /// file is copied, and the copy is the same ciphertext as the original.
+  ///
+  /// Completes with an error on IO failure (for example when the database
+  /// has vanished), so the caller can fail closed.
+  Future<void> snapshotDatabaseTo(String targetPath);
+
   /// Reads the wrapped-key blob, or null if no vault is set up.
   String? readBlob();
 
