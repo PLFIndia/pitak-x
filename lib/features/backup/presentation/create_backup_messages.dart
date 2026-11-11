@@ -1,7 +1,7 @@
 /// The sentences the create-backup page shows when a backup is refused,
-/// had to leave something out, or is still being packed (presentation
-/// layer, AGENTS.md §5: typed failures in, safe text out, never raw
-/// exception text).
+/// had to leave something out (cover pictures, the borrowers vault), or is
+/// still being packed (presentation layer, AGENTS.md §5: typed failures
+/// in, safe text out, never raw exception text).
 ///
 /// WHY THIS FILE EXISTS (beginner note): the writer refuses to build a
 /// backup its own reader could not restore (BR3). "Too large" alone leaves
@@ -131,6 +131,25 @@ String _size(
   final sizes = formatSizePair(actual, limit);
   return sentence(sizes.first, sizes.second);
 }
+
+/// The note under a finished backup that does NOT carry the borrowers vault
+/// although this phone has one (BR4 rider 2, decision D17).
+///
+/// Why (beginner note): if the app is killed in the middle of a vault
+/// change, the vault file on disk is not a whole database until the vault
+/// is opened again. A copy of it could look fine and show a wrong list, so
+/// the backup leaves it out. Without this note the user would believe
+/// borrowers and loans are safe in the file. The sentence also says what
+/// to do: unlocking the vault repairs it (proven by a test in the Rust
+/// core), and the next backup carries it again.
+///
+/// It does not say "everything else is inside": other notes on the page
+/// can name other things that are missing.
+const String backupVaultLeftOutMessage =
+    'Note: the borrowers vault is not inside this backup. Its last change '
+    'did not finish, for example because the app was closed in the middle '
+    'of it. Unlock the vault once (lock it first if it is open), then '
+    'create the backup again. The rest of this backup is not affected.';
 
 /// How many titles the page lists under [coversLeftOutMessage] before it
 /// says "and N more".

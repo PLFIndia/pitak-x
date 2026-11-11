@@ -21,6 +21,8 @@ import 'package:pitaka/features/vault/infrastructure/vault_store.dart';
 import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
 import 'package:sqlite3/sqlite3.dart';
 
+import 'test_vault_gate.dart';
+
 /// BR3 (review finding P1-M1): the writer refuses what the reader refuses.
 ///
 /// Every test here runs the REAL writer on real files, and checks an
@@ -76,6 +78,7 @@ void main() {
     final work = Directory('${tmp.path}/work_${builds++}');
     final writer = BackupArchiveWriter(
       vaultStore: vault ?? VaultStore(baseDir: '${tmp.path}/novault'),
+      vaultGate: TestVaultGate(),
       coversDir: covers.path,
       limits: limits,
     );

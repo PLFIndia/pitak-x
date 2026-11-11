@@ -37,11 +37,23 @@ import 'package:pitaka/features/backup/domain/backup_progress.dart';
 import 'package:pitaka/features/backup/infrastructure/backup_archive_writer.dart';
 import 'package:pitaka/features/import_export/domain/zip_container.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
+import 'package:pitaka/features/vault/domain/vault_idle_gate.dart';
 import 'package:pitaka/features/vault/infrastructure/vault_store.dart';
 
 const int _mebibyte = 1024 * 1024;
 
 String _megabytes(int bytes) => '${(bytes / _mebibyte).toStringAsFixed(1)} MB';
+
+/// The writer copies the vault file only while no vault operation runs. In
+/// the app the vault session decides when that is. This script has no vault
+/// session and nothing else touches its made-up vault, so the copy may run
+/// at once.
+class _NoVaultSession implements VaultIdleGate {
+  const _NoVaultSession();
+
+  @override
+  Future<T> whileVaultIdle<T>(Future<T> Function() action) => action();
+}
 
 Future<void> main(List<String> arguments) async {
   final coverCount = arguments.isNotEmpty ? int.parse(arguments[0]) : 10000;
@@ -89,6 +101,7 @@ Future<void> main(List<String> arguments) async {
     );
     final writer = BackupArchiveWriter(
       vaultStore: vault,
+      vaultGate: const _NoVaultSession(),
       coversDir: covers.path,
       limits: limits,
     );

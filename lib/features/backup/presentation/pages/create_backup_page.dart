@@ -50,6 +50,10 @@ class _CreateBackupPageState extends ConsumerState<CreateBackupPage> {
   /// large for a backup and was left out. The items themselves are inside.
   List<String> _coversLeftOut = const [];
 
+  /// BR4 rider 2 (decision D17): the phone has a borrowers vault, and the
+  /// finished backup does not carry it. The rest of the backup is as usual.
+  bool _vaultLeftOut = false;
+
   /// BR4 rider 3: how many cover pictures the running build has packed, of
   /// how many. Null before the first report and once the build is over
   /// (so there is nothing to reset when the next backup starts).
@@ -88,6 +92,7 @@ class _CreateBackupPageState extends ConsumerState<CreateBackupPage> {
       _missingNetwork = false;
       _missingPublishState = false;
       _coversLeftOut = const [];
+      _vaultLeftOut = false;
     });
 
     // N11: the use-case provider build, the archive build and the share
@@ -146,6 +151,7 @@ class _CreateBackupPageState extends ConsumerState<CreateBackupPage> {
                 _missingNetwork = !result.includesNetwork;
                 _missingPublishState = result.missingPublishState;
                 _coversLeftOut = result.coversLeftOut;
+                _vaultLeftOut = result.vaultLeftOut;
                 if (outcome == ShareOutcome.unavailable) {
                   _error = 'Sharing is unavailable on this device.';
                 }
@@ -246,6 +252,16 @@ class _CreateBackupPageState extends ConsumerState<CreateBackupPage> {
               'sent.',
               style: TextStyle(color: scheme.primary),
             ),
+            // BR4 rider 2: first among the notes, because borrowers and
+            // loans are the largest thing a backup can be missing.
+            if (_vaultLeftOut) ...[
+              const SizedBox(height: 4),
+              Text(
+                backupVaultLeftOutMessage,
+                key: const Key('backup-vault-left-out'),
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ],
             if (_missingAnything) ...[
               const SizedBox(height: 4),
               Text(

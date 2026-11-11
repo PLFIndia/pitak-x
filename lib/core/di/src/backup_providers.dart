@@ -74,7 +74,15 @@ Future<CreateBackupUseCase> createBackupUseCase(
   final coversDir = await ref.watch(coversDirProvider.future);
   // N10-c: the writer opens SQLite itself inside its worker isolate (an
   // `sqlite3.open` tear-off is not sendable across isolates).
-  final writer = BackupArchiveWriter(vaultStore: store, coversDir: coversDir);
+  final writer = BackupArchiveWriter(
+    vaultStore: store,
+    // BR4 rider 2: the vault file is copied only while no vault operation
+    // runs. The session controller owns the line those operations wait in
+    // (read, not watched: the same notifier lives for the whole app, like
+    // the restore's `replacementGuard` below).
+    vaultGate: ref.read(vaultSessionControllerProvider.notifier),
+    coversDir: coversDir,
+  );
   return CreateBackupUseCase(
     books: books,
     wishlist: wishlist,

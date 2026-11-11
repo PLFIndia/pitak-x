@@ -42,7 +42,9 @@ class _FakeCreateBackup implements CreateBackupUseCase {
     bool includesNetwork = true,
     bool missingPublishState = false,
     List<String> coversLeftOut = const [],
+    bool vaultLeftOut = false,
     this.gate,
+    this.gateFromCall = 1,
     this.events,
     this.error,
   }) : _result = result.map(
@@ -53,6 +55,7 @@ class _FakeCreateBackup implements CreateBackupUseCase {
            includesNetwork: includesNetwork,
            missingPublishState: missingPublishState,
            coversLeftOut: coversLeftOut,
+           vaultLeftOut: vaultLeftOut,
          ),
        );
 
@@ -61,6 +64,11 @@ class _FakeCreateBackup implements CreateBackupUseCase {
   /// When given, the build waits for it: a test can then act "while the
   /// backup is being built".
   final Completer<void>? gate;
+
+  /// The first build that waits at [gate] (1 = every build). With 2, a test
+  /// can let a first backup run through and stop the second one.
+  final int gateFromCall;
+  int _calls = 0;
 
   final _Events? events;
 
@@ -85,7 +93,8 @@ class _FakeCreateBackup implements CreateBackupUseCase {
     BackupProgressListener? onProgress,
   }) async {
     _onProgress = onProgress;
-    await gate?.future;
+    _calls++;
+    if (_calls >= gateFromCall) await gate?.future;
     final e = error;
     if (e != null) Error.throwWithStackTrace(e, StackTrace.current);
     return _result;
@@ -462,6 +471,139 @@ void main() {
       await tester.tap(find.widgetWithText(FilledButton, 'Create backup'));
       await tester.pumpAndSettle();
       expect(find.text('• Alpha'), findsNothing);
+    });
+  });
+
+  // BR4 rider 2 (decision D17): a vault whose last change did not finish is
+  // left out of the backup. The backup itself succeeds, so the page MUST say
+  // what is missing: without the note the user would believe borrowers and
+  // loans are safe in the file.
+  group('BR4 rider 2 (D17): the borrowers vault was left out', () {
+    final note = find.byKey(const Key('backup-vault-left-out'));
+    const handedOver =
+        'Backup handed to the selected app; confirm it was saved or sent.';
+
+    Future<void> createBackup(WidgetTester tester) async {
+      await tester.tap(find.widgetWithText(FilledButton, 'Create backup'));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('the note is shown under the hand-off sentence, word for '
+        'word', (tester) async {
+      await tester.pumpWidget(
+        page(
+          useCase: _FakeCreateBackup(
+            right(Uint8List.fromList([1])),
+            vaultLeftOut: true,
+          ),
+        ),
+      );
+      await createBackup(tester);
+
+      // The backup itself was made and handed over.
+      expect(find.text(handedOver), findsOneWidget);
+      expect(
+        tester.widget<Text>(note).data,
+        'Note: the borrowers vault is not inside this backup. Its last '
+        'change did not finish, for example because the app was closed in '
+        'the middle of it. Unlock the vault once (lock it first if it is '
+        'open), then create the backup again. The rest of this backup is '
+        'not affected.',
+      );
+      expect(
+        tester.getTopLeft(note).dy,
+        greaterThan(tester.getBottomLeft(find.text(handedOver)).dy),
+      );
+      await expectMeetsA11yGuidelines(tester);
+    });
+
+    testWidgets('it comes first among the notes', (tester) async {
+      // A tall screen: the page is a lazy list, and with three notes the
+      // last ones lie below what a default test screen builds.
+      tester.view
+        ..physicalSize = const Size(800, 2400)
+        ..devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        page(
+          useCase: _FakeCreateBackup(
+            right(Uint8List.fromList([1])),
+            vaultLeftOut: true,
+            includesIdentity: false,
+            coversLeftOut: const ['Alpha'],
+          ),
+        ),
+      );
+      await createBackup(tester);
+
+      final vault = tester.getTopLeft(note).dy;
+      final identity = tester
+          .getTopLeft(find.textContaining('does not carry your library'))
+          .dy;
+      final covers = tester.getTopLeft(find.text('• Alpha')).dy;
+      expect(vault, lessThan(identity));
+      expect(identity, lessThan(covers));
+    });
+
+    testWidgets('a vault that is inside, or no vault at all: no note', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        page(useCase: _FakeCreateBackup(right(Uint8List.fromList([1])))),
+      );
+      await createBackup(tester);
+
+      expect(find.text(handedOver), findsOneWidget);
+      expect(note, findsNothing);
+      expect(
+        find.textContaining('borrowers vault is not inside'),
+        findsNothing,
+      );
+    });
+
+    testWidgets('a dismissed share sheet shows no note, like the other '
+        'notes', (tester) async {
+      // Nothing was handed to another app, so there is no file to describe.
+      await tester.pumpWidget(
+        page(
+          useCase: _FakeCreateBackup(
+            right(Uint8List.fromList([1])),
+            vaultLeftOut: true,
+          ),
+          share: _FakeShare(outcome: ShareOutcome.dismissed),
+        ),
+      );
+      await createBackup(tester);
+
+      expect(note, findsNothing);
+    });
+
+    testWidgets('the note is gone when the next backup starts', (tester) async {
+      // The note belongs to ONE finished backup. While the next one is
+      // being built it must not stay on the screen.
+      final gate = Completer<void>();
+      final share = _FakeShare();
+      await tester.pumpWidget(
+        page(
+          useCase: _FakeCreateBackup(
+            right(Uint8List.fromList([1])),
+            vaultLeftOut: true,
+            gate: gate,
+            gateFromCall: 2,
+          ),
+          share: share,
+        ),
+      );
+      await createBackup(tester);
+      expect(note, findsOneWidget);
+
+      await tester.tap(find.widgetWithText(FilledButton, 'Create backup'));
+      await tester.pump();
+      expect(note, findsNothing, reason: 'the second build is running');
+
+      gate.complete();
+      await tester.pumpAndSettle();
+      expect(note, findsOneWidget, reason: 'the second backup says it again');
     });
   });
 

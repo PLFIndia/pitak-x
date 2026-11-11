@@ -108,6 +108,61 @@ void main() {
     });
   });
 
+  // BR4 rider 2 (review finding P1-m1): SQLite keeps a side file next to a
+  // database while it writes, and the file stays when the app is killed in
+  // the middle of a write. The database file alone is then not a whole
+  // database, so a backup must not copy it as if it were.
+  group('hasUnfinishedWrite (a SQLite side file next to the vault)', () {
+    setUp(() {
+      File(store.dbPath).writeAsBytesSync([1, 2, 3, 4]);
+      store.writeBlob('salt.iv.ct');
+    });
+
+    test('false for a vault with nothing next to it', () {
+      expect(store.hasUnfinishedWrite(), isFalse);
+    });
+
+    for (final suffix in ['-journal', '-wal', '-shm']) {
+      test('true when a "$suffix" file lies next to the database', () {
+        File('${store.dbPath}$suffix').writeAsBytesSync(const []);
+
+        expect(store.hasUnfinishedWrite(), isTrue);
+      });
+    }
+
+    test('the other files of the vault do not count', () {
+      // The biometric key blob, and the temporary file of an atomic blob
+      // write that was cut off: neither belongs to SQLite.
+      store.writeBioBlob('bio.iv.ct');
+      File(p.join(tmp.path, 'vault_backup_blob.tmp')).writeAsStringSync('x');
+
+      expect(store.hasUnfinishedWrite(), isFalse);
+    });
+
+    test('files with a similar name do not count', () {
+      File('${store.dbPath}.bak').writeAsBytesSync([1]);
+      File('${store.dbPath}-journal.old').writeAsBytesSync([1]);
+      File(p.join(tmp.path, 'other.db-journal')).writeAsBytesSync([1]);
+
+      expect(store.hasUnfinishedWrite(), isFalse);
+    });
+
+    test('false where no vault has been set up', () {
+      final empty = VaultStore(baseDir: p.join(tmp.path, 'nowhere'));
+
+      expect(empty.hasUnfinishedWrite(), isFalse);
+    });
+
+    test('looking does not change anything', () {
+      File('${store.dbPath}-journal').writeAsBytesSync([9, 9]);
+
+      store.hasUnfinishedWrite();
+
+      expect(File(store.dbPath).readAsBytesSync(), [1, 2, 3, 4]);
+      expect(File('${store.dbPath}-journal').readAsBytesSync(), [9, 9]);
+    });
+  });
+
   group('atomic blob writes (review 2026-09-03, Blocker)', () {
     test('writeBlob leaves no temp file and the live blob is complete', () {
       store

@@ -71,6 +71,11 @@
 /// names the covers folder, and `cover_files_immutable_test.dart` allows
 /// such a file to read only.
 ///
+/// That copy is made while no vault operation runs, and a vault with a
+/// SQLite side file next to it is left out and reported instead of copied
+/// (BR4 rider 2, decision D17). The steps and the reasons are in
+/// `backup_vault_snapshot.dart`.
+///
 /// **The writer refuses what the reader refuses (S5, BR3).** Every entry is
 /// measured and checked against [BackupLimits] before the ZIP is started
 /// (`backup_preflight.dart`), and the finished file is checked once more. A
@@ -102,6 +107,7 @@ import 'package:pitaka/features/backup/infrastructure/backup_extras_reader.dart'
 import 'package:pitaka/features/backup/infrastructure/backup_preflight.dart';
 import 'package:pitaka/features/backup/infrastructure/backup_progress_port.dart';
 import 'package:pitaka/features/backup/infrastructure/backup_room_databases.dart';
+import 'package:pitaka/features/backup/infrastructure/backup_vault_snapshot.dart';
 import 'package:pitaka/features/backup/infrastructure/backup_zip_file.dart';
 import 'package:pitaka/features/backup/infrastructure/item_details_archive_codec.dart';
 import 'package:pitaka/features/backup/infrastructure/restore_covers_builder.dart'
@@ -113,6 +119,7 @@ import 'package:pitaka/features/library/domain/value_objects/item_details.dart';
 import 'package:pitaka/features/library/domain/value_objects/item_kind.dart';
 import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
 import 'package:pitaka/features/vault/domain/vault_artifacts_store.dart';
+import 'package:pitaka/features/vault/domain/vault_idle_gate.dart';
 import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
 
 // The archive entry names are the restore reader's own constants (imported
@@ -156,17 +163,24 @@ typedef _BackupJob = ({
 class BackupArchiveWriter implements BackupArchiveBuilder {
   /// Creates the writer.
   ///
-  /// [vaultStore] locates the persistent vault artifacts; [coversDir] is where
-  /// user cover images live. [limits] is what one backup can hold; the app
-  /// uses the default, tests pass small limits.
+  /// [vaultStore] locates the persistent vault artifacts; [vaultGate] gives
+  /// the moment at which they may be read; [coversDir] is where user cover
+  /// images live. [limits] is what one backup can hold; the app uses the
+  /// default, tests pass small limits.
   const BackupArchiveWriter({
     required this.vaultStore,
+    required this.vaultGate,
     required this.coversDir,
     this.limits = BackupLimits.current,
   });
 
   /// Persistent vault locations (DB + blob), copied verbatim when present.
   final VaultArtifactsStore vaultStore;
+
+  /// Lets the vault file be copied while no vault operation runs (rider 2).
+  /// Required ON PURPOSE: a writer without it could copy a vault that is
+  /// being written. The app passes the vault session.
+  final VaultIdleGate vaultGate;
 
   /// Directory holding user cover images (`covers/<leaf>`).
   final String coversDir;
@@ -190,9 +204,10 @@ class BackupArchiveWriter implements BackupArchiveBuilder {
   /// The heavy lifting runs in a worker isolate (see the library doc). The
   /// vault facts are read HERE, on the calling isolate, because
   /// [VaultArtifactsStore] is an interface whose implementation is not
-  /// guaranteed sendable; they are two `existsSync` calls, a tiny file read
-  /// (the blob is ciphertext that already lives as a plain file) and the
-  /// copy of the vault database, which `dart:io` does off this isolate.
+  /// guaranteed sendable, and because the [vaultGate] lives on this
+  /// isolate: a few `existsSync` calls, a tiny file read (the blob is
+  /// ciphertext that already lives as a plain file) and the copy of the
+  /// vault database, which `dart:io` does off this isolate.
   ///
   /// [onProgress]: see [BackupArchiveBuilder.build]. It is called here, on
   /// the calling isolate, for the reports the worker sends.
@@ -226,13 +241,14 @@ class BackupArchiveWriter implements BackupArchiveBuilder {
       if (scratch.existsSync()) await scratch.delete(recursive: true);
       await scratch.create(recursive: true);
 
-      final hasVault = vaultStore.isInitialized();
-      final vaultCopyPath = hasVault
-          ? p.join(scratch.path, borrowersDbEntryName)
-          : null;
-      if (vaultCopyPath != null) {
-        await vaultStore.snapshotDatabaseTo(vaultCopyPath);
-      }
+      // Rider 2: "is there a vault", its copy and its key are taken in one
+      // go, while no vault operation runs. A vault with a SQLite side file
+      // next to it is left out (`vault.leftOut`) instead of copied.
+      final vault = await snapshotVaultForBackup(
+        store: vaultStore,
+        gate: vaultGate,
+        copyPath: p.join(scratch.path, borrowersDbEntryName),
+      );
       final outcome = await _runWorker((
         books: books,
         wishlist: wishlist,
@@ -240,9 +256,9 @@ class BackupArchiveWriter implements BackupArchiveBuilder {
         scratchDir: scratch.path,
         finalPath: finalPath,
         exportedAt: exportedAt,
-        hasVault: hasVault,
-        vaultCopyPath: vaultCopyPath,
-        blob: hasVault ? vaultStore.readBlob() : null,
+        hasVault: vault.copyPath != null,
+        vaultCopyPath: vault.copyPath,
+        blob: vault.blob,
         coversDir: coversDir,
         identityJson: identityJson,
         networkJson: networkJson,
@@ -250,7 +266,7 @@ class BackupArchiveWriter implements BackupArchiveBuilder {
         limits: limits,
         progressPort: progress?.sendPort,
       ));
-      return _toEither(outcome, finalPath);
+      return _toEither(outcome, finalPath, vaultLeftOut: vault.leftOut);
     } finally {
       // On EVERY way out: success, refusal, or an error on either isolate.
       // The port first: closing it cannot fail. If the removal fails, the
@@ -274,8 +290,9 @@ class BackupArchiveWriter implements BackupArchiveBuilder {
   /// no [Failure] object ever crosses the boundary (S5).
   static Either<Failure, BuiltBackup> _toEither(
     _BuildOutcome outcome,
-    String finalPath,
-  ) {
+    String finalPath, {
+    required bool vaultLeftOut,
+  }) {
     final refusal = outcome.refusal;
     if (refusal != null) {
       return left(
@@ -287,6 +304,7 @@ class BackupArchiveWriter implements BackupArchiveBuilder {
         path: finalPath,
         sizeBytes: outcome.sizeBytes,
         coversLeftOut: outcome.coversLeftOut,
+        vaultLeftOut: vaultLeftOut,
       ),
     );
   }

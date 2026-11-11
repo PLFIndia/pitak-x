@@ -11,6 +11,8 @@ import 'package:pitaka/features/backup/infrastructure/backup_archive_writer.dart
 import 'package:pitaka/features/import_export/domain/bounded_zip_extractor.dart';
 import 'package:pitaka/features/vault/infrastructure/vault_store.dart';
 
+import 'test_vault_gate.dart';
+
 /// What one build gave: its result, every report in the order it arrived,
 /// and how long the build took as timed by the test.
 typedef _Run = ({
@@ -56,6 +58,7 @@ void main() {
     final reports = <BackupProgress>[];
     final writer = BackupArchiveWriter(
       vaultStore: VaultStore(baseDir: '${tmp.path}/novault'),
+      vaultGate: TestVaultGate(),
       coversDir: coversDir.path,
       limits: limits,
     );

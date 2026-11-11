@@ -59,7 +59,7 @@ final staleBackupWorkSweepProvider = FutureProvider<void>.internal(
 // ignore: unused_element
 typedef StaleBackupWorkSweepRef = FutureProviderRef<void>;
 String _$createBackupUseCaseHash() =>
-    r'02ce8031adc2ea873fda9f3d69b410e561281ba0';
+    r'e6059fa54fd163731b7adc8fa2d37cd2faeb60ef';
 
 /// Creates a `.pitabak` backup of the whole local catalog (#28B): Room-format
 /// books/wishlist written from Drift, the persistent vault copied verbatim, and

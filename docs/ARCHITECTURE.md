@@ -502,6 +502,20 @@ to false** (the `hasX` forward-compat pattern):
   domain). The page shows "Cover 1,234 of 9,000" under its button until
   the build has returned. Reading the catalogue, the vault copy and the
   databases report nothing: the spinner alone. There is no Cancel.
+- The vault goes into a backup only as a whole database (review finding
+  P1-m1). "Is there a vault", the copy of `borrowers.db` and the key blob
+  are taken in ONE turn at the `VaultIdleGate` (vault domain; implemented
+  by `VaultSessionController` with its operation queue), so no vault
+  operation of the app runs meanwhile (`backup_vault_snapshot.dart`). The
+  turn needs no secret and works with a locked vault; a failed copy locks
+  nothing. If a SQLite side file (`-journal`, `-wal`, `-shm`) lies next to
+  the database (`VaultArtifactsStore.hasUnfinishedWrite`), a write was cut
+  off and the file alone is not a whole database: it can open and show a
+  wrong list. Such a vault is **left out**: the backup is built without
+  `borrowers.db` and the key blob, the manifest says so, and the page
+  tells the user to unlock the vault once and create the backup again
+  (`vaultLeftOut`). Unlocking repairs a cut-off write; a test in
+  `rust/src/vault.rs` proves it. The backup never writes to the vault.
 - A cover file above the per-cover cap does not fail the backup: it is left
   out, the item stays inside, and the page names the items (count, first
   three titles). An oversized file that no item refers to is skipped without

@@ -15,6 +15,7 @@ import 'package:pitaka/features/vault/domain/entities/borrower.dart';
 import 'package:pitaka/features/vault/infrastructure/vault_store.dart';
 
 import '../library/replacement_harness.dart';
+import 'test_vault_gate.dart';
 
 /// Hook into the BUILDER generation's catalogue (M02: restore writes there,
 /// never into the live one) so a test can inject a fault or a lock right
@@ -57,6 +58,7 @@ void main() {
             vaultStore: VaultStore(
               baseDir: '${h.directory.path}/no_source_vault',
             ),
+            vaultGate: TestVaultGate(),
             coversDir: '${h.directory.path}/incoming_covers',
           )
           .build(

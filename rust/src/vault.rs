@@ -947,4 +947,108 @@ mod tests {
         assert!(matches!(res, Err(VaultError::Key(_))), "got {res:?}");
         cleanup(&db);
     }
+
+    // Backup rework BR4 rider 2 (review finding P1-m1, decision D17).
+    //
+    // WHY THIS TEST EXISTS: SQLite keeps a side file, `borrowers.db-journal`,
+    // while it writes. If the app is killed in the middle of a vault write,
+    // that file stays, and the database file alone is then not a whole
+    // database. The Dart backup writer therefore leaves such a vault out and
+    // tells the user: "Unlock the vault once, then create the backup again."
+    // This test is what makes that sentence true: opening the vault the way
+    // unlock does (`open_and_read`) puts the saved pages back, and the vault
+    // reads exactly as it did before the write that never finished.
+    //
+    // It also pins the assumption the Dart side rests on: the vault uses
+    // SQLite's rollback journal (`journal_mode = delete`). If a later change
+    // sets another mode, this test fails and the backup rule must be read
+    // again.
+    #[test]
+    fn opening_a_vault_repairs_a_write_that_was_cut_off() {
+        const BORROWERS: usize = 300;
+        let key = test_key();
+        let path = fresh_path();
+        create_vault(&path, &key).expect("create");
+
+        // The vault as it was last saved: 300 borrowers of about 1 KB each,
+        // so that the table spans many pages.
+        {
+            let mut conn = open_and_key(&path, &key, true).expect("open");
+            let mode: String = conn
+                .query_row("PRAGMA journal_mode", [], |r| r.get(0))
+                .expect("journal_mode");
+            assert_eq!(mode, "delete", "the backup rule assumes this mode");
+            let tx = conn.transaction().expect("begin");
+            for i in 0..BORROWERS {
+                tx.execute(
+                    "INSERT INTO borrowers(name, contact, notes) VALUES (?1, NULL, ?2)",
+                    rusqlite::params![format!("kept {i}"), "x".repeat(1000)],
+                )
+                .expect("insert");
+            }
+            tx.commit().expect("commit");
+        }
+        let size_before = std::fs::metadata(&path).expect("size").len();
+        let journal = format!("{path}-journal");
+        assert!(
+            !std::path::Path::new(&journal).exists(),
+            "a finished write leaves no journal"
+        );
+
+        // The "crash": a write that changes every borrower and never commits.
+        // The two files are copied as they are on disk in the middle of it,
+        // which is what a killed app leaves behind. The page cache is made
+        // tiny so that changed pages really reach the database file before
+        // the commit (otherwise only the journal would have changed).
+        let crashed = fresh_path();
+        let crashed_journal = format!("{crashed}-journal");
+        {
+            let mut conn = open_and_key(&path, &key, true).expect("open");
+            conn.execute_batch("PRAGMA cache_size = 10;")
+                .expect("cache_size");
+            let tx = conn
+                .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+                .expect("begin");
+            tx.execute(
+                "UPDATE borrowers SET name = 'changed ' || id, notes = notes || ?1",
+                rusqlite::params!["y".repeat(1500)],
+            )
+            .expect("update");
+            std::fs::copy(&path, &crashed).expect("copy the database");
+            std::fs::copy(&journal, &crashed_journal).expect("copy the journal");
+            tx.rollback().expect("rollback");
+        }
+        assert!(
+            std::fs::metadata(&crashed).expect("size").len() > size_before,
+            "the unfinished write must have reached the database file, \
+             or this test proves nothing"
+        );
+
+        // Opening it the way unlock does repairs it.
+        let data = open_and_read(&crashed, &key).expect("open the crashed vault");
+        assert_eq!(data.borrowers.len(), BORROWERS);
+        assert!(
+            data.borrowers
+                .iter()
+                .all(|b| b.name.as_deref().is_some_and(|n| n.starts_with("kept "))),
+            "no row of the unfinished write may be visible"
+        );
+        assert!(
+            !std::path::Path::new(&crashed_journal).exists(),
+            "the journal is used up, so the Dart check sees a clean vault"
+        );
+        assert_eq!(
+            std::fs::metadata(&crashed).expect("size").len(),
+            size_before
+        );
+        let conn = open_and_key(&crashed, &key, false).expect("open again");
+        let verdict: String = conn
+            .query_row("PRAGMA integrity_check", [], |r| r.get(0))
+            .expect("integrity_check");
+        assert_eq!(verdict, "ok");
+        drop(conn);
+
+        cleanup(&path);
+        cleanup(&crashed);
+    }
 }

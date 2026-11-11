@@ -19,15 +19,26 @@ import 'package:pitaka/features/vault/infrastructure/vault_store.dart';
 import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
 import 'package:sqlite3/sqlite3.dart';
 
+import 'test_vault_gate.dart';
+
 /// A vault whose COPY for the backup differs from the file at [dbPath]. Only
 /// a test can tell the two apart this way: it proves which one the writer
 /// packs.
 class _VaultWithMarkedCopy implements VaultArtifactsStore {
-  _VaultWithMarkedCopy(this.dbPath, this.copyBytes);
+  _VaultWithMarkedCopy(
+    this.dbPath,
+    this.copyBytes, {
+    this.sideFileAppearsDuringCopy = false,
+  });
 
   @override
   final String dbPath;
   final List<int> copyBytes;
+
+  /// Rider 2: plays a write that slipped past the gate. No side file before
+  /// the copy, one after it.
+  final bool sideFileAppearsDuringCopy;
+  bool _copied = false;
 
   @override
   bool isInitialized() => true;
@@ -36,8 +47,12 @@ class _VaultWithMarkedCopy implements VaultArtifactsStore {
   String? readBlob() => 'salt.iv.ct';
 
   @override
+  bool hasUnfinishedWrite() => sideFileAppearsDuringCopy && _copied;
+
+  @override
   Future<void> snapshotDatabaseTo(String targetPath) async {
     await File(targetPath).writeAsBytes(copyBytes);
+    _copied = true;
   }
 
   @override
@@ -89,8 +104,14 @@ void main() {
     return store;
   }
 
-  BackupArchiveWriter writerFor(VaultArtifactsStore vault) =>
-      BackupArchiveWriter(vaultStore: vault, coversDir: covers.path);
+  BackupArchiveWriter writerFor(
+    VaultArtifactsStore vault, {
+    TestVaultGate? gate,
+  }) => BackupArchiveWriter(
+    vaultStore: vault,
+    vaultGate: gate ?? TestVaultGate(),
+    coversDir: covers.path,
+  );
 
   BackupArchiveWriter writerWithoutVault() =>
       writerFor(VaultStore(baseDir: '${tmp.path}/novault'));
@@ -340,5 +361,120 @@ void main() {
 
     expect(namesIn(work), [expectedName]);
     expect(entriesOf(again).containsKey('cover_later.jpg'), isTrue);
+  });
+
+  // BR4 rider 2 (review finding P1-m1). SQLite keeps a side file next to a
+  // database while a write is under way. If the app is killed in the middle
+  // of a vault write, that file stays, and the database file ALONE is then
+  // not a whole database: it can open and show a wrong list (seen in the
+  // experiment recorded in PLAN.md). Such a vault must not go into a backup
+  // as if it were fine. Decision D17: it is left out, and the result says
+  // so.
+  group('rider 2: a vault with a side file next to it is left out', () {
+    for (final suffix in ['-journal', '-wal', '-shm']) {
+      test('a "$suffix" file: the backup is built without the vault and its '
+          'key', () async {
+        File('${covers.path}/a.jpg').writeAsBytesSync(noise(2000));
+        final vault = vaultWith(noise(4096, seed: 9));
+        File('${vault.dbPath}$suffix').writeAsBytesSync([1, 2, 3]);
+        final work = '${tmp.path}/run';
+
+        final built = await buildEverything(writerFor(vault), work);
+        final files = entriesOf(built);
+
+        expect(files.containsKey('borrowers.db'), isFalse);
+        expect(files.containsKey('backup_blob'), isFalse);
+        // The manifest reads like the one of a phone without a vault, so
+        // the reader does not look for either entry.
+        final manifest = BackupManifest.tryParse(
+          utf8.decode(files['manifest.json']!),
+        )!;
+        expect(manifest.hasBorrowers, isFalse);
+        expect(manifest.hasBackupBlob, isFalse);
+        // Everything else is inside, and nothing else is left behind.
+        expect(files.containsKey('books.db'), isTrue);
+        expect(files.containsKey('cover_a.jpg'), isTrue);
+        expect(namesIn(work), [expectedName]);
+        // And the result says so: without this flag the page could not
+        // tell the user that borrowers and loans are missing.
+        expect(built.vaultLeftOut, isTrue);
+        // The live vault and its side file were only looked at.
+        expect(File(vault.dbPath).lengthSync(), 4096);
+        expect(File('${vault.dbPath}$suffix').readAsBytesSync(), [1, 2, 3]);
+      });
+    }
+
+    test('no side file: the vault and its key are inside, and nothing is '
+        'reported', () async {
+      final built = await buildEverything(
+        writerFor(vaultWith(noise(4096, seed: 9))),
+        '${tmp.path}/run',
+      );
+
+      final files = entriesOf(built);
+      expect(files.containsKey('borrowers.db'), isTrue);
+      expect(files.containsKey('backup_blob'), isTrue);
+      expect(built.vaultLeftOut, isFalse);
+    });
+
+    test('a phone without a vault: nothing is left out, so nothing is '
+        'reported', () async {
+      final built = await buildEverything(
+        writerWithoutVault(),
+        '${tmp.path}/run',
+      );
+
+      expect(entriesOf(built).containsKey('borrowers.db'), isFalse);
+      expect(built.vaultLeftOut, isFalse);
+    });
+
+    test('a side file that is there only AFTER the copy: the copy is not '
+        'packed and not left behind', () async {
+      // Nothing of the app can write while the gate is held, so this is
+      // the case of a bug: a write that slipped past the gate. The backup
+      // must notice it instead of packing what was copied meanwhile.
+      final live = File('${tmp.path}/live_borrowers.db')
+        ..writeAsBytesSync(utf8.encode('the live file'));
+      final work = '${tmp.path}/run';
+
+      final built = await buildEverything(
+        writerFor(
+          _VaultWithMarkedCopy(
+            live.path,
+            utf8.encode('a copy made during a write'),
+            sideFileAppearsDuringCopy: true,
+          ),
+        ),
+        work,
+      );
+
+      final files = entriesOf(built);
+      expect(files.containsKey('borrowers.db'), isFalse);
+      expect(files.containsKey('backup_blob'), isFalse);
+      expect(built.vaultLeftOut, isTrue);
+      expect(namesIn(work), [expectedName]);
+    });
+
+    test('one build takes exactly one turn at the vault gate, with a vault '
+        'and without one', () async {
+      final withVault = TestVaultGate();
+      await buildEverything(
+        writerFor(vaultWith(noise(4096, seed: 9)), gate: withVault),
+        '${tmp.path}/run-1',
+      );
+      expect(withVault.holds, 1);
+
+      // Also without a vault: whether there is one is itself asked inside
+      // the turn, so that a vault being created right now is not half seen.
+      final withoutVault = TestVaultGate();
+      await buildEverything(
+        writerFor(
+          VaultStore(baseDir: '${tmp.path}/novault'),
+          gate: withoutVault,
+        ),
+        '${tmp.path}/run-2',
+      );
+      expect(withoutVault.holds, 1);
+    });
   });
 }

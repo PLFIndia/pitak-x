@@ -25,6 +25,7 @@ final class BuiltBackup {
     required this.path,
     required this.sizeBytes,
     this.coversLeftOut = const [],
+    this.vaultLeftOut = false,
   });
 
   /// Absolute path of the finished `.pitabak` file. Its file name is the
@@ -40,6 +41,15 @@ final class BuiltBackup {
   /// One title per item (books, wishlist entries, magazine titles). Empty in
   /// the normal case.
   final List<String> coversLeftOut;
+
+  /// True when this phone HAS a borrowers vault and it is NOT inside (BR4
+  /// rider 2, decision D17). The builder leaves a vault out when its last
+  /// change did not finish (the app was killed in the middle of a vault
+  /// write): the vault file alone could then open and show a wrong list.
+  /// Everything else is inside. Unlocking the vault once repairs it, and
+  /// the next backup carries it again. False both when the vault is inside
+  /// and when there is none.
+  final bool vaultLeftOut;
 }
 
 /// Builds a `.pitabak` archive from the current catalog + vault artifacts.
@@ -86,6 +96,10 @@ abstract interface class BackupArchiveBuilder {
   /// number and the limit. A cover picture that is too large by itself does
   /// not fail the build: it is left out and reported in
   /// [BuiltBackup.coversLeftOut].
+  ///
+  /// A vault whose last change did not finish does not fail the build
+  /// either (rider 2): it is left out and reported in
+  /// [BuiltBackup.vaultLeftOut].
   ///
   /// Asynchronous on purpose (N10-c): building a backup means writing two
   /// SQLite files, reading every cover and packing the lot — seconds of

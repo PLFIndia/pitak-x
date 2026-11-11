@@ -189,6 +189,19 @@ void main() {
     });
   });
 
+  // BR4 rider 2 (decision D17). Pinned word for word: it is what the user
+  // reads when borrowers and loans are NOT in the file they just saved.
+  test('the note for a vault that was left out says what happened and '
+      'what to do', () {
+    expect(
+      backupVaultLeftOutMessage,
+      'Note: the borrowers vault is not inside this backup. Its last change '
+      'did not finish, for example because the app was closed in the middle '
+      'of it. Unlock the vault once (lock it first if it is open), then '
+      'create the backup again. The rest of this backup is not affected.',
+    );
+  });
+
   group('cover pictures that were left out (decision D10)', () {
     test('one item', () {
       expect(

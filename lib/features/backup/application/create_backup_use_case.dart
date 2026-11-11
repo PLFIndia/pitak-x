@@ -15,6 +15,11 @@
 /// Read-only with respect to app state: it reads books/wishlist and copies the
 /// existing vault artifacts; it mutates nothing. The vault key never appears.
 ///
+/// BR4 rider 2: the builder leaves the vault out when its last change did
+/// not finish (a copy of it could not be trusted). That does not fail the
+/// backup; it is reported on the result (`vaultLeftOut`) so the UI can say
+/// so.
+///
 /// docs/ARCHITECTURE.md §3 network: the archive also gathers the library identity
 /// (`identity.json`, via the [LibraryNamespace] port) and the saved-libraries
 /// list (`network.json`, via [NetworkRepository]). Both are BEST-EFFORT: a
@@ -169,6 +174,7 @@ class CreateBackupUseCase {
           includesNetwork: networkJson != null,
           missingPublishState: publishStateEntry.missing,
           coversLeftOut: built.coversLeftOut,
+          vaultLeftOut: built.vaultLeftOut,
         ),
       );
     } on Object catch (e) {

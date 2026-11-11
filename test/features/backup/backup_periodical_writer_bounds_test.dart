@@ -6,6 +6,8 @@ import 'package:pitaka/features/backup/infrastructure/backup_archive_writer.dart
 import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
 import 'package:pitaka/features/vault/infrastructure/vault_store.dart';
 
+import 'test_vault_gate.dart';
+
 /// Direct writer proof for the periodicals.json byte bound. The companion
 /// item_kinds bounds already live in backup_archive_writer_test.dart.
 void main() {
@@ -16,6 +18,7 @@ void main() {
     tmp = Directory.systemTemp.createTempSync('periodical_writer_bounds');
     writer = BackupArchiveWriter(
       vaultStore: VaultStore(baseDir: '${tmp.path}/novault'),
+      vaultGate: TestVaultGate(),
       coversDir: '${tmp.path}/covers',
     );
   });

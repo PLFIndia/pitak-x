@@ -965,4 +965,157 @@ void main() {
       expect(h.store.readBioBlob(), isNull);
     },
   );
+
+  // BR4 rider 2 (review finding P1-m1): the backup copies the vault file,
+  // and that copy is only a whole database if no vault write runs while it
+  // is made. `whileVaultIdle` gives the copy a turn in the line the vault
+  // operations already wait in. These tests use the REAL controller and
+  // stop a vault write (or the action) half-way to see who waits for whom.
+  group('whileVaultIdle: a turn between vault operations', () {
+    /// Starts an action at the gate that stays inside its turn until
+    /// `leave` is completed. `entered` completes when the turn has begun.
+    ({Completer<void> entered, Completer<void> leave, Future<String> done})
+    takeTurn(_Harness h) {
+      final entered = Completer<void>();
+      final leave = Completer<void>();
+      final done = h.controller.whileVaultIdle(() async {
+        entered.complete();
+        await leave.future;
+        return 'copied';
+      });
+      return (entered: entered, leave: leave, done: done);
+    }
+
+    test('the action waits for a vault write that is under way, and for '
+        'the read that follows it', () async {
+      final h = _Harness();
+      await h.open();
+      final pause = h.steps.hold(_Step.write);
+      final write = h.controller.addBorrower(const Borrower(name: 'New'));
+      await pause.entered.future;
+
+      List<_Step>? callsWhenTheActionRan;
+      final turn = h.controller.whileVaultIdle(() async {
+        callsWhenTheActionRan = List.of(h.steps.calls);
+        return 'copied';
+      });
+      await pumpEventQueue();
+      expect(callsWhenTheActionRan, isNull, reason: 'the write is not done');
+
+      pause.release.complete();
+      expect((await write).isRight(), isTrue);
+      expect(await turn, 'copied');
+      // The save is one operation: its write AND the read that refreshes
+      // the list. The action ran after both.
+      expect(callsWhenTheActionRan!.reversed.take(2), [
+        _Step.read,
+        _Step.write,
+      ]);
+    });
+
+    test('a vault write started during the action waits until the action '
+        'is over', () async {
+      final h = _Harness();
+      await h.open();
+      final turn = takeTurn(h);
+      await turn.entered.future;
+
+      final write = h.controller.addBorrower(const Borrower(name: 'New'));
+      await pumpEventQueue();
+      expect(
+        h.steps.count(_Step.write),
+        0,
+        reason: 'nothing may write the vault file while it is copied',
+      );
+
+      turn.leave.complete();
+      expect(await turn.done, 'copied');
+      expect((await write).isRight(), isTrue);
+      expect(h.steps.count(_Step.write), 1);
+    });
+
+    test('an unlock started during the action waits as well', () async {
+      // Unlocking opens the database file, which also tidies up after a
+      // cut-off write: it changes the file, so it must not overlap a copy.
+      final h = _Harness();
+      await h.ready();
+      final turn = takeTurn(h);
+      await turn.entered.future;
+
+      final unlock = h.controller.unlock(_secret());
+      await pumpEventQueue();
+      expect(h.steps.count(_Step.read), 0);
+
+      turn.leave.complete();
+      await turn.done;
+      expect((await unlock).isRight(), isTrue);
+      expect(h.steps.count(_Step.read), 1);
+    });
+
+    test('an action that fails gives its error to its caller only: the '
+        'vault stays unlocked and the next operation runs', () async {
+      final h = _Harness();
+      await h.open();
+
+      await expectLater(
+        h.controller.whileVaultIdle<void>(
+          () async => throw const FileSystemException('disk full'),
+        ),
+        throwsA(isA<FileSystemException>()),
+      );
+
+      // A failed file copy is not a vault failure: nothing is locked.
+      expect(h.state, isA<VaultUnlocked>());
+      expect(h.controller.isUnlocked, isTrue);
+      final write = await h.controller.addBorrower(const Borrower(name: 'New'));
+      expect(write.isRight(), isTrue);
+    });
+
+    test('lock does not wait for the action', () async {
+      final h = _Harness();
+      final held = await h.open();
+      final turn = takeTurn(h);
+      await turn.entered.future;
+
+      await h.controller.lock();
+
+      h.expectLocked();
+      _expectWiped(held);
+      turn.leave.complete();
+      expect(await turn.done, 'copied');
+      h.expectLocked();
+    });
+
+    test('it needs no unlocked vault and touches nothing: locked, and '
+        'where no vault exists', () async {
+      final locked = _Harness();
+      await locked.ready();
+      expect(await locked.controller.whileVaultIdle(() async => 7), 7);
+      locked.expectLocked();
+      // Only the session's own start-up call; the gate made none.
+      expect(locked.steps.calls, [_Step.store]);
+
+      final none = _Harness(initialized: false);
+      await none.ready();
+      expect(await none.controller.whileVaultIdle(() async => 7), 7);
+      expect(none.state, isA<VaultUninitialized>());
+      expect(none.steps.calls, [_Step.store]);
+    });
+
+    test('two actions take their turns one after the other', () async {
+      final h = _Harness();
+      await h.ready();
+      final first = takeTurn(h);
+      await first.entered.future;
+      final second = takeTurn(h);
+      await pumpEventQueue();
+      expect(second.entered.isCompleted, isFalse);
+
+      first.leave.complete();
+      await first.done;
+      await second.entered.future;
+      second.leave.complete();
+      expect(await second.done, 'copied');
+    });
+  });
 }

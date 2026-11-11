@@ -23,6 +23,8 @@ import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
 import 'package:sqlite3/common.dart';
 import 'package:sqlite3/sqlite3.dart';
 
+import 'test_vault_gate.dart';
+
 /// A store that claims a vault exists but points at a file that does not —
 /// the shape of "the DB disappeared between the check and the copy".
 class _VanishedVault implements VaultArtifactsStore {
@@ -33,6 +35,9 @@ class _VanishedVault implements VaultArtifactsStore {
   bool isInitialized() => true;
   @override
   String? readBlob() => 'salt.iv.ct';
+  // Rider 2: no SQLite side file, so the writer goes on to the copy.
+  @override
+  bool hasUnfinishedWrite() => false;
   // BR4: the same copy the real store makes, so a missing file fails the
   // same way.
   @override
@@ -52,6 +57,7 @@ void main() {
     tmp = Directory.systemTemp.createTempSync('backup_writer_test');
     writer = BackupArchiveWriter(
       vaultStore: VaultStore(baseDir: '${tmp.path}/novault'),
+      vaultGate: TestVaultGate(),
       coversDir: '${tmp.path}/covers',
     );
   });
@@ -484,6 +490,7 @@ void main() {
     store.writeBlob('salt.iv.ct');
     final w = BackupArchiveWriter(
       vaultStore: store,
+      vaultGate: TestVaultGate(),
       coversDir: '${tmp.path}/covers',
     );
     final bytes = await w
@@ -524,6 +531,7 @@ void main() {
       }
       return BackupArchiveWriter(
         vaultStore: VaultStore(baseDir: '${tmp.path}/novault'),
+        vaultGate: TestVaultGate(),
         coversDir: '${tmp.path}/covers',
       );
     }
@@ -649,6 +657,7 @@ void main() {
       // folder, already created, must be removed on the way out.
       final w = BackupArchiveWriter(
         vaultStore: _VanishedVault('${tmp.path}/gone/borrowers.db'),
+        vaultGate: TestVaultGate(),
         coversDir: '${tmp.path}/covers',
       );
       await expectLater(

@@ -9,6 +9,7 @@ import 'package:pitaka/features/publish/domain/publish_target.dart';
 import 'package:pitaka/features/vault/infrastructure/vault_store.dart';
 
 import '../publish/support/publish_state_fixtures.dart';
+import 'test_vault_gate.dart';
 
 /// The publishing record end to end through the REAL archive writer and the
 /// REAL restore reader (plan CV6, S11): what one phone writes, the next one
@@ -31,6 +32,7 @@ void main() {
       final built =
           (await BackupArchiveWriter(
                 vaultStore: VaultStore(baseDir: '${tmp.path}/novault'),
+                vaultGate: TestVaultGate(),
                 coversDir: covers.path,
               ).build(
                 books: const [],

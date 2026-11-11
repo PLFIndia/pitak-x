@@ -35,6 +35,7 @@ import 'package:pitaka/features/vault/domain/entities/borrower.dart';
 import 'package:pitaka/features/vault/domain/entities/vault_session_state.dart';
 import 'package:pitaka/features/vault/domain/repositories/vault_repository.dart';
 import 'package:pitaka/features/vault/domain/vault_artifacts_store.dart';
+import 'package:pitaka/features/vault/domain/vault_idle_gate.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 part 'vault_session_controller.g.dart';
@@ -53,7 +54,11 @@ part 'vault_session_controller.g.dart';
 /// auto-lock timeout is the accepted future hardening, not a bug fix.
 @Riverpod(keepAlive: true)
 class VaultSessionController extends _$VaultSessionController
-    implements VaultLoanPurger, VaultLender, CatalogueReplacementGuard {
+    implements
+        VaultLoanPurger,
+        VaultLender,
+        CatalogueReplacementGuard,
+        VaultIdleGate {
   /// Secret lifetime (held passphrase/S, active blob, pending secrets,
   /// generation/lifetime fences) lives in this plain-Dart collaborator so
   /// the wipe invariants are unit-testable without vault IO. See
@@ -681,6 +686,11 @@ class VaultSessionController extends _$VaultSessionController
       if (replacingVault || endsSession) await lock();
     }
   });
+
+  /// Runs [action] while no vault operation runs; see [VaultIdleGate].
+  @override
+  Future<T> whileVaultIdle<T>(Future<T> Function() action) =>
+      _queue.enqueue(action);
 
   // --- internals ----------------------------------------------------------
 

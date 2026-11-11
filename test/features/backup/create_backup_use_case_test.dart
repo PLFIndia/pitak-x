@@ -427,6 +427,37 @@ void main() {
     });
   });
 
+  // BR4 rider 2 (decision D17): the builder leaves the vault out when its
+  // last change did not finish. The backup still happens, and the use case
+  // hands the fact on so that the page can say it.
+  group('BR4 rider 2 — a vault that was left out', () {
+    test('reaches the result, and the backup is still a success', () async {
+      final leavingOut = CreateBackupUseCase(
+        books: _Books(),
+        wishlist: _Wishlist(),
+        periodicals: _Periodicals(),
+        writer: _VaultLeavingOutWriter(),
+        workArea: workArea,
+        namespace: _Namespace(right(identity)),
+        network: _Network([row]),
+        publishState: _PublishState(right(null)),
+      );
+
+      final r = (await leavingOut()).getOrElse((f) => fail('left: $f'));
+
+      expect(r.vaultLeftOut, isTrue);
+      // The file is handed over like any finished backup.
+      expect(r.sizeBytes, 3);
+      expect(workArea.discarded, isEmpty);
+    });
+
+    test('is false in the normal case', () async {
+      final r = (await useCase()()).getOrElse((f) => fail('left: $f'));
+
+      expect(r.vaultLeftOut, isFalse);
+    });
+  });
+
   test('no cover left out is the normal case', () async {
     final r = (await useCase()()).getOrElse((f) => fail('left: $f'));
     expect(r.coversLeftOut, isEmpty);
@@ -679,6 +710,28 @@ class _LeavingOutWriter implements BackupArchiveBuilder {
       path: '$workDir/$_fakeFileName',
       sizeBytes: 3,
       coversLeftOut: coversLeftOut,
+    ),
+  );
+}
+
+/// Builds fine, but reports that it left the borrowers vault out (D17).
+class _VaultLeavingOutWriter implements BackupArchiveBuilder {
+  @override
+  Future<Either<Failure, BuiltBackup>> build({
+    required List<CatalogueItem> books,
+    required List<WishlistBook> wishlist,
+    required List<Periodical> periodicals,
+    required String workDir,
+    required int exportedAt,
+    required String? identityJson,
+    required String? networkJson,
+    required String? publishStateJson,
+    BackupProgressListener? onProgress,
+  }) async => right(
+    BuiltBackup(
+      path: '$workDir/$_fakeFileName',
+      sizeBytes: 3,
+      vaultLeftOut: true,
     ),
   );
 }

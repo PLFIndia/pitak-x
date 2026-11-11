@@ -30,6 +30,13 @@ const String _blobFileName = 'vault_backup_blob';
 /// unlock is enrolled; its absence means "not enrolled".
 const String _bioBlobFileName = 'vault_biometric_blob';
 
+/// What SQLite appends to a database's file name for the files it keeps
+/// next to it while it writes: the rollback journal, and the two files of
+/// write-ahead logging. The vault uses the rollback journal (SQLite's
+/// default; the Rust core sets no other mode); the other two are listed so
+/// that a later change of mode cannot slip past the checks below.
+const List<String> _sqliteSideFileSuffixes = ['-journal', '-wal', '-shm'];
+
 /// Reads/writes the persistent vault's database path and wrapped-key blob.
 final class VaultStore implements VaultArtifactsStore {
   /// Creates a store rooted at [baseDir] (typically the app documents dir).
@@ -78,6 +85,13 @@ final class VaultStore implements VaultArtifactsStore {
     if (blob.existsSync()) blob.deleteSync();
     clearBioBlob();
   }
+
+  /// See [VaultArtifactsStore.hasUnfinishedWrite]: true when any SQLite
+  /// side file lies next to `borrowers.db`.
+  @override
+  bool hasUnfinishedWrite() => _sqliteSideFileSuffixes.any(
+    (suffix) => File('$dbPath$suffix').existsSync(),
+  );
 
   /// Copies `borrowers.db` to [targetPath] for the backup (BR4).
   ///
@@ -180,7 +194,7 @@ final class VaultStore implements VaultArtifactsStore {
       sourceDb.copySync(dbPath);
       // A hot journal / WAL is part of the database's state after a crash;
       // leaving it behind would silently drop committed vault writes.
-      for (final suffix in const ['-journal', '-wal', '-shm']) {
+      for (final suffix in _sqliteSideFileSuffixes) {
         final side = File('${source.dbPath}$suffix');
         if (side.existsSync()) side.copySync('$dbPath$suffix');
       }

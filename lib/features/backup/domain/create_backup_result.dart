@@ -11,6 +11,9 @@
 /// too large for a backup is left out, and the items it belongs to are named
 /// here so the page can say so.
 ///
+/// And it covers the borrowers vault (BR4 rider 2, decision D17): a vault
+/// whose last change did not finish is left out, and `vaultLeftOut` says so.
+///
 /// Since BR4 the archive is a FILE in a private folder of the app, not
 /// bytes in memory. Whoever receives this result must hand it back to
 /// `CreateBackupUseCase.discard` when done, so the file does not stay
@@ -27,6 +30,7 @@ final class CreateBackupResult {
     required this.includesNetwork,
     this.missingPublishState = false,
     this.coversLeftOut = const [],
+    this.vaultLeftOut = false,
   });
 
   /// Absolute path of the finished `.pitabak` file. Its file name is the
@@ -52,4 +56,11 @@ final class CreateBackupResult {
   /// picture file is too large for a backup. The items themselves are
   /// inside. Empty in the normal case.
   final List<String> coversLeftOut;
+
+  /// True when this phone HAS a borrowers vault and it is NOT inside the
+  /// archive, because its last change did not finish. The page must say so:
+  /// without the note the user would believe borrowers and loans are safe
+  /// in this file. False both when the vault is inside and when there is
+  /// none.
+  final bool vaultLeftOut;
 }
