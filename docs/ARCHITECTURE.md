@@ -145,7 +145,7 @@ These fail the build; change them deliberately, never to "make it pass".
 | `test/architecture/layer_boundaries_test.dart` | no `presentation → infrastructure` imports; no `flutter/material` in `application`; no `print`/`debugPrint` outside `lib/core/platform/app_log.dart`; no `flutter_map` under `core/di` or `application/`; **file-size ratchet** (a file may not grow past its recorded line budget without an explicit allow-list entry — split it instead) |
 | `test/architecture/catalogue_item_validation_gate_test.dart` | every `CatalogueItem` construction site goes through `CatalogueItem.validate` (ADR 0004; the entity was `Book` until 2026-10) |
 | `test/core/database/migration_test.dart` | a drift schema snapshot exists for the current `schemaVersion`; every past version migrates forward with data intact (§5.4) |
-| `test/architecture/archive_sink_protocol_test.dart` | the ZIP output budget still fits `package:archive`: the three package files that decide how the inflater writes are pinned by content (a package update that touches them fails until they are read again), and the extractor's sink still guards every write path (ADR 0009, amendment) |
+| `test/architecture/archive_sink_protocol_test.dart` | the ZIP output budget still fits `package:archive`: the five package files that decide how the inflater writes and reads are pinned by content (a package update that touches them fails until they are read again), and the sink of each of the two ZIP readers still guards every write path (ADR 0009, both amendments) |
 | `test/architecture/cover_files_immutable_test.dart` | a stored cover file never changes once saved (ADR 0020 Decision 1): every file that reaches the covers folder is reviewed, readers write nothing, and the four writers are pinned to fresh names, a not-yet-live generation, or a move that never overwrites |
 
 ---
@@ -434,7 +434,21 @@ to false** (the `hasX` forward-compat pattern):
   with its own code, `zip_container.dart`, and uses `package:archive` only
   to inflate and to compute the CRC; a deflate stream must reach its end
   mark and the CRC must match. What the reader decides for odd containers
-  is recorded in `bounded_zip_extractor_container_test.dart`. W2
+  is recorded in `bounded_zip_extractor_container_test.dart`.
+  A second reader, `BoundedZipFile` (import/export infrastructure, BR5),
+  works from a FILE: it reads the last bytes, the directory and each entry
+  header, runs every rule on declared values for all entries
+  (`zip_entry_rules.dart`, pure Dart) before it unpacks anything, and then
+  takes one entry at a time, into memory or into a new file. Its inflater
+  output keeps only the last 32 KiB (`zip_inflate_window.dart`), so memory
+  does not grow with the entry. It is stricter in three rules: an entry is
+  exactly the size it declares, its header carries the directory's name,
+  and no entry uses zip64. Its caller gives a rule per entry name; for a
+  backup that is `backupEntryRule`: a cover or an additive JSON entry above
+  its cap is left out, the manifest, a database or the key blob above its
+  cap refuses the backup, and an unknown name is ignored and never
+  unpacked. Nothing calls this reader yet: restore moves to it in BR6.
+  Until the first reader is removed, the tests ask every case of both. W2
   `item_kinds.json` / `periodicals.json` entries are capped at 4 MiB of UTF-8
   bytes and 100,000 rows in each `kinds`, `periodicals`, or `issues`
   collection (the codec constants are authoritative; equality is accepted).

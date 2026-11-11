@@ -346,6 +346,9 @@ void m05Regressions(ZipReaderUnderTest reader) {
       // size LIES (says 512 bytes) so the header pre-check passes. The
       // extractor must stop inflating at the per-entry cap: the probe
       // records how many bytes were actually produced.
+      //
+      // The reader from a file stops EARLIER (BR5): its budget for an entry
+      // is the size the entry declares, so the 513th byte ends the work.
       const bombSize = 64 * 1024 * 1024;
       final zip = buildHostileZip([
         HostileEntry(
@@ -373,10 +376,22 @@ void m05Regressions(ZipReaderUnderTest reader) {
           isA<BoundedExtractionException>().having(
             (e) => e.message,
             'message',
-            contains('exceeds per-entry cap'),
+            contains(
+              reader.fromFile
+                  ? 'holds more than the 512 bytes it declares'
+                  : 'exceeds per-entry cap',
+            ),
           ),
         ),
       );
+      if (reader.fromFile) {
+        // Stopped at the declared size, and it did start: the stream
+        // repeats one byte, so the write that would pass 512 is refused
+        // when most of the 512 are already out.
+        expect(produced, lessThanOrEqualTo(512));
+        expect(produced, greaterThan(0));
+        return;
+      }
       // The sink refuses BEFORE writing, so what was produced is at most the
       // budget — and certainly not the full 64 MiB. Anything within one
       // 64 KiB deflate block below the budget proves the inflate ran up to
@@ -388,6 +403,10 @@ void m05Regressions(ZipReaderUnderTest reader) {
     test('the running total caps the LAST entry by what is left', () {
       // Two truthful 1 KiB entries under a 1.5 KiB total: the second must be
       // rejected while inflating, with at most ~512 bytes produced for it.
+      //
+      // The reader from a file adds up the DECLARED sizes (1024 + 1, under
+      // the total) and then holds the second entry to the one byte it
+      // declares (BR5): refused all the same, earlier and for that reason.
       final zip = buildHostileZip([
         HostileEntry('a', List<int>.filled(1024, 1)),
         HostileEntry(
@@ -412,11 +431,15 @@ void m05Regressions(ZipReaderUnderTest reader) {
           isA<BoundedExtractionException>().having(
             (e) => e.message,
             'message',
-            contains('total exceeds cap'),
+            contains(
+              reader.fromFile
+                  ? "'b' holds more than the 1 bytes it declares"
+                  : 'total exceeds cap',
+            ),
           ),
         ),
       );
-      expect(produced, lessThanOrEqualTo(1024 + 65536));
+      expect(produced, lessThanOrEqualTo(reader.fromFile ? 1 : 1024 + 65536));
     });
 
     test('declared size lies SMALL: real length still enforced', () {
@@ -666,7 +689,14 @@ void m05Regressions(ZipReaderUnderTest reader) {
           ),
           throwsA(isA<BoundedExtractionException>()),
         );
-        expect(produced, 0, reason: 'a stored overrun must not be copied');
+        // The reader from a file refuses this entry before it works on any
+        // entry at all (BR5, rule N1: a stored entry declares ONE size), so
+        // its probe is never called and the -1 from above is still there.
+        expect(
+          produced,
+          reader.fromFile ? -1 : 0,
+          reason: 'a stored overrun must not be copied',
+        );
         // Honest stored entry: probe reports the full copied length.
         final ok = buildHostileZip([
           HostileEntry('y', List<int>.filled(300, 1), deflate: false),

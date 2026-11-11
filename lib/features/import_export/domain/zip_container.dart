@@ -107,6 +107,8 @@ final class ZipDirectoryEntry {
     required this.uncompressedSize,
     required this.externalAttributes,
     required this.localHeaderOffset,
+    required this.nameBytes,
+    required this.hasZip64Marker,
   });
 
   /// The entry's name as the directory has it (the authoritative one; the
@@ -136,6 +138,18 @@ final class ZipDirectoryEntry {
 
   /// Declared offset of the entry header.
   final int localHeaderOffset;
+
+  /// The bytes of [name] as they lie in the directory: a view, nothing is
+  /// copied. The reader that works from a file compares them with the name
+  /// in the entry header (BR5, rule N2).
+  final Uint8List nameBytes;
+
+  /// True when one of the record's sizes, its offset or its disk number
+  /// holds the "see the zip64 record" marker (all bits set), whether or
+  /// not such a record then gave a value. The reader that works from a
+  /// file refuses such an entry (BR5, rule N3); the in-memory reader does
+  /// not look at this.
+  final bool hasZip64Marker;
 }
 
 /// Where an entry's content lies: a VIEW into the input (nothing is copied).
@@ -271,6 +285,12 @@ abstract final class ZipContainer {
       var uncompressedSize = data.getUint32(position + 24, Endian.little);
       var diskNumberStart = data.getUint16(position + 34, Endian.little);
       var localHeaderOffset = data.getUint32(position + 42, Endian.little);
+      // Noted before the zip64 record below replaces the marked values.
+      final hasZip64Marker =
+          compressedSize == _marker32 ||
+          uncompressedSize == _marker32 ||
+          localHeaderOffset == _marker32 ||
+          diskNumberStart == _marker16;
 
       // Extra field: a list of (id, length, data) records. Only the zip64
       // record matters: it carries a 64-bit value for each field above that
@@ -337,6 +357,8 @@ abstract final class ZipContainer {
         uncompressedSize: uncompressedSize,
         externalAttributes: data.getUint32(position + 38, Endian.little),
         localHeaderOffset: localHeaderOffset,
+        nameBytes: Uint8List.sublistView(bytes, nameStart, extraStart),
+        hasZip64Marker: hasZip64Marker,
       );
       position = recordEnd;
     }
@@ -371,12 +393,19 @@ abstract final class ZipContainer {
   /// the four bytes behind the declared content; both only after the range
   /// was checked to lie inside the file.
   ///
+  /// With [nameMustMatch] the name in the entry header has to be the name
+  /// in the directory, byte for byte (BR5, rule N2), and [read] is also
+  /// asked for that name. The reader that works from a file asks for this.
+  /// The in-memory reader does not: it keeps the released reader's
+  /// verdict, which ignored the entry header's name, until it is removed.
+  ///
   /// Throws [ZipContainerException] when no entry header is where the
   /// directory says, or when the content would start beyond the file.
   static ZipContentRange contentRange(
     ZipDirectoryEntry entry, {
     required int fileLength,
     required ZipRead read,
+    bool nameMustMatch = false,
   }) {
     final offset = entry.localHeaderOffset;
     if (offset < 0 || offset > fileLength - _entryFixedLength) {
@@ -393,13 +422,32 @@ abstract final class ZipContainer {
     if ((flags & _flagEncrypted) != 0) {
       throw const ZipContainerException('entry header says encrypted');
     }
+    final nameLength = data.getUint16(26, Endian.little);
     final start =
         offset +
         _entryFixedLength +
-        data.getUint16(26, Endian.little) +
+        nameLength +
         data.getUint16(28, Endian.little);
     if (start > fileLength) {
       throw const ZipContainerException('entry content lies outside the file');
+    }
+    if (nameMustMatch) {
+      // Two names for one entry are not the work of an honest writer, and
+      // a reader that picked the other one would see another archive.
+      final expected = entry.nameBytes;
+      var same = nameLength == expected.length;
+      if (same) {
+        // Inside the file: the name ends before `start`, checked above.
+        final actual = read(offset + _entryFixedLength, nameLength);
+        for (var i = 0; same && i < nameLength; i++) {
+          same = actual[i] == expected[i];
+        }
+      }
+      if (!same) {
+        throw const ZipContainerException(
+          'entry header and directory name the entry differently',
+        );
+      }
     }
     // Compared by subtraction ON PURPOSE: a declared size can be any 64-bit
     // number, and `start + size` could overflow. Sizes are never negative

@@ -82,3 +82,86 @@ so "the package is pure Dart" no longer holds by itself.
   for verdicts that are ours.
 - Still to come (BR5): reading from a file instead of memory, caps per kind
   of entry, and a check of the produced size against the declared one.
+
+## Amendment (2026-11-11): a reader that works from a file
+
+- **Status:** Accepted (backup rework, stage BR5; `PLAN.md`, "BR5 in
+  detail", decisions D9 and D18)
+
+### Context
+
+`BoundedZipExtractor` takes the whole archive as bytes and returns every
+entry unpacked. A backup with thousands of cover pictures needs the archive
+and all its content in memory at once (review finding P3-B3), and the
+limits of a backup are to rise to 10,000 covers and 1 GiB (D3, D4). The
+restore has to read from a file, one entry at a time.
+
+### Decision
+
+1. **Rules in the domain, the disk in infrastructure.**
+   `zip_container.dart` reads the structure of a ZIP from PARTS of a file
+   (the last bytes, the directory, one entry header), and
+   `zip_entry_rules.dart` judges what the structure declares. Both are pure
+   Dart. `BoundedZipFile`
+   (`import_export/infrastructure/bounded_zip_file.dart`) reads the parts
+   from the file, asks the rules, and then takes one entry at a time, into
+   memory or into a new file.
+2. **The inflater leaves the domain with the new reader.** `BoundedZipFile`
+   calls `package:archive`'s inflater from infrastructure
+   (`zip_inflate_window.dart`). Its output goes into `ZipWindowSink`, which
+   keeps only the last 32 KiB (the furthest deflate can refer back) and
+   hands the rest on; its input comes from `ZipFileRangeInput`, one range of
+   the file through one buffer. The memory in use does not grow with the
+   entry. The sink extends the package's in-memory stream for the reason
+   the first amendment gives, and guards every write path.
+3. **The platform's own zlib is not used**, although it is faster: through
+   `dart:io` it does not say whether a stream reached its end mark, and
+   point 4 of the first amendment needs that.
+4. **Three rules are stricter in the new reader.** No file an honest writer
+   makes breaks them (checked on the frozen 1.9.7 backup and on backups of
+   the current writer).
+   - N1: the unpacked size of an entry is the size the directory declares.
+     The budget for unpacking an entry is that declared size.
+   - N2: the name in the entry header is the name in the directory, byte
+     for byte.
+   - N3: no size or offset of an entry comes from a zip64 record. (The end
+     record was already refused for zip64.)
+
+   Of the 68 recorded containers, 6 change, all from accepted to refused:
+   C20 (N1); C4 and C18 (N2: two records that share one content share one
+   entry header, which can carry only one of their names); C13a, C13c and
+   C13e (N3). No verdict changed to the looser side. The tests mark each.
+5. **A rule per entry name.** The caller hands the reader a function from
+   entry name to rule: take up to a cap (and above it either refuse the
+   archive or leave the entry out), or ignore. For a backup the table is
+   `backupEntryRule`, built on the caps the writer checks against: a cover
+   above its cap is left out (D18), so is an additive JSON entry; the
+   manifest, a database or the key blob above its cap refuses the backup;
+   a name the app does not write is ignored and never unpacked. Only what
+   is unpacked counts against the cap for the content; every entry counts
+   against the cap for the number of entries.
+6. **Both readers ship until BR7.** Restore and the bundle import still
+   call `BoundedZipExtractor`; BR6 and BR7 move them. Until then every case
+   of the two extractor test files runs against both readers.
+
+### Consequences
+
+- Reading a 1.1 GiB backup (10,000 covers, a 200 MiB database) took 2.4 s
+  and 52 MB at its peak on a Mac with the Dart heap capped at 32 MB
+  (`tool/zip_reader_memory_check.dart`, run by hand). A phone was not
+  measured.
+- `archive_sink_protocol_test.dart` pins two more package files
+  (`input_stream.dart`, `input_memory_stream.dart`) and the new sink's
+  guards.
+- The domain still imports `package:archive` in ONE file, the old reader.
+  When BR7 removes it, the domain needs the package no longer, and
+  `archive` leaves the allow-list of `domain_purity_test.dart`. This ADR's
+  first decision then describes history.
+- One way in which the new reader is LOOSER than the old one, on purpose:
+  with a rule per name, an entry under an unknown name is not unpacked, so
+  damage inside it, or a size above every cap, no longer refuses the
+  archive. Its name, its headers and its place in the entry count are
+  still checked.
+- More code of our own in a security path (about 1,200 lines in the two
+  infrastructure files and the rules, comments included), in exchange for
+  a reader whose memory use does not depend on the file it is given.

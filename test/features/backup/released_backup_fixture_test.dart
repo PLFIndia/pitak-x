@@ -5,7 +5,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/features/backup/domain/backup_limits.dart';
+import 'package:pitaka/features/backup/infrastructure/backup_entry_bounds.dart';
 import 'package:pitaka/features/import_export/domain/bounded_zip_extractor.dart';
+import 'package:pitaka/features/import_export/domain/zip_entry_rules.dart';
+import 'package:pitaka/features/import_export/infrastructure/bounded_zip_file.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/value_objects/item_details.dart';
 import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
@@ -166,6 +170,33 @@ void main() {
       'periodicals.json',
       'publish_state.json',
     });
+  });
+
+  test('the reader that works from a file takes the same twelve entries, '
+      'byte for byte (BR5)', () {
+    // The new reader is stricter than the one above in three rules (the
+    // size an entry declares, the name in its header, no zip64). A file
+    // the released app wrote must pass all of them, with the rules a
+    // restore will use: every entry known, every entry taken.
+    final expected = BoundedZipExtractor.extract(archive);
+    const limits = BackupLimits.current;
+    final file = BoundedZipFile.open(
+      '$_fixtureDir/released_1_9_7.backup',
+      limits: ZipLimits.forBackup(limits),
+      policy: (name) => backupEntryRule(name, limits),
+    );
+    addTearDown(file.close);
+
+    expect(file.entries, hasLength(12));
+    expect({for (final e in file.entries) e.name}, expected.keys.toSet());
+    for (final entry in file.entries) {
+      expect(entry.verdict, ZipEntryVerdict.take, reason: entry.name);
+      expect(
+        file.read(entry, maxBytes: backupEntryCap(entry.name, limits)!),
+        expected[entry.name],
+        reason: entry.name,
+      );
+    }
   });
 
   test('inspection reads what the file declares, without restoring', () async {

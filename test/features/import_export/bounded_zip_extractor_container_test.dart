@@ -57,6 +57,31 @@ void containerCases(ZipReaderUnderTest reader) {
     throwsA(isA<BoundedExtractionException>()),
   );
 
+  /// A case where the reader from a file is STRICTER on purpose (backup
+  /// rework BR5, rules N1 to N3): it refuses the file, and its reason holds
+  /// [because]. The in-memory reader keeps the verdict of the released
+  /// reader, [inMemory], until it is removed (BR7).
+  void stricterFromFile(
+    Uint8List zip, {
+    required Map<String, List<int>> inMemory,
+    required String because,
+  }) {
+    if (!reader.fromFile) {
+      expect(accepted(zip), inMemory);
+      return;
+    }
+    expect(
+      () => reader.extract(zip, limits: roomy),
+      throwsA(
+        isA<BoundedExtractionException>().having(
+          (e) => e.message,
+          'message',
+          contains(because),
+        ),
+      ),
+    );
+  }
+
   Uint8List u16(int value) =>
       Uint8List(2)..buffer.asByteData().setUint16(0, value, Endian.little);
   Uint8List u32(int value) =>
@@ -319,7 +344,8 @@ void containerCases(ZipReaderUnderTest reader) {
       expect(accepted(zip).keys, ['plain.txt']);
     });
 
-    test('the directory name wins over the name in the entry header', () {
+    test('the directory name wins over the name in the entry header '
+        '(from a file: refused, rule N2)', () {
       final zip = buildHostileZip([
         HostileEntry('central.txt', [
           1,
@@ -327,9 +353,31 @@ void containerCases(ZipReaderUnderTest reader) {
           3,
         ], localNameBytes: utf8.encode('local-name-longer.txt')),
       ]);
-      expect(accepted(zip), {
-        'central.txt': [1, 2, 3],
-      });
+      stricterFromFile(
+        zip,
+        inMemory: {
+          'central.txt': [1, 2, 3],
+        },
+        because: 'entry header and directory name the entry differently',
+      );
+    });
+
+    test('an entry-header name of the same length but other letters '
+        '(from a file: refused, rule N2)', () {
+      final zip = buildHostileZip([
+        HostileEntry('cover_a.jpg', [
+          1,
+          2,
+          3,
+        ], localNameBytes: utf8.encode('cover_b.jpg')),
+      ]);
+      stricterFromFile(
+        zip,
+        inMemory: {
+          'cover_a.jpg': [1, 2, 3],
+        },
+        because: 'entry header and directory name the entry differently',
+      );
     });
 
     test('a UTF-8 name is read as UTF-8, with or without the UTF-8 flag', () {
@@ -431,36 +479,36 @@ void containerCases(ZipReaderUnderTest reader) {
 
     group('zip64 sizes on ONE entry (the end record itself may not be '
         'zip64)', () {
-      test('a 64-bit size that fits is used', () {
-        expect(
-          accepted(
-            buildHostileZip([
-              HostileEntry(
-                'a',
-                data,
-                declaredUncompressedSize: 0xFFFFFFFF,
-                centralExtra: extra(1, u64(300)),
-              ),
-            ]),
-          ),
-          {'a': data},
+      test('a 64-bit size that fits is used '
+          '(from a file: refused, rule N3)', () {
+        stricterFromFile(
+          buildHostileZip([
+            HostileEntry(
+              'a',
+              data,
+              declaredUncompressedSize: 0xFFFFFFFF,
+              centralExtra: extra(1, u64(300)),
+            ),
+          ]),
+          inMemory: {'a': data},
+          because: "'a' uses zip64",
         );
-        expect(
-          accepted(
-            buildHostileZip([
-              HostileEntry(
-                'a',
-                data,
-                declaredCompressedSize: 0xFFFFFFFF,
-                centralExtra: extra(1, u64(deflated.length)),
-              ),
-            ]),
-          ),
-          {'a': data},
+        stricterFromFile(
+          buildHostileZip([
+            HostileEntry(
+              'a',
+              data,
+              declaredCompressedSize: 0xFFFFFFFF,
+              centralExtra: extra(1, u64(deflated.length)),
+            ),
+          ]),
+          inMemory: {'a': data},
+          because: "'a' uses zip64",
         );
       });
 
-      test('a 64-bit offset of the entry header is used', () {
+      test('a 64-bit offset of the entry header is used '
+          '(from a file: refused, rule N3)', () {
         final zip = buildHostileZip([
           HostileEntry(
             'a',
@@ -469,7 +517,7 @@ void containerCases(ZipReaderUnderTest reader) {
             centralExtra: extra(1, u64(0)),
           ),
         ]);
-        expect(accepted(zip), {'a': data});
+        stricterFromFile(zip, inMemory: {'a': data}, because: "'a' uses zip64");
       });
 
       test('a 64-bit size over the cap is refused', () {
@@ -633,15 +681,22 @@ void containerCases(ZipReaderUnderTest reader) {
       refused(longExtra);
     });
 
-    test('two directory records may share one content', () {
+    test('two directory records may share one content '
+        '(from a file: refused, rule N2)', () {
+      // The shared entry header can carry only one of the two names, so the
+      // rule about names refuses this shape as well.
       final zip = buildHostileZip([
         HostileEntry('a', [1, 2, 3]),
         HostileEntry('b', [1, 2, 3], localHeaderOffsetOverride: 0),
       ]);
-      expect(accepted(zip), {
-        'a': [1, 2, 3],
-        'b': [1, 2, 3],
-      });
+      stricterFromFile(
+        zip,
+        inMemory: {
+          'a': [1, 2, 3],
+          'b': [1, 2, 3],
+        },
+        because: 'entry header and directory name the entry differently',
+      );
     });
 
     test('the directory decides the method, not the entry header', () {
@@ -902,7 +957,7 @@ void containerCases(ZipReaderUnderTest reader) {
     });
 
     test('stored: the compressed size decides the length, not the declared '
-        'uncompressed size', () {
+        'uncompressed size (from a file: refused, rule N1)', () {
       final zip = buildHostileZip([
         HostileEntry(
           'a',
@@ -911,9 +966,33 @@ void containerCases(ZipReaderUnderTest reader) {
           declaredUncompressedSize: 9,
         ),
       ]);
-      expect(accepted(zip), {
-        'a': [1, 2, 3],
-      });
+      stricterFromFile(
+        zip,
+        inMemory: {
+          'a': [1, 2, 3],
+        },
+        because: 'stored, but declares two different sizes',
+      );
+    });
+
+    test('deflate: an uncompressed size declared too LARGE or too small, '
+        'under the cap (from a file: refused, rule N1)', () {
+      // The released reader never compared what came out with what was
+      // declared: the cap and the checksum decided alone.
+      stricterFromFile(
+        buildHostileZip([
+          HostileEntry('a', data, declaredUncompressedSize: data.length + 9),
+        ]),
+        inMemory: {'a': data},
+        because: "'a' holds 300 bytes, not the 309 it declares",
+      );
+      stricterFromFile(
+        buildHostileZip([
+          HostileEntry('a', data, declaredUncompressedSize: data.length - 9),
+        ]),
+        inMemory: {'a': data},
+        because: "'a' holds more than the 291 bytes it declares",
+      );
     });
   });
 }

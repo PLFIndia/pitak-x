@@ -6,11 +6,15 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/features/backup/domain/backup_archive_builder.dart';
 import 'package:pitaka/features/backup/domain/backup_file_name.dart';
+import 'package:pitaka/features/backup/domain/backup_limits.dart';
 import 'package:pitaka/features/backup/domain/backup_manifest.dart';
 import 'package:pitaka/features/backup/infrastructure/backup_archive_writer.dart';
+import 'package:pitaka/features/backup/infrastructure/backup_entry_bounds.dart';
 import 'package:pitaka/features/backup/infrastructure/legacy_db_reader.dart';
 import 'package:pitaka/features/import_export/domain/bounded_zip_extractor.dart';
 import 'package:pitaka/features/import_export/domain/zip_container.dart';
+import 'package:pitaka/features/import_export/domain/zip_entry_rules.dart';
+import 'package:pitaka/features/import_export/infrastructure/bounded_zip_file.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/value_objects/item_details.dart';
 import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
@@ -233,6 +237,53 @@ void main() {
 
     expect(titlesIn('books.db', 'books'), ['A book', 'An issue']);
     expect(titlesIn('wishlist.db', 'wishlist_books'), ['A wish']);
+  });
+
+  test('the reader that works from a file knows every entry the writer '
+      'makes, and takes each one byte for byte (BR5)', () async {
+    // WHY (beginner note): the restore reader gets a rule for each entry
+    // NAME (`backupEntryRule`). A name it does not know is ignored. If the
+    // writer ever wrote an entry under a name that table does not hold, a
+    // restore would quietly skip it. This test builds a backup with every
+    // kind of entry, with the real writer, and asks the reader about each.
+    final pictureA = noise(2000);
+    final pictureB = noise(300 * 1024, seed: 2);
+    File('${covers.path}/a.jpg').writeAsBytesSync(pictureA);
+    File('${covers.path}/b.jpg').writeAsBytesSync(pictureB);
+
+    final built = await buildEverything(
+      writerFor(vaultWith(noise(50 * 1024, seed: 3))),
+      '${tmp.path}/run',
+    );
+    final expected = entriesOf(built);
+    expect(expected, hasLength(BackupLimits.otherEntries + 2));
+
+    const limits = BackupLimits.current;
+    final file = BoundedZipFile.open(
+      built.path,
+      limits: ZipLimits.forBackup(limits),
+      policy: (name) => backupEntryRule(name, limits),
+    );
+    addTearDown(file.close);
+
+    expect([for (final e in file.entries) e.name], expected.keys.toList());
+    for (final entry in file.entries) {
+      expect(entry.verdict, ZipEntryVerdict.take, reason: entry.name);
+      // Both ways of taking an entry, each against the in-memory reader.
+      // `maxBytes` is the entry's own cap: the writer kept under it.
+      expect(
+        file.read(entry, maxBytes: backupEntryCap(entry.name, limits)!),
+        expected[entry.name],
+        reason: entry.name,
+      );
+      final target = File('${tmp.path}/taken_${entry.name}');
+      file.writeTo(entry, target.path);
+      expect(
+        target.readAsBytesSync(),
+        expected[entry.name],
+        reason: entry.name,
+      );
+    }
   });
 
   test('the legacy reader still reads the rows of the new archive', () async {

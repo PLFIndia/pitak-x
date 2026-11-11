@@ -11,8 +11,9 @@
 /// data on restore, so the writer refuses up front instead.
 ///
 /// BR3 adds the size cap of EVERY entry, by entry name ([backupEntryCap]).
-/// The writer checks against it now; the reader will use the same function
-/// when it learns per-kind caps, so the two sides share one table.
+/// The writer checks against it. Since BR5 the reader that works from a
+/// file takes its rule for each entry from the same table
+/// ([backupEntryRule]), so the two sides cannot drift apart.
 ///
 /// The bounds live here, not inside the writer class, so the check is one
 /// small reviewed unit and the writer file stays readable. They sit in
@@ -37,6 +38,7 @@ import 'package:pitaka/features/backup/infrastructure/restore_covers_builder.dar
     show coverEntryPrefix;
 import 'package:pitaka/features/backup/infrastructure/restore_legacy_read.dart'
     show booksDbEntryName, wishlistDbEntryName;
+import 'package:pitaka/features/import_export/domain/zip_entry_rules.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/value_objects/item_details.dart';
 import 'package:pitaka/features/library/domain/value_objects/item_kind.dart';
@@ -51,8 +53,8 @@ const String borrowersDbEntryName = 'borrowers.db';
 const String backupBlobEntryName = 'backup_blob';
 
 /// The largest size, in bytes, the entry called [name] may have, or null for
-/// a name this app does not write (what the reader does with such an entry
-/// is decided when the reader starts to use this table).
+/// a name this app does not write (the reader ignores such an entry, see
+/// [backupEntryRule]).
 ///
 /// The table of decision D9. Where an entry has a decoder with its own cap,
 /// that constant is used directly, so the writer and the reader cannot drift
@@ -81,6 +83,49 @@ int? backupEntryCap(String name, BackupLimits limits) {
     manifestEntryName || backupBlobEntryName => limits.maxTextEntryBytes,
     _ => null,
   };
+}
+
+/// What the restore reader does with the entry called [name] of a backup
+/// (backup rework BR5; decisions D9 and D18). Hand it to `BoundedZipFile`
+/// as `policy: (name) => backupEntryRule(name, limits)`.
+///
+/// The cap of every entry is [backupEntryCap], the number the writer
+/// checks against. What happens ABOVE the cap depends on what the restore
+/// can do without:
+///
+///  - a cover picture (`cover_<name>`) is LEFT OUT, and the rest of the
+///    backup is restored (D18: one bad picture should not cost the whole
+///    library). It is never unpacked;
+///  - `identity.json`, `network.json`, `item_kinds.json`,
+///    `periodicals.json` and `publish_state.json` are LEFT OUT as well.
+///    They are additive: restore goes on and reports the entry as
+///    unreadable, as it did before, only now without unpacking it first;
+///  - everything else with a cap (`manifest.json`, the three databases,
+///    `backup_blob`) REFUSES the backup: nothing can be restored without
+///    it. This is also what a name added to [backupEntryCap] later gets
+///    until someone decides otherwise here (fail closed);
+///  - a name the app does not write is IGNORED: counted as an entry and
+///    never unpacked. A later version of Pitak may add an entry; a backup
+///    from it must not fail here for that alone.
+ZipEntryRule backupEntryRule(String name, BackupLimits limits) {
+  final cap = backupEntryCap(name, limits);
+  if (cap == null) return const ZipEntryRule.ignore();
+  final restoreCanDoWithoutIt =
+      name.startsWith(coverEntryPrefix) ||
+      switch (name) {
+        identityEntryName ||
+        networkEntryName ||
+        itemKindsEntryName ||
+        periodicalsEntryName ||
+        publishStateEntryName => true,
+        _ => false,
+      };
+  return ZipEntryRule.take(
+    maxBytes: cap,
+    tooLarge: restoreCanDoWithoutIt
+        ? ZipTooLarge.leaveOut
+        : ZipTooLarge.refuseArchive,
+  );
 }
 
 /// The code the writer refuses with when the entry called [name] is larger

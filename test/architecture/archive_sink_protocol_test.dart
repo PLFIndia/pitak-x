@@ -4,9 +4,9 @@ import 'dart:io';
 import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-/// The ZIP extractor's output budget depends on HOW `package:archive`'s
-/// inflater writes its output. This test pins the three source files that
-/// decide it, by their content.
+/// The ZIP readers' output budget depends on HOW `package:archive`'s
+/// inflater writes its output, and (since BR5) reads its input. This test
+/// pins the five source files that decide it, by their content.
 ///
 /// WHY (beginner note): `BoundedZipExtractor` stops a "zip bomb" by handing
 /// the inflater an output stream that refuses to grow past a budget
@@ -24,13 +24,27 @@ import 'package:flutter_test/flutter_test.dart';
 /// was added), and a port that had missed it would have let a small file
 /// unpack without limit. Nothing in the type system shows such a change.
 ///
+/// Since BR5 the app has a second reader, which works from a file
+/// (`BoundedZipFile`). Its sink, `ZipWindowSink`, rests on the same three
+/// facts. Its input, `ZipFileRangeInput`, rests on two more:
+///
+///  4. the inflater reads through `isEOS`, `readByte` and `rewind`, and
+///     for a block without compression through `length` and `readBytes`,
+///     which is `subset` plus `setPosition` and asks for at most 65,535
+///     bytes (`input_stream.dart` holds the abstract class and
+///     `readBytes`);
+///  5. the piece handed back for such a block is the package's in-memory
+///     input stream, whose `toUint8List` gives the rest of its bytes
+///     (`input_memory_stream.dart`).
+///
 /// So: when this test fails after a dependency update, the package changed
-/// one of these files. Read the three files in the new version, check the
-/// three facts above against `_BudgetedSink` and `_inflateBounded` in
-/// `bounded_zip_extractor.dart`, run the extractor tests, and only then
-/// record the new hashes here. (Same idea as the reviewed lists in
-/// `cover_files_immutable_test.dart`: a change needs a look before it
-/// passes.)
+/// one of these files. Read the files in the new version, check the facts
+/// above against `_BudgetedSink` and `_inflateBounded` in
+/// `bounded_zip_extractor.dart` and against `ZipWindowSink` and
+/// `ZipFileRangeInput` in `zip_inflate_window.dart`, run the reader tests,
+/// and only then record the new hashes here. (Same idea as the reviewed
+/// lists in `cover_files_immutable_test.dart`: a change needs a look before
+/// it passes.)
 void main() {
   // Reviewed for archive 4.6.0 on 2026-11-10 (backup rework BR2).
   const reviewed = <String, String>{
@@ -40,6 +54,11 @@ void main() {
         '9a54942c53c1d7898a39724f72a50ddc618258f02bb1e248499cd3bcc49c80c7',
     'lib/src/codecs/zlib/inflate.dart':
         'f55866da3f05599c0f86cfad1b66de5b31ad5a847ae8d5db09e775c1a9235ca1',
+    // Reviewed for archive 4.6.0 on 2026-11-11 (backup rework BR5).
+    'lib/src/util/input_stream.dart':
+        '1bfe89d3026c86822ce80627e64dff348d5768025dd9858f090d8b4e08a4663a',
+    'lib/src/util/input_memory_stream.dart':
+        'e3651d05826f77e2a032b89c41bcb639fd5a292cd65bff898b7cae11328a08de',
   };
 
   /// Where the resolved `archive` package lies on this machine, from the
@@ -60,7 +79,7 @@ void main() {
     );
   }
 
-  test('the inflater and its output streams are the reviewed sources', () {
+  test('the inflater and its streams are the reviewed sources', () {
     final root = archiveRoot();
     final actual = {
       for (final path in reviewed.keys)
@@ -102,6 +121,51 @@ void main() {
       'if (!inflater.isFinished) {',
     ]) {
       expect(extractor, contains(guarded), reason: guarded);
+    }
+  });
+
+  test('the reader from a file still names the write paths it guards', () {
+    // The same pin for the second reader (BR5): its sink, and the end-mark
+    // rule where the inflater is called.
+    final window = File(
+      'lib/features/import_export/infrastructure/zip_inflate_window.dart',
+    ).readAsStringSync();
+    expect(
+      window,
+      contains('final class ZipWindowSink extends OutputMemoryStream'),
+    );
+    // The parent's buffer has size 0: a write that reached it would fail
+    // loudly instead of growing a hidden buffer.
+    expect(window, contains('super(size: 0);'));
+    const writeBytes =
+        'void writeBytes(List<int> bytes, {int? length}) {\n'
+        '    final count = length ?? bytes.length;\n'
+        '    _guard(count);';
+    const writeBackReference =
+        'void writeBackReference(int distance, int count) {\n'
+        '    _guard(count);\n'
+        '    if (distance < 1 || distance > length || distance > window) {';
+    for (final guarded in const [
+      'void writeByte(int value) {\n    _guard(1);',
+      writeBytes,
+      'void writeStream(InputStream stream) {\n    _guard(stream.length);',
+      writeBackReference,
+      'if (attempted > budget) throw ZipBudgetExceeded(attempted);',
+    ]) {
+      expect(window, contains(guarded), reason: guarded);
+    }
+
+    final reader = File(
+      'lib/features/import_export/infrastructure/bounded_zip_file.dart',
+    ).readAsStringSync();
+    for (final rule in const [
+      // The budget is what the entry declares, not a cap.
+      'budget: entry.size,',
+      'if (!inflater.isFinished) {',
+      'if (produced != entry.size) {',
+      'if (crc != entry._crc32) {',
+    ]) {
+      expect(reader, contains(rule), reason: rule);
     }
   });
 }
