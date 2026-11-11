@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/features/import_export/domain/bounded_zip_extractor.dart';
 
 import 'hostile_zip_builder.dart';
+import 'zip_reader_table.dart';
 
 /// What the extractor does with ODD ZIP CONTAINERS: files that are not what
 /// an honest writer produces, but that the reader has to give a verdict on.
@@ -28,7 +29,17 @@ import 'hostile_zip_builder.dart';
 /// The verdicts of the released reader were taken with a copy of the 1.9.7
 /// extractor on `archive` 3.6.1, kept outside the repository; the list is
 /// in `PLAN.md` ("BR2 result").
+///
+/// Since BR5 every case runs against every ZIP reader the app ships (see
+/// `zip_reader_table.dart`).
 void main() {
+  for (final reader in zipReadersUnderTest) {
+    group(reader.name, () => containerCases(reader));
+  }
+}
+
+/// The recorded verdicts, asked of [reader].
+void containerCases(ZipReaderUnderTest reader) {
   final roomy = ZipLimits(
     maxEntryBytes: 64 * 1024,
     maxTotalBytes: 256 * 1024,
@@ -37,12 +48,12 @@ void main() {
   );
 
   Map<String, List<int>> accepted(Uint8List zip) => {
-    for (final entry in BoundedZipExtractor.extract(zip, limits: roomy).entries)
+    for (final entry in reader.extract(zip, limits: roomy).entries)
       entry.key: entry.value,
   };
 
   void refused(Uint8List zip) => expect(
-    () => BoundedZipExtractor.extract(zip, limits: roomy),
+    () => reader.extract(zip, limits: roomy),
     throwsA(isA<BoundedExtractionException>()),
   );
 
@@ -248,7 +259,7 @@ void main() {
           ),
         );
         expect(
-          () => BoundedZipExtractor.extract(zip, limits: roomy),
+          () => reader.extract(zip, limits: roomy),
           throwsA(
             isA<BoundedExtractionException>().having(
               (e) => e.message,
@@ -737,7 +748,7 @@ void main() {
       final stopsEarly = [0x00, 5, 0, 0xFA, 0xFF, ...first, 0x06];
 
       void refusedForMissingEnd(Uint8List zip) => expect(
-        () => BoundedZipExtractor.extract(zip, limits: roomy),
+        () => reader.extract(zip, limits: roomy),
         throwsA(
           isA<BoundedExtractionException>().having(
             (e) => e.message,
@@ -810,7 +821,7 @@ void main() {
         (crc: getCrc32(const [0, 0, 0]), size: 3), // "three zero bytes"
       ]) {
         expect(
-          () => BoundedZipExtractor.extract(
+          () => reader.extract(
             buildHostileZip([
               HostileEntry(
                 'a',
@@ -840,7 +851,7 @@ void main() {
       // source), so a checksum made to fit would have passed. A stored
       // entry has no end mark; a size beyond the file is refused outright.
       expect(
-        () => BoundedZipExtractor.extract(
+        () => reader.extract(
           buildHostileZip([
             HostileEntry(
               'a',

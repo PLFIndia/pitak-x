@@ -66,8 +66,15 @@ import 'dart:typed_data';
 import 'package:archive/archive.dart'
     show Inflate, InputMemoryStream, InputStream, OutputMemoryStream, getCrc32;
 import 'package:pitaka/features/import_export/domain/zip_container.dart';
+import 'package:pitaka/features/import_export/domain/zip_entry_rules.dart';
 import 'package:pitaka/features/import_export/domain/zip_limits.dart';
 
+// `BoundedExtractionException` and the name rule moved to
+// `zip_entry_rules.dart` (BR5), where the reader that works from a file
+// uses them too. The exception is re-exported so every file that imports
+// the extractor still sees it.
+export 'package:pitaka/features/import_export/domain/zip_entry_rules.dart'
+    show BoundedExtractionException;
 // `ZipLimits` moved to its own file (BR3). Re-exported so every file that
 // imports the extractor still sees it.
 export 'package:pitaka/features/import_export/domain/zip_limits.dart';
@@ -83,20 +90,6 @@ bool hasZipLocalFileHeader(List<int> bytes) =>
     bytes[1] == 0x4B && // 'K'
     bytes[2] == 0x03 &&
     bytes[3] == 0x04;
-
-/// Thrown on any limit violation or structural anomaly (zip-slip, empty name,
-/// nested name, duplicate, directory entry). Distinct from IO errors so callers
-/// can show "archive looks corrupt or hostile" without conflating causes.
-class BoundedExtractionException implements Exception {
-  /// Creates the exception with a human-readable [message].
-  const BoundedExtractionException(this.message);
-
-  /// Why extraction was rejected.
-  final String message;
-
-  @override
-  String toString() => 'BoundedExtractionException: $message';
-}
 
 /// Extracts a flat ZIP into a map from sanitised leaf name to its decompressed
 /// content, enforcing the configured [ZipLimits].
@@ -200,7 +193,9 @@ abstract final class BoundedZipExtractor {
 
     for (var index = 0; index < headers.length; index++) {
       final header = headers[index];
-      final leaf = _validatedLeafName(header, out);
+      // Leaf-only, non-empty, no separators/NUL, unique, a plain file
+      // (`zip_entry_rules.dart`).
+      final leaf = zipLeafName(header, isTaken: out.containsKey);
 
       // 3a. Features we never produce and therefore refuse to decode.
       if ((header.flags & _flagEncrypted) != 0) {
@@ -278,59 +273,6 @@ abstract final class BoundedZipExtractor {
     }
 
     return out;
-  }
-
-  /// Name checks: leaf-only, non-empty, no separators/NUL, unique, a file.
-  ///
-  /// Uses the CENTRAL directory name (spoof-safe; the local header's name is
-  /// ignored, cf. archive issue #266). "Directory" here means either a
-  /// trailing slash or a UNIX mode that is not a regular file (symlink,
-  /// device, ...), mirroring what `ZipDecoder` would have classified — but
-  /// refused instead of followed.
-  static String _validatedLeafName(
-    ZipDirectoryEntry header,
-    Map<String, Uint8List> seen,
-  ) {
-    final rawName = header.name;
-    if (!_isRegularFile(header)) {
-      throw BoundedExtractionException(
-        "Archive contains a directory entry: '$rawName'",
-      );
-    }
-
-    // Reduce to leaf; strip any directory component (zip-slip defence).
-    final leaf = rawName.split('/').last.split(r'\').last;
-    if (leaf.trim().isEmpty) {
-      throw BoundedExtractionException(
-        "Archive entry has an empty filename: '$rawName'",
-      );
-    }
-    if (leaf.contains('/') || leaf.contains(r'\') || leaf.contains('\u0000')) {
-      throw BoundedExtractionException(
-        "Archive entry has an unsafe filename: '$rawName'",
-      );
-    }
-    if (seen.containsKey(leaf)) {
-      throw BoundedExtractionException(
-        "Archive has duplicate entry name: '$leaf'",
-      );
-    }
-    return leaf;
-  }
-
-  /// Same classification `ZipDecoder.decodeBuffer` applies: for UNIX-made
-  /// entries (`versionMadeBy` high byte 3) the file type lives in the high
-  /// 16 bits of the external attributes; anything but "regular" (0x8000) or
-  /// "unspecified" (0x0000) is not a plain file. For other hosts only a
-  /// trailing slash marks a directory.
-  static bool _isRegularFile(ZipDirectoryEntry header) {
-    if (header.name.endsWith('/')) return false;
-    if ((header.versionMadeBy >> 8) == 3) {
-      final mode = header.externalAttributes >> 16;
-      final fileType = mode & 0xF000;
-      return fileType == 0x8000 || fileType == 0x0000;
-    }
-    return true;
   }
 
   /// Streams a raw-deflate body through the pure-Dart inflater into a sink

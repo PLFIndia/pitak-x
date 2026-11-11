@@ -37,6 +37,16 @@
 /// beyond the file.)
 ///
 /// Pure Dart: bytes in, numbers and views out. No `dart:io`.
+///
+/// PARTS OF A FILE (BR5). The three readers below do not need the whole
+/// file. The end record is found in the last bytes, the directory is one
+/// block, and an entry header is 30 bytes. So each reader also works on a
+/// part of the file when it is told where that part starts
+/// (`offsetInFile`), or is given a function that fetches bytes ([ZipRead]).
+/// The reader that holds the whole file in memory passes the file and 0;
+/// the reader that works from a file on disk passes what it has read. Both
+/// run the SAME code here, so they cannot give different verdicts on the
+/// container.
 library;
 
 import 'dart:convert';
@@ -135,8 +145,24 @@ final class ZipDirectoryEntry {
 /// still be whole (it carries its own end mark); a stored entry is not.
 typedef ZipBodyRange = ({Uint8List bytes, bool complete});
 
-/// Reads the structure of a ZIP file held in memory.
+/// Where an entry's content lies, as numbers: it starts at `start` of the
+/// file and `length` bytes of it are inside the file. `complete` as for
+/// [ZipBodyRange]: false when the declared compressed size points beyond
+/// the end of the file, and `length` then ends at the end of the file.
+typedef ZipContentRange = ({int start, int length, bool complete});
+
+/// Hands out `length` bytes at `offset` of the file. [ZipContainer] asks
+/// only for ranges it has checked to lie inside the file.
+typedef ZipRead = Uint8List Function(int offset, int length);
+
+/// Reads the structure of a ZIP file: from memory, or part by part.
 abstract final class ZipContainer {
+  /// How many bytes at the END of a file can hold the end record: the
+  /// record itself and the longest comment it may carry. A reader that does
+  /// not hold the whole file reads this many (or the whole file, if it is
+  /// shorter) and hands them to [locateEndRecord].
+  static const int endRecordSearchLength = _endFixedLength + _maxCommentLength;
+
   static const int _endSignature = 0x06054b50;
   static const int _endFixedLength = 22;
   static const int _maxCommentLength = 0xFFFF;
@@ -160,7 +186,11 @@ abstract final class ZipContainer {
   /// Searches backwards within the last 64 KiB + 22 bytes (the longest
   /// possible comment plus the record) and takes the first hit whose comment
   /// fits the remaining bytes (adapted from Go's `findSignatureInBlock`).
-  static ZipEndRecord locateEndRecord(Uint8List bytes) {
+  ///
+  /// [bytes] is the whole file, or its last [endRecordSearchLength] bytes
+  /// with [offsetInFile] saying where in the file they start. The search
+  /// never looks further back than that, so both give the same answer.
+  static ZipEndRecord locateEndRecord(Uint8List bytes, {int offsetInFile = 0}) {
     if (bytes.length < _endFixedLength) {
       throw const ZipContainerException('file is too small to be an archive');
     }
@@ -186,7 +216,7 @@ abstract final class ZipContainer {
         }
       }
       return ZipEndRecord._(
-        recordOffset: i,
+        recordOffset: offsetInFile + i,
         entryCount: data.getUint16(i + 10, Endian.little),
         centralDirectorySize: data.getUint32(i + 12, Endian.little),
         centralDirectoryOffset: data.getUint32(i + 16, Endian.little),
@@ -204,12 +234,16 @@ abstract final class ZipContainer {
   /// end record says has NO entries, and junk after the last record is
   /// ignored), and the end record's entry count is not compared with the
   /// number of records found. The caller counts for itself.
+  ///
+  /// [bytes] is the whole file, or a part of it that holds the whole
+  /// directory, with [offsetInFile] saying where in the file it starts.
   static Iterable<ZipDirectoryEntry> directory(
     Uint8List bytes,
-    ZipEndRecord end,
-  ) sync* {
+    ZipEndRecord end, {
+    int offsetInFile = 0,
+  }) sync* {
     final data = ByteData.sublistView(bytes);
-    var position = end.centralDirectoryOffset;
+    var position = end.centralDirectoryOffset - offsetInFile;
     final stop = position + end.centralDirectorySize;
     while (position < stop) {
       if (stop - position < 4) {
@@ -308,23 +342,51 @@ abstract final class ZipContainer {
     }
   }
 
-  /// Where the content of [entry] lies, found through the entry header in
-  /// front of it. Only the header's signature, its flags and its two
-  /// lengths are used; every other value comes from the directory (adapted
-  /// from Go's `findBodyOffset`).
+  /// The content of [entry] as a view into [bytes], the whole file in
+  /// memory. The rules are those of [contentRange].
+  static ZipBodyRange body(Uint8List bytes, ZipDirectoryEntry entry) {
+    final range = contentRange(
+      entry,
+      fileLength: bytes.length,
+      read: (offset, length) =>
+          Uint8List.sublistView(bytes, offset, offset + length),
+    );
+    return (
+      bytes: Uint8List.sublistView(
+        bytes,
+        range.start,
+        range.start + range.length,
+      ),
+      complete: range.complete,
+    );
+  }
+
+  /// Where the content of [entry] lies in a file of [fileLength] bytes,
+  /// found through the entry header in front of it. Only the header's
+  /// signature, its flags and its two lengths are used; every other value
+  /// comes from the directory (adapted from Go's `findBodyOffset`).
+  ///
+  /// [read] fetches bytes of the file. It is asked for the 30 bytes of the
+  /// entry header and, when the header announces a data descriptor, for
+  /// the four bytes behind the declared content; both only after the range
+  /// was checked to lie inside the file.
   ///
   /// Throws [ZipContainerException] when no entry header is where the
   /// directory says, or when the content would start beyond the file.
-  static ZipBodyRange body(Uint8List bytes, ZipDirectoryEntry entry) {
+  static ZipContentRange contentRange(
+    ZipDirectoryEntry entry, {
+    required int fileLength,
+    required ZipRead read,
+  }) {
     final offset = entry.localHeaderOffset;
-    if (offset < 0 || offset > bytes.length - _entryFixedLength) {
+    if (offset < 0 || offset > fileLength - _entryFixedLength) {
       throw const ZipContainerException('entry header lies outside the file');
     }
-    final data = ByteData.sublistView(bytes);
-    if (data.getUint32(offset, Endian.little) != _entrySignature) {
+    final data = ByteData.sublistView(read(offset, _entryFixedLength));
+    if (data.getUint32(0, Endian.little) != _entrySignature) {
       throw const ZipContainerException('entry header has a wrong signature');
     }
-    final flags = data.getUint16(offset + 6, Endian.little);
+    final flags = data.getUint16(6, Endian.little);
     // STRICTER than the released reader, which looked at the directory's
     // flag only. An entry whose two headers disagree about encryption is
     // not one of ours.
@@ -334,15 +396,15 @@ abstract final class ZipContainer {
     final start =
         offset +
         _entryFixedLength +
-        data.getUint16(offset + 26, Endian.little) +
-        data.getUint16(offset + 28, Endian.little);
-    if (start > bytes.length) {
+        data.getUint16(26, Endian.little) +
+        data.getUint16(28, Endian.little);
+    if (start > fileLength) {
       throw const ZipContainerException('entry content lies outside the file');
     }
     // Compared by subtraction ON PURPOSE: a declared size can be any 64-bit
     // number, and `start + size` could overflow. Sizes are never negative
     // here (`directory` refuses a negative zip64 value).
-    final available = bytes.length - start;
+    final available = fileLength - start;
     final complete = entry.compressedSize <= available;
 
     // An entry header that announces a data descriptor (a streaming writer
@@ -354,20 +416,19 @@ abstract final class ZipContainer {
       if (behind < 12) {
         throw const ZipContainerException('data descriptor is missing');
       }
+      final behindContent = ByteData.sublistView(
+        read(start + entry.compressedSize, 4),
+      );
       final signed =
-          data.getUint32(start + entry.compressedSize, Endian.little) ==
-          _descriptorSignature;
+          behindContent.getUint32(0, Endian.little) == _descriptorSignature;
       if (signed && behind < 16) {
         throw const ZipContainerException('data descriptor is missing');
       }
     }
 
     return (
-      bytes: Uint8List.sublistView(
-        bytes,
-        start,
-        complete ? start + entry.compressedSize : bytes.length,
-      ),
+      start: start,
+      length: complete ? entry.compressedSize : available,
       complete: complete,
     );
   }
