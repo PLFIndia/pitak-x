@@ -269,3 +269,21 @@ jobs:
             exit 1
           fi
           echo "positive control OK: the play flavor resolves Google code, so the fdroid check is live."
+      # Android unit tests (JUnit, `android/app/src/test/kotlin`): the app's
+      # own native code — the bounded copy and the channel of the document
+      # picker, and the wiping of the biometric vault secret. Until
+      # 2026-11 no job ran them, so they guarded nothing unless someone
+      # remembered to run Gradle by hand.
+      #
+      # Why in THIS job: it already has what the tests need (Flutter, the
+      # resolved packages and the generated Gradle wrapper). Both flavors
+      # are run because both compile `src/main`. The debug variant is the
+      # cheap one: it builds the Dart side without ahead-of-time compiling.
+      # No Rust cross-compile was seen for these tasks in a local run.
+      #
+      # LAST on purpose (same rule as the golden step above): a failing step
+      # skips everything after it, and a failing unit test must never hide
+      # the result of the purity gate.
+      - name: Android unit tests (both flavors)
+        working-directory: android
+        run: ./gradlew :app:testFdroidDebugUnitTest :app:testPlayDebugUnitTest

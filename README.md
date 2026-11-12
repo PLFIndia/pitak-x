@@ -321,6 +321,7 @@ fvm flutter test --coverage --exclude-tags golden
 ( cd rust && cargo clippy --all-targets -- -D warnings )  # lints as errors
 ( cd rust && cargo deny check )                # advisories + licenses + bans + sources
 ( cd rust && cargo test --release )            # native crate tests (2 #[ignore]d — need a real vault via PITAK_* env)
+( cd android && ./gradlew :app:testFdroidDebugUnitTest :app:testPlayDebugUnitTest )  # Android unit tests (JUnit); needs the network, `--offline` fails
 ```
 
 These are the main local checks; the build-runner/diff pair is also what
