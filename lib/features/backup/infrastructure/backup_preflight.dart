@@ -19,10 +19,10 @@ import 'dart:typed_data';
 
 import 'package:pitaka/features/backup/domain/backup_limits.dart';
 import 'package:pitaka/features/backup/domain/backup_overflow.dart';
+import 'package:pitaka/features/backup/domain/cover_item_titles.dart';
 import 'package:pitaka/features/backup/infrastructure/backup_entry_bounds.dart';
 import 'package:pitaka/features/backup/infrastructure/restore_covers_builder.dart'
     show coverEntryPrefix;
-import 'package:pitaka/features/import_export/domain/cover_paths.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
 import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
@@ -65,25 +65,17 @@ CoverSelection selectBackupCovers({
       kept.add(file);
     }
   }
-  if (tooLarge.isEmpty) return (kept: kept, leftOutTitles: const []);
-
-  // `CoverPaths.leafOf` is the app's one rule for "which file does this
-  // cover reference name"; a remote or unsafe reference names none.
-  bool pictureLeftOut(String? coverUrl) {
-    final leaf = CoverPaths.leafOf(coverUrl);
-    return leaf != null && tooLarge.contains(leaf);
-  }
-
+  // The rule "which items show one of these pictures" is shared with the
+  // restore side (`cover_item_titles.dart`), so the two notes cannot name
+  // different items for the same picture.
   return (
     kept: kept,
-    leftOutTitles: [
-      for (final book in books)
-        if (pictureLeftOut(book.coverUrl)) book.title,
-      for (final wish in wishlist)
-        if (pictureLeftOut(wish.coverUrl)) wish.title,
-      for (final periodical in periodicals)
-        if (pictureLeftOut(periodical.coverUrl)) periodical.title,
-    ],
+    leftOutTitles: titlesOfItemsWithCover(
+      coverLeaves: tooLarge,
+      books: books,
+      wishlist: wishlist,
+      periodicals: periodicals,
+    ),
   );
 }
 
