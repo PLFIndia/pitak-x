@@ -124,7 +124,10 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
         // Same one-shot pattern (backup rework BR4): remove what a backup
         // left in the app's temporary folder when the app was killed in
         // the middle of it. That file is a plain copy of the whole library.
-        ..listen(staleBackupWorkSweepProvider, (_, _) {});
+        ..listen(staleBackupWorkSweepProvider, (_, _) {})
+        // And the same for a restore (backup rework BR6): the private copy
+        // of a chosen backup file, and the databases unpacked from it.
+        ..listen(staleRestoreFilesSweepProvider, (_, _) {});
     }
 
     return Scaffold(

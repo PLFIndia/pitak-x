@@ -181,7 +181,7 @@ lib/
                           private copy under a size cap) with
                           channel_document_picker.dart (Android side:
                           PickedDocumentChannel.kt; elsewhere "not available";
-                          no page uses it before the restore rework's next stage)
+                          the Restore page chooses its backup file with it)
     security/             hardened_secure_storage.dart — the ONE hardened
                           flutter_secure_storage configuration
     storage/              data_generations.dart (atomic restore), run_folders.dart
@@ -214,6 +214,7 @@ lib/
                           Refresh/discovery, membership, native catalogue/events
                           viewers (ADR 0015/0016), consent-gated images/OSM map
     backup/               .pitabak writer (worker isolate) + all-or-nothing restore
+                          (reads its file in worker isolates, one entry at a time)
     import_export/        JSON/CSV/PDF export, Goodreads import, merge UI
     settings/             Appearance · Data · Security (SettingsPage.initialTab)
     app_update/           Play-only flexible updates; inert on F-Droid
@@ -454,8 +455,10 @@ to false** (the `hasX` forward-compat pattern):
   backup that is `backupEntryRule`: a cover or an additive JSON entry above
   its cap is left out, the manifest, a database or the key blob above its
   cap refuses the backup, and an unknown name is ignored and never
-  unpacked. Nothing calls this reader yet: restore moves to it in BR6.
-  Until the first reader is removed, the tests ask every case of both. W2
+  unpacked. A restore reads its backup with this reader (see "A restore
+  reads its backup from a file" below); import and merge still use the
+  first one. Until the first reader is removed, the tests ask every case
+  of both. W2
   `item_kinds.json` / `periodicals.json` entries are capped at 4 MiB of UTF-8
   bytes and 100,000 rows in each `kinds`, `periodicals`, or `issues`
   collection (the codec constants are authoritative; equality is accepted).
@@ -515,6 +518,71 @@ to false** (the `hasX` forward-compat pattern):
   private work folder is removed by the same code. On Android the share
   plugin offers its own copy of the file, which it removes at the next
   share.
+- A restore reads its backup from a **file**, in worker isolates, one
+  entry at a time (review finding P3-B3). The Restore page chooses the file
+  through the app's own picker (`DocumentPicker`, `core/platform`), which
+  hands back a private copy that is never larger than the archive cap of
+  `BackupLimits`; no code of the restore holds the backup in memory.
+  `RestoreBackup` then runs two workers with `Isolate.run`, each of which
+  opens the copy under the same rules (`openBackupArchive`:
+  `ZipLimits.forBackup` and `backupEntryRule`):
+  1. `readRestoreArchive` (`restore_archive_reader.dart`) takes the
+     manifest, then only what the manifest announces: the small text
+     entries into memory, each under its own cap, and the three databases
+     with `writeTo` into a fresh work folder under three fixed names. Of
+     the covers it only lists the names: those it will write and those
+     above their cap. An inspection (the look before the passphrase is
+     asked) takes the manifest, `identity.json` and `publish_state.json`
+     and stages nothing.
+  2. After the vault unlock, the catalogue read and the catalogue write
+     (all on the calling isolate, so a wrong passphrase or a refused row is
+     found before any cover is written), `buildRestoredCovers`
+     (`restore_covers_builder.dart`) lists the covers again, refuses when
+     the list is not the one the first look made (the file changed), and
+     unpacks each cover with `writeTo` straight into the covers folder of
+     the generation being built. A backup without covers has the phone's
+     own covers copied there instead, by the same worker.
+  A name the app does not write is never unpacked, which includes
+  `books.db-wal` and its kind. A worker hands back plain data only: a
+  refusal as its text (`BackupCorruptFailure` is made on the calling
+  isolate), trouble with the disk as a code (`RestoreDiskTrouble`); a
+  backup file that can no longer be read gives "The backup file could not
+  be read. Please choose it again." A damaged entry is found when it is
+  unpacked: an inspection can therefore succeed on a file whose restore
+  then fails, with nothing changed.
+- A cover above its cap inside a backup does not fail the restore: it is
+  left out, everything else is restored, and `RestoreSummary`
+  (`coverPicturesLeftOut`) names the restored items that refer to it, by
+  the same rule and with the same note as the backup page
+  (`titlesOfItemsWithCover`, `LeftOutCoversNote`). The publishing record
+  keeps a local cover source only for the covers that were written.
+- Where a restore keeps its files and who removes them. The picked copy
+  lies in `<temp>/picked_documents/pick-<random>/document`. It has one
+  owner at a time (`RestoreController`'s library doc has the table): the
+  page from the pick on, the controller while a restore reads it, the page
+  again after a restore that failed, so a wrong passphrase can be typed
+  again without choosing the file again. It is removed
+  (`DocumentPicker.discard`) after a restore that succeeded, when another
+  file is chosen, when the file turns out not to be a backup, and when the
+  page is left; a copy released during a restore is removed when that
+  restore has ended. The staged databases lie in
+  `<temp>/restore_work/run-<random>/` (`restoreWorkFolders`, a
+  `RunFolders`), made at the start of a restore and removed at its end on
+  every way out. A sweep once per app start (`staleRestoreFilesSweep`,
+  started by the Library screen) and before every restore removes what a
+  killed app left, including the `<Documents>/restore_work` folder of
+  older versions. The picker counts the picks that are on their way: a
+  sweep does nothing while there is one, and a pick lets a running sweep
+  finish first, so a sweep can never delete the folder a copy is being
+  written into. Nothing of a restore is written under Documents any more
+  except the new data generation itself.
+- Progress while a restore runs (review finding P4-M7, the restore part).
+  The covers worker counts every cover it writes and reports through the
+  port and the rule of the backup (`backup_progress_port.dart`).
+  `RestoreController` puts the latest count into `RestoreProgress`, a
+  notifier of its own that outlives the page as the controller does, and
+  clears it when a restore starts and ends. The page shows "Cover 1,234 of
+  9,000" under its button. There is no Cancel.
 - Progress while a backup is built (review finding P4-M7, the backup part
   only). `packBackupZip` counts every cover it has written. In the worker,
   `BackupProgressReporter` passes on at most ten counts a second and always

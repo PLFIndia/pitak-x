@@ -11,7 +11,9 @@ import 'package:pitaka/core/crypto/secret_bytes.dart';
 import 'package:pitaka/core/database/app_database.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/core/storage/data_generations.dart';
+import 'package:pitaka/core/storage/run_folders.dart';
 import 'package:pitaka/features/backup/infrastructure/restore_backup.dart';
+import 'package:pitaka/features/backup/infrastructure/restore_legacy_read.dart';
 import 'package:pitaka/features/library/domain/catalogue_replacement_guard.dart';
 import 'package:pitaka/features/vault/domain/entities/borrower.dart';
 import 'package:pitaka/features/vault/domain/entities/vault_data.dart';
@@ -19,6 +21,7 @@ import 'package:pitaka/features/vault/domain/repositories/vault_repository.dart'
 import 'package:pitaka/features/vault/infrastructure/vault_store.dart';
 import 'package:sqlite3/sqlite3.dart';
 
+import '../import_export/hostile_zip_builder.dart';
 import '../library/replacement_test_guard.dart';
 import '../vault/vault_repository_write_stub.dart';
 
@@ -72,7 +75,19 @@ void main() {
   late AppDatabase live;
   late VaultStore liveStore;
   late _FaultyCatalogueFactory catalogues;
+  late RunFolders workFolders;
   final switched = <DataGeneration>[];
+
+  /// Where a restore stages its databases (BR6): one `run-…` folder per
+  /// restore, gone again on every way out.
+  String workRoot() => p.join(docs.path, 'tmp', 'restore_work');
+
+  /// The run folders that exist right now.
+  List<String> runFolders() {
+    final root = Directory(workRoot());
+    if (!root.existsSync()) return const [];
+    return [for (final entity in root.listSync()) p.basename(entity.path)];
+  }
 
   setUp(() {
     docs = Directory.systemTemp.createTempSync('atomic_restore_test');
@@ -81,6 +96,7 @@ void main() {
     live = AppDatabase(NativeDatabase(File(active.catalogueDbPath)));
     liveStore = VaultStore(baseDir: active.vaultDir);
     catalogues = _FaultyCatalogueFactory();
+    workFolders = RunFolders(rootPath: workRoot(), prefix: 'run');
     switched.clear();
   });
 
@@ -98,6 +114,7 @@ void main() {
     VaultRepository? vault,
     CatalogueReplacementGuard? guard,
     Future<DataGeneration> Function(DataGeneration)? activate,
+    LegacyDbOpener? openLegacyDb,
   }) => RestoreBackup(
     vault: vault ?? _FakeVault(right(VaultData.empty)),
     generations: generations,
@@ -110,7 +127,9 @@ void main() {
           return now;
         },
     openCatalogue: catalogues.open,
-    workDir: p.join(docs.path, 'restore_work'),
+    openLegacyDb:
+        openLegacyDb ?? (path) => sqlite3.open(path, mode: OpenMode.readOnly),
+    workFolders: workFolders,
     replacementGuard: guard ?? FakeReplacementGuard(),
   );
 
@@ -163,10 +182,23 @@ void main() {
     return File(path).readAsBytesSync();
   }
 
-  Uint8List zip(Map<String, List<int>> entries) {
+  var archives = 0;
+
+  /// Writes [bytes] as a backup FILE and returns its path. BR6: a restore
+  /// reads the backup from a file, the private copy the app's picker made.
+  String file(List<int> bytes) {
+    final folder = Directory(p.join(docs.path, 'tmp', 'chosen'))
+      ..createSync(recursive: true);
+    final path = p.join(folder.path, 'archive-${archives++}');
+    File(path).writeAsBytesSync(bytes);
+    return path;
+  }
+
+  /// A backup file with [entries], packed as an honest writer packs them.
+  String zip(Map<String, List<int>> entries) {
     final a = Archive();
     entries.forEach((k, v) => a.addFile(ArchiveFile(k, v.length, v)));
-    return Uint8List.fromList(ZipEncoder().encode(a));
+    return file(ZipEncoder().encode(a));
   }
 
   List<int> manifest({bool vault = false, bool covers = false}) => utf8.encode(
@@ -181,14 +213,14 @@ void main() {
     }),
   );
 
-  Uint8List vaultFreeArchive({bool covers = false, String? coverRef}) => zip({
+  String vaultFreeArchive({bool covers = false, String? coverRef}) => zip({
     'manifest.json': manifest(covers: covers),
     'books.db': booksDb(cover: coverRef),
     'wishlist.db': wishlistDb(),
     if (covers) 'cover_new.jpg': [8, 8, 8],
   });
 
-  Uint8List vaultArchive() => zip({
+  String vaultArchive() => zip({
     'manifest.json': manifest(vault: true),
     'books.db': booksDb(),
     'wishlist.db': wishlistDb(),
@@ -244,7 +276,7 @@ void main() {
       p.join(docs.path, 'data'),
     ).listSync().whereType<Directory>().map((d) => p.basename(d.path)).toList();
     expect(dirs, [active.name]);
-    expect(Directory(p.join(docs.path, 'restore_work')).existsSync(), isFalse);
+    expect(runFolders(), isEmpty, reason: 'no run folder is left');
   }
 
   group('success: everything moves together', () {
@@ -252,10 +284,7 @@ void main() {
         'and the old generation is gone', () async {
       await seedDevice();
       final result = await restorer().restore(
-        archiveBytes: vaultFreeArchive(
-          covers: true,
-          coverRef: 'covers/new.jpg',
-        ),
+        archivePath: vaultFreeArchive(covers: true, coverRef: 'covers/new.jpg'),
       );
 
       final summary = result.getOrElse((f) => fail('unexpected: $f'));
@@ -286,10 +315,7 @@ void main() {
         8,
       ]);
       expect(File(p.join(now.coversDir, 'old.jpg')).existsSync(), isFalse);
-      expect(
-        Directory(p.join(docs.path, 'restore_work')).existsSync(),
-        isFalse,
-      );
+      expect(runFolders(), isEmpty, reason: 'no run folder is left');
     });
 
     test('a vault-bearing restore installs the archive vault pair in the new '
@@ -306,7 +332,7 @@ void main() {
       final p1 = pass();
       final result = await restorer(
         vault: vault,
-      ).restore(archiveBytes: vaultArchive(), passphrase: p1);
+      ).restore(archivePath: vaultArchive(), passphrase: p1);
       p1.dispose();
 
       final summary = result.getOrElse((f) => fail('unexpected: $f'));
@@ -326,7 +352,7 @@ void main() {
       await seedDevice(withVault: true);
       final result = await restorer(
         guard: FakeReplacementGuard(loanIds: {}),
-      ).restore(archiveBytes: vaultFreeArchive());
+      ).restore(archivePath: vaultFreeArchive());
 
       final summary = result.getOrElse((f) => fail('unexpected: $f'));
       expect(summary.existingVaultKept, isTrue);
@@ -341,7 +367,7 @@ void main() {
         'be referenced by restored rows)', () async {
       await seedDevice();
       final result = await restorer().restore(
-        archiveBytes: vaultFreeArchive(coverRef: 'covers/old.jpg'),
+        archivePath: vaultFreeArchive(coverRef: 'covers/old.jpg'),
       );
 
       expect(result.isRight(), isTrue);
@@ -357,12 +383,12 @@ void main() {
       await seedDevice();
       final r = restorer();
       expect(
-        (await r.restore(archiveBytes: vaultFreeArchive())).isRight(),
+        (await r.restore(archivePath: vaultFreeArchive())).isRight(),
         isTrue,
       );
       active = switched.last; // as the provider would republish
       expect(
-        (await r.restore(archiveBytes: vaultFreeArchive())).isRight(),
+        (await r.restore(archivePath: vaultFreeArchive())).isRight(),
         isTrue,
       );
       expect(switched.map((g) => g.name).toList(), [
@@ -379,7 +405,7 @@ void main() {
       final p1 = pass();
       final result = await restorer(
         vault: _FakeVault(left(const WrongPassphraseFailure())),
-      ).restore(archiveBytes: vaultArchive(), passphrase: p1);
+      ).restore(archivePath: vaultArchive(), passphrase: p1);
       p1.dispose();
 
       expect(result.getLeft().toNullable(), isA<WrongPassphraseFailure>());
@@ -392,7 +418,7 @@ void main() {
         guard: FakeReplacementGuard(
           failure: const ValidationFailure('Unlock the vault first.'),
         ),
-      ).restore(archiveBytes: vaultFreeArchive());
+      ).restore(archivePath: vaultFreeArchive());
 
       expect(result.getLeft().toNullable(), isA<ValidationFailure>());
       await expectUnchanged(withVault: true);
@@ -401,7 +427,7 @@ void main() {
     test('FTS rebuild failure inside the new catalogue', () async {
       await seedDevice();
       catalogues.failRebuild = true;
-      final result = await restorer().restore(archiveBytes: vaultFreeArchive());
+      final result = await restorer().restore(archivePath: vaultFreeArchive());
 
       expect(result.getLeft().toNullable(), isA<StorageFailure>());
       await expectUnchanged();
@@ -415,7 +441,7 @@ void main() {
         catalogues.afterRebuild = () async => guard.current = false;
         final result = await restorer(
           guard: guard,
-        ).restore(archiveBytes: vaultFreeArchive());
+        ).restore(archivePath: vaultFreeArchive());
 
         expect(result.getLeft().toNullable(), isA<ValidationFailure>());
         await expectUnchanged();
@@ -425,7 +451,7 @@ void main() {
     test('corrupt legacy books.db', () async {
       await seedDevice();
       final result = await restorer().restore(
-        archiveBytes: zip({
+        archivePath: zip({
           'manifest.json': manifest(),
           'books.db': [0, 1, 2, 3],
           'wishlist.db': wishlistDb(),
@@ -448,7 +474,7 @@ void main() {
       };
       final result = await restorer(
         activate: (g) async => fail('must not switch'),
-      ).restore(archiveBytes: vaultFreeArchive(covers: true));
+      ).restore(archivePath: vaultFreeArchive(covers: true));
 
       expect(result.getLeft().toNullable(), isA<StorageFailure>());
       await expectUnchanged();
@@ -458,7 +484,7 @@ void main() {
       await seedDevice();
       final result = await restorer(
         activate: (g) async => throw const FileSystemException('disk full'),
-      ).restore(archiveBytes: vaultFreeArchive());
+      ).restore(archivePath: vaultFreeArchive());
 
       expect(result.getLeft().toNullable(), isA<StorageFailure>());
       await expectUnchanged();
@@ -468,7 +494,7 @@ void main() {
       await seedDevice(withVault: true);
       final p1 = pass();
       final result = await restorer().restore(
-        archiveBytes: zip({
+        archivePath: zip({
           'manifest.json': manifest(vault: true),
           'books.db': booksDb(),
           'wishlist.db': wishlistDb(),
@@ -483,6 +509,229 @@ void main() {
     });
   });
 
+  // BR6: the backup is read from a file by two workers, with the catalogue
+  // work in between. Each fault here hits one of the new seams.
+  group('BR6 — fault injection in the streamed restore', () {
+    /// A backup FILE written by hand, so an entry can lie.
+    String hostileFile(List<HostileEntry> entries) =>
+        file(buildHostileZip(entries));
+
+    /// The generation folders on disk, as the failed restore left them.
+    /// Looked at BEFORE `expectUnchanged`, whose first step opens the
+    /// generations the way an app start does and would tidy up itself.
+    List<String> generationFolders() => Directory(
+      p.join(docs.path, 'data'),
+    ).listSync().whereType<Directory>().map((d) => p.basename(d.path)).toList();
+
+    List<HostileEntry> honestParts({bool covers = true}) => [
+      HostileEntry('manifest.json', manifest(covers: covers)),
+      HostileEntry('books.db', booksDb()),
+      HostileEntry('wishlist.db', wishlistDb()),
+    ];
+
+    test('a bad checksum on the LAST cover: nothing is switched, and the '
+        'file itself is untouched', () async {
+      await seedDevice();
+      final archive = hostileFile([
+        ...honestParts(),
+        HostileEntry('cover_first.jpg', const [1, 2, 3]),
+        HostileEntry('cover_second.jpg', const [4, 5, 6]),
+        HostileEntry('cover_last.jpg', const [
+          7,
+          8,
+          9,
+        ], declaredCrc32: 0x12345678),
+      ]);
+      final before = File(archive).readAsBytesSync();
+
+      final result = await restorer(
+        activate: (g) async => fail('must not switch'),
+      ).restore(archivePath: archive);
+
+      expect(result.getLeft().toNullable(), isA<BackupCorruptFailure>());
+      expect(generationFolders(), [active.name], reason: 'no builder left');
+      await expectUnchanged();
+      expect(File(archive).readAsBytesSync(), before);
+    });
+
+    test('a cover whose file is already in the new folder is never '
+        'replaced: the restore fails closed', () async {
+      await seedDevice();
+      // After the catalogue copy, before the covers step: something put a
+      // file where a cover is about to be written.
+      catalogues.afterRebuild = () async {
+        final covers = Directory(
+          p.join(docs.path, 'data', 'gen-000002', 'covers'),
+        )..createSync(recursive: true);
+        File(p.join(covers.path, 'new.jpg')).writeAsBytesSync([0]);
+      };
+
+      final result = await restorer(
+        activate: (g) async => fail('must not switch'),
+      ).restore(archivePath: vaultFreeArchive(covers: true));
+
+      expect(result.getLeft().toNullable(), isA<StorageFailure>());
+      expect(generationFolders(), [active.name], reason: 'no builder left');
+      await expectUnchanged();
+    });
+
+    test(
+      'the file is replaced by another backup between the two looks: '
+      'the covers no longer fit the first look, nothing is switched',
+      () async {
+        await seedDevice();
+        final archive = vaultFreeArchive(covers: true);
+        // A different, perfectly valid backup: one cover more.
+        final other = File(
+          zip({
+            'manifest.json': manifest(covers: true),
+            'books.db': booksDb(id: 8, uid: 'uid-8'),
+            'wishlist.db': wishlistDb(),
+            'cover_new.jpg': [8, 8, 8],
+            'cover_extra.jpg': [9, 9, 9],
+          }),
+        ).readAsBytesSync();
+        var swapped = false;
+
+        final result = await restorer(
+          activate: (g) async => fail('must not switch'),
+          // The databases are read between the first look and the covers.
+          openLegacyDb: (path) {
+            if (!swapped) {
+              swapped = true;
+              File(archive).writeAsBytesSync(other);
+            }
+            return sqlite3.open(path, mode: OpenMode.readOnly);
+          },
+        ).restore(archivePath: archive);
+
+        expect(swapped, isTrue);
+        expect(result.getLeft().toNullable(), isA<BackupCorruptFailure>());
+        expect(generationFolders(), [active.name], reason: 'no builder left');
+        await expectUnchanged();
+      },
+    );
+
+    test('the file is taken away between the two looks: "choose it again", '
+        'nothing is switched', () async {
+      await seedDevice();
+      final archive = vaultFreeArchive(covers: true);
+
+      final result = await restorer(
+        activate: (g) async => fail('must not switch'),
+        openLegacyDb: (path) {
+          final chosen = File(archive);
+          if (chosen.existsSync()) chosen.deleteSync();
+          return sqlite3.open(path, mode: OpenMode.readOnly);
+        },
+      ).restore(archivePath: archive);
+
+      final failure = result.getLeft().toNullable();
+      expect(failure, isA<ValidationFailure>());
+      expect(
+        (failure! as ValidationFailure).message,
+        'The backup file could not be read. Please choose it again.',
+      );
+      expect(generationFolders(), [active.name], reason: 'no builder left');
+      await expectUnchanged();
+    });
+
+    test('a work folder that cannot be made: nothing is read, nothing is '
+        'switched', () async {
+      await seedDevice();
+      // A FILE where the folder of the run folders must be.
+      Directory(p.dirname(workRoot())).createSync(recursive: true);
+      File(workRoot()).writeAsBytesSync([0]);
+      final vault = _FakeVault(right(VaultData.empty));
+
+      final result = await restorer(
+        vault: vault,
+        activate: (g) async => fail('must not switch'),
+      ).restore(archivePath: vaultFreeArchive());
+
+      expect(result.getLeft().toNullable(), isA<StorageFailure>());
+      expect(vault.reads, 0);
+      await expectUnchanged();
+    });
+  });
+
+  group('BR6 — the cover count of a restore (D27)', () {
+    test('rises to the number of covers and ends on it; nothing arrives '
+        'after the restore has returned', () async {
+      await seedDevice();
+      final seen = <(int, int)>[];
+
+      final result = await restorer().restore(
+        archivePath: zip({
+          'manifest.json': manifest(covers: true),
+          'books.db': booksDb(),
+          'wishlist.db': wishlistDb(),
+          for (var i = 0; i < 5; i++) 'cover_c$i.jpg': [i, i, i],
+        }),
+        onProgress: (progress) =>
+            seen.add((progress.coversDone, progress.coversTotal)),
+      );
+
+      expect(result.isRight(), isTrue);
+      expect(seen, isNotEmpty);
+      expect(seen.first.$2, 5);
+      expect(seen.last, (5, 5));
+      // The count never goes backwards and never repeats.
+      final done = [for (final report in seen) report.$1];
+      expect(done, [...done]..sort());
+      expect(done.toSet(), hasLength(done.length));
+      final count = seen.length;
+      await pumpEventQueue();
+      expect(seen, hasLength(count), reason: 'the port is closed');
+    });
+
+    test('carrying the device covers over is counted the same way', () async {
+      await seedDevice(); // one cover on the device: old.jpg
+      final seen = <(int, int)>[];
+
+      final result = await restorer().restore(
+        archivePath: vaultFreeArchive(coverRef: 'covers/old.jpg'),
+        onProgress: (progress) =>
+            seen.add((progress.coversDone, progress.coversTotal)),
+      );
+
+      expect(result.isRight(), isTrue);
+      expect(seen.last, (1, 1));
+    });
+
+    test('a backup and a device without covers report nothing', () async {
+      final seen = <(int, int)>[];
+
+      final result = await restorer().restore(
+        archivePath: vaultFreeArchive(),
+        onProgress: (progress) =>
+            seen.add((progress.coversDone, progress.coversTotal)),
+      );
+      await pumpEventQueue();
+
+      expect(result.isRight(), isTrue);
+      expect(seen, isEmpty);
+    });
+
+    test('a restore that fails closes its port too: nothing arrives '
+        'later', () async {
+      await seedDevice();
+      final seen = <(int, int)>[];
+      catalogues.failRebuild = true;
+
+      final result = await restorer().restore(
+        archivePath: vaultFreeArchive(covers: true),
+        onProgress: (progress) =>
+            seen.add((progress.coversDone, progress.coversTotal)),
+      );
+      await pumpEventQueue();
+
+      expect(result.isLeft(), isTrue);
+      expect(seen, isEmpty, reason: 'the covers step was never reached');
+      await expectUnchanged();
+    });
+  });
+
   group('crash simulation: startup recovery', () {
     test('a fully built but never-switched generation is discarded at the '
         'next open and the old data is still active', () async {
@@ -490,7 +739,7 @@ void main() {
       // Build everything, then "crash" before the pointer rename.
       final result = await restorer(
         activate: (g) async => throw StateError('simulated crash'),
-      ).restore(archiveBytes: vaultFreeArchive());
+      ).restore(archivePath: vaultFreeArchive());
       expect(result.isLeft(), isTrue);
       // Even if discard had not run (a real crash), open() cleans up:
       final leftover = generations.beginNext(active);

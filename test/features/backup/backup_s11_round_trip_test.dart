@@ -184,10 +184,9 @@ void main() {
 
       final create = await h.container.read(createBackupUseCaseProvider.future);
       final backup = _unwrap(await create());
-      // BR4: the backup is a file now; the restore below still takes bytes.
-      final backupBytes = File(backup.path).readAsBytesSync();
-      expect(backupBytes, isNotEmpty);
-      expect(backup.sizeBytes, backupBytes.length);
+      // BR4: the backup is a file. BR6: the restore below reads that file.
+      expect(backup.sizeBytes, greaterThan(0));
+      expect(File(backup.path).lengthSync(), backup.sizeBytes);
 
       // Make restore prove its input came from the archive, not from surviving
       // live state. The changed live vault must also be replaced by the
@@ -200,10 +199,13 @@ void main() {
       var sawArchivedVault = false;
       h.vault.onRead = () async {
         sawArchivedVault = true;
+        // BR6: the staged copy lies in the one run folder of this restore,
+        // under the app's temporary folder.
+        final run = Directory(
+          '${h.directory.path}/app_temp/restore_work',
+        ).listSync().whereType<Directory>().single;
         expect(
-          File(
-            '${h.directory.path}/restore_work/borrowers.db',
-          ).readAsBytesSync(),
+          File('${run.path}/borrowers.db').readAsBytesSync(),
           originalVaultBytes,
         );
       };
@@ -211,7 +213,7 @@ void main() {
       final restorer = await h.container.read(restoreBackupProvider.future);
       final passphrase = ReplacementHarness.secret();
       final result = await restorer.restore(
-        archiveBytes: backupBytes,
+        archivePath: backup.path,
         passphrase: passphrase,
       );
       passphrase.dispose();

@@ -147,9 +147,16 @@ void main() {
   late ReplacementHarness h;
   late Uint8List archive;
 
+  /// A copy of the fixture for a restore to read (BR6: a restore reads its
+  /// backup from a file). A copy, so that no bug in a restore could ever
+  /// touch the tracked fixture itself.
+  late String archivePath;
+
   setUp(() {
     h = ReplacementHarness(generations: true);
-    archive = File('$_fixtureDir/released_1_9_7.backup').readAsBytesSync();
+    final fixture = File('$_fixtureDir/released_1_9_7.backup');
+    archive = fixture.readAsBytesSync();
+    archivePath = fixture.copySync('${h.directory.path}/chosen.backup').path;
   });
   tearDown(() => h.close());
 
@@ -202,7 +209,7 @@ void main() {
   test('inspection reads what the file declares, without restoring', () async {
     final restorer = await h.container.read(restoreBackupProvider.future);
 
-    final inspection = _unwrap(await restorer.inspectArchive(archive));
+    final inspection = _unwrap(await restorer.inspectArchive(archivePath));
 
     final manifest = inspection.manifest;
     expect(
@@ -254,7 +261,7 @@ void main() {
     final restorer = await h.container.read(restoreBackupProvider.future);
     final passphrase = ReplacementHarness.secret();
     final result = await restorer.restore(
-      archiveBytes: archive,
+      archivePath: archivePath,
       passphrase: passphrase,
     );
     passphrase.dispose();

@@ -166,7 +166,11 @@ class ReplacementHarness {
         if (generations && openCatalogue != null)
           restoreBackupProvider.overrideWith((ref) async {
             final real = await ref.watch(dataGenerationsProvider.future);
-            final dir = await ref.watch(appDocsDirProvider.future);
+            // BR6: the app's own scratch folders for a restore, under the
+            // harness's temporary folder.
+            final workFolders = await ref.watch(
+              restoreWorkFoldersProvider.future,
+            );
             return RestoreBackup(
               vault: vault,
               generations: real,
@@ -176,7 +180,7 @@ class ReplacementHarness {
                   .read(activeDataGenerationProvider.notifier)
                   .activate(generation),
               openCatalogue: openCatalogue,
-              workDir: '${dir.path}/restore_work',
+              workFolders: workFolders,
               replacementGuard: ref.read(
                 vaultSessionControllerProvider.notifier,
               ),

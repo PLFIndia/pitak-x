@@ -1,22 +1,45 @@
 /// UI-facing restore controller (application layer, AGENTS.md §4).
 ///
 /// A `@riverpod` AsyncNotifier the Restore screen drives: idle until `restore`
-/// is called with the chosen archive bytes and a `SecretBytes` passphrase. It
+/// is called with the chosen backup file and a `SecretBytes` passphrase. It
 /// runs `RestoreBackup` and maps the `Either<Failure, RestoreSummary>` to
 /// loading / data / error so the UI can render a safe message.
 ///
 /// Secret ownership (§6.1): this controller takes ownership of the passphrase
 /// and disposes it in a `finally` once the restore completes — success or
 /// failure — so the bytes never outlive the call.
+///
+/// THE CHOSEN FILE (backup rework BR6, decision D25): the backup is a
+/// private COPY the app's own picker made (`PickedDocument`), a plain
+/// duplicate of a whole library. It has one owner at a time, so that it is
+/// never left behind and never deleted while it is read:
+///
+///  - the picker answers "picked": the PAGE owns the copy;
+///  - a later pick answers anything but "cancelled": the page owns the new
+///    copy and releases the earlier one;
+///  - the inspection fails, or the page is left while no restore runs: the
+///    page releases the copy;
+///  - `restore` starts: THIS CONTROLLER owns the copy, which is in use;
+///  - the restore succeeds: the copy is discarded;
+///  - the restore fails and the page still holds the copy: it goes back to
+///    the page, kept for another try (a wrong passphrase is typed again
+///    without choosing the file again);
+///  - the restore fails and the page released the copy meanwhile: it is
+///    discarded;
+///  - `restore` is refused because one runs already: nothing changes;
+///  - the app is killed: the sweep at the next start removes the copy.
+///
+/// "Released" is [RestoreController.releaseArchive], which the page calls.
 library;
-
-import 'dart:typed_data';
 
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/crypto/secret_bytes.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/core/platform/document_picker.dart';
 import 'package:pitaka/features/backup/domain/archive_inspection.dart';
+import 'package:pitaka/features/backup/domain/backup_limits.dart';
+import 'package:pitaka/features/backup/domain/backup_progress.dart';
 import 'package:pitaka/features/backup/domain/restore_summary.dart';
 import 'package:pitaka/features/import_export/domain/cover_paths.dart';
 import 'package:pitaka/features/library/application/library_controller.dart';
@@ -30,6 +53,27 @@ import 'package:pitaka/features/wishlist/application/wishlist_controller.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 part 'restore_controller.g.dart';
+
+/// How many cover pictures the running restore has written, of how many
+/// (decision D27); null when no restore runs, and before its first cover.
+///
+/// A notifier of its own, next to the controller, because a restore
+/// outlives its page: a page that is reopened during a restore shows the
+/// count again. Only [RestoreController] sets it.
+///
+/// keepAlive (justified): for the same reason as the controller. The value
+/// is two whole numbers; it holds nothing secret.
+@Riverpod(keepAlive: true)
+class RestoreProgress extends _$RestoreProgress {
+  @override
+  BackupProgress? build() => null;
+
+  /// Shows [progress], or nothing when it is null.
+  // A method on purpose: a Riverpod notifier is changed through methods,
+  // and a setter here would need a getter that only repeats `state`.
+  // ignore: use_setters_to_change_properties
+  void show(BackupProgress? progress) => state = progress;
+}
 
 /// Drives a one-shot restore and surfaces its [RestoreSummary].
 ///
@@ -48,12 +92,23 @@ part 'restore_controller.g.dart';
 ///    session invalidation), so it happens even when the page is gone.
 ///
 /// keepAlive is safe here: the controller holds no secret (the passphrase is
-/// wiped in `restore`'s `finally`) and a [RestoreSummary] is only counts and
-/// outcome flags.
+/// wiped in `restore`'s `finally`). A [RestoreSummary] holds counts and
+/// outcome flags and some of the user's own catalogue data: the identity
+/// name, the saved-libraries rows, and the titles of the items whose cover
+/// picture was left out (D23). All of it is shown on the Restore screen
+/// only, never logged, and goes when a new file is chosen.
 @Riverpod(keepAlive: true)
 class RestoreController extends _$RestoreController {
   /// True while a restore runs — a second call is refused (N11).
   bool _running = false;
+
+  /// The copy of the backup the running restore reads; null when none runs.
+  PickedDocument? _archiveInUse;
+
+  /// True when the page gave [_archiveInUse] back while the restore was
+  /// still reading it: the copy is then removed when that restore ends,
+  /// however it ends.
+  bool _releaseWhenDone = false;
 
   /// True after this element was disposed (container teardown mid-run).
   bool _disposed = false;
@@ -75,41 +130,104 @@ class RestoreController extends _$RestoreController {
     state = const AsyncData(null);
   }
 
-  /// Inspects the archive WITHOUT restoring (N13): the Restore screen runs
-  /// this right after a file is picked so it can show what the backup
-  /// contains — including the identity it would adopt (§5.10) — and ask for
-  /// a passphrase only when the archive actually carries an encrypted vault.
-  Future<Either<Failure, ArchiveInspection>> inspectArchive(
-    Uint8List archiveBytes,
-  ) async {
-    final restorer = await ref.read(restoreBackupProvider.future);
-    return restorer.inspectArchive(archiveBytes);
+  /// Lets the user choose a backup file and answers with a private copy of
+  /// it, never larger than the largest backup the app reads.
+  ///
+  /// Never throws: every way a pick can end is one of the seven answers of
+  /// [DocumentPickResult]. The caller owns a picked copy (see the table in
+  /// the library doc) and gives it back with [releaseArchive].
+  Future<DocumentPickResult> pickArchive() async {
+    try {
+      final picker = await ref.read(documentPickerProvider.future);
+      // The cap is the one the restore's reader enforces again when it
+      // opens the copy; a larger file could never be a backup of this app.
+      return await picker.pickCopy(
+        maxBytes: BackupLimits.current.maxArchiveBytes,
+      );
+    } on Object {
+      // The picker itself never throws; resolving it might.
+      return const DocumentPickFailed();
+    }
   }
 
-  /// Restores [archiveBytes] using [passphrase]. Takes ownership of
-  /// [passphrase] and disposes it when done. State becomes loading, then either
+  /// "The page no longer wants this copy": removes the picked [archive].
+  ///
+  /// When a restore is reading that copy right now, it is NOT removed under
+  /// it: it goes when that restore has ended. Never throws, and may be
+  /// called twice.
+  Future<void> releaseArchive(PickedDocument archive) async {
+    if (_archiveInUse?.path == archive.path) {
+      _releaseWhenDone = true;
+      return;
+    }
+    await _discard(archive);
+  }
+
+  /// Removes the picked copy. Best-effort by design: a copy that cannot be
+  /// removed now is swept at the next app start.
+  Future<void> _discard(PickedDocument archive) async {
+    try {
+      final picker = await ref.read(documentPickerProvider.future);
+      await picker.discard(archive);
+    } on Object {
+      // Resolving the picker failed, or this controller is already
+      // disposed: the sweep at the next start removes the copy.
+    }
+  }
+
+  /// Passes the count of the running restore on to the page (D27).
+  void _showProgress(BackupProgress? progress) {
+    if (_disposed) return;
+    ref.read(restoreProgressProvider.notifier).show(progress);
+  }
+
+  /// Inspects the picked [archive] WITHOUT restoring (N13): the Restore
+  /// screen runs this right after a file is picked so it can show what the
+  /// backup contains — including the identity it would adopt (§5.10) — and
+  /// ask for a passphrase only when the archive actually carries an
+  /// encrypted vault.
+  Future<Either<Failure, ArchiveInspection>> inspectArchive(
+    PickedDocument archive,
+  ) async {
+    final restorer = await ref.read(restoreBackupProvider.future);
+    return restorer.inspectArchive(archive.path);
+  }
+
+  /// Restores the picked [archive] using [passphrase]. Takes ownership of
+  /// [passphrase] and disposes it when done, and owns [archive] while the
+  /// restore reads it (see the table in the library doc for what happens to
+  /// the copy afterwards). State becomes loading, then either
   /// `AsyncData(summary)` or `AsyncError(Failure)`.
   ///
   /// [passphrase] is null only for vault-free archives (N13); the restorer
   /// fails closed if a vault is present but no passphrase was supplied.
   Future<void> restore({
-    required Uint8List archiveBytes,
+    required PickedDocument archive,
     SecretBytes? passphrase,
   }) async {
     if (_running || _disposed) {
       // Refused — but the caller already handed over the secret, so wipe it
-      // anyway: ownership transfers at call time, never leaks (§6.1).
+      // anyway: ownership transfers at call time, never leaks (§6.1). The
+      // copy of the backup is NOT taken over: its owner stays who it was.
       passphrase?.dispose();
       return;
     }
     _running = true;
+    _archiveInUse = archive;
+    _releaseWhenDone = false;
+    // Whether the restore itself went through. Kept apart from `state`,
+    // which is not touched once this controller is disposed.
+    var succeeded = false;
     state = const AsyncLoading();
+    _showProgress(null);
     try {
       final restorer = await ref.read(restoreBackupProvider.future);
       final result = await restorer.restore(
-        archiveBytes: archiveBytes,
+        archivePath: archive.path,
         passphrase: passphrase,
+        onProgress: _showProgress,
       );
+      succeeded = result.isRight();
       if (!_disposed) {
         final Either<Failure, RestoreSummary> effective;
         if (result case Right(value: final summary)) {
@@ -173,7 +291,19 @@ class RestoreController extends _$RestoreController {
       // §6.1: wipe the passphrase regardless of outcome (null for vault-free
       // archives — nothing to wipe).
       passphrase?.dispose();
+      _showProgress(null);
+      // D25: after a success nobody needs the copy. After a failure it goes
+      // back to the page for another try, unless the page gave it back
+      // meanwhile. (When this controller itself was disposed during the
+      // run, the picker can no longer be reached from here; the copy is
+      // then left to the sweep at the next app start.)
+      final discard = succeeded || _releaseWhenDone;
+      // The run is over BEFORE the copy is removed: a release that arrives
+      // from now on removes the copy itself instead of waiting for a
+      // restore that has ended.
+      _archiveInUse = null;
       _running = false;
+      if (discard) await _discard(archive);
     }
   }
 

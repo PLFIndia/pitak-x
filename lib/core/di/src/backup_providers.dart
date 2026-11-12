@@ -15,6 +15,7 @@ import 'package:pitaka/core/di/src/platform_providers.dart';
 import 'package:pitaka/core/di/src/publish_state_providers.dart';
 import 'package:pitaka/core/di/src/vault_providers.dart';
 import 'package:pitaka/core/storage/active_data_generation.dart';
+import 'package:pitaka/core/storage/run_folders.dart';
 import 'package:pitaka/features/backup/application/create_backup_use_case.dart';
 import 'package:pitaka/features/backup/domain/backup_work_area.dart';
 import 'package:pitaka/features/backup/infrastructure/backup_archive_writer.dart';
@@ -97,6 +98,53 @@ Future<CreateBackupUseCase> createBackupUseCase(
   );
 }
 
+/// The private scratch folders of restores (backup rework BR6): one new
+/// folder per restore under the app's temporary directory, for the
+/// databases a restore unpacks before it reads them, and the one place that
+/// removes them again.
+///
+/// Under the TEMPORARY folder, as the backup's work area is: Documents is
+/// never cleared by the system, so a restore that was killed half-way left
+/// plain copies of the databases there for good. The old
+/// `<Documents>/restore_work` of earlier versions is no longer written; a
+/// sweep removes it when it is still there.
+///
+/// keepAlive (justified): this object remembers which folders are IN USE by
+/// a restore of this app session, so that a sweep never deletes the files a
+/// restore is reading. An auto-disposed instance would forget that between
+/// two reads (the same reason as `backupWorkArea`).
+@Riverpod(keepAlive: true)
+Future<RunFolders> restoreWorkFolders(RestoreWorkFoldersRef ref) async {
+  final temp = await ref.watch(appTempDirProvider.future);
+  final docs = await ref.watch(appDocsDirProvider.future);
+  return RunFolders(
+    rootPath: p.join(temp.path, 'restore_work'),
+    prefix: 'run',
+    // Where versions before BR6 staged a restore. Only removed, never
+    // written.
+    legacyDirectory: p.join(docs.path, 'restore_work'),
+  );
+}
+
+/// One-time clean-up per app start: removes what a restore left behind when
+/// the app was killed in the middle of it. That is the private copy of a
+/// chosen backup file (a plain copy of a whole library) and the databases
+/// unpacked from it. Triggered next to the other two sweeps, by the Library
+/// screen's first build.
+///
+/// keepAlive (justified): "once per app session" is the whole point, as for
+/// `staleBackupWorkSweep`. The result is not shown anywhere: what could not
+/// be removed is tried again at the next start and before the next restore.
+@Riverpod(keepAlive: true)
+Future<void> staleRestoreFilesSweep(StaleRestoreFilesSweepRef ref) async {
+  // The picked copies first: they are the larger files. A pick that is on
+  // its way right now is not disturbed (the picker waits it out).
+  final picker = await ref.watch(documentPickerProvider.future);
+  await picker.sweep();
+  final workFolders = await ref.watch(restoreWorkFoldersProvider.future);
+  await workFolders.sweep();
+}
+
 /// Backup-archive restorer (authoritative overwrite of local state).
 ///
 /// M02: restore builds a NEW data generation and switches to it atomically
@@ -108,7 +156,7 @@ Future<CreateBackupUseCase> createBackupUseCase(
 Future<RestoreBackup> restoreBackup(RestoreBackupRef ref) async {
   final vault = ref.watch(vaultRepositoryProvider);
   final generations = await ref.watch(dataGenerationsProvider.future);
-  final dir = await ref.watch(appDocsDirProvider.future);
+  final workFolders = await ref.watch(restoreWorkFoldersProvider.future);
   return RestoreBackup(
     vault: vault,
     generations: generations,
@@ -126,7 +174,7 @@ Future<RestoreBackup> restoreBackup(RestoreBackupRef ref) async {
             .activate(generation),
       );
     },
-    workDir: p.join(dir.path, 'restore_work'),
+    workFolders: workFolders,
     replacementGuard: ref.read(vaultSessionControllerProvider.notifier),
   );
 }

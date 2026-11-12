@@ -27,7 +27,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:image/image.dart' as img;
 import 'package:pitaka/core/crypto/secret_bytes.dart';
 import 'package:pitaka/core/di/providers.dart';
+import 'package:pitaka/core/platform/document_picker.dart';
 import 'package:pitaka/features/backup/application/restore_controller.dart';
+import 'package:pitaka/features/backup/domain/create_backup_result.dart';
 import 'package:pitaka/features/library/application/form_cover_controller.dart';
 import 'package:pitaka/features/library/presentation/pages/library_page.dart';
 import 'package:pitaka/features/library/presentation/widgets/form_cover_field.dart';
@@ -354,13 +356,14 @@ Future<String> attachSmokeCover(WidgetTester tester) async {
 ///
 /// The Create-backup PAGE ends in the OS share sheet, which an integration
 /// test cannot complete. Calling the provider still exercises FFI, SQLCipher
-/// and real file IO, and returns bytes that can be restored after a deliberate
-/// destructive interval.
+/// and real file IO, and returns a backup that can be restored after a
+/// deliberate destructive interval.
 ///
 /// BR4: the use case hands back a FILE in the app's private temporary
-/// folder. The restore still takes bytes, so the file is read here and then
-/// given back, the way the Create-backup page does after sharing.
-Future<Uint8List> createSmokeBackup(WidgetTester tester) async {
+/// folder. BR6: a restore reads its backup from a file, so that file is
+/// kept and handed on as it is. Whoever gets it owns it until
+/// [restoreSmokeBackup] gives it back.
+Future<CreateBackupResult> createSmokeBackup(WidgetTester tester) async {
   final createUseCase = await appContainer(
     tester,
   ).read(createBackupUseCaseProvider.future);
@@ -373,16 +376,19 @@ Future<Uint8List> createSmokeBackup(WidgetTester tester) async {
     isNotNull,
     reason: 'backup creation failed on device: $backupResult',
   );
-  try {
-    final bytes = File(backup!.path).readAsBytesSync();
-    expect(bytes.length, backup.sizeBytes);
-    return bytes;
-  } finally {
-    await createUseCase.discard(backup!);
-  }
+  expect(File(backup!.path).lengthSync(), backup.sizeBytes);
+  return backup;
 }
 
-/// Restores [archiveBytes] through the production RestoreController.
+/// Restores [backup] through the production RestoreController, then gives
+/// the backup file back to the backup's work area.
+///
+/// On a device the user's file reaches the controller as the private copy
+/// the system picker made, which an unattended test cannot drive. The
+/// built backup file stands in for that copy. It does not lie in the
+/// picker's own folder, so the controller's clean-up after the restore
+/// (which goes through the picker) leaves it alone on purpose; it is given
+/// back here instead.
 ///
 /// The controller applies the real post-success invalidations and owns/wipes
 /// the passphrase. Holding a listener keeps its terminal state readable long
@@ -390,14 +396,27 @@ Future<Uint8List> createSmokeBackup(WidgetTester tester) async {
 /// like a successful restore.
 Future<void> restoreSmokeBackup(
   WidgetTester tester,
-  Uint8List archiveBytes,
+  CreateBackupResult backup,
 ) async {
   final container = appContainer(tester);
   final subscription = container.listen(restoreControllerProvider, (_, _) {});
   final controller = container.read(restoreControllerProvider.notifier);
   final secret = SecretBytes(Uint8List.fromList(utf8.encode(smokePassphrase)));
+  // Resolved BEFORE the restore: afterwards the app runs on a new data
+  // generation, and the file must be given back to the work area that
+  // made it.
+  final createUseCase = await container.read(
+    createBackupUseCaseProvider.future,
+  );
   try {
-    await controller.restore(archiveBytes: archiveBytes, passphrase: secret);
+    await controller.restore(
+      archive: PickedDocument(
+        path: backup.path,
+        displayName: 'smoke.pitabak',
+        sizeBytes: backup.sizeBytes,
+      ),
+      passphrase: secret,
+    );
     final state = container.read(restoreControllerProvider);
     expect(
       state.hasValue && state.valueOrNull != null,
@@ -406,6 +425,7 @@ Future<void> restoreSmokeBackup(
     );
   } finally {
     subscription.close();
+    await createUseCase.discard(backup);
   }
   // Restore switched the active data generation; let every invalidated
   // provider rebuild before the journey reads the screens again.

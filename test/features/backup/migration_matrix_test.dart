@@ -106,10 +106,12 @@ void main() {
     return File(path).readAsBytesSync();
   }
 
-  Uint8List archive(Map<String, List<int>> entries) {
+  /// A backup FILE with [entries]; returns its path. BR6: a restore reads
+  /// the backup from a file, the private copy the app's picker made.
+  String archive(Map<String, List<int>> entries) {
     final a = Archive();
     entries.forEach((k, v) => a.addFile(ArchiveFile(k, v.length, v)));
-    return Uint8List.fromList(ZipEncoder().encode(a));
+    return gen.archiveFile(ZipEncoder().encode(a));
   }
 
   RestoreBackup restorer() =>
@@ -137,7 +139,7 @@ void main() {
     });
 
     final p = SecretBytes(Uint8List.fromList([1]));
-    final result = await restorer().restore(archiveBytes: zip, passphrase: p);
+    final result = await restorer().restore(archivePath: zip, passphrase: p);
     p.dispose();
     result.getOrElse((f) => fail('restore failed: $f'));
 
@@ -186,7 +188,7 @@ void main() {
     });
 
     final p = SecretBytes(Uint8List.fromList([1]));
-    final result = await restorer().restore(archiveBytes: zip, passphrase: p);
+    final result = await restorer().restore(archivePath: zip, passphrase: p);
     p.dispose();
     result.getOrElse((f) => fail('restore failed: $f'));
 
@@ -250,7 +252,7 @@ void main() {
     });
 
     final p = SecretBytes(Uint8List.fromList([1]));
-    final result = await restorer().restore(archiveBytes: zip, passphrase: p);
+    final result = await restorer().restore(archivePath: zip, passphrase: p);
     p.dispose();
     result.getOrElse((f) => fail('restore failed: $f'));
 
@@ -299,7 +301,7 @@ void main() {
       return File(path).readAsBytesSync();
     }
 
-    Uint8List hostileArchive(String column, String columnValue) => archive({
+    String hostileArchive(String column, String columnValue) => archive({
       'manifest.json': utf8.encode(
         jsonEncode({
           'schemaVersion': 1,
@@ -314,9 +316,9 @@ void main() {
 
     // Restores [zip] and asserts: typed ValidationFailure, the pre-restore
     // generation is untouched, and no builder directory lingers.
-    Future<ValidationFailure> expectRefused(Uint8List zip) async {
+    Future<ValidationFailure> expectRefused(String zip) async {
       final p = SecretBytes(Uint8List.fromList([1]));
-      final result = await restorer().restore(archiveBytes: zip, passphrase: p);
+      final result = await restorer().restore(archivePath: zip, passphrase: p);
       p.dispose();
       final failure = result.fold((f) => f, (_) => fail('expected refusal'));
       expect(failure, isA<ValidationFailure>());
@@ -375,7 +377,7 @@ void main() {
         "'https://tracker.example/c.jpg'",
       );
       final p = SecretBytes(Uint8List.fromList([1]));
-      final result = await restorer().restore(archiveBytes: zip, passphrase: p);
+      final result = await restorer().restore(archivePath: zip, passphrase: p);
       p.dispose();
       final summary = result.getOrElse((f) => fail('restore failed: $f'));
       expect(summary.coversDropped, 1);

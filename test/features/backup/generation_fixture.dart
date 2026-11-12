@@ -4,6 +4,8 @@ import 'package:drift/native.dart';
 import 'package:path/path.dart' as p;
 import 'package:pitaka/core/database/app_database.dart';
 import 'package:pitaka/core/storage/data_generations.dart';
+import 'package:pitaka/core/storage/run_folders.dart';
+import 'package:pitaka/features/backup/domain/backup_limits.dart';
 import 'package:pitaka/features/backup/infrastructure/restore_backup.dart';
 import 'package:pitaka/features/backup/infrastructure/restore_legacy_read.dart';
 import 'package:pitaka/features/library/domain/catalogue_replacement_guard.dart';
@@ -49,6 +51,39 @@ final class GenerationFixture {
   /// Absolute path of the pre-restore covers directory.
   String get coversDir => active.coversDir;
 
+  /// Where restores of this fixture stage their databases: one `run-…`
+  /// folder per restore under [restoreWorkRoot] (BR6). Shared by every
+  /// restorer of the fixture, as the app shares one per session.
+  late final RunFolders workFolders = RunFolders(
+    rootPath: restoreWorkRoot,
+    prefix: 'run',
+  );
+
+  /// The folder the run folders of restores lie in. After a restore, on
+  /// every way out, it holds no run folder (see [restoreRunFolders]).
+  String get restoreWorkRoot => p.join(docsDir, 'tmp', 'restore_work');
+
+  /// The run folders that exist right now. Empty before and after a restore.
+  List<String> restoreRunFolders() {
+    final root = Directory(restoreWorkRoot);
+    if (!root.existsSync()) return const [];
+    return [for (final entity in root.listSync()) p.basename(entity.path)];
+  }
+
+  int _archives = 0;
+
+  /// Writes [bytes] to a new file and returns its path: "the backup file
+  /// the user chose", as a restore gets it since BR6. The files lie in a
+  /// folder of their own next to the generations, so a test that lists the
+  /// data folders does not see them.
+  String archiveFile(List<int> bytes) {
+    final folder = Directory(p.join(docsDir, 'tmp', 'chosen'))
+      ..createSync(recursive: true);
+    final path = p.join(folder.path, 'archive-${_archives++}');
+    File(path).writeAsBytesSync(bytes);
+    return path;
+  }
+
   /// Builds a restorer over this fixture. [activate] defaults to the real
   /// pointer switch (recorded in [switched]).
   RestoreBackup restorer({
@@ -57,6 +92,7 @@ final class GenerationFixture {
     Future<DataGeneration> Function(DataGeneration)? activate,
     CatalogueOpener? openCatalogue,
     LegacyDbOpener? openLegacyDb,
+    BackupLimits limits = BackupLimits.current,
   }) => RestoreBackup(
     vault: vault,
     generations: generations,
@@ -71,7 +107,8 @@ final class GenerationFixture {
         },
     openCatalogue: openCatalogue ?? _defaultOpen,
     openLegacyDb: openLegacyDb ?? _defaultLegacyOpen,
-    workDir: p.join(docsDir, 'restore_work'),
+    workFolders: workFolders,
+    limits: limits,
     replacementGuard: guard,
   );
 
