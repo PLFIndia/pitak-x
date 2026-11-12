@@ -27,8 +27,10 @@
 ///
 /// Neighbours (split out under the file-size ratchet, B8): the archive-entry
 /// readers are `backup_extras_reader.dart`, the legacy-DB read phase is
-/// `restore_legacy_read.dart`, and the ADR 0014 W2 kinds/details join +
-/// write helpers are `restore_item_details.dart`.
+/// `restore_legacy_read.dart`, the ADR 0014 W2 kinds/details join +
+/// write helpers are `restore_item_details.dart`, the catalogue write of
+/// phase 6a is `restore_catalogue_builder.dart`, and the covers of phase 6b
+/// are `restore_covers_builder.dart`.
 library;
 
 import 'dart:convert';
@@ -46,18 +48,16 @@ import 'package:pitaka/features/backup/domain/archive_inspection.dart';
 import 'package:pitaka/features/backup/domain/backup_manifest.dart';
 import 'package:pitaka/features/backup/domain/restore_summary.dart';
 import 'package:pitaka/features/backup/infrastructure/backup_extras_reader.dart';
+import 'package:pitaka/features/backup/infrastructure/restore_catalogue_builder.dart';
 import 'package:pitaka/features/backup/infrastructure/restore_covers_builder.dart';
 import 'package:pitaka/features/backup/infrastructure/restore_item_details.dart';
 import 'package:pitaka/features/backup/infrastructure/restore_legacy_read.dart';
 import 'package:pitaka/features/import_export/domain/bounded_zip_extractor.dart';
 import 'package:pitaka/features/library/domain/catalogue_replacement_guard.dart';
-import 'package:pitaka/features/library/domain/catalogue_replacement_plan.dart';
-import 'package:pitaka/features/library/infrastructure/catalogue_item_mapper.dart';
 import 'package:pitaka/features/vault/domain/entities/vault_data.dart';
 import 'package:pitaka/features/vault/domain/loan_integrity.dart';
 import 'package:pitaka/features/vault/domain/repositories/vault_repository.dart';
 import 'package:pitaka/features/vault/infrastructure/vault_store.dart';
-import 'package:pitaka/features/wishlist/infrastructure/wishlist_mapper.dart';
 import 'package:sqlite3/common.dart';
 import 'package:sqlite3/sqlite3.dart';
 
@@ -292,11 +292,12 @@ final class RestoreBackup {
       // 6a. catalogue: consistent snapshot of the live DB, then replace inside
       // a transaction on THAT copy. `VACUUM INTO` copies schema, indexes,
       // FTS shadow tables and sqlite_sequence (so M03's no-ID-reuse holds).
-      final catalogueResult = await _buildCatalogue(
+      final catalogueResult = await buildRestoredCatalogue(
         active: active,
         builder: builder,
         legacy: legacy,
         scope: scope,
+        openCatalogue: _openCatalogue,
       );
       if (catalogueResult.isLeft()) {
         return catalogueResult.map((_) => throw StateError('unreachable'));
@@ -385,8 +386,6 @@ final class RestoreBackup {
               manifest.hasPublishState && extras.publishState == null,
         ),
       );
-    } on _ReplacementRefused catch (e) {
-      return left(e.failure);
     } on FileSystemException catch (e) {
       return left(
         StorageFailure('Restore could not write files: ${e.message}'),
@@ -415,86 +414,6 @@ final class RestoreBackup {
     }
   }
 
-  /// Snapshots the live catalogue into the builder and replaces its rows.
-  Future<Either<Failure, Unit>> _buildCatalogue({
-    required DataGeneration active,
-    required DataGeneration builder,
-    required LegacyCatalogueRows legacy,
-    required CatalogueReplacementScope scope,
-  }) async {
-    // Snapshot through a private read connection so the copy is consistent
-    // and independent of whichever executor the app holds on the live file.
-    // `VACUUM INTO` refuses to run inside a transaction and refuses to
-    // overwrite; the builder directory is fresh, so the target is absent.
-    // A device that never opened its catalogue has no file yet: Drift then
-    // creates the builder's schema from scratch when opened below.
-    if (File(active.catalogueDbPath).existsSync()) {
-      final source = sqlite3.open(
-        active.catalogueDbPath,
-        mode: OpenMode.readOnly,
-      );
-      try {
-        source.execute('VACUUM INTO ?', [builder.catalogueDbPath]);
-      } finally {
-        source.dispose();
-      }
-    }
-
-    final db = _openCatalogue(builder.catalogueDbPath);
-    try {
-      await db.transaction(() async {
-        final loanIds = scope.retainedLoanBookIds;
-        if (loanIds != null) {
-          final local = await db.select(db.books).get();
-          final plan = CatalogueReplacementPlan.build(
-            local: local.map((row) => row.toDomain()).toList(),
-            incoming: legacy.books,
-            loanBookIds: loanIds,
-          );
-          legacy.books = plan.match(
-            (failure) => throw _ReplacementRefused(failure),
-            (books) => books,
-          );
-        }
-        if (!scope.isCurrent) {
-          throw const _ReplacementRefused(CatalogueReplacementScope.cancelled);
-        }
-        // The books delete cascades to `magazine_issues` (FK, plan A.6); the
-        // periodicals table is cleared inside writeRestoredPeriodicals.
-        await db.delete(db.books).go();
-        await db.delete(db.wishlistBooks).go();
-        // W2: row-by-row — the assigned ids key the kind detail rows.
-        await insertRestoredItems(db, legacy.books);
-        await db.batch((b) {
-          for (final w in legacy.wishlist) {
-            b.insert(db.wishlistBooks, w.toCompanion());
-          }
-        });
-        // W2: the periodicals write joins this transaction (Drift
-        // transactions are zone-scoped); a Left rolls EVERYTHING back —
-        // restore never leaves a half-written catalogue.
-        final replaced = await writeRestoredPeriodicals(db, legacy.periodicals);
-        replaced.match((f) => throw _ReplacementRefused(f), (_) {});
-        final reprojected = await reprojectRestoredIssues(db);
-        reprojected.match((f) => throw _ReplacementRefused(f), (_) {});
-        // Rebuild the derived FTS index from the rows just written.
-        await db.rebuildFts();
-        if (!scope.isCurrent) {
-          throw const _ReplacementRefused(CatalogueReplacementScope.cancelled);
-        }
-      });
-    } finally {
-      await db.close();
-    }
-    return right(unit);
-  }
-
   static String _utf8(Uint8List bytes) =>
       const Utf8Decoder(allowMalformed: true).convert(bytes);
-}
-
-/// Infrastructure-only rollback signal, converted back to a typed Failure.
-final class _ReplacementRefused implements Exception {
-  const _ReplacementRefused(this.failure);
-  final Failure failure;
 }
