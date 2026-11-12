@@ -503,7 +503,9 @@ to false** (the `hasX` forward-compat pattern):
   (`staleBackupWorkSweep`) removes what a killed app left, including the
   `<Documents>/backup_create_work` folder of older versions. Only a real
   directory named `run-…` directly under `backup_work` is ever deleted, and
-  a run this app session is using is never swept. On Android the share
+  a run this app session is using is never swept. Those two rules live in
+  one class, `RunFolders` (`core/storage/run_folders.dart`), so that every
+  private work folder is removed by the same code. On Android the share
   plugin offers its own copy of the file, which it removes at the next
   share.
 - Progress while a backup is built (review finding P4-M7, the backup part

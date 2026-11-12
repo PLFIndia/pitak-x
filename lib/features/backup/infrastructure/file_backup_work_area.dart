@@ -18,7 +18,9 @@
 /// page deleted each other's files.
 ///
 /// The rules that make deleting safe are the ones of
-/// `PublishArtifactSpoolRoot` (publish feature), adapted here:
+/// `PublishArtifactSpoolRoot` (publish feature). Since BR5b they live in
+/// [RunFolders] (`core/storage/run_folders.dart`), because the file a
+/// restore picks needs the very same ones:
 ///
 ///  1. Only a REAL directory named `run-<1..64 of [A-Za-z0-9_-]>` directly
 ///     inside the app's own `backup_work` folder is ever deleted. A link, a
@@ -31,14 +33,16 @@
 /// must never stop a backup, and the next sweep tries again. `sweep` and
 /// `discard` still report such a failure as a typed value, for callers and
 /// tests that care.
+///
+/// What is left in this file: the names (`backup_work`, `run-…`), the old
+/// Documents folder, and turning [RunFolders]' plain answers into the typed
+/// results of the domain port.
 library;
-
-import 'dart:async';
-import 'dart:io';
 
 import 'package:fpdart/fpdart.dart';
 import 'package:path/path.dart' as p;
 import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/core/storage/run_folders.dart';
 import 'package:pitaka/features/backup/domain/backup_work_area.dart';
 
 /// See the library doc.
@@ -54,7 +58,12 @@ final class FileBackupWorkArea implements BackupWorkArea {
   static const String directoryName = 'backup_work';
 
   /// The only folder names that are ever deleted inside [directoryName].
-  static final RegExp runNamePattern = RegExp(r'^run-[A-Za-z0-9_-]{1,64}$');
+  /// Built by [RunFolders] from the same prefix the runs are made with, so
+  /// this text and the deleting code cannot disagree.
+  static final RegExp runNamePattern = RunFolders.namePatternFor(_runPrefix);
+
+  /// First part of every run folder's name.
+  static const String _runPrefix = 'run';
 
   /// Path of the app's temporary folder.
   final String tempRoot;
@@ -69,136 +78,33 @@ final class FileBackupWorkArea implements BackupWorkArea {
     'Could not remove temporary backup files.',
   );
 
-  /// Paths of the runs this app session is using (created, not discarded).
-  final Set<String> _inUse = <String>{};
-  Future<void> _lock = Future<void>.value();
-
-  /// The `backup_work` folder, as one tidy absolute path. Every run path is
-  /// built from this exact text, so two spellings of the same folder can
-  /// never be mistaken for two folders.
-  late final String _rootPath = p.normalize(
-    p.absolute(p.join(tempRoot, directoryName)),
+  /// The keeper of the run folders: which exist, which are in use, and the
+  /// only code that deletes one. Made on first use, when [tempRoot] and
+  /// [legacyWorkDir] are known.
+  late final RunFolders _runs = RunFolders(
+    rootPath: p.join(tempRoot, directoryName),
+    prefix: _runPrefix,
+    legacyDirectory: legacyWorkDir,
   );
 
   @override
-  Future<Either<Failure, String>> createRun() => _serialized(() async {
-    // Best-effort: something stale that cannot be deleted must not stop a
-    // backup. The typed result is available from [sweep].
-    await _sweepAll();
-    try {
-      final root = Directory(_rootPath);
-      await root.create(recursive: true);
-      final run = await root.createTemp('run-');
-      _inUse.add(run.path);
-      return right<Failure, String>(run.path);
-    } on Exception {
-      return left<Failure, String>(_createFailed);
-    }
-  });
+  Future<Either<Failure, String>> createRun() async {
+    // The sweep before the new run is best-effort: something stale that
+    // cannot be deleted must not stop a backup. The typed result is
+    // available from [sweep].
+    final run = await _runs.create(sweepFirst: true);
+    return run == null
+        ? left<Failure, String>(_createFailed)
+        : right<Failure, String>(run);
+  }
 
   @override
-  Future<Either<Failure, Unit>> discard(String path) => _serialized(() async {
-    final run = _runFolderOf(path);
-    // Not a run of this work area: nothing of ours to remove.
-    if (run == null) return right<Failure, Unit>(unit);
-    // From here on the run is no longer "in use": if deleting fails now,
-    // the next sweep may try again.
-    _inUse.remove(run);
-    return await _deleteRealDirectory(run)
-        ? right<Failure, Unit>(unit)
-        : left<Failure, Unit>(_removeFailed);
-  });
+  Future<Either<Failure, Unit>> discard(String path) async =>
+      _removed(await _runs.discard(path));
 
   @override
-  Future<Either<Failure, Unit>> sweep() => _serialized(_sweepAll);
+  Future<Either<Failure, Unit>> sweep() async => _removed(await _runs.sweep());
 
-  /// The run folder [path] belongs to, or null when [path] is neither a run
-  /// folder directly under the root nor something directly inside one.
-  ///
-  /// The path is tidied first (`a/../b` becomes `b`), so `..` cannot be used
-  /// to climb out of the root.
-  String? _runFolderOf(String path) {
-    final tidy = p.normalize(p.absolute(path));
-    for (final candidate in [tidy, p.dirname(tidy)]) {
-      if (p.equals(p.dirname(candidate), _rootPath) &&
-          runNamePattern.hasMatch(p.basename(candidate))) {
-        return candidate;
-      }
-    }
-    return null;
-  }
-
-  Future<Either<Failure, Unit>> _sweepAll() async {
-    final runsGone = await _sweepRuns();
-    final legacyGone = await _sweepLegacy();
-    return runsGone && legacyGone
-        ? right<Failure, Unit>(unit)
-        : left<Failure, Unit>(_removeFailed);
-  }
-
-  /// Deletes every run folder under the root that is not in use. Returns
-  /// false when one could not be deleted.
-  Future<bool> _sweepRuns() async {
-    // A root that is a link (or a file) is never followed or deleted.
-    if (FileSystemEntity.typeSync(_rootPath, followLinks: false) !=
-        FileSystemEntityType.directory) {
-      return true;
-    }
-    var ok = true;
-    try {
-      // `followLinks: false` yields a Link for a symlink, so a link named
-      // `run-x` is skipped instead of deleting what it points at.
-      await for (final entity in Directory(
-        _rootPath,
-      ).list(followLinks: false)) {
-        if (entity is! Directory) continue;
-        if (!runNamePattern.hasMatch(p.basename(entity.path))) continue;
-        if (_inUse.contains(entity.path)) continue;
-        if (!await _deleteRealDirectory(entity.path)) ok = false;
-      }
-    } on Exception {
-      ok = false;
-    }
-    return ok;
-  }
-
-  /// Deletes the fixed work folder of versions before BR4, if it is there.
-  /// Returns false when it could not be deleted.
-  Future<bool> _sweepLegacy() async {
-    final legacy = legacyWorkDir;
-    return legacy == null || await _deleteRealDirectory(legacy);
-  }
-
-  /// Deletes [path] with everything in it when it is a real directory.
-  /// A link or a file at [path] is left alone (that counts as done: it is
-  /// not ours). Returns false when a real directory could not be deleted.
-  ///
-  /// Deleting does not follow links INSIDE the folder either: `dart:io`
-  /// removes a link itself, never what it points at.
-  Future<bool> _deleteRealDirectory(String path) async {
-    try {
-      if (FileSystemEntity.typeSync(path, followLinks: false) !=
-          FileSystemEntityType.directory) {
-        return true;
-      }
-      await Directory(path).delete(recursive: true);
-      return true;
-    } on Exception {
-      return false;
-    }
-  }
-
-  /// Runs [action] with the lock held, so a sweep cannot interleave with
-  /// the creation or the removal of a run.
-  Future<T> _serialized<T>(Future<T> Function() action) async {
-    final previous = _lock;
-    final gate = Completer<void>();
-    _lock = gate.future;
-    await previous;
-    try {
-      return await action();
-    } finally {
-      gate.complete();
-    }
-  }
+  Either<Failure, Unit> _removed(bool gone) =>
+      gone ? right<Failure, Unit>(unit) : left<Failure, Unit>(_removeFailed);
 }
