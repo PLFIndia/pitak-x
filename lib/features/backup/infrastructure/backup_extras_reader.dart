@@ -41,6 +41,21 @@ const String networkEntryName = 'network.json';
 /// The `publish_state.json` zip entry name (ADR 0014 amendment, plan CV6).
 const String publishStateEntryName = 'publish_state.json';
 
+/// The names of the additive entries [manifest] announces, in a fixed
+/// order. An entry the manifest does not announce is absent by design and
+/// is never looked at, not even to unpack it (backup rework BR6).
+///
+/// The list exists ONCE, here, next to the readers that parse these
+/// entries: the worker that reads a backup from its file asks it which
+/// entries to take.
+List<String> announcedExtraEntries(BackupManifest manifest) => [
+  if (manifest.hasIdentity) identityEntryName,
+  if (manifest.hasNetwork) networkEntryName,
+  if (manifest.hasItemKinds) itemKindsEntryName,
+  if (manifest.hasPeriodicals) periodicalsEntryName,
+  if (manifest.hasPublishState) publishStateEntryName,
+];
+
 /// Parses `manifest.json` out of the extracted [files], refusing a missing or
 /// invalid manifest and a `schemaVersion` newer than this build knows (the
 /// update-channel rule — fail closed before any device write).
