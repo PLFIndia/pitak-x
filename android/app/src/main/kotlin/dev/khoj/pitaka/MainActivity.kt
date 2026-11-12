@@ -26,6 +26,10 @@ import io.flutter.plugin.common.MethodChannel
  *    The class is FLAVOR-SPLIT: `src/play/kotlin` holds the real Play Core
  *    implementation, `src/fdroid/kotlin` an inert twin that registers
  *    nothing, so the F-Droid APK contains no proprietary Play code.
+ *  - [PickedDocumentChannel] — BR5b: ONE method that opens the system's
+ *    document picker and copies the chosen document, under a size cap, into
+ *    the app's private cache folder. Dart sends the cap and nothing else;
+ *    no permission is involved. See that class for the trust boundary.
  *
  * No other native surface is exposed.
  */
@@ -39,9 +43,13 @@ class MainActivity : FlutterFragmentActivity() {
     // that guarantee; construction time is always early enough.
     private val appUpdateChannel = AppUpdateChannel(this)
 
+    // A field for the same reason: it registers the document picker.
+    private val pickedDocumentChannel = PickedDocumentChannel(this)
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         appUpdateChannel.attach(flutterEngine)
+        pickedDocumentChannel.attach(flutterEngine)
         MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
             BiometricSecretVault.CHANNEL,
@@ -79,6 +87,7 @@ class MainActivity : FlutterFragmentActivity() {
 
     override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
         appUpdateChannel.detach()
+        pickedDocumentChannel.detach()
         super.cleanUpFlutterEngine(flutterEngine)
     }
 
