@@ -176,9 +176,16 @@ lib/
                           redirects), app_user_agent.dart, osm_tiles.dart,
                           workers_dev_url.dart (the ONE workers.dev grammar, shared
                           by the reader and the publisher)
-    platform/             screen_security.dart (FLAG_SECURE), app_log.dart
+    platform/             screen_security.dart (FLAG_SECURE), app_log.dart,
+                          document_picker.dart (port: pick ONE document and get a
+                          private copy under a size cap) with
+                          channel_document_picker.dart (Android side:
+                          PickedDocumentChannel.kt; elsewhere "not available";
+                          no page uses it before the restore rework's next stage)
     security/             hardened_secure_storage.dart — the ONE hardened
                           flutter_secure_storage configuration
+    storage/              data_generations.dart (atomic restore), run_folders.dart
+                          (the ONE set of rules for deleting a private work folder)
     widgets/              app_gate.dart (splash → lock → Library), qr_view/qr_scan_page
   features/
     library/              catalogue items (`CatalogueItem`, the base row of every
