@@ -18,6 +18,13 @@
 /// the rules of [RunFolders] (only a real folder of the expected name inside
 /// our own root is ever deleted; a copy in use is never swept).
 ///
+/// A SWEEP AND A PICK NEVER RUN TOGETHER (backup rework BR6): Dart learns of
+/// a copy's folder only when Android answers. Until then the folder looks
+/// like one nobody uses, and a sweep would delete it under the copy that is
+/// still being written. So this class counts the picks that are on their
+/// way: `sweep` does nothing while there is one (the next app start sweeps
+/// again), and a pick lets a sweep that is already running finish first.
+///
 /// D19: where the Android side is missing (any other platform, a desktop
 /// run during development) the answer is [DocumentPickUnavailable]. There
 /// is deliberately no second way through `file_selector`: that plugin loads
@@ -66,23 +73,43 @@ final class ChannelDocumentPicker implements DocumentPicker {
   /// one.
   final RunFolders _folders;
 
+  /// How many picks are on their way: asked of Android, and not yet either
+  /// refused or marked "in use". While this is above zero, [sweep] does
+  /// nothing (see the library doc).
+  int _picksUnderWay = 0;
+
+  /// The sweep that is running, or one that is already done. A pick waits
+  /// for it before it asks Android for a copy.
+  Future<void> _sweepUnderWay = Future<void>.value();
+
   @override
   Future<DocumentPickResult> pickCopy({required int maxBytes}) async {
     // A cap that allows nothing is a mistake in the calling code. Do not
     // even open the picker for it.
     if (maxBytes <= 0) return const DocumentPickFailed();
-    final Object? reply;
+    // Counted BEFORE the first wait, so that no sweep can start from here
+    // on. `finally` ends the count on every way out, also a failed pick.
+    _picksUnderWay++;
     try {
-      reply = await _channel.invokeMethod<Object?>('pickAndCopy', {
-        'maxBytes': maxBytes,
-      });
-    } on MissingPluginException {
-      // No native side: not Android, or a build without it (D19).
-      return const DocumentPickUnavailable();
-    } on PlatformException catch (e) {
-      return _fromCode(e.code);
+      // A sweep that started earlier must not meet the new folder.
+      await _sweepUnderWay;
+      final Object? reply;
+      try {
+        reply = await _channel.invokeMethod<Object?>('pickAndCopy', {
+          'maxBytes': maxBytes,
+        });
+      } on MissingPluginException {
+        // No native side: not Android, or a build without it (D19).
+        return const DocumentPickUnavailable();
+      } on PlatformException catch (e) {
+        return _fromCode(e.code);
+      }
+      // Awaited inside the count: only when the check is through is the
+      // folder either removed or marked "in use".
+      return await _checked(reply, maxBytes);
+    } finally {
+      _picksUnderWay--;
     }
-    return _checked(reply, maxBytes);
   }
 
   @override
@@ -94,7 +121,14 @@ final class ChannelDocumentPicker implements DocumentPicker {
 
   @override
   Future<void> sweep() async {
-    await _folders.sweep();
+    // A pick is on its way: its folder is not known here yet, so nothing is
+    // swept now. What is stale stays until the next sweep (the next app
+    // start at the latest).
+    if (_picksUnderWay > 0) return;
+    // `RunFolders.sweep` never throws; its answer is not needed here.
+    final done = _folders.sweep().then<void>((_) {});
+    _sweepUnderWay = done;
+    await done;
   }
 
   /// The error codes of `PickedDocumentChannel.kt`, one to one. `busy`,

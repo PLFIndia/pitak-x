@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -515,6 +516,111 @@ void main() {
       await picker().sweep();
 
       expect(root().existsSync(), isFalse);
+    });
+  });
+
+  // BR6 (design point 4): Dart learns of a copy's folder only when Android
+  // answers. Until then the folder looks like one nobody uses, and a sweep
+  // would delete it under the copy that is still being written.
+  group('a sweep and a pick at the same time', () {
+    test('a sweep during a pick removes nothing, and works again '
+        'afterwards', () async {
+      final subject = picker();
+      final stale = copyOnDisk('pick-stale');
+      final arrived = Completer<Directory>();
+      final mayAnswer = Completer<void>();
+      // Android has made the folder and is still copying into it.
+      messenger.setMockMethodCallHandler(channel, (call) async {
+        final folder = copyOnDisk('pick-busy');
+        arrived.complete(folder);
+        await mayAnswer.future;
+        return answerFor(folder);
+      });
+
+      final pick = subject.pickCopy(maxBytes: 1000);
+      final busy = await arrived.future;
+      await subject.sweep();
+
+      expect(busy.existsSync(), isTrue, reason: 'the copy being written');
+      expect(stale.existsSync(), isTrue, reason: 'this sweep does nothing');
+
+      mayAnswer.complete();
+      final result = await pick;
+      expect(result, isA<DocumentPicked>());
+
+      // The pick is over: a sweep removes the stale copy and spares the
+      // picked one, which is in use now.
+      await subject.sweep();
+      expect(stale.existsSync(), isFalse);
+      expect(
+        File((result as DocumentPicked).document.path).existsSync(),
+        isTrue,
+      );
+    });
+
+    test('a pick that ends without a copy lets the next sweep run', () async {
+      final subject = picker();
+      final outcomes = <String, Object? Function(MethodCall)>{
+        'an error code': (_) => throw PlatformException(code: 'unreadable'),
+        'an answer that is refused': (_) => 'not a map',
+        'an error nobody expected': (_) => throw StateError('boom'),
+      };
+      for (final MapEntry(key: label, value: answer) in outcomes.entries) {
+        android(answer);
+        expect(
+          await subject.pickCopy(maxBytes: 1000),
+          isNot(isA<DocumentPicked>()),
+          reason: label,
+        );
+        final stale = copyOnDisk('pick-stale');
+
+        await subject.sweep();
+
+        expect(stale.existsSync(), isFalse, reason: label);
+      }
+      // The same without any Android side (D19).
+      messenger.setMockMethodCallHandler(channel, null);
+      expect(
+        await subject.pickCopy(maxBytes: 1000),
+        isA<DocumentPickUnavailable>(),
+      );
+      final stale = copyOnDisk('pick-stale');
+      await subject.sweep();
+      expect(stale.existsSync(), isFalse);
+    });
+
+    test(
+      'a cap that never reaches Android does not hold a sweep back',
+      () async {
+        final subject = picker();
+        expect(await subject.pickCopy(maxBytes: 0), isA<DocumentPickFailed>());
+        final stale = copyOnDisk('pick-stale');
+
+        await subject.sweep();
+
+        expect(stale.existsSync(), isFalse);
+      },
+    );
+
+    test('a pick that starts during a sweep keeps its copy', () async {
+      final subject = picker();
+      for (var i = 0; i < 50; i++) {
+        copyOnDisk('pick-stale$i');
+      }
+      // Android makes its folder the moment it is called.
+      late Directory folder;
+      android((_) {
+        folder = copyOnDisk('pick-late');
+        return answerFor(folder);
+      });
+
+      final sweep = subject.sweep();
+      final result = await subject.pickCopy(maxBytes: 1000);
+      await sweep;
+
+      expect(result, isA<DocumentPicked>());
+      expect(folder.existsSync(), isTrue);
+      expect(Directory('${root().path}/pick-stale0').existsSync(), isFalse);
     });
   });
 
