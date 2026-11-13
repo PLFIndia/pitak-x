@@ -144,7 +144,7 @@ small ones, on the branch `reviewFixes`.
 | BR5b | The app's own document picker for Android: it copies the chosen file into private storage under a size cap. CI runs the Android unit tests | done: `a3bb1e9`, `ccabe1e`, `806f162`, `876ff11` |
 | BR6 | Restore reads its backup from a file, in two worker isolates. The restore page says what happens. Changelog for BR1 to BR6 | done: `9ecdbb2`, `a91fe4b`, `da58a5c`, `6b508d0`, `709d1d6`, `847edd6` |
 | (CI) | `rustix` 1.1.6 for an advisory. The restore's copy of the catalogue waits for a write instead of failing (`retryWhileSqliteBusy`) | done: `5e8dfea`, `ede5a3e`, `0d3dcca` |
-| BR7 | The other readers: Import reads JSON and CSV only (D29); the in-memory ZIP reader is removed | designed; waits for the go-ahead |
+| BR7 | The other readers: Import reads JSON and CSV only (D29); the in-memory ZIP reader is removed (ADR 0009, third amendment) | committed: `122545f`, `683b5f9`, `8cc4660`, `9511905`; waits for the push and a green CI run |
 | (D24) | Import and Merge on the app's own picker (T1) | after BR7; needs its own design |
 | BR8 | Raise the limits (D3, D4) | after BR7 and a passed run on a phone |
 | BR9 | The resource notice (D5) | needs decision points 5 and 6 |
@@ -167,18 +167,20 @@ After each of BR1, BR2, BR3, BR4, BR6 and BR7 the app is releasable.
 
 **BR7. The other readers; remove the in-memory reader.** Four steps,
 one commit each. The full design, with eight choices to review, is
-the private file `br7-in-detail.md`.
+the private file `br7-in-detail.md`. Built and committed on 2026-11-13
+with the eight choices as proposed. Not pushed yet, and no CI run has
+seen it: until one is green the stage stays in this list.
 
-- [ ] Import offers JSON and CSV. A ZIP that is picked anyway is
+- [x] Import offers JSON and CSV. A ZIP that is picked anyway is
   refused with a sentence. The bundle reader, its provider and its
   tests go; the tests of the import step that it shares with "Restore
   from my published site" stay, built on rows made in the test.
-- [ ] Every test reads ZIP files through the reader that works from a
+- [x] Every test reads ZIP files through the reader that works from a
   file. All 96 cases of odd and hostile files stay.
-- [ ] `BoundedZipExtractor` is deleted. The domain layer then imports
+- [x] `BoundedZipExtractor` is deleted. The domain layer then imports
   no package for ZIP work: `archive` leaves the allow-list of
   `domain_purity_test.dart`. Third amendment to ADR 0009.
-- [ ] Changelog lines.
+- [x] Changelog lines.
 
 **Import and Merge on the app's own picker (D24, T1).** Not designed.
 `test/support/fake_document_picker.dart` is there for it.
@@ -313,15 +315,16 @@ when it was written; check the repository before relying on it.
 
 ### State of the repository
 
-- Branch `reviewFixes`: the 24 commits of the rework on top of
-  `origin/main` (`fe8a2c4`), the last of them `0d3dcca`, and after
-  them the commit that put this file into git. Look at `git status`
-  for whether the branch is pushed.
+- Branch `reviewFixes`: the 24 commits of the rework up to BR6 on top
+  of `origin/main` (`fe8a2c4`), the last of them `0d3dcca`; the commit
+  that put this file into git (`5e8449b`); the four commits of BR7;
+  and the commit that brought this handoff up to date. Look at
+  `git status` for whether the branch is pushed.
 - Draft pull request #30 ("Backup and restore rework, stages BR1 to
   BR6"). CI runs on a pull request and on a push to `main` only
   (`ci.yml:7-10`); a push to `reviewFixes` runs it because of #30.
-  Run 43392871577 at `0d3dcca` is green in all jobs; the commit of
-  this file changes no code.
+  Run 43392871577 at `0d3dcca` is green in all jobs. No run has seen
+  BR7 yet.
 - **Where the private files are:** in the root of the maintainer's
   working tree, next to the review files, as untracked files:
   `review-tracker.md`, `plan-archive-2026-11-13.md`,
@@ -335,18 +338,30 @@ when it was written; check the repository before relying on it.
   that are not part of this work (`docs/plans/handoff-2026-11-09.md`,
   `item-reminder.md`, `reminder-fixes.md`, `reminder-issues1.md`,
   `remoteImport-issues.md`).
-- Nothing of BR7 is built.
+- **BR7 is committed and not pushed** (2026-11-13): `122545f` (Import
+  reads JSON and CSV only), `683b5f9` (the tests read ZIP files
+  through the one reader), `8cc4660` (the in-memory reader removed),
+  `9511905` (changelog). The go-ahead was "build as designed, with the
+  eight choices as proposed". The result, the trials by hand and what
+  differs from the design are at the end of `br7-in-detail.md` ("BR7
+  build log", "BR7 result").
+- Checks on the tree of `9511905`: `build_runner` no diff; format 0
+  changed of 1,427 files; analyze 47, none in `lib/`, `test/`,
+  `integration_test/`, `tool/`; 7,008 tests passed (7,136 before: the
+  tests of the bundle reader and its route went, and the 94 ZIP cases
+  no longer run a second time against the removed reader); Kotlin 55
+  in each flavour; Rust clean, 37 passed, 2 ignored. These are the
+  numbers a later stage compares its baseline with.
 
 ### Next
 
 1. Confirm the state above and run the checks (baseline).
-2. The go-ahead for BR7 is asked and not answered yet: build it as
-   designed, with the eight choices listed at "Choices in this design"
-   of `br7-in-detail.md`, or with changes. No code before the answer.
-3. Build BR7 step by step: the checks after each step, a patch of
-   each step saved outside git, a stop for review before the first
-   commit, a yes for each commit and for the push. Watch the CI run
-   to its end before the stage is called done.
+2. The push of `reviewFixes`, after its yes. Then the CI run of pull
+   request #30 is watched to its end, every job.
+3. When that run is green, BR7 is done: give it its line with the
+   commits in "Stages", take its entry out of "The open stages", and
+   move `br7-in-detail.md` into the private archive, word for word.
+   When it is red, the fix comes first (see "CI, Linux and this Mac").
 4. After BR7: design "Import and Merge on the app's own picker" (D24)
    and ask for its go-ahead.
 
@@ -354,7 +369,7 @@ when it was written; check the repository before relying on it.
 
 | Stage | Waits for |
 |---|---|
-| BR7 | the go-ahead |
+| BR7 | a yes for the push, and a green CI run |
 | Import and Merge on the picker (D24, T1) | BR7; its own design and go-ahead |
 | BR8 raise the limits | BR7 and a passed run on a real phone; the time the share plugin needs to copy a large file on Android's main thread, measured first |
 | BR9 resource notice | decision points 5 and 6 |
@@ -436,9 +451,9 @@ Each cost time once.
 
 - No file under `lib/` may pass 500 lines without an entry in the
   allow-list of `layer_boundaries_test.dart`. New code goes into new
-  files. Near or at the ceiling today: `pitaka_json_importer.dart`
-  500, `zip_container.dart` 494, `backup_archive_writer.dart` 477,
-  `restore_backup.dart` 468. `vault_session_controller.dart` has 836
+  files. Near the ceiling today: `import_library_use_case.dart` 481,
+  `backup_archive_writer.dart` 477, `pitaka_json_importer.dart` 475,
+  `zip_container.dart` 475, `restore_backup.dart` 468. `vault_session_controller.dart` has 836
   lines, the number recorded for it: one more line fails the test, and
   a change to it has to move something out first.
 - Layers are enforced by tests. The application layer may not import
@@ -518,11 +533,12 @@ Each cost time once.
   `@riverpod` annotation needs `build_runner` before and after.
 - `--timeout` does not stop a test that loops in plain code; it works
   between asynchronous steps only.
-- `bounded_zip_extractor_test.dart:758` holds one assertion on
-  wall-clock time, under 200 ms. Under load it can fail without a
-  change in the code.
-- The table helper of the ZIP cases takes every entry twice (`read`,
-  then `writeTo`); the probe is given to the first pass only. A
+- `zip_reader_cases_test.dart:729` holds one assertion on wall-clock
+  time, under 200 ms. Under load it can fail without a change in the
+  code.
+- `readZip` (`test/support/read_zip.dart`), through which the tests
+  read an archive, takes every entry twice (`read`, then `writeTo`);
+  the probe is given to the first pass only. A
   hostile test entry can "declare" a size it does not have as long as
   it is left out or ignored: such an entry is never unpacked.
 
@@ -539,6 +555,14 @@ Each cost time once.
 - `build_runner` may say it wrote hundreds of outputs although git
   shows no change. It once took 17 minutes: give the checks and a
   commit a long time limit.
+- This Mac goes to sleep in the middle of a long check when nobody
+  touches it: a test run then shows 67 minutes instead of 6, and a
+  test that looks at the clock could fail. Start long runs under
+  `caffeinate -i`.
+- A Dart file that no longer compiles but that nothing imports fails
+  `dart analyze` only; `flutter test` passes without it. A deletion
+  that waits for its yes therefore hides nothing from the tests, but
+  the stage is not green before the file is gone.
 - Peak memory of a Dart program is not what it holds; short-lived
   garbage counts too. `--new_gen_semi_max_size=4` next to
   `--old_gen_heap_size` shows the difference. For a compiled program
@@ -676,9 +700,13 @@ Nine things that are not fixed and are therefore not described here
 
 ### Questions the maintainer has not answered yet
 
-None of them blocks BR7 except the first.
+None of them blocks BR7.
 
-- **The go-ahead for BR7,** with its eight choices.
+- Two things the trials of BR7 showed, with the detail in
+  `br7-in-detail.md`: a pair of guards in the import controller that
+  a test can see only together, and a test file about the covers
+  folder that does not notice when its coordinator is switched off
+  (another test file does). Change them, or leave them?
 - Pull request #30 is a draft. When is it made ready, and merged?
 - Decision points 5 and 6 (before BR9) and 7.
 - For each of T2, T3 and T5 to T9: is it built, in which stage, or
@@ -752,7 +780,9 @@ None of them blocks BR7 except the first.
 
 ### Scratch folders outside git
 
-`/tmp/pitak_br7/` holds the logs and saved files of 2026-11-13. The
+`/tmp/pitak_br7/` holds the logs and saved files of 2026-11-13; its
+folder `build/` holds those of BR7 (the logs of every check, a
+snapshot and a patch of each step, the trial script and its logs). The
 folders of the earlier stages (`/tmp/pitak_br2/` to `/tmp/pitak_br6/`)
 were gone on 2026-11-13; the system empties `/tmp`. Nothing in the
 repository depends on any of them.
@@ -764,4 +794,4 @@ repository depends on any of them.
 | 2026-11-10 | The four review passes. Decisions D1 to D16. BR1, BR3, BR2, the core of BR4 and its rider 1 |
 | 2026-11-11 | Riders 3 and 2 of BR4. BR5. The first three steps of BR5b. D17 to D19 |
 | 2026-11-12 | BR5b step 4. BR6, with a run in the emulator. D20 to D28. The branch pushed; draft pull request #30 |
-| 2026-11-13 | The first CI runs: `rustix` (`5e8dfea`), and a restore test that failed now and then, fixed in two commits (`ede5a3e`, then `0d3dcca` after the first form failed on Linux). D29. BR7 designed. This file cut down (D30) |
+| 2026-11-13 | The first CI runs: `rustix` (`5e8dfea`), and a restore test that failed now and then, fixed in two commits (`ede5a3e`, then `0d3dcca` after the first form failed on Linux). D29. BR7 designed. This file cut down (D30). BR7 built and committed (`122545f` to `9511905`), not pushed |
