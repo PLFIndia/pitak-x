@@ -88,12 +88,3 @@ bool isSafeBundleCoverLeaf(String leaf) =>
     CoverPaths.leafOf('${CoverPaths.prefix}$leaf') == leaf &&
     !leaf.contains(r'\') &&
     !leaf.contains('\u0000');
-
-/// Decodes bundles without file or database side effects.
-// A nominal domain port, like Importer, keeps the no-IO decoding contract
-// explicit for infrastructure implementations and DI overrides.
-// ignore: one_member_abstracts
-abstract interface class BundleReader {
-  /// Returns validated content or a typed corruption failure.
-  Future<Either<Failure, ImportBundle>> read(Uint8List bytes);
-}

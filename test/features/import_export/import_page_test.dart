@@ -129,12 +129,65 @@ class _FakeFileSelector extends FileSelectorPlatform {
   final Uint8List bytes;
   final int? reportedLength;
 
+  /// The file endings the page asked the picker for, once it was opened.
+  List<String>? askedExtensions;
+
   @override
   Future<XFile?> openFile({
     List<XTypeGroup>? acceptedTypeGroups,
     String? initialDirectory,
     String? confirmButtonText,
-  }) async => XFile.fromData(bytes, name: 'pick', length: reportedLength);
+  }) async {
+    askedExtensions = [
+      for (final group in acceptedTypeGroups ?? const <XTypeGroup>[])
+        ...?group.extensions,
+    ];
+    return XFile.fromData(bytes, name: 'pick', length: reportedLength);
+  }
+}
+
+/// A picked file that writes down what is asked of it, so a test can show
+/// that the page LOOKED at a file it refuses (its first four bytes) and
+/// never loaded it.
+///
+/// It records instead of failing on the spot: the page catches every error
+/// of a read on purpose, so a `fail` in here would be swallowed.
+class _RecordingFile extends XFile {
+  _RecordingFile(super.bytes) : super.fromData(name: 'pick');
+
+  /// Every call, as text: `openRead(0, 4)`, `length`, `readAsBytes`.
+  final List<String> asked = [];
+
+  @override
+  Stream<Uint8List> openRead([int? start, int? end]) {
+    asked.add('openRead($start, $end)');
+    return super.openRead(start, end);
+  }
+
+  @override
+  Future<Uint8List> readAsBytes() {
+    asked.add('readAsBytes');
+    return super.readAsBytes();
+  }
+
+  @override
+  Future<int> length() {
+    asked.add('length');
+    return super.length();
+  }
+}
+
+/// Picker seam that hands back one prepared file.
+class _OneFileSelector extends FileSelectorPlatform {
+  _OneFileSelector(this.file);
+  final XFile file;
+
+  @override
+  Future<XFile?> openFile({
+    List<XTypeGroup>? acceptedTypeGroups,
+    String? initialDirectory,
+    String? confirmButtonText,
+  }) async => file;
 }
 
 void main() {
@@ -192,30 +245,38 @@ void main() {
       expect(books.stored, isEmpty, reason: 'nothing may reach the use case');
     });
 
-    testWidgets('a ZIP pick reporting > maxArchiveBytes is refused unread', (
+    testWidgets('a ZIP pick is refused unread, with the sentence (D29)', (
       tester,
     ) async {
-      // ZIP magic so the archive cap (not the text cap) applies; reported
-      // size far past it. Old code skipped the size guard for ZIPs entirely.
+      // Import reads no ZIP (BR7). A picked file that starts like one is
+      // turned away on its first four bytes, and nothing more of it is
+      // asked for.
       final zipish = Uint8List.fromList([0x50, 0x4B, 0x03, 0x04, 0, 0, 0, 0]);
       final books = _MemBookRepo();
-      FileSelectorPlatform.instance = _FakeFileSelector(
-        zipish,
-        reportedLength: 5 * 1024 * 1024 * 1024,
-      );
+      final file = _RecordingFile(zipish);
+      FileSelectorPlatform.instance = _OneFileSelector(file);
       await tester.pumpWidget(page(useCaseWith(books)));
       await tester.pumpAndSettle();
 
       await tester.tap(find.text('Choose file'));
       await tester.pumpAndSettle();
 
-      expect(find.text('File is too large to import safely.'), findsOneWidget);
-      expect(books.stored, isEmpty);
+      expect(file.asked, ['openRead(0, 4)']);
+      expect(find.text(kImportZipRefusedMessage), findsOneWidget);
+      expect(
+        kImportZipRefusedMessage,
+        'Import reads Pitak JSON and Goodreads CSV files, not ZIP files. '
+        'To load a backup (.pitabak), use “Restore backup”.',
+      );
+      expect(find.text('Import complete'), findsNothing);
+      expect(find.text('Import failed'), findsNothing);
+      expect(books.stored, isEmpty, reason: 'nothing may reach the use case');
     });
 
     testWidgets('an honest small text pick still imports', (tester) async {
       final books = _MemBookRepo();
-      FileSelectorPlatform.instance = _FakeFileSelector(smallJson);
+      final picker = _FakeFileSelector(smallJson);
+      FileSelectorPlatform.instance = picker;
       await tester.pumpWidget(page(useCaseWith(books)));
       await tester.pumpAndSettle();
 
@@ -225,7 +286,19 @@ void main() {
       expect(find.text('File is too large to import safely.'), findsNothing);
       expect(find.text('Import complete'), findsOneWidget);
       expect(books.stored.single.title, 'From file');
+      // The picker is asked for the two kinds of file Import reads.
+      expect(picker.askedExtensions, ['json', 'csv']);
     });
+  });
+
+  testWidgets('the page names the kinds of file it reads, and no bundle', (
+    tester,
+  ) async {
+    await tester.pumpWidget(page(useCaseWith(_MemBookRepo())));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('file (JSON or CSV).'), findsOneWidget);
+    expect(find.textContaining('bundle'), findsNothing);
   });
 
   testWidgets('pasting JSON and tapping Import shows a summary', (

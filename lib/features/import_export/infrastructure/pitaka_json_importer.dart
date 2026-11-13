@@ -10,8 +10,9 @@
 ///  - `ageGroup` is the stable token string, parsed tolerantly via
 ///    AgeGroup.fromToken (legacy names accepted; unknown becomes null).
 ///  - `sourceType` is the enum NAME (upper-case), parsed tolerantly.
-///  - Imported rows get FRESH ids (id = 0); LOCAL cover references are dropped
-///    unless keepLocalCovers is set (only the bundle path ships image bytes).
+///  - Imported rows get FRESH ids (id = 0); LOCAL cover references are always
+///    dropped: a JSON file carries no picture, so such a reference would
+///    point at a file this device does not have.
 ///  - Malformed input never throws — errors are collected into the payload.
 ///
 /// v4 rules (ADR 0014 W1, fail closed on the unknown — P1):
@@ -47,16 +48,8 @@ const int kPitakaSchemaVersion = 4;
 
 /// Parses Pitaka JSON export files into an [ImportPayload].
 final class PitakaJsonImporter implements Importer, LibraryJsonParser {
-  /// Creates a JSON importer. Bundles preserve local refs during parsing, then
-  /// validate them against bundled bytes and rewrite them before persistence.
-  const PitakaJsonImporter({
-    this.keepLocalCovers = false,
-    this.limits = ImportLimits.defaults,
-  });
-
-  /// When true, local `covers/<uuid>.jpg` / `file://` references are preserved
-  /// instead of dropped. Plain JSON import keeps the default (false).
-  final bool keepLocalCovers;
+  /// Creates a JSON importer.
+  const PitakaJsonImporter({this.limits = ImportLimits.defaults});
 
   /// Hostile-input caps (M4). Single source of truth: [ImportLimits.defaults].
   final ImportLimits limits;
@@ -221,11 +214,9 @@ final class PitakaJsonImporter implements Importer, LibraryJsonParser {
     _RowReader r,
     Set<String> filePeriodicalUids,
   ) {
-    // Fresh id on import; drop LOCAL cover refs unless bundled. Remote https
-    // covers are allow-list-checked by CatalogueItem.validate below.
-    final unsafe = r.unsafeLocalCoverError(keepLocalCovers: keepLocalCovers);
-    if (unsafe != null) return left([unsafe]);
-    final cover = r.cover(keepLocalCovers: keepLocalCovers);
+    // Fresh id on import; LOCAL cover refs are dropped. Remote https covers
+    // are allow-list-checked by CatalogueItem.validate below.
+    final cover = r.cover();
 
     // W1: the kind token decides the row's `details`. Absent ⇒ book; an
     // unknown token skips the row (F6 — never mis-catalogued as a book).
@@ -320,9 +311,7 @@ final class PitakaJsonImporter implements Importer, LibraryJsonParser {
   /// validate-or-reject contract as [_book] (the gate trims the title and
   /// canonicalises the ISSN).
   Either<List<FieldError>, Periodical> _periodical(_RowReader r) {
-    final unsafe = r.unsafeLocalCoverError(keepLocalCovers: keepLocalCovers);
-    if (unsafe != null) return left([unsafe]);
-    final cover = r.cover(keepLocalCovers: keepLocalCovers);
+    final cover = r.cover();
     final candidate = Periodical(
       title: r.text('title') ?? '',
       periodicalUid: r.text('periodicalUid'),
@@ -351,12 +340,10 @@ final class PitakaJsonImporter implements Importer, LibraryJsonParser {
   }
 
   /// Wishlist twin of [_book] — same validate-or-reject contract (M15).
-  /// Local cover refs follow the same keepLocalCovers rule as books (the S6
-  /// asymmetry let plain-JSON wishlist rows keep dangling local refs).
+  /// Local cover refs are dropped as they are for books (the S6 asymmetry
+  /// let wishlist rows keep dangling local refs).
   Either<List<FieldError>, WishlistBook> _wishlistBook(_RowReader r) {
-    final unsafe = r.unsafeLocalCoverError(keepLocalCovers: keepLocalCovers);
-    if (unsafe != null) return left([unsafe]);
-    final cover = r.cover(keepLocalCovers: keepLocalCovers);
+    final cover = r.cover();
     final candidate = WishlistBook(
       title: r.text('title') ?? '',
       titleTransliteration: r.text('titleTransliteration'),
@@ -450,32 +437,20 @@ final class _RowReader {
     return clamped;
   }
 
-  /// Reads the cover reference: LOCAL refs are dropped unless the bundle mode
-  /// asked to keep them; anything else is left for the entity validator to
+  /// Reads the cover reference. A LOCAL ref (`covers/<uuid>.jpg`, legacy
+  /// `file://…`) is dropped without a word: every export of a library with
+  /// photographed covers holds them, and they mean nothing on another
+  /// device. Anything else is left for the entity validator to
   /// allow-list-check (its drop is reported via [reportDroppedCover]).
-  String? cover({required bool keepLocalCovers}) {
+  String? cover() {
     final value = raw['coverUrl'];
     if (value is! String) return null;
-    if (!keepLocalCovers && CoverPaths.isLocal(value)) return null;
+    if (CoverPaths.isLocal(value)) return null;
     return text('coverUrl');
   }
 
-  /// In bundle mode a local-shaped but UNSAFE cover ref (`covers/../x.jpg`)
-  /// is tampering evidence — our exporter never writes one — so the row is
-  /// rejected (the bundle then fails closed, M04). In plain-JSON mode such
-  /// refs are just dropped like any local ref, so this returns null there.
-  FieldError? unsafeLocalCoverError({required bool keepLocalCovers}) {
-    if (!keepLocalCovers) return null;
-    final value = raw['coverUrl'];
-    if (value is! String) return null;
-    if (CoverPaths.isLocal(value) && CoverPaths.leafOf(value) == null) {
-      return const FieldError('coverUrl', 'is not a safe cover reference');
-    }
-    return null;
-  }
-
   /// Records a warning when validation dropped a cover link that was present
-  /// in the file (a non-allow-listed remote URL or an unsafe local ref).
+  /// in the file (a remote URL that is not on the allow-list).
   void reportDroppedCover(String? validatedCover, String? parsedCover) {
     if (parsedCover != null && validatedCover == null) {
       warnings.add(

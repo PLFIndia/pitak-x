@@ -17,7 +17,6 @@ const s11UnicodePeriodicalUid = 'पत्रिका-१';
 const s11LegacyPeriodicalUid = 'legacy-weekly';
 const s11RemoteSeriesCover = 'https://covers.openlibrary.org/b/id/legacy-L.jpg';
 const s11LocalSeriesCoverReference = 'covers/s11-local.jpg';
-const s11LocalSeriesCoverEntry = 'cover_s11-local.jpg';
 const s11LocalSeriesCoverBytes = <int>[11, 22, 33, 44];
 
 const _bookUid = 's11-book';
@@ -154,10 +153,11 @@ Future<ImportSummary> importS11Json(
 }
 
 /// Checks final rows and soft links, including which row owns each cover.
-Future<void> expectS11InterchangeState(
-  BundleTestFixture fixture, {
-  required bool localCoverPreserved,
-}) async {
+///
+/// The state after a JSON import: a JSON file carries no picture, so the
+/// series cover that was a local file on the source device is gone. (Until
+/// BR7 a bundle file could bring it along, and this took a flag for that.)
+Future<void> expectS11InterchangeState(BundleTestFixture fixture) async {
   final summaries = (await fixture.periodicals.listAll()).getOrElse(
     (failure) => fail('series read failed: $failure'),
   );
@@ -175,18 +175,9 @@ Future<void> expectS11InterchangeState(
   expect(unicodeSummary.issueCount, 1);
   expect(unicodeSeries.removed, isTrue);
   expect(unicodeSeries.removedAt, 11);
-  if (localCoverPreserved) {
-    final reference = unicodeSeries.coverUrl;
-    expect(reference, startsWith('covers/'));
-    final cover = fixture.cover(reference!);
-    expect(cover.existsSync(), isTrue);
-    expect(await cover.readAsBytes(), s11LocalSeriesCoverBytes);
-    expect(fixture.images, hasLength(1));
-  } else {
-    // Plain JSON deliberately carries no local image bytes or dangling refs.
-    expect(unicodeSeries.coverUrl, isNull);
-    expect(fixture.images, isEmpty);
-  }
+  // JSON deliberately carries no local image bytes or dangling refs.
+  expect(unicodeSeries.coverUrl, isNull);
+  expect(fixture.images, isEmpty);
 
   final legacySummary = seriesByUid[s11LegacyPeriodicalUid]!;
   expect(legacySummary.issueCount, 1);

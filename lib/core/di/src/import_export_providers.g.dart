@@ -6,27 +6,6 @@ part of 'import_export_providers.dart';
 // RiverpodGenerator
 // **************************************************************************
 
-String _$libraryBundleReaderHash() =>
-    r'9b5a65c16881ce1118e34d43334eae4ed427ceee';
-
-/// Side-effect-free bundle decoding, exposed through its domain contract.
-///
-/// Copied from [libraryBundleReader].
-@ProviderFor(libraryBundleReader)
-final libraryBundleReaderProvider =
-    AutoDisposeFutureProvider<BundleReader>.internal(
-      libraryBundleReader,
-      name: r'libraryBundleReaderProvider',
-      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
-          ? null
-          : _$libraryBundleReaderHash,
-      dependencies: null,
-      allTransitiveDependencies: null,
-    );
-
-@Deprecated('Will be removed in 3.0. Use Ref instead')
-// ignore: unused_element
-typedef LibraryBundleReaderRef = AutoDisposeFutureProviderRef<BundleReader>;
 String _$bundleCoverFilesHash() => r'1a39d026e0238b00f8061007a6005f7afa808372';
 
 /// Operation-owned imported covers under the existing app-private covers dir.

@@ -79,18 +79,6 @@ export 'package:pitaka/features/import_export/domain/zip_entry_rules.dart'
 // imports the extractor still sees it.
 export 'package:pitaka/features/import_export/domain/zip_limits.dart';
 
-/// True when [bytes] starts with the ZIP local-file-header magic
-/// (`50 4B 03 04`, "PK\x03\x04"). Used to content-sniff a picked file as a
-/// bundle vs a text export — by ImportController before decoding, and by the
-/// import page's pre-read size guard, which must not apply the text cap to
-/// bundles (single source of truth for the magic).
-bool hasZipLocalFileHeader(List<int> bytes) =>
-    bytes.length >= 4 &&
-    bytes[0] == 0x50 && // 'P'
-    bytes[1] == 0x4B && // 'K'
-    bytes[2] == 0x03 &&
-    bytes[3] == 0x04;
-
 /// Extracts a flat ZIP into a map from sanitised leaf name to its decompressed
 /// content, enforcing the configured [ZipLimits].
 abstract final class BoundedZipExtractor {

@@ -11,7 +11,8 @@
 library;
 
 /// Single source of truth for cover-reference classification + safe leaf
-/// extraction (zip-slip / traversal defence for the bundle reader).
+/// extraction (zip-slip / traversal defence wherever a cover is named by
+/// something the app did not write itself).
 abstract final class CoverPaths {
   /// Sub-directory under the app docs dir where covers live.
   static const String coversDir = 'covers';

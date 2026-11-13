@@ -1,43 +1,27 @@
-import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:archive/archive.dart';
-import 'package:drift/native.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:pitaka/core/database/app_database.dart';
-import 'package:pitaka/core/di/providers.dart';
-import 'package:pitaka/features/import_export/application/import_controller.dart';
+import 'package:pitaka/features/import_export/domain/import_payload.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
-import 'package:pitaka/features/library/infrastructure/drift_catalogue_item_repository.dart';
 
-Uint8List _bundle(String json) {
-  final archive = Archive();
-  for (final entry in {
-    'library.json': utf8.encode(json),
-    'cover_existing.jpg': [9, 9, 9],
-  }.entries) {
-    archive.addFile(ArchiveFile(entry.key, entry.value.length, entry.value));
-  }
-  return Uint8List.fromList(ZipEncoder().encode(archive));
-}
+import 'bundle_test_fixture.dart';
 
+/// Review finding M04: an import that brings cover pictures must never
+/// write over a cover that is already on the device.
+///
+/// The rows are built here, as the restore from the user's own published
+/// site hands them to `importBundle`. (Until BR7 they came out of a bundle
+/// file; reading such a file was removed, decision D29. A third scenario,
+/// "invalid JSON", was a test of that reader and went with it.)
 void main() {
-  for (final scenario in [
-    'invalid JSON',
-    'duplicate ISBN',
-    'database rollback',
-  ]) {
+  for (final scenario in ['duplicate ISBN', 'database rollback']) {
     test('M04: $scenario leaves existing covers untouched', () async {
-      final dir = Directory.systemTemp.createTempSync('m04_safety');
-      addTearDown(() => dir.deleteSync(recursive: true));
-      final cover = File('${dir.path}/existing.jpg')
+      final fixture = BundleTestFixture();
+      addTearDown(fixture.dispose);
+      final cover = File('${fixture.directory.path}/existing.jpg')
         ..writeAsBytesSync([1, 2, 3]);
-      final db = AppDatabase(NativeDatabase.memory());
-      addTearDown(db.close);
-      final books = DriftCatalogueItemRepository(db);
-      await books.insert(
+      await fixture.books.insert(
         const CatalogueItem(
           title: 'Keep',
           itemUid: 'old',
@@ -45,43 +29,45 @@ void main() {
           coverUrl: 'covers/existing.jpg',
         ),
       );
-      await books.insert(const CatalogueItem(title: 'Other', isbn: '999'));
-      final container = ProviderContainer(
-        overrides: [
-          appDatabaseProvider.overrideWith((ref) async => db),
-          coversDirProvider.overrideWith((ref) async => dir.path),
-        ],
+      await fixture.books.insert(
+        const CatalogueItem(title: 'Other', isbn: '999'),
       );
-      addTearDown(container.dispose);
-      final json = scenario == 'invalid JSON'
-          ? '{broken'
-          : jsonEncode({
-              'schemaVersion': 3,
-              'books': [
-                {
-                  'title': 'Incoming',
-                  'isbn': scenario == 'duplicate ISBN' ? '111' : '222',
-                  'coverUrl': 'covers/existing.jpg',
-                },
-                if (scenario == 'database rollback')
-                  {'title': 'Collision', 'bookUid': 'old', 'isbn': '999'},
-              ],
-              'wishlist': <Object>[],
-            });
-      await container
-          .read(importControllerProvider.notifier)
-          .importBytes(_bundle(json));
-      // The old implementation writes [9, 9, 9] before any of these outcomes.
+
+      // The incoming rows name a cover with the SAME leaf as the one on
+      // disk, and bring other bytes for it.
+      final result = await fixture.apply(
+        ImportPayload(
+          items: [
+            CatalogueItem(
+              title: 'Incoming',
+              isbn: scenario == 'duplicate ISBN' ? '111' : '222',
+              coverUrl: 'covers/existing.jpg',
+            ),
+            // Same identity as 'Keep', but the ISBN of 'Other': updating
+            // the row breaks a UNIQUE rule, and the transaction rolls back.
+            if (scenario == 'database rollback')
+              const CatalogueItem(
+                title: 'Collision',
+                itemUid: 'old',
+                isbn: '999',
+              ),
+          ],
+        ),
+        images: {
+          'existing.jpg': Uint8List.fromList([9, 9, 9]),
+        },
+      );
+
+      // The old implementation wrote [9, 9, 9] before either outcome.
       expect(cover.readAsBytesSync(), [1, 2, 3]);
-      expect(dir.listSync().whereType<File>(), hasLength(1));
-      final rows = (await books.getAll()).toNullable()!;
+      expect(fixture.images, hasLength(1));
+      final rows = (await fixture.books.getAll()).toNullable()!;
       expect(rows, hasLength(2));
       expect(rows.singleWhere((b) => b.itemUid == 'old').title, 'Keep');
-      final state = container.read(importControllerProvider);
       if (scenario == 'duplicate ISBN') {
-        expect(state.requireValue!.booksSkipped, 1);
+        expect(result.toNullable()!.booksSkipped, 1);
       } else {
-        expect(state.hasError, isTrue);
+        expect(result.isLeft(), isTrue);
       }
     });
   }

@@ -345,8 +345,8 @@ void main() {
 
     test('export → parse → planMerge round-trip is a no-op', () {
       // The exact two-maintainer flow: device A exports its library (local
-      // covers and all), device B parses with keepLocalCovers=false and plans
-      // the merge back against A's library — nothing may surface.
+      // covers and all), device B parses it (local cover refs are dropped)
+      // and plans the merge back against A's library — nothing may surface.
       final lib = [
         book(
           id: 1,
