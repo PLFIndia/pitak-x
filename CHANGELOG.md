@@ -15,7 +15,7 @@ heading as part of the `chore(release):` commit.
 ## [Unreleased]
 
 The backup and restore rework so far (review of November 2026; stages BR1
-to BR6 in `PLAN.md`). The limits of a backup are the ones 1.9.7 had; they
+to BR7 in `PLAN.md`). The limits of a backup are the ones 1.9.7 had; they
 are raised in a later stage.
 
 ### Changed
@@ -78,6 +78,14 @@ are raised in a later stage.
   it declares, its header must carry the directory's name, no entry may
   use zip64, and every entry has the cap of its kind. No file the app's
   writer makes breaks one of these rules.
+- **The app has one ZIP reader, and Import no longer unpacks anything.**
+  The reader that held a whole archive in memory (`BoundedZipExtractor`,
+  up to 500 MiB of unpacked content) is removed; its last caller was the
+  import of a bundle file (see "Removed"). The only ZIP the app opens is
+  a backup the user chose to restore, through the reader that works from
+  a file (`BoundedZipFile`). The domain layer imports no package for ZIP
+  work any more: `archive` left the allow-list of
+  `domain_purity_test.dart` (ADR 0009, third amendment).
 - **A restore unpacks only what the manifest announces and only names
   the app writes.** A file meant to sit next to a database
   (`books.db-wal` and its kind) is never unpacked. The covers step checks
@@ -98,12 +106,26 @@ are raised in a later stage.
 
 ### Removed
 - The read-only vault archive viewer, which no screen could reach.
+- **Importing a Pitak bundle (`.zip`, `.pitabundle`) from a file.** A
+  bundle was a library file with its cover pictures inside, a format of
+  the retired Kotlin app; this app has never written one. Import takes
+  Pitak JSON and Goodreads CSV, as text or as a file. A ZIP that is
+  picked anyway is refused before it is read, with a sentence that says
+  what Import reads and that a backup (`.pitabak`) is loaded with
+  "Restore backup". "Restore from my published site" is not touched. The
+  JSON importer lost its bundle mode: a local cover reference in a JSON
+  file is always dropped.
 
 ### Tests
 - CI runs the Android unit tests (55 JUnit tests in both flavours) at the
   end of the F-Droid purity job.
 - `tool/zip_reader_memory_check.dart`: a check by hand that reading and
   restoring a 1 GiB backup stays within a capped heap.
+- Every test reads a ZIP through the reader that ships
+  (`test/support/read_zip.dart`): each entry is taken twice, into memory
+  and into a file, and the two must agree. The cases for odd and hostile
+  archives are `zip_reader_cases_test.dart` and
+  `zip_container_verdicts_test.dart`.
 
 ## [1.9.7] - 2026-11 (tag `1.9.7`, versionCode 39)
 
