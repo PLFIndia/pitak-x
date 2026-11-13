@@ -1,875 +1,767 @@
-# Background event notifications for bookmarked libraries
+# Backup and restore rework: plan, decisions and handoff
 
-- **Status (2026-11-08):** Implemented and committed (`bc8b019`, then
-  `102cc53`); automated gates pass. The device-test issue "no notification
-  after a caption change" is CLOSED (forced JobScheduler runs never reach
-  the Dart worker; see "Session 2026-11-08 (second)"). Still open: the
-  rest of the device matrix and the review findings listed in "Session
-  2026-11-08 (third)" at the end; two of them are fixed in the commit
-  after `102cc53` on branch `notifications` (PR #25).
-- **Updated:** 2026-11-08. Supersedes the consolidated review plan at
-  `617cd53:PLAN.md`. Decisions 9, 12, 13, 14 were confirmed/amended by the
-  maintainer in conversation; sizing decision 15 is new.
-- **Baseline:** `617cd53`; earlier borrower-limits plan: `bad362e:PLAN.md`.
+The working file for the rework of backup, restore and import that
+came out of the code review of November 2026. It was cut down on
+2026-11-13 at the maintainer's request (see "Where the earlier text
+went").
 
-## Understanding
+## How to use this file (read before writing)
 
-On Android, periodically check events at libraries the user deliberately
-saved (`NetworkSource.bookmark` or `card`, never `discovered`). Notify about
-added or modified posters, using a safe public caption when available.
-Provide an in-app off switch. Default is ON, the interval is fixed at
-12 hours, and first sight/re-enable establish quiet baselines.
+- **This file is public.** The repository is public, and this file is
+  in git.
+- **Do not describe a weakness that is not fixed.** `SECURITY.md` asks
+  for that ("private until a fix ships"), and it holds for this file
+  too. A weakness that is found goes into the private tracker under a
+  new T number; here only the number and the stage that will fix it
+  are named. Once the fix is pushed, it may be described.
+- **What lives where:**
 
-**Scale (decision 15):** realistically ≤ 20 saved libraries, usually < 5.
-Hard cap 100. Every run checks every saved library; there is no per-run site
-selection, fairness ordering or overflow budget. Deadlines are safety limits.
+  | What | Where |
+  |---|---|
+  | Decisions, the open part of the plan, ONE handoff, short results | this file |
+  | The findings of the four review passes with their boxes, and the open items T1 to T9 | private: `review-tracker.md` |
+  | Every design ("in detail"), result, safety check and older handoff, word for word | private: `plan-archive-2026-11-13.md` |
+  | The design of the stage that is being built | private: `br7-in-detail.md`, until its fix is pushed |
+  | The four review reports, their prompts and the summary | private: `codeReviewReport1.md` to `4.md`, `codeReviewPrompt1.md` to `4.md`, `codeReviewSummary.md` |
 
-"App closed" includes ordinary backgrounding and process death, not a promise
-of execution after force-stop or despite Doze, OEM restrictions or battery
-policy. Polling and Android notification display are both best-effort.
+  "Private" means: files the maintainer keeps outside git (the
+  handoff says where). An agent that cannot see them stops and asks.
+- **Keep ONE handoff.** At the end of a session the section "Handoff"
+  is brought up to date in place. It is not copied and appended.
+- **A stage that is done** gets one line in "The plan" with its
+  commits. Its design and its result section move to the private
+  archive, word for word.
+- **A decision** gets the next D number and one row in "Decisions".
+  Its full text, with what was not chosen, goes to the archive.
+- New sections go at the end of the file.
 
-Non-goals: push servers, iOS background work, removal alerts, notification
-history, per-library mute, fetching poster images to detect changed bytes,
-a foreground badge phase, and suppressing an alert merely because the user
-already viewed the poster. An unchanged `imageRef` and caption cannot reveal
-changed image bytes.
+## Where the earlier text went
 
-## Privacy & threat notes
+Until 2026-11-13 this file had about 11,700 lines: the tracker of the
+four review passes, every decision in full, and a design, a result
+and a handoff for each stage. None of it had been committed. Code
+comments, ADR 0009 and `CHANGELOG.md` name some of those sections by
+their title. They are kept, word for word and under the same titles,
+in the private archive:
 
-- This adds scheduled headless network activity. Update the manifest's
-  "only on explicit user action" wording and `PRIVACY.md`; do not overlook
-  its already-documented foreground availability updates.
-- A watched host sees the device IP, site/file URL, timing and fixed Pitak
-  User-Agent once per run. This exposes a bookmark relationship, not just an
-  IP. Use the existing HTTPS, same-origin/directory and redirect
-  restrictions; send no credentials/cookies; no analytics or remote logging.
-- Default ON (decision 1, reconfirmed) is a maintainer trade-off, not blanket
-  consent. Explain scheduled and metered traffic. Require foreground
-  readiness, an unlocked app gate and at least one saved library before
-  initial setup. Android < 33 has no runtime permission prompt; say so.
-- A stored library `name` is user-typed until the first successful Refresh,
-  after which `refresh_run.dart:283` overwrites it with the descriptor's
-  public name. Decision 13: the notification title uses the stored name only
-  when `fetch_status = 'ok'`; otherwise a generic title. Never copy a name
-  into watch-state payloads. Hide alerts on the OS lock screen. Captions pass
-  safe-display-text checks with a fixed fallback for empty/unsafe text.
-- Watch files hold bookmark relationships plus public metadata, not vault
-  secrets. They stay plaintext in private support storage under the existing
-  file-store design, excluded from Android backup. App-private storage is
-  not encryption; disclose this. Minimize fields; keep no delivered-history.
-- Recheck settings, revocation, generation and current bookmark membership
-  before sensitive actions. Final check → action races are best-effort.
-- Validate notification payloads against current saved rows; app-lock gates
-  both warm and cold-start navigation. Never log URLs, labels, captions or
-  raw exceptions. No new secrets, vault access or catalogue writes.
-
-## Investigation notes
-
-Verified on 2026-11-07 against `617cd53`; recheck changed dependencies before
-implementation. Proposed types below are design contracts, not existing APIs.
-
-| Evidence | Consequence |
+| Title that is cited | Cited from |
 |---|---|
-| `lib/features/network/infrastructure/published_events_codec.dart:57` | At most two posters; partial reads may omit rows/captions. Reject partial, duplicate-reference and newer-schema observations for diffing. |
-| `lib/features/network/infrastructure/bounded_published_events_fetcher.dart:66` | Bounded fetch supports validators, `304`, `404` and abort signals; reuse without foreground cache writes or stale fallback. |
-| `lib/features/network/domain/published_site_url_policy.dart:13` | Preserve canonical-site, HTTPS, redirect and directory containment checks. |
-| `lib/features/network/application/network_controller.dart:161` | `name` is user input on add; the descriptor fetch on the next Refresh supplies the real name. |
-| `lib/features/network/domain/usecases/refresh_run.dart:283` | Successful Refresh sets `name: descriptor.name` and `fetchStatus: ok`. No user-rename path exists. A row with `fetch_status = 'ok'` therefore carries the public name. |
-| `lib/core/database/tables.dart:234` | `fetch_status` column, default `'never'`. Worker SELECT adds `name, fetch_status`. |
-| `lib/features/network/infrastructure/drift_network_repository.dart:351` | Unknown source tokens map permissively (`?? NetworkSource.bookmark`) in the foreground repository; watch queries must filter raw tokens strictly. |
-| `lib/core/di/src/database_providers.dart:36` | Catalogue is plaintext and uses the normal Drift open path; do not use that provider in a worker. |
-| `lib/core/storage/data_generations.dart:118` | `open()` repairs/writes. Expose a peek-only resolver based on the existing read-only pointer primitive. |
-| `lib/features/backup/infrastructure/restore_backup.dart:81` | Existing `sqlite3` read-only open is the implementation precedent. |
-| `lib/features/network/application/add_member_controller.dart:85`, `lib/features/backup/application/restore_controller.dart:150` | Card adds and restore invalidate the network controller; test the watched-count observer end-to-end. |
-| `lib/features/events/infrastructure/file_events_repository.dart:86` | Temp + rename is the file-store precedent; existing `uuid` supplies settings incarnations after verifying its random source. |
+| "BR2 result" | `docs/adr/0009-archive-package-in-domain.md` |
+| "BR5 in detail" (rules N1 to N3) | ADR 0009, `zip_entry_rules.dart`, `zip_inflate_window.dart` |
+| Decisions D7, D9, D13, D18 in full | ADR 0009 |
+| "stages BR1 to BR6" | `CHANGELOG.md`, `[Unreleased]` |
 
-No foreground `busy_timeout` or WAL configuration exists in `lib/`
-(decision 12 reconfirmed: none is added). Dart file locks do not exclude
-another isolate in the same process; neither atomic rename nor one worker
-isolate serializes overlapping async writes.
+The archive is to be published when the open items T1 to T9 are
+closed (the maintainer's decision of 2026-11-13).
 
-Cached candidates `workmanager: 0.6.0` and
-`flutter_local_notifications: 20.1.0` contain no gms/play/firebase/mlkit
-Android dependencies in the audited Gradle files. Verify current releases,
-transitive dependencies and F-Droid classpaths before approving pins. The
-notification plugin requires desugaring, compileSdk ≥ 35 and release icon
-retention; its README reports Android 12L+ desugaring crashes. Its native
-`show()` returns after `notify()`, not after confirmed display. The
-WorkManager bridge returns from registration/cancellation before awaiting
-native operations; adapter success must not assume completion.
+The `PLAN.md` that was in git before this one is a different
+document, the plan for the background event alerts:
+`git show fe8a2c4:PLAN.md`. Older code comments that say "PLAN.md §2"
+mean that one.
 
-## Proposed approach
+## The review in short
 
-Single-writer architecture. Domain types/ports live under
-`lib/features/network/domain/events_watch/`; application orchestration uses
-code-generated Riverpod providers and `Either<Failure, T>`. Infrastructure
-owns file IO, read-only SQLite, HTTP and Android plugins. Desktop/iOS receive
-no-op ports and no Settings tile. No foreground state writer.
+Four passes over the whole app on 2026-11-10: security, dependencies,
+efficiency, UI and UX. Each has a report; the findings are tracked in
+the private tracker with ids of the form `P<pass>-<id>` (for example
+`P3-B1`). The maintainer went through the decision points and chose
+what to build first: the rework below. The ids that the rework closes
+are named with the stages.
 
-**OSS references:** adapt this repository's bounded fetch and atomic
-file-store patterns; verify Android WorkManager periodic-work guidance
-against the chosen artifact. No external implementation is treated as proof.
+## Decisions
 
-### 1. Identity, ownership and bounded persistence
+Each row is the maintainer's decision in short. The full text of each,
+with the reasons and what was not chosen, is in the private archive
+under "D<number>". All are of November 2026.
 
-`WatchSettingsToken` = **incarnation + epoch**. Incarnation is a fresh UUID
-on first creation or explicit settings reset. Epoch increments on every
-explicit enable/disable within that incarnation; never wrap/reuse it.
-Compare the whole token. Reset creates a fresh incarnation, epoch 0,
-enabled false, then cancels work; a surviving old epoch 2 cannot match a
-newly enabled epoch 2 after reset.
+| D | Date | Decision | State |
+|---|---|---|---|
+| D1 | 10 | Nothing from the retired Kotlin app has to be honoured: no backups made by it exist. Removing that support from code and docs is its own work, with an ADR | open (ADR 0025, BR10) |
+| D2 | 10 | A cover made from a photo is stored at most 240×360 pixels, JPEG quality 70. Existing covers, ISBN covers, the logo and the publish step do not change | built (BR1) |
+| D3 | 10 | A backup holds up to 10,000 covers; the entry limit is derived from that number in one place | BR8 |
+| D4 | 10 | The content limit of a backup may rise to 1 GiB, only once backup and restore work from files | BR8 |
+| D5 | 10 | Streaming first, then the higher limits. Before a backup and before a restore the app says what the run needs and what the device has. It informs; it never blocks. One set of limits for every reader | streaming built (BR4 to BR6); the notice is BR9 |
+| D6 | 10 | The read-only vault archive viewer, which no screen led to, is deleted | done (`09e9ad9`) |
+| D7 | 10 | The backup work starts on `archive` 4 and the newer `image`, so that the streaming code is written once | built (BR2) |
+| D8 | 10 | Restore picks its file through the app's own Kotlin channel, not through `file_selector` | built (BR5b, BR6) |
+| D9 | 10 | Caps per kind of entry: 4 MiB per cover, 4 MiB per JSON entry, 200 MiB per database | built (BR3, BR5) |
+| D10 | 10 | A cover file above its cap is left out of a backup; the backup is finished, and the page names the items | built (BR3) |
+| D11 | 10 | The packages of BR2 may be fetched: `archive` 4.6.0, `image` 4.12.0, `pdf` 3.13.1, and `posix` | done |
+| D12 | 10 | A backup made by a newer Pitak need not open in an older one, and the create-backup page says so. The other direction is a promise: an older backup restores in a newer app (`released_backup_fixture_test.dart`) | built (BR2) |
+| D13 | 10 | The app may read the ZIP container with its own code instead of the package's reader | built (BR2) |
+| D14 | 10 | `flutter_local_notifications` goes from 20.1.0 to 22.3.3 inside BR2 | built; an alert on a device has not been seen |
+| D15 | 10 | Pictures keep the look they have: transparency is dropped without blending, as before the upgrade | built (BR2) |
+| D16 | 10 | Riders of BR4: one transaction for each database of a backup, and a cover count while a backup runs. The vault copy is read first, then decided | built (BR4) |
+| D17 | 11 | A vault that has a leftover side file next to it is left out of a backup, and the page says so | built (`41ae631`) |
+| D18 | 11 | A cover above its cap inside a backup is skipped at restore; everything else is restored, and restore says how many were skipped | built (BR5, BR6) |
+| D19 | 11 | Where the app's Android code is missing (another platform), the picker answers "not available". No second way through `file_selector` | built (BR5b) |
+| D20 | 12 | CI runs the Android unit tests | done (`876ff11`) |
+| D21 | 12 | Code is written at the stage where it is written once. A planning session writes no code before the go-ahead | in force |
+| D22 | 12 | D21 confirmed. A line that a stage rewrites anyway gets the form a later, already decided stage will not have to touch | in force |
+| D23 | 12 | The restore page names the items whose cover was left out: the first three titles, then "and N more" | built (BR6) |
+| D24 | 12 | Import and Merge move to the app's own picker later, as a stage of their own after BR7 | open (T1) |
+| D25 | 12 | After a failed restore the picked copy is kept for another try while the page is open; after a success, a new pick or leaving the page it is deleted | built (BR6) |
+| D26 | 12 | No time limit in BR6 for the copy of a picked document. Looked at again after the phone runs of BR10 | open (T4) |
+| D27 | 12 | A restore shows "Cover 1,234 of 9,000" while covers are written | built (BR6) |
+| D28 | 12 | The changelog lines for BR1 to BR6 come as one commit at the end of BR6 | done (`847edd6`) |
+| D29 | 13 | The import of a bundle (`.zip`, `.pitabundle`) from a file is removed. Import takes JSON and CSV. "Restore from my published site" is not touched | BR7 |
+| D30 | 13 | This file is public and short. The findings, the history and the design of anything not yet fixed stay in private files until the open items T1 to T9 are closed | in force |
 
-| Document/type | Contents and ownership |
-|---|---|
-| `events_watch_settings.json` | Foreground-only writer: schema, enabled, token, explanation-version acknowledgement. Worker only reads it. |
-| `events_watch_state.json` | Worker-only writer: schema, observed settings token, generation, site statuses, pending, nullable `revocationToken`, bounded recovery notice, last-run outcome. Foreground only reads status. |
-| Site status | Canonical site URL, row id + creation time, persisted notification id, last attempt, nullable last successful check, bounded outcome, optional baseline. |
-| Baseline | Up to two reference/content digests, optional entity-tag validator, full settings token. Null = no authoritative first sight (distinct from empty). |
-| Pending change | Added/modified kind, site + row identity, image reference, safe caption, content digest, full settings token. No library name. |
+Decision points of the plan that are still open: 5, 6 and 7 (see "The
+plan").
 
-A different incarnation clears baselines and pending; a different epoch in
-one incarnation discards pending and requires quiet re-baselining.
-Generation change clears site state/pending. Within a generation, removed or
-replaced rows are pruned by `(id, createdAt, siteUrl)`. Revocation/recovery
-notices follow their own token rules, not generation rules.
+## The plan
 
-Schema 1: strict decoding, typed failures. Caps (decision 15): settings
-16 KiB; state 512 KiB; 100 sites; pending ≤ 2 per site (≤ 200 entries).
-Bound bytes before decoding, nesting, fields, identifiers and enum values.
-Flushed unique temp files + atomic rename, cleanup on error. Missing settings
-never mean ON inside a worker; only foreground initialization creates
-defaults. Newer schemas are never overwritten. Recovery: section 6.
+### What it is for
 
-One async operation queue owns foreground settings: collapses duplicate
-reconciliation, handles permission-dialog resume re-entrancy, lets newer
-intent suppress an older enable before registration. Publish state only
-after its save succeeds; disposal must not permit a second controller writer.
+1. Photographed covers are stored smaller (D2).
+2. A backup holds up to 10,000 covers and up to 1 GiB of content (D3,
+   D4), once backup and restore work from files and no longer hold the
+   archive in memory (D5).
+3. Before a backup and before a restore the app says how much storage
+   and memory the run needs, how much the device has, and whether it
+   will go fine. It never blocks; the user decides (D5).
+4. Every reader of a ZIP shares one set of limits (D5).
+5. Nothing from the Kotlin app has to be honoured (D1).
 
-The worker has a separate **serialized state reducer/commit queue**. Fetches
-may run concurrently (bound 4, matching existing refresh); completions carry
-immutable results. The reducer merges into latest state, checks guards/caps,
-awaits each write, then permits notification submission. Revocation/recovery
-use the same queue. Late results after stop/deadline cannot mutate state.
+Findings it closes when done: P1-M1, P3-B1, P2-M1, and P3-B3 as far
+as memory and unpacking go.
 
-No Dart file lock or invented CAS. Step 0 must prove worker non-overlap
-during cancellation, retry, update and rapid re-registration. If the plugin
-cannot establish it, stop and reconsider a transactional store.
+### Stages
 
-### 2. Read-only source and action guards
+Each stage ends with the checks green and is one commit, or a few
+small ones, on the branch `reviewFixes`.
 
-`WatchedLibrariesSource` provides a bounded snapshot and a point-membership
-recheck. Initial query: `SELECT id, site_url, created_at, name, fetch_status
-FROM network_libraries WHERE source IN ('bookmark', 'card') LIMIT 101`.
-Reject noncanonical URLs; row 101 produces a visible capacity failure. Use
-the same strict source for the foreground watched-count decision.
-
-Before each site's fetch, result commit and notification, recheck the
-expected id, creation time, canonical URL and raw source with a parameterized
-query. A missing/replaced row discards that site's result/pending; a DB check
-failure stops the action, never authorizes a fetch. At ≤ 20 sites this is
-≤ 60 short reads per run; busy collisions skip that site until the next run.
-
-Dedicated `sqlite3` read-only connections with a short bounded busy wait;
-one bounded SELECT per connection, close in `finally`. Never hold a
-connection across HTTP or notification calls. Busy/hot-journal, missing
-schema or missing database fail closed without repair. Never use
-`AppDatabase`, its callbacks, normal network DI or legacy-bookmark migration.
-`DataGenerations.peekActive()` never writes: check before open, after each
-SELECT and before actions; invalid pointers stop.
-
-**Common guard:** before every fetch, commit and show, reload enabled
-settings/full token; require no matching `revocationToken`, effective global
-AND channel permission, same generation and current affected-row identity.
-On token/generation change stop the run; on observed removal stop that
-site's actions and cancel its notification id. Abort HTTP where supported.
-Only revocation bookkeeping may commit after definitive permission loss.
-
-### 3. Run state machine and fetch outcomes
-
-This table is the single ordering contract; tests and adapters implement it.
-
-| Phase | Required transition |
-|---|---|
-| Load/guard | Load both documents; stop on OFF/missing settings/current revocation marker; no fetch. Classify state recovery before ordinary work. |
-| Reconcile | Check generation and rows; prune stale identity/token entries; allocate stable ids through the reducer. Empty watched set cancels work. |
-| Revalidate pending | Fetch sites already carrying pending changes, reconcile latest content, commit, then submit only eligible changes. Never show old pending first. |
-| Check remaining sites | After the pending phase, process every other site. HTTP failure at one site never blocks others. |
-| Finish | Commit submitted-entry cleanup; report bounded outcomes. On infrastructure failure stop new work and request retry. No unawaited mutations survive return. |
-
-All phases share a five-minute safety deadline (monotonic, injected clock);
-abort/drain outstanding work on stop. Every completed attempt advances
-`lastAttemptAt`; only authoritative `200`, validated `304` and `404` advance
-`lastSuccessfulCheckAt`. Retain the 64 KiB body cap, 15-second request
-deadline and bounded redirects. An unconditional retry after an unusable
-`304` stays inside the same budget.
-
-| Fetch outcome | Baseline/change rule | Existing pending this run |
+| Stage | What | State |
 |---|---|---|
-| Complete supported `200` | Null baseline or changed settings token: baseline only. Otherwise diff; commit baseline, validator, outcome and pending together. Complete empty payload is authoritative. | Coalesce latest caption/digest; remove entries for absent posters; remaining entries become eligible. |
-| Partial, duplicate image reference, newer schema | Record outcome; no diff, no baseline advance. | Retain but withhold. |
-| Validated `304` | Require validator belonging to local baseline; retain posters, re-tag baseline with current token. No diff. | Eligible only when matching that confirmed baseline. |
-| `304` without matching baseline | Retry once without validator; repeated invalid response fails closed. | Not eligible unless retry validates content. |
-| `404` | Retain old posters, or create empty first baseline; clear validator, re-tag token, record success. No removal alert. | Retain but withhold. |
-| Transport/decode failure | Retain baseline/validator; record failed attempt. Never use saved-copy fallback. | Retain but withhold. |
+| (D6) | The unreachable vault archive viewer is removed | done: `09e9ad9` |
+| BR1 | Photographed covers at 240×360, JPEG quality 70 | done: `8e27e51` |
+| BR3, step 0 | A frozen backup made by the 1.9.7 writer, with a restore test | done: `802be89` |
+| BR3 | One value, `BackupLimits`, for writer and reader. The writer refuses a backup the reader could not restore, with a sentence that names the limit. A cover above its cap is left out and named | done: `d972b02` |
+| BR2 | `archive` 4.6, `image` 4.12, `pdf` 3.13.1, notifications 22.3.3. The app reads the ZIP container with its own code (ADR 0009, first amendment) | done: `4374c9f` |
+| BR4 | The backup is written straight to a file and shared by path. One transaction per database. A cover count while it runs. The vault goes in only as a whole database | done: `9480fd2`, `c36e266`, `1be75cf`, `41ae631` |
+| BR5 | A ZIP reader that works from a file, one entry at a time, with a rule per entry name (ADR 0009, second amendment) | done: `970563d`, `2fcf6fc` |
+| BR5b | The app's own document picker for Android: it copies the chosen file into private storage under a size cap. CI runs the Android unit tests | done: `a3bb1e9`, `ccabe1e`, `806f162`, `876ff11` |
+| BR6 | Restore reads its backup from a file, in two worker isolates. The restore page says what happens. Changelog for BR1 to BR6 | done: `9ecdbb2`, `a91fe4b`, `da58a5c`, `6b508d0`, `709d1d6`, `847edd6` |
+| (CI) | `rustix` 1.1.6 for an advisory. The restore's copy of the catalogue waits for a write instead of failing (`retryWhileSqliteBusy`) | done: `5e8dfea`, `ede5a3e`, `0d3dcca` |
+| BR7 | The other readers: Import reads JSON and CSV only (D29); the in-memory ZIP reader is removed | designed; waits for the go-ahead |
+| (D24) | Import and Merge on the app's own picker (T1) | after BR7; needs its own design |
+| BR8 | Raise the limits (D3, D4) | after BR7 and a passed run on a phone |
+| BR9 | The resource notice (D5) | needs decision points 5 and 6 |
+| BR10 | Proof on devices, records, clean-up | last |
 
-Hash a length-prefixed encoding of image reference and caption with the
-existing SHA-256. New reference = added; changed digest at same reference =
-modified; disappearance = no notification. Pending is keyed by
-`(siteUrl, imageRef)`: a still-pending addition stays "added" while its
-content advances. Two posters maximum per site.
-
-The quiet re-enable/`404` trade-off remains decision 8: `404` cannot prove
-when subsequently served content was published. No event-time accuracy
-promise absent wire-format timestamps.
-
-### 4. Pending work and submission (decision 9, simplified)
-
-Pending means not yet successfully submitted, not notification history.
-After process death/retry, only a complete current-run `200` or validated
-`304` can make an entry eligible again. Revalidation failure cannot cause an
-old caption to be shown. A failed show or cleanup write stops ordinary
-new-site fetches and returns retry; revalidation fetches are still permitted.
-Explicit OFF/ON discards pending with the documented quiet re-baseline cost.
-
-Commit baseline + pending before show; remove only entries covered by
-successful calls, in a subsequent serialized write. A crash in between may
-repeat the same id. This is durable, retryable **submission**, not a
-guarantee of OS display, sound or attention. Disable, reset, revocation,
-identity change and authoritative withdrawal invalidate pending; unreadable
-state recovery may lose it and must be visible (section 6).
-
-**Notification identity and replacement:** each library has one stable
-persisted notification id; the group summary uses id 0. Posting a library
-id again replaces that library's own previous alert (Android semantics), so
-a library can never have two alerts. There is **no** active-inventory
-inspection, cross-run cap or batch cancellation during ordinary runs. The
-group summary is posted whenever at least one child is posted, as Android
-grouping requires. Feature-scoped cancellation (stable tag/channel) is used
-only for: explicit disable, settings reset, revocation/recovery, and a row
-detected as removed. Never cancel another feature's notifications.
-
-Derive a candidate nonzero 31-bit id from SHA-256 of the canonical URL;
-resolve zero/collisions with deterministic length-prefixed URL + counter
-rehashing in stable URL order. Persist allocations and reuse on retry.
-Never use `String.hashCode`. `LocalNotifier` needs typed permission,
-effective-delivery, feature-scoped cancellation, library-show and
-summary-show operations.
-
-### 5. Foreground lifecycle and scheduling
-
-An explicit app-start owner, not the Settings tile, calls the code-generated
-`EventsWatchController` after initialization, first frame and app-lock
-unlock. Use the same serialized queue on resume, explicit toggles and
-watched-count zero/nonzero transitions. Observe the network provider for
-mutations; use the strict source to decide whether valid watched rows exist.
-
-Fresh initialization alone may offer default ON. Persist settings before
-scheduling. An empty watched set cancels without a permission prompt; the
-first saved row enters setup. ON is effective only with deliverable alerts.
-On Android 13+, show the explanation before the first system prompt; persist
-its acknowledged version. "Not now" or denial persists OFF with a new token.
-Ordinary resume with acknowledged explanation and permission must not repeat
-dialogs. Revoked/blocked states offer system settings instead of prompt
-loops. Pre-33 checks effective settings without claiming runtime consent.
-
-Initialize `Workmanager().initialize(callbackDispatcher)` once in foreground
-before registration. One unique periodic name, fixed 12 hours (plus
-WorkManager's flex window — Settings copy says "about every 12 hours"),
-`NetworkType.connected`, battery-not-low, explicit backoff. Keep for an
-unchanged specification, update for a changed one; no per-launch
-replacement. The scheduler port must inspect registration and verify native
-completion, not equate a returned method-channel call with completed work.
-
-### 6. Stop states, restart and recovery
-
-| Event | Persistent action and next behavior |
-|---|---|
-| Explicit disable | Save OFF + next token before cancellation; always attempt cancellation even if save fails. Show OFF only after save succeeds. Clear feature alerts without writing worker state. |
-| Definitive permission/channel loss | Worker serializes `revocationToken = current token`, clears pending, nulls baselines, then attempts cancellation. Allowed despite permission false. |
-| Matching revocation marker on a later worker run | Stop without fetch/show even if permission was re-granted. Retry cancellation; only a foreground token transition supersedes the marker. |
-| Matching marker on foreground reconciliation | Persist OFF + next token and cancel, regardless of current permission. |
-| Permission-state check error | No fabricated marker; stop and return infrastructure failure without fetching. |
-| Explicit settings reset | Fresh incarnation, epoch 0, OFF; cancel work and clear feature alerts. Foreground never edits the state file. |
-| Current-format corrupt/oversized state | Worker replaces it with an empty recovery document, current token, null generation and a visible recovery notice; no fetch that run. |
-| Newer/unknown schema, unreadable settings or failed recovery write | Fail closed, no schedule/fetch; never default or overwrite a newer format. Expose a safe error/update-required state. |
-| **ON in settings, no registered job (decision 14)** | Do not auto-repair. Show "Checks are not scheduled" with an explicit **Resume** action; register only on that tap. Unknown registration state is treated as not scheduled. Applies after failed-OFF-save + successful cancel + process death, OS-side job loss and earlier empty-set cancellation. |
-
-Check settings again before revocation bookkeeping so an old run cannot
-invalidate a newer enable. Preserve a matching marker across generation
-changes; a superseded marker is cleared by the worker on a later enabled run.
-If marker persistence fails, attempt cancellation anyway and report failure.
-Recovery notices survive normal runs and clear only on an explicit
-enable/disable token change.
-
-If neither OFF nor cancellation could be persisted, the old intent cannot be
-reconstructed after process death. Surface the failure immediately, retry
-while foregrounded and offer OS notification blocking. Document the
-marker-write-failure + permission-re-grant residual. Cancellation must target
-the observed registration, not a newer job created during a race; establish
-that adapter contract in Step 0.
-
-Expected site/network failures wait for the next periodic run.
-Infrastructure failures request WorkManager retry with backoff;
-disabled/empty/completed runs return success. The entry-point dispatcher only
-calls `executeTask`, initializes notifications, and builds a minimal fresh
-`ProviderContainer`: peek-only generation, read-only source, bounded HTTP,
-stores and notifier/scheduler. No Rust/vault/app-lock, normal database or
-network providers, refresh controller or cache writes. Catch errors by safe
-type and dispose clients/container in `finally`; forced termination can
-bypass Dart cleanup and must be crash-tested.
-
-### 7. Presentation and Android integration
-
-Settings shows the ON/OFF switch, "about every 12 hours" best-effort note,
-metered-data notice, no-library state, latest successful check,
-withheld/partial/newer-format counts, safe storage/scheduler/capacity errors,
-the "not scheduled → Resume" state and settings reset. A recent successful
-site must not imply every site was checked. Hide the group on unsupported
-platforms.
-
-**Title (decision 13):** if the row's `fetch_status = 'ok'`, title is the
-stored `name` (already the descriptor's public name, `NetworkName`-validated
-on write); otherwise a generic "New event at a saved library". Body is the
-public caption after safety checks. Library payloads contain only canonical
-site URLs; summary payload selects the Network tab. Validate against current
-saved rows at consumption; invalid/removed rows fall back to Network. Handle
-running callbacks and `getNotificationAppLaunchDetails()` for cold start.
-Queue one route until providers and the unlocked app gate are ready, then
-consume once.
-
-Initialize the notifier in both foreground and worker with a stable channel,
-lock-screen visibility `private`/`secret` (verify on devices) and a
-release-safe icon. Document merged `POST_NOTIFICATIONS` and `VIBRATE`
-permissions. Add only required Gradle/desugaring/resource-keeping
-configuration after exact-command approval; verify compileSdk/AGP/Kotlin
-compatibility and build both Android flavors. If the Android 12L+ desugaring
-issue needs a WindowManager dependency, obtain separate approval. Update
-`PRIVACY.md`, manifest INTERNET wording, guides, changelog and ADR 0024.
-
-### 8. Required tests and acceptance evidence
-
-Baseline existing tests/analyze before code changes, then targeted tests and
-full gates after. Fake ports, injected clocks, Riverpod overrides; no real
-hosts or production storage in unit/widget tests.
-
-| Area | Required cases |
-|---|---|
-| Digest/diff | Null vs empty baseline, add/modify/remove, reorder, ambiguous encodings, duplicate references, unsafe/empty captions, changed bytes at unchanged reference explicitly undetectable. |
-| Fetch | Complete/empty `200`, `304` with/without matching validator, bounded unconditional retry, first/transient `404`, partial/newer schema, failure and stale-copy rejection; no cache writes. |
-| Token recovery | Surviving pending/baselines with the same numeric epoch as reset → immediate enable: fresh incarnation prevents a match. |
-| Quiet re-enable | Fresh/`304`/`404` token re-tagging; failed first attempt remains null; later valid additions notify per decision 8. |
-| Pending freshness | Show fails → publisher removes/edits → retry revalidates before show; removed entry drops, newest caption wins, undelivered addition remains added. Failure/partial/`404` withholds. |
-| Deadline | Late results after deadline/stop cannot commit; outstanding fetches are aborted/drained; one failing site does not block others. |
-| Worker serialization | Reversed concurrent completions, delayed writes, id collisions and revocation during outstanding fetches preserve unrelated changes and never overwrite the stop marker. |
-| Membership/generation | Remove one of several bookmarks mid-run without generation change (its alert is cancelled); move/source change/re-add; restore before/after SELECT and before action; no stale fetch/show after detection. |
-| Read-only source | Strict unknown-token handling agrees in foreground/background; canonical URLs only; > 100 rows rejected; no DB mutation, migration or repair; each connection closed; busy/hot-journal fail closed. |
-| Submission | Persist before show, cleanup after; process death preserves retryability; re-post with same id replaces; forced zero/hash collisions; summary posted with children; feature-scoped cancel only on disable/reset/revocation/removed row; unrelated alerts survive. |
-| Stop/restart | Marker survives generation change; cancel fails → permission re-granted → no fetch; foreground consumes marker; ON-settings + missing job → Resume state, no auto-register; unknown registration fails closed. |
-| Recovery failures | OFF save and cancellation both fail without false success; marker save failure; missing/unknown/newer settings/state; oversized state; recovery write failure; visible notice and quiet next baseline. |
-| Stores/ownership | Bounded round-trip/hostile decode; old-or-new reads during rename; unique temps and cleanup; only controller saves settings, only worker reducer saves state. |
-| Controller | Start/resume/row-add/disable races, latest intent, failed save never published, no-library/no-prompt, Not now, no repeated explanation on resume, disposal and observed-registration cancellation races. |
-| UI/privacy | Title uses stored name only when `fetch_status = 'ok'`, generic otherwise; caption safety; lock-screen hiding; denied/blocked/recovery/Resume messages; warm/cold/invalid/summary routes; app-lock preservation; accessibility. |
-| Regression | Manual Refresh and `PublishedEventsController` never write watch state; desktop no-op ports and architecture boundaries intact. |
-
-Real-device matrix (must): process death, reboot, Android 13 permission and
-pre-33 behavior, revocation then re-grant, offline/metered, locked/cold taps,
-remove/re-add, app update without reopening, Android 12L+ desugaring.
-(Should): Doze/battery saver, force-stop/OEM limits, restore,
-uninstall/reinstall. Verify real native completion and non-overlap.
-
-Full gates: build_runner with no unexpected generated diff, format, analyze,
-Flutter tests/coverage, architecture/secret/dependency scans, F-Droid purity,
-release build and applicable goldens; Rust gates required by repository CI.
-
-## Decision points
-
-All resolved 2026-11-07. The state tables above, not historical prose, are
-the behavioral source of truth.
-
-| # | Choice | Status |
-|---|---|---|
-| 1 | ON by default; no schedule without saved rows and effective delivery; denied/revoked becomes OFF. | Reconfirmed 2026-11-07. Document trade-off, metered traffic and pre-33 lack of runtime consent. |
-| 2 | User-saved bookmark/card rows only, never discovered. | Preserved; raw-token filtering and live membership checks. |
-| 3 | Fixed 12-hour interval; no selector. | Preserved; best-effort, flex window disclosed. |
-| 4 | Android only; no-op ports elsewhere. | Preserved. |
-| 5 | First sight establishes baseline, no alert. | Preserved; null ≠ empty; first `404` establishes empty. |
-| 6 | Quiet re-enable; discard old pending and re-baseline. | Preserved with incarnation + epoch identity. |
-| 7 | Write ADR `0024-background-event-alerts.md` after implementation. | Preserved; use `docs/adr/0000-template.md`. |
-| 8 | Conditional fetches; no stale/partial/newer-schema diffs; retain baseline on `404`. | Preserved. |
-| 9 | Grouped alerts with stable per-library ids; re-post replaces that library's own alert; summary id 0. | **Amended 2026-11-07 (simplified):** no active-inventory inspection, cross-run cap or batch cancellation. Feature-scoped cancel only on disable/reset/revocation/removed row. Promise is submission, not display. |
-| 10 | Five-minute run deadline. | **Amended by 15:** no 100-site selection; all sites every run; deadline is a safety limit. |
-| 11 | One writer per file; no foreground observer. | Preserved; worker non-overlap is a Step 0 gate. |
-| 12 | Do not change foreground `busy_timeout`/journal mode. | **Reconfirmed 2026-11-07.** Worker uses a short bounded busy wait and fails closed; at realistic scale skipped sites are harmless. |
-| 13 | Notification title provenance. | **Decided 2026-11-07:** stored `name` when `fetch_status = 'ok'` (public name via `refresh_run.dart:283`), generic title otherwise; no extra descriptor fetch; hide on lock screen. |
-| 14 | ON-settings with missing registration. | **Decided 2026-11-07:** explicit Resume; unknown registration fails closed; no automatic re-register or auto-disable. **Amended 2026-11-08:** the foreground's own no-libraries cancellation is recorded (`pausedForNoLibraries`, same token) and resumes automatically when a library is saved; every other missing registration still requires Resume. |
-| 15 | Sizing. | **New 2026-11-07:** realistic ≤ 20 libraries; hard cap 100; check all per run; pending ≤ 2/site; state ≤ 512 KiB; no overflow budget or fairness ordering. |
-| 16 | Phasing. | **Decided 2026-11-07:** background-only; no foreground badge phase. |
-
-## Steps
-
-Implementation was approved end-to-end in conversation on 2026-11-07; the
-steps below are kept as the record of what was done.
-
-- [x] 0. Feasibility BEFORE the state store: baseline tests/analyze with
-  pinned `fvm`; inspect current plugin/native WorkManager sources for
-  periodic retry/backoff, registration/cancellation completion, safe
-  cancellation targeting and worker non-overlap. Exercise cancel/re-enable,
-  retry/update, engine stop and process death on Android. Verify
-  notification replace-by-id, lock-screen visibility and the `uuid` random
-  source. Plugin installation needed for this proof requires exact-command
-  and dependency approval first (brings Step 4's package approval forward).
-  A failed/unknown proof is a stop-and-redesign gate.
-- [x] 1. Read complete generation, DB and network DI flows and existing
-  tests; implement peek-only generation and bounded snapshot/point-read
-  source with side-effect, capacity, contention and live-removal tests.
-- [x] 2. Add immutable domain types, typed async ports, digest/diff and token
-  identity tests; `CheckLibraryEventsUseCase` returns a typed run report.
-- [x] 3. Add bounded file stores, foreground operation queue and worker
-  reducer; test atomicity, ownership, reset and concurrent completions.
-- [x] 4. Approve exact pinned packages/Gradle edits (if not already done in
-  Step 0); integrate scheduler, notifier, icon/channel/desugaring; audit
-  F-Droid purity.
-- [x] 5. Implement the run state machine, pending revalidation, guard checks,
-  deadline, revocation/recovery and submission tests from the tables above.
-- [x] 6. Wire the top-level `@pragma('vm:entry-point')` dispatcher, minimal
-  background providers, foreground lifecycle observer and safe disposal.
-- [x] 7. Add Settings, nonrepeating explanation, recovery/Resume state and
-  warm/cold routing; verify title provenance and app-lock in widget/device
-  tests.
-- [x] 8. Update privacy/manifest/guides/changelog and ADR 0024 from template.
-- [x] 9. Automated gates run (results below). Real-device matrix: partly
-  run on 2026-11-08 ("Session 2026-11-08 (second)"); the remaining items
-  are listed under "Still owed" in that section. Committed as `bc8b019`
-  and `102cc53`.
-
-## Out-of-scope observations
-
-- Foreground observation/de-duplication and a foreground events badge stay
-  deferred (decision 16). Adding either requires revisiting writer
-  coordination, not another JSON writer.
-- Shared notification infrastructure for loan reminders moves to core only
-  when that feature needs it; do not refactor it now.
-- iOS scheduling/push infrastructure remain out.
-- No exact timing, guaranteed OS display, image-byte-change detection, or
-  recovery of an intent that neither storage nor the scheduler persisted.
-- Untracked notes at repo root (`item-reminder.md`, `reminder-fixes.md`,
-  `reminder-issues1.md`, `remoteImport-issues.md`) are unrelated to this
-  feature; the maintainer should file or remove them.
-- CI (seen 2026-11-08 on PR #25): the `fdroid-purity` job has no Gradle
-  cache, so every run downloads `gradle-8.14-all.zip` unauthenticated from
-  GitHub releases (services.gradle.org redirects there). During GitHub's
-  "timeouts for some unauthenticated users" incident that download
-  returned 504 three times and failed the gate before it checked
-  anything. Possible hardening: cache `~/.gradle/wrapper/dists` (or a
-  SHA-pinned Gradle setup action). Separately,
-  `android/gradle/wrapper/gradle-wrapper.properties` has no
-  `distributionSha256Sum`, so the downloaded Gradle is not
-  checksum-verified. Both are CI/supply-chain changes outside this
-  feature.
-
-## Result
-
-- [x] Resolved pending decisions 9, 12, 13, 14 and recorded new decisions
-  15 (sizing) and 16 (phasing) with the maintainer on 2026-11-07.
-- [x] Implemented Steps 0–8 end-to-end (approved in conversation).
-
-### Gates (2026-11-07)
-
-| Gate | Result |
-|---|---|
-| `dart run build_runner build` | clean; generated files present and unignored |
-| `dart format --set-exit-if-changed lib test integration_test` | 0 changed |
-| `flutter analyze lib test integration_test` | 0 issues |
-| `flutter test` | 6247 passed, 10 failed — the SAME 10 pre-existing golden pixel diffs in `test/golden/key_screens_test.dart` as the pre-change baseline (6069 passed, 10 failed). +178 new tests, all green. |
-| Architecture tests | 38/38 (domain purity, layer boundaries, 500-line ratchet) |
-| F-Droid purity (`fdroidReleaseRuntimeClasspath`) | no gms/play/firebase/mlkit; new artifacts: `androidx.work:work-runtime:2.9.0`, `gson 2.12.0` (already transitive at 2.10.1) |
-| `flutter build apk --debug --flavor fdroid` | built (desugaring compiles) |
-| `flutter build apk --release --flavor fdroid --split-per-abi arm64` | built; dex strings free of `google/android/(play|gms)|firebase|mlkit`; `drawable/ic_stat_pitak_events` present in the shrunk resource table (keep.xml effective) |
-| Rust gates | not re-run: no Rust files changed |
-
-### Step 0 findings (plugin sources, 2026-11-07)
-
-- `workmanager 0.6.0`: register/cancel return before the native `Operation`
-  completes; `isScheduledByUniqueName` is authoritative (`.get()`).
-  `onStopped` destroys the Dart engine without a Dart-side signal. Adapter
-  confirms every mutation by polling the authoritative query; worker
-  non-overlap = AndroidX unique periodic work + the token guard.
-- `flutter_local_notifications 20.1.0`: `notify(id)` replaces; requires app
-  desugaring; brings `gson` (Apache-2.0, not a Play/GMS artifact).
-- `uuid 4.5.3` v4 default RNG is `CryptoRNG` (`Random.secure`).
-- `androidx.work` merges `ACCESS_NETWORK_STATE`, `RECEIVE_BOOT_COMPLETED`,
-  `WAKE_LOCK`, `FOREGROUND_SERVICE` (documented in the manifest and
-  `PRIVACY.md`); its `DUMP`-protected diagnostics receiver is not a
-  `uses-permission`.
-
-### What was built
-
-- Domain (`lib/features/network/domain/events_watch/`): token, settings,
-  state, baseline, pending, digest, diff, reconcile, id allocator, payload,
-  ports, run report; `WatchedLibrariesSource` port.
-- Application (`lib/features/network/application/events_watch/`):
-  `CheckLibraryEventsUseCase` + `EventsWatchRun` (state machine),
-  `WatchStateReducer`, `EventsWatchController` (+ view), tap resolver.
-- Infrastructure (`lib/features/network/infrastructure/events_watch/`):
-  read-only SQLite source, JSON codec, bounded atomic document file, file
-  stores, WorkManager scheduler, notifications notifier, no-op ports,
-  entry-point dispatcher.
-- Core: `DataGenerations.peekActive()`, `CapacityFailure`,
-  `rootNavigatorKeyProvider`, `events_watch_providers.dart`.
-- Presentation: Settings group, explanation dialog, lifecycle relay
-  (bootstrap, reconcile on start/unlock/resume, first-run offer, tap
-  routing); `main.dart` wiring.
-- Android: plugins, desugaring, icon + `keep.xml`, manifest permissions.
-- Docs: `PRIVACY.md` (item 10, permissions, storage, date), `CHANGELOG.md`,
-  network guide, ADR 0024 + README row.
-
-### Deviations from the plan (recorded)
-
-- The dispatcher wires dependencies by hand instead of building a
-  `ProviderContainer`: same minimal surface, fewer moving parts; nothing
-  that touches Drift/vault/app-lock is referenced from it.
-- `PendingChange.safeCaption` uses the existing `SafeDisplayText` rule plus
-  the poster caption cap; no new text rule was introduced.
-- `settings_page.dart` lost one pre-existing one-line comment to stay at
-  exactly 500 lines (ratchet); the information moved to trailing comments.
-
-### Owed by the maintainer
-
-- Real-device matrix (PLAN.md §8): partly done on 2026-11-08; the
-  remaining items are under "Still owed" in "Session 2026-11-08 (second)".
-- [x] Commit — done as `bc8b019` (2026-11-08 01:40).
-- Fastlane changelog entry at the next release.
-
-## Handoff (2026-11-08, first session) — HISTORY
-
-Kept for the record; superseded by the two sessions below. The "open
-issue" here is closed and the phone now runs the debug play build.
-
-### Device state
-- OnePlus 9R (LE2101), Android 14 / API 34, serial `678c5642`, USB.
-- Installed: `dev.khoj.pitaka` 1.9.5 **play release** (local upload key,
-  signer `d30c5209`), built after `flutter clean` from the working tree.
-  The previous Play-signed copy was uninstalled (`adb uninstall`) because
-  its certificate blocked `adb install -r`. `dev.khoj.pitaka.fdroid` is
-  also on the phone, untouched.
-- `adb` is at `~/Library/Android/sdk/platform-tools/adb` (not on PATH).
-
-### What was verified on the device
-- `POST_NOTIFICATIONS` granted; channel `pitak_events_watch` exists at
-  importance DEFAULT (so the foreground `initialize()` ran and the user
-  went through the explanation + system prompt).
-- Periodic job registered by WorkManager with the intended constraints
-  (`batteryNotLow=true`, CONNECTIVITY, TIMING_DELAY).
-- ~~Forcing it runs the worker~~ **Corrected 2026-11-08 (second session):
-  `cmd jobscheduler run -f` does NOT run the Dart worker** — see
-  "Root cause" below. The job id increments because WorkManager
-  reschedules, not because the worker ran.
-
-### Root cause of the open issue (found 2026-11-08, debug build)
-
-`dumpsys jobscheduler` job history for the forced job: `START` → `STOP
-… app called jobFinished` **23 ms later**; no Flutter engine, no
-`events_watch:` log line, no WM-WorkerWrapper result line. Verified in
-`work-runtime-2.9.0.aar` bytecode (`WorkerWrapper.runWorker`,
-`WorkSpec.Companion.calculateNextRunTime`):
-
-- For periodic work with a flex window (`flex != interval`), the first
-  run time is `enqueue + initialDelay + (interval − flex)` = **enqueue +
-  11 h** for our 12 h / 1 h registration.
-- `WorkerWrapper` refuses any periodic/backed-off run while
-  `now < calculateNextRunTime()` ("Delaying execution … before
-  schedule", debug-level log) and resolves with *reschedule* → new
-  JobScheduler id. A forced JobScheduler run therefore never reaches
-  `BackgroundWorker`.
-
-Consequence: **none** of the previous session's forced runs (#1–#4)
-executed the worker. No baseline was ever written; the caption-change
-sequence was never checked; the "no notification" observation was
-expected behaviour of an un-run job, not a defect in the run logic.
-The Settings status lines on the old install would have shown no
-"Last check" — that evidence is gone (release copy uninstalled for the
-debug build).
-
-Product note (record, do not change without a decision): with the
-current flex, the first check after enabling happens 11–12 h later;
-subsequent checks every 12 h ± 1 h. Settings copy says "about every
-12 hours", which is compatible but silent on the first delay.
-
-### Open issue — no notification after a caption change (SUPERSEDED by the root cause above; kept for history)
-Sequence: library saved → alerts enabled → forced run #1 (baseline,
-nothing shown — correct) → maintainer published a poster, then **edited
-its caption** and reports it live → forced runs #2 and #3 → **no
-notification posted** (`dumpsys notification` shows no record for the
-package). Release builds carry no per-step logs (`appLog` is debug-only;
-WorkManager's own logs are debug-level), so the worker's decision is not
-observable from logcat.
-
-Not yet known (first things to establish next session):
-1. **Settings → Data → Event alerts** status lines on the phone — they are
-   rendered from the worker's state file and distinguish "worker never
-   got past load", "fetch failed/unreachable", "checked, nothing new
-   (304/old content)", and "alert waiting (show failed)". The maintainer
-   had not read them yet when the session ended.
-2. Whether the library is actually in **Network** as a `bookmark`/`card`
-   row on this phone (the worker watches only that list; publishing from
-   the phone does not add a row).
-3. What the site serves right now: read-only `GET <site>/events.json`
-   with/without the previous `ETag` (URL not shared this session).
-
-Hypotheses, most to least likely:
-- The edit was not yet served by the host when runs #2/#3 happened
-  (Pages/CDN propagation) → host answered `304` → correctly no alert.
-  Re-force once more after confirming the caption via curl.
-- The watched row is missing / `discovered` → nothing is fetched;
-  Settings would show "Save a library in Network…" or 0 checked.
-- Background-isolate plugin problem (e.g. `MissingPluginException` from
-  `flutter_local_notifications.initialize` in the WorkManager engine) →
-  dispatcher returns `false` → WorkManager retries with backoff. Would
-  show as NO "Last check" line. Check by building the **debug** play
-  flavor (needs uninstall first: different debug certificate) — `appLog`
-  then prints `events_watch: run <reason>` — or temporarily passing
-  `isInDebugMode: true` to `Workmanager().initialize` (posts debug
-  notifications per task; do not ship).
-- Guard refusal in the worker (membership check hitting a busy catalogue
-  while the foreground app was open; token mismatch). Would show as
-  "unreachable"/failed count or 0 checked.
-
-Useful commands:
 ```
-adb shell dumpsys jobscheduler | grep -A30 'JOB #u0a318/' | grep -E 'Requires|constraints'
-adb shell cmd jobscheduler run -f dev.khoj.pitaka <id>
-adb shell dumpsys notification --noredact | grep -E 'pkg=dev.khoj.pitaka|pitak_events_watch'
-adb shell dumpsys package dev.khoj.pitaka | grep -E 'versionName|signatures=|POST_NOTIFICATIONS: granted'
+BR1 (covers)        independent
+BR2 (archive 4)  -> BR3 (limits, writer refuses) -> BR4 (streamed writer)
+                 -> BR5 (reader from a file) -> BR5b (picker)
+                 -> BR6 (streamed restore) -> BR7 -> Import and Merge
+                    on the picker
+BR8 (raise limits)  needs BR4, BR6, BR7 and a passed phone run
+BR9 (notice)        needs BR4 and BR6 for honest numbers
+BR10                last; its phone runs can start now that BR6 is in
 ```
 
-## Session 2026-11-08 (second): open issue closed
+After each of BR1, BR2, BR3, BR4, BR6 and BR7 the app is releasable.
 
-Correction to the status line at the top: the feature WAS committed as
-`bc8b019` (2026-11-08 01:40, includes PLAN.md). This session's changes
-below were committed on top of it as `102cc53` (2026-11-08 12:36).
+### The open stages
 
-### Changes made (committed as `102cc53`)
-- Debug-only device-testing hook (approved in conversation):
-  `WorkmanagerGateway.registerOneOffNow()` +
-  `WorkmanagerEventsWatchScheduler.debugRunNow()` (one-off request, same
-  task name, separate unique name `…events_watch.debug_run`, no
-  constraints, no confirmation poll); `eventsWatchDebugRunNowProvider`
-  (null unless `kDebugMode` and the WorkManager scheduler is bound);
-  "Run check now (debug build)" action in `EventsWatchSettingsGroup`.
-  Tests: 2 scheduler cases, 3 widget cases (the widget `pump` helper pins
-  the hook to null so other cases model a release build).
-- `PendingChange.safeCaptionOf` folds layout whitespace (`\n \r \t`,
-  runs of spaces, U+2028/2029) into one space before the safe-display
-  check (approved: multi-line captions were always falling back to the
-  fixed sentence because `EventPoster.create` accepts newlines). Tests in
-  `events_diff_test.dart` and `validation_gates_test.dart`.
-- Docs: ADR 0024 "Testing note" + caption-folding consequence;
-  CHANGELOG Unreleased entry extended; this file.
+**BR7. The other readers; remove the in-memory reader.** Four steps,
+one commit each. The full design, with eight choices to review, is
+the private file `br7-in-detail.md`.
 
-### Device evidence (OnePlus 9R, Android 14, play **debug** build)
-- Install: release copy uninstalled (data wiped), debug build installed;
-  later debug rebuilds installed with `-r` (data, permission, periodic job
-  all survived).
-- Debug one-off run: background engine starts (`FlutterJNI: Beginning
-  load of flutter`), `events_watch: run completed`, `WM-WorkerWrapper:
-  Worker result SUCCESS`, ~1.3 s per run; Settings shows "Last check … 1
-  checked". Periodic registration (`dev.khoj.pitaka.events_watch`)
-  untouched and still ENQUEUED.
-- Baseline run → no alert (correct). Second run with unchanged content →
-  no alert, nothing duplicated.
-- Caption edited on the host (verified with `curl`: new ETag, same
-  `imageRef`) → run → `dumpsys notification`: summary id 0 "New events at
-  1 saved library" (GROUP_SUMMARY|AUTO_CANCEL) + library id 11065214,
-  both `vis=PRIVATE`, channel `pitak_events_watch`. Title was generic and
-  body was the fixed sentence — both explained: the row had never been
-  Refreshed (`fetch_status ≠ ok`, decision 13 holds) and the caption
-  contained `\n` (led to the folding change above).
-- After Refresh in Network + another caption edit (three line breaks) +
-  rebuilt debug APK: maintainer reports title = library public name, body
-  = caption, tap → events poster page (warm tap route). Log:
-  `10:57:51 events_watch: run completed`, SUCCESS.
+- [ ] Import offers JSON and CSV. A ZIP that is picked anyway is
+  refused with a sentence. The bundle reader, its provider and its
+  tests go; the tests of the import step that it shares with "Restore
+  from my published site" stay, built on rows made in the test.
+- [ ] Every test reads ZIP files through the reader that works from a
+  file. All 96 cases of odd and hostile files stay.
+- [ ] `BoundedZipExtractor` is deleted. The domain layer then imports
+  no package for ZIP work: `archive` leaves the allow-list of
+  `domain_purity_test.dart`. Third amendment to ADR 0009.
+- [ ] Changelog lines.
 
-### Device matrix, driven over adb/uiautomator (11:03–11:17)
+**Import and Merge on the app's own picker (D24, T1).** Not designed.
+`test/support/fake_document_picker.dart` is there for it.
 
-Evidence per step: Settings UI dump, `dumpsys jobscheduler`, WorkManager
-diagnostics broadcast, `run-as` reads of the two JSON documents, logcat.
+**BR8. Raise the limits (D3, D4).** Only after the phone run of the
+old numbers has passed, or together with it.
 
-| Step | Result |
+- [ ] `BackupLimits`: 10,000 covers, entries derived, 1 GiB content;
+  the caps per kind as D9 says.
+- [ ] Tests at the new edges (10,000 covers pass, 10,001 refused;
+  1 GiB passes, one byte more refused), as tagged tests or a `tool/`
+  script because of their size.
+- [ ] Messages name the new numbers (P4-m19).
+
+**BR9. The resource notice (D5).**
+
+- [ ] Read the Android documentation for free storage and available
+  memory; write the exact calls and their meaning into the ADR.
+- [ ] Kotlin: a channel `dev.khoj.pitaka/device_resources` in `main/`
+  (both flavours, no Google dependency, no permission, no argument),
+  with a JUnit test. Dart: a port `DeviceResources` that answers
+  "unknown" on a missing handler or an error; a provider; a fake.
+- [ ] Domain: need, supply, verdict (decision point 5), pure, tested at
+  every boundary.
+- [ ] One dialog for the create-backup page and the restore page
+  (decision point 6). Sizes in MB or GB with one decimal. Wording for
+  the four verdicts, also "could not be read on this device".
+- [ ] The restore page has a golden (`restore_initial.png`): if its
+  first state changes, the `update-goldens` workflow on Linux.
+- [ ] Widget tests for the four verdicts on both pages; "Go on" is
+  there in each; nothing is logged.
+
+**BR10. Proof on devices, records, clean-up.**
+
+- [ ] A `tool/` script that builds a synthetic `.pitabak` (N covers of
+  a chosen size). Restore it in the emulator (`pitak_s11_api36`), then
+  make a backup there and restore that. Sizes: 4,000, 10,000 and
+  10,001 covers; about 300 MB and 1 GiB.
+- [ ] The same on a real phone, the slowest at hand. Time, peak
+  memory, free storage before and after. The memory figure of the
+  notice comes from here.
+- [ ] Look at real covers at 240×360, quality 70, on the phone.
+- [ ] ADR 0025 (no Kotlin compatibility, D1, D29). ADR 0026 (backup
+  limits, streamed archive, resource notice; D2, D8, D19, D20, D22 to
+  D28). Update `README.md`, `SECURITY.md`, `PRIVACY.md` and
+  `docs/ARCHITECTURE.md` where they describe backup, limits or covers.
+- [ ] Tick the findings this closed in the private tracker, with
+  commit ids. Publish the archive when T1 to T9 are closed (D30).
+
+### Decision points that are still open
+
+5. **When is storage "tight" [BR9].** Proposed: "enough" when free
+   storage is at least the need plus 20% (at least 100 MB more), "not
+   enough" when it is below the need, "tight" in between.
+6. **The restore confirmation (P4-M5) [BR9].** The notice sits before
+   the button that P4-M5 wants a confirmation for. Proposed: the
+   notice is that confirmation (it also says "This replaces your
+   library"), and the long red box stays until P4-M5 is decided.
+7. **How to run the plan.** Never answered in words. In practice every
+   stage has ended with a stop for review, and every commit and push
+   has had its own yes.
+
+Not part of this plan, on purpose: "Save to this phone" (P4-M6),
+reading and writing the catalogue off the screen's thread (the rest
+of P3-B3), Cancel for long runs, a change to the archive's format.
+
+### Checks for every stage
+
+Before the first change of a stage (baseline) and after each step:
+
+```
+fvm dart run build_runner build --delete-conflicting-outputs
+fvm dart format -o none --set-exit-if-changed lib test integration_test
+fvm dart analyze
+fvm flutter test --exclude-tags golden
+```
+
+At the end of a stage, and whenever Kotlin or Rust changed:
+
+```
+# in android/ (offline; --rerun after EACH task name, then look at
+# the dates of the XML files under build/app/test-results/)
+./gradlew --offline -x :integration_test:compileDebugJavaWithJavac \
+  :app:testFdroidDebugUnitTest --rerun :app:testPlayDebugUnitTest --rerun
+# in rust/
+cargo fmt --check
+cargo clippy --offline --locked --all-targets -- -D warnings
+cargo test --offline --locked --release
+```
+
+Numbers at `0d3dcca` (2026-11-13):
+
+| Check | Result |
 |---|---|
-| Disable via switch | ✔ OFF persisted (epoch+1), WM work `CANCELLED`, JobScheduler job gone, state file untouched, no alerts. |
-| Re-enable | ✔ No explanation, no system prompt (both already satisfied), job re-registered; debug run = quiet re-baseline, same notification id. |
-| Reset | ✔ Fresh incarnation, epoch 0, OFF, job cancelled; state file still carried the old incarnation (foreground never writes it); next enable showed the explanation again (acknowledgement resets with the incarnation — acceptable, recorded); worker adopted the new token and re-baselined quietly. |
-| Force-stop → relaunch | ✔ JobScheduler job vanished with `stopped=true`; WorkManager's `ForceStopRunnable` re-registered it on launch BEFORE our reconcile; Settings shows ON, no Resume. |
-| Notifications blocked in system settings (`pm revoke`/appops are denied to shell on this OEM) | ✔ Process killed by the OS; relaunch reconcile persisted OFF (epoch+1) and cancelled the job. **Finding 1** below. |
-| Enable while blocked | ✔ OS re-prompted once; "Don't allow" → OFF (epoch+1), no job; second tap → no prompt loop, OFF again (epoch+1). **Finding 1** applies. |
-| Re-allow → enable | ✔ No dialogs, job registered, worker quiet under the new epoch, `revocationToken` null. |
-| Remove the only library | ✔ Job cancelled by the watched-count observer, settings stay ON, phase "Save a library in Network…". |
-| Re-add + Refresh | ✔ as designed (decision 14): ON + no job → "Checks are not scheduled → Resume"; Resume registered; run pruned rowId 1, baselined rowId 2 quietly, stable id reused. **Finding 2** below. |
-| Android 12L+ desugaring crash | ✔ Not reproduced on API 34: notifications initialise and post. |
-| Worker-side revocation (marker written by the worker) | ✗ Not reachable on-device: the only trigger is the debug hook, which needs the app open, and opening the app reconciles OFF first. Covered by unit tests only. |
+| `build_runner` | no diff in git (judge by `git status`, not by "wrote N outputs") |
+| format | 0 changed, 1,430 files |
+| analyze | 47 issues: 45 under `rust_builder/`, 2 in `pubspec.yaml`; none in `lib/`, `test/`, `integration_test/`, `tool/` |
+| `flutter test --exclude-tags golden` | 7,136 passed (4.5 to 6 minutes) |
+| Kotlin unit tests | 55 in each flavour (6, 18, 31) |
+| Rust | fmt and clippy clean; 37 passed, 2 ignored |
+| CI on pull request #30 | all jobs green, the first fully green run of this branch |
 
-**Finding 1 (UX, controller) — FIXED (approved):** `_turnOffBecauseBlocked`
-returned the `blocked` view, but every permission / system-settings round
-trip ends in a `resumed` lifecycle event whose reconcile re-read settings
-(now OFF) and replaced the view with `off` within the same second; the
-"Notifications are blocked for Pitak…" sentence was never visible. Fix:
-`_reconcilePresent` derives `blocked` from facts (settings OFF **and**
-`delivery() == blocked`), `off` otherwise, `noLibraries` first; a
-delivery-check error shows plain `off`. Re-verified on device: the
-sentence stays through later reconciles (12:04–12:05).
+`cargo deny check` and the OSV scan fetch from the network: they are
+left to CI, or need a yes. Golden images are judged on Linux only; a
+stage that changes a screen with a golden needs the `update-goldens`
+workflow after a push.
 
-**Finding 2 (product, decision 14) — FIXED (approved, decision 14
-amended):** `EventsWatchSettings.pausedForNoLibraries` (schema 1, absent
-= false, non-bool = corrupt). The ON path writes it `true` (same token)
-before cancelling for an empty set; with libraries present and no
-registration it auto-registers only when the flag is set, then clears
-it; `withEnabled` clears it; a failed pause save falls back to Resume.
-The worker is unchanged (it still cancels on an empty set; it never
-writes settings). Re-verified on device: remove → job cancelled, flag
-true, epoch 5; re-add → job `#19` registered automatically, flag false,
-epoch still 5.
+### Definition of done for the whole plan
 
-Tests added: controller (6 cases: pause recorded once, auto-resume,
-no-pause → Resume, failed pause save → Resume, disable clears, derived
-blocked/off/noLibraries precedence, delivery error → off), settings
-model (validate + transitions), store round-trip + pre-field document +
-hostile value. `test/features/network` + `test/architecture` +
-`test/features/settings`: 1331 passed.
+- [ ] D2 to D5 behave as written, proven by tests and by the runs of
+  BR10.
+- [ ] The checks above green; the golden step green on Linux.
+- [ ] No secret, path or user data in any new log line or message.
+- [ ] ADR 0025 and ADR 0026 written; docs updated; findings ticked.
+- [ ] No leftover temporary files, no pending tool failure.
 
-**Out of scope, noticed:** the Network page header read "Never refreshed
-yet." after a force-stop although the row had been refreshed earlier
-(the title showed the public name); the last-refresh stamp looks
-in-memory only.
+## Handoff
 
-### Still owed
-- Device matrix (§8) not yet exercised: cold-start tap (app killed) and
-  tap while locked (app-lock gate) — both need a fresh caption edit on
-  the host; reboot (WM `RECEIVE_BOOT_COMPLETED` re-registration);
-  Doze/battery saver; process death mid-run; one natural periodic run
-  (≥ 11 h after enable) to prove the scheduled path without the debug
-  hook.
-- [x] Full gates on the working tree (2026-11-08 12:30): `build_runner`
-  (only the controller's generated hash changed), `dart format` 0 changed,
-  `flutter analyze lib test integration_test` 0 issues, full
-  `flutter test` 6263 passed / 10 failed = the same 10 pre-existing golden
-  pixel diffs in `test/golden/key_screens_test.dart` (+16 net new tests),
-  F-Droid `fdroidReleaseRuntimeClasspath` free of gms/play/firebase/mlkit,
-  `flutter build apk --release --flavor fdroid` arm64 built.
-  `--analyze-size` of that release confirms `_DebugRunAction`, the
-  `eventsWatchDebugRunNow` provider function, `debugRunNow` and
-  `registerOneOffNow` are all tree-shaken (the `if (kDebugMode)` gate is
-  a statement around a dedicated widget class for that reason); two
-  inert label literals remain in the snapshot's string table.
-- [x] Commit — done as `102cc53` (2026-11-08 12:36).
-- Reinstall a **release** build on the phone before any store upload test
-  (the phone currently runs the debug-signed play flavor).
-- Fastlane changelog entry at the next release.
+For an agent or a person who starts with no memory of the earlier
+sessions. Brought up to date on 2026-11-13. Everything here was true
+when it was written; check the repository before relying on it.
 
-## Session 2026-11-08 (third): review against the plan
+### Read in this order
 
-Read-only review of `bc8b019` + `102cc53` against this plan. Evidence:
-feature + architecture tests 251 passed; `flutter analyze` 0 issues.
-The plan is largely honoured (token identity, bounded stores, strict
-read-only source, fetch-outcome table, pending revalidation, stable ids,
-revocation marker, Resume, deadline, F-Droid gates).
+1. "How to use this file", then this section.
+2. "Decisions" and "The plan".
+3. The private file `br7-in-detail.md` (the next stage), and in the
+   private tracker the open items T1 to T9.
+4. From the private archive only what the task needs: the design and
+   the result of the stage it builds on. Its titles are listed at its
+   top.
 
-### Fixed this session (approved in conversation; committed after `102cc53`)
-- [x] **Enable with no saved library.** The switch stayed active in the
-  `noLibraries` phase, and `_enable` prompted for permission, saved ON
-  and registered a job for an empty list (against §5: "an empty watched
-  set cancels without a permission prompt; the first saved row enters
-  setup"). Now `EventsWatchController._enable` checks the strict watched
-  count BEFORE the prompt: 0 → `noLibraries` with no prompt, no settings
-  write, no registration; unreadable → `storageError`, no prompt. The
-  Settings switch is disabled in `noLibraries` (subtitle already says
-  "Save a library in Network…"). Tests: 2 controller cases, 1 widget
-  case.
-- [x] **PLAN.md out of date.** Header status, Steps preamble, Step 9,
-  both commit items and the first handoff (now marked HISTORY) corrected.
-- [x] Gates: `build_runner` (only the controller's generated hash
-  changed), `dart format` 0 changed, `flutter analyze lib test
-  integration_test` 0 issues, `test/features/network` +
-  `test/features/settings` + `test/architecture` 1334 passed (+3); full
-  `flutter test`: only the same 10 pre-existing golden pixel diffs in
-  `test/golden/key_screens_test.dart` fail.
+### State of the repository
 
-### Open review findings (NOT fixed; each needs a decision)
+- Branch `reviewFixes`: the 24 commits of the rework on top of
+  `origin/main` (`fe8a2c4`), the last of them `0d3dcca`, and after
+  them the commit that put this file into git. Look at `git status`
+  for whether the branch is pushed.
+- Draft pull request #30 ("Backup and restore rework, stages BR1 to
+  BR6"). CI runs on a pull request and on a push to `main` only
+  (`ci.yml:7-10`); a push to `reviewFixes` runs it because of #30.
+  Run 43392871577 at `0d3dcca` is green in all jobs; the commit of
+  this file changes no code.
+- **Where the private files are:** in the root of the maintainer's
+  working tree, next to the review files, as untracked files:
+  `review-tracker.md`, `plan-archive-2026-11-13.md`,
+  `br7-in-detail.md`. Three lines in `.git/info/exclude` (a setting
+  of that checkout only) keep them out of `git status` and
+  `git add`. Git does not keep them: they exist on that machine
+  only.
+- Untracked files that `git status` shows. Do not add, move or
+  delete them: the nine review files (`codeReviewPrompt1.md` to `4.md`,
+  `codeReviewReport1.md` to `4.md`, `codeReviewSummary.md`), and five
+  that are not part of this work (`docs/plans/handoff-2026-11-09.md`,
+  `item-reminder.md`, `reminder-fixes.md`, `reminder-issues1.md`,
+  `remoteImport-issues.md`).
+- Nothing of BR7 is built.
 
-Major (1–3: WORDING corrected before 1.9.6 — `PRIVACY.md` item 10 + a
-new 2026-11-08 change note, and the explanation dialog's lock-screen
-sentence. The BEHAVIOUR is unchanged and is now disclosed as it is;
-changing it still needs a decision):
-1. Decision 13 premise is false. `add_member_use_case.dart:128,146`
-   keeps a user-typed bookmark name and sets `fetchStatus: ok` after a
-   card's fingerprint verifies, so a private label can become the alert
-   title until the next successful Refresh. Was: "never a name you typed".
-   Now disclosed as an exception. ADR 0024's rationale line still states
-   the old premise.
-2. Watch data was claimed "deleted when you reset the feature or remove
-   the library". Nothing deletes it: reset rewrites only settings, the
-   state file waits for a worker run that never comes while OFF, and
-   removing the last library cancels the job. Root cause: single-writer
-   design has no purge path. Now disclosed (off/reset/removal leave it
-   until the next check; clear storage/uninstall deletes it).
-3. "Hidden on the lock screen" rested on `visibility: private`
-   (`local_notifications_notifier.dart:164,193`), which (from memory,
-   unverified) still shows the alert and conceals content only when the
-   user hides sensitive content. Now worded as "follows your lock-screen
-   setting". Still verify on device; `secret` remains an option.
-4. `EventsWatchController.build()` runs `_reconcile()` outside the
-   `SerialOpQueue`, as soon as the relay subscribes — before unlock and
-   before `Workmanager().initialize`; it can overlap the relay's own
-   reconcile (stale read-modify-write of settings). The relay test uses a
-   fake controller and cannot catch this.
-5. Partial submission (`events_watch_run.dart` `_submit`): if library B
-   fails after A was shown, no summary is posted and A's pending is not
-   removed, so A re-alerts on retry (§4 says remove entries covered by
-   successful calls). No two-library test covers it.
+### Next
 
-Minor:
-6. Mid-run guard: delivery-check error is a per-site failure (plan: stop
-   and retry); permission loss mid-run stops without the marker; no guard
-   before the result commit. Not in "Deviations".
-7. Cancellation targeting (Step 0 gate) not established:
-   `cancelByUniqueName` cancels whatever job is current; `_revoke`
-   self-cancels before `cancelAllFeatureAlerts()`, which probably never
-   runs once WorkManager stops the worker.
-8. A newer-schema STATE file is not surfaced (`_readStatus` → `none`);
-   §6 wants an update-required state.
-9. Blocked phase has text only, no system-settings action (§5).
-10. Worst-case state size at the hard caps (100 sites, 2048-char URLs,
-    200 pending) exceeds 512 KiB → every commit would fail. Unreachable
-    at realistic scale; no test proves the caps fit together.
-11. NEW (seen while fixing the zero-library case): with settings ON and
-    `pausedForNoLibraries`, the view is `noLibraries` and the switch shows
-    OFF, so the user cannot turn the paused ON state off from Settings,
-    and saving a library resumes alerts automatically. Pre-existing
-    (tapping used to call `enable`, never `disable`); not changed by this
-    fix. Possible direction: show the switch ON in that state and allow
-    only disable.
+1. Confirm the state above and run the checks (baseline).
+2. The go-ahead for BR7 is asked and not answered yet: build it as
+   designed, with the eight choices listed at "Choices in this design"
+   of `br7-in-detail.md`, or with changes. No code before the answer.
+3. Build BR7 step by step: the checks after each step, a patch of
+   each step saved outside git, a stop for review before the first
+   commit, a yes for each commit and for the push. Watch the CI run
+   to its end before the stage is called done.
+4. After BR7: design "Import and Merge on the app's own picker" (D24)
+   and ask for its go-ahead.
 
-Nits: unused `BoundedJsonDocumentFile.delete()` and
-`EventsWatchStatus.withheldSites`/`failedSites`; duplicate orphan doc
-comments (`events_watch_state.dart:131,133`, `site_watch_status.dart:70`);
-tap resolver uses Drift rows (permissive token mapping) instead of the
-strict source; stopped runs write no `lastRun`.
+### What each stage still waits for
 
-### Still owed
-- [x] Committed (explicit paths; the four untracked root notes stay out)
-  and pushed to `notifications` as `0c96e48`, which re-ran CI on PR #25.
-- [x] CI on PR #25 (run 42469614050): all four jobs green on attempt 3 —
-  Flutter (analyze, format, test), Rust core, OSV scan, F-Droid flavor
-  purity ("fdroidReleaseRuntimeClasspath is clean" + positive control OK).
-  Attempts 1–2 (and the earlier `102cc53` run) failed only because the
-  Gradle download returned 504 during a GitHub incident (see
-  "Out-of-scope observations").
-- Device matrix items listed under "Session 2026-11-08 (second) → Still
-  owed".
-- Decisions on the open findings above (Major 1–3 are now disclosed
-  accurately; their behaviour is unchanged).
-- [x] 1.9.6+38 Play bundle built and verified from `fee39f3` with
-  `tool/release_build.sh` (evidence in `CHANGELOG.md`).
-- [x] Uploaded to Google Play by the maintainer (2026-11-08).
-- Signed tag `1.9.6`, push and F-Droid follow-up remain maintainer-owned,
-  as do the manual RELEASING.md §6.1 steps 6–7 (TalkBack walk,
-  cleared-install integration test).
+| Stage | Waits for |
+|---|---|
+| BR7 | the go-ahead |
+| Import and Merge on the picker (D24, T1) | BR7; its own design and go-ahead |
+| BR8 raise the limits | BR7 and a passed run on a real phone; the time the share plugin needs to copy a large file on Android's main thread, measured first |
+| BR9 resource notice | decision points 5 and 6 |
+| BR10 proof and records | a real phone; ADR 0025 and ADR 0026 |
+
+### What the built stages left in place
+
+For the stage of D24 (Import and Merge on the picker):
+
+- `DocumentPicker` (`lib/core/platform/document_picker.dart`):
+  `pickCopy(maxBytes:)`, `discard(document)`, `sweep()`. Seven
+  answers, a sealed set: a `switch` must name each.
+  `documentPickerProvider` is a kept-alive `Future` provider.
+- A picked copy is `<temp>/picked_documents/pick-<uuid>/document`,
+  without a file ending. `PickedDocument.displayName` is for showing
+  only. Kotlin refuses a cap above 2 GiB.
+- `test/support/fake_document_picker.dart`; on the Kotlin side
+  `DocumentPickPlatform` is the seam, with `FakePlatform` in
+  `PickedDocumentChannelTest`.
+- `RestoreController` shows how a page and a controller share a
+  picked copy (the table in its library comment, D25).
+
+For BR8 (the limits):
+
+- `BackupLimits.current` is the one place for the numbers.
+  `ZipLimits.forBackup(limits)` builds the reader's caps from it, and
+  `backupEntryRule(name, limits)` the rule per entry name.
+  `RestoreBackup` takes `limits` as a constructor argument.
+- `presentation/restore_messages.dart` and the create-backup messages
+  take their numbers from `BackupLimits`.
+- The memory checks by hand: `tool/backup_memory_check.dart` and
+  `tool/zip_reader_memory_check.dart` (with `--restore`).
+- `released_backup_fixture_test.dart` must stay green (D12).
+
+For BR9 (the notice):
+
+- The notice goes in front of the Restore button; `_runRestore` in
+  `restore_page.dart` is the one place a restore starts.
+- The channel needs no path argument: Kotlin can use the app's own
+  files folder. No argument, nothing to validate.
+
+Shared pieces, by name:
+
+- Backup: `BackupWorkArea` and `FileBackupWorkArea` (one folder per
+  build under `<temp>/backup_work/`), `PlannedBackupEntry.streamed`,
+  `packBackupZip`, `FileShareService.shareFile(path, mimeType)`,
+  `BackupProgress` with `backup_progress_port.dart` ("done, of
+  total" from a worker, at most ten times a second), `VaultIdleGate`,
+  `VaultArtifactsStore.hasUnfinishedWrite()`,
+  `test/features/backup/test_vault_gate.dart`.
+- The reader: `BoundedZipFile.open(path, limits:, policy:)`, then
+  `entries`, `entry(name)`, `read(entry, maxBytes:)`,
+  `writeTo(entry, path)`, `close()`. All synchronous: run them in a
+  worker isolate. An entry has one of three verdicts; only `take` can
+  be taken.
+- Restore: `RestoreBackup.inspectArchive(path)` and
+  `restore(archivePath:, passphrase:, onProgress:)`;
+  `openBackupArchive`, `listBackupCovers`, `RestoreDiskTrouble`
+  (`restore_archive_reader.dart`); `restorableCoverLeaf`;
+  `RestoreController` (`pickArchive`, `inspectArchive`, `restore`,
+  `releaseArchive`) and the notifier `RestoreProgress`;
+  `restoreWorkFolders` and `staleRestoreFilesSweep`.
+- Storage: `RunFolders` (`create`, `adopt`, `discard`, `sweep`).
+- SQLite: `retryWhileSqliteBusy`
+  (`lib/core/database/sqlite_busy_retry.dart`): the way to wait for a
+  lock held by another connection. Its header says why SQLite's own
+  wait is not used.
+- The reader of release 1.9.7 can be rebuilt outside the repository
+  when old and new have to be compared: one file,
+  `git show 1.9.7:lib/features/import_export/domain/bounded_zip_extractor.dart`,
+  on `archive` 3.6.1.
+
+### Traps
+
+Gathered from the eight handoffs of BR1 to BR6 and from 2026-11-13.
+Each cost time once.
+
+**Files and layers**
+
+- No file under `lib/` may pass 500 lines without an entry in the
+  allow-list of `layer_boundaries_test.dart`. New code goes into new
+  files. Near or at the ceiling today: `pitaka_json_importer.dart`
+  500, `zip_container.dart` 494, `backup_archive_writer.dart` 477,
+  `restore_backup.dart` 468. `vault_session_controller.dart` has 836
+  lines, the number recorded for it: one more line fails the test, and
+  a change to it has to move something out first.
+- Layers are enforced by tests. The application layer may not import
+  `dart:io`, `dart:isolate` or `package:path`; presentation may not
+  import infrastructure; the domain may not import infrastructure.
+- A file that names the covers folder may only read
+  (`cover_files_immutable_test.dart` forbids `.copy(`, `.rename(`,
+  `.writeAs…(` and `.openWrite(` in it, pins the write calls by their
+  exact text, and wants every such file listed). A new file that
+  writes must not contain `coversDir` or the quoted word `covers`.
+- `*.pitabak` is ignored by git on purpose. Do not change that rule.
+
+**Tests that fail on purpose after a change**
+
+- `archive_sink_protocol_test.dart` pins five files of the `archive`
+  package by their content and reads the SOURCE TEXT of the reader's
+  sink. An `archive` update that touches the inflater or its streams,
+  or renaming or rewrapping a guard, fails it. Read the comment at its
+  top, read the package's files again, then change the test with the
+  code.
+- `image_downscaler_test.dart`, two SHA-256 pins: an `image` version
+  that resizes or encodes differently. Compare old and new pictures
+  first, with pictures that have a colour profile and transparency; a
+  visible change needs a new `PublishCoverRendition` (ADR 0020).
+- `domain_purity_test.dart`: the packages the domain may import.
+- `backup_vault_gate_wiring_test.dart`: a gate under `lib/` that just
+  runs its action. `BackupArchiveWriter` needs a `vaultGate`; tests
+  pass `TestVaultGate()`.
+
+**Writing tests**
+
+- A helper next to tests must not be called `…_test.dart`:
+  `flutter test` loads every such file and fails when it has no `main`.
+- A function given to `Isolate.run` or `Isolate.spawn` must be
+  top-level or static. Inside a test body, or next to a `ReceivePort`,
+  a `Directory` or a store, it drags those along and fails at run
+  time, not at compile time.
+- A widget test cannot wait for a real isolate or for asynchronous
+  file work. The page tests of restore therefore replace the
+  controller. `RestoreBackup` is a `final class`: no stand-in outside
+  its file.
+- The create-backup page and the restore page are lists that build
+  only what is near the screen. "Not found" can mean "further down":
+  make the test's screen tall (`tester.view.physicalSize`) or ask the
+  controller.
+- A test that a provider is kept alive has to wait one turn
+  (`await Future<void>.delayed(Duration.zero)`) between its two reads,
+  or it passes for an auto-disposed provider too.
+- A real backup or restore provider in a test needs
+  `TestWidgetsFlutterBinding.ensureInitialized()`,
+  `SharedPreferences.setMockInitialValues({})`, and the overrides
+  `appDocsDirProvider`, `appTempDirProvider` and
+  `documentPickerProvider`. `ReplacementHarness(generations: true)`
+  makes drift warn about a second database; that is noise.
+- Three places build a `RestoreBackup` and follow a change of its
+  constructor: `generation_fixture.dart`, `atomic_restore_test.dart`,
+  `replacement_harness.dart`. The golden test uses the first and is
+  judged on Linux only.
+- Fakes that follow an interface change: six of `FileShareService`,
+  two of `VaultArtifactsStore`, two of `BackupWorkArea`, and 19
+  implementations of `VaultRepository` in `lib/` and `test/` together.
+- `expectUnchanged` in `atomic_restore_test.dart` opens the
+  generations first, which tidies up like an app start. A test that
+  wants to see a leftover has to list the folders before it.
+- `buildWishlistDb()` and `buildBooksDb()` in
+  `restore_backup_test.dart` write to one fixed file each: call each
+  once per test and reuse the bytes.
+- In the tests of the restore controller, `.value!` on the state
+  fails with "Null check operator" for ANY failed restore. The log
+  then does not say why; print the state's error to find out.
+- A test that must fail on the old code is written without the new
+  names first, or it only fails to compile.
+- That a new test can fail is tried by hand, one change in `lib/` at
+  a time. The script that makes the change puts the file back in a
+  `finally`, but not when the tool that runs it is killed: after any
+  stopped run, compare with the saved copy. A trial change to a
+  `@riverpod` annotation needs `build_runner` before and after.
+- `--timeout` does not stop a test that loops in plain code; it works
+  between asynchronous steps only.
+- `bounded_zip_extractor_test.dart:758` holds one assertion on
+  wall-clock time, under 200 ms. Under load it can fail without a
+  change in the code.
+- The table helper of the ZIP cases takes every entry twice (`read`,
+  then `writeTo`); the probe is given to the first pass only. A
+  hostile test entry can "declare" a size it does not have as long as
+  it is left out or ignored: such an entry is never unpacked.
+
+**Tools**
+
+- `dart format` rewrites files unless told `-o none`. `cargo fmt`
+  rewrites too.
+- `flutter pub get --dry-run` is not a look without side effects: it
+  downloads into the shared pub cache. `flutter test` resolves
+  packages again when `pubspec.yaml` is newer than the package map.
+- `fvm dart` works inside the repository only. A script outside runs
+  against the app's packages with
+  `dart --packages=<repo>/.dart_tool/package_config.json script.dart`.
+- `build_runner` may say it wrote hundreds of outputs although git
+  shows no change. It once took 17 minutes: give the checks and a
+  commit a long time limit.
+- Peak memory of a Dart program is not what it holds; short-lived
+  garbage counts too. `--new_gen_semi_max_size=4` next to
+  `--old_gen_heap_size` shows the difference. For a compiled program
+  the options go into `DART_VM_OPTIONS`, separated by commas.
+
+**Git and the pre-commit hook**
+
+- The hook runs `build_runner` when Dart under `lib/` or `test/` is
+  staged (about 20 seconds) and refuses a commit while ANY generated
+  file in the WORKING tree differs from the index. It checks
+  `cargo fmt` when a Rust file is staged.
+- Several commits from one working tree: make the step that changes
+  a generated file the FIRST commit. Where that is not possible, save
+  each step as a patch before the next step starts (`git diff` for
+  tracked files, `git diff --no-index /dev/null <file>` for new ones)
+  and stage it later with `git apply --cached`.
+- Before a commit, compare what is staged with the saved files.
+- `git checkout`, `git restore`, `git add -N`, `rm` and `chmod` need a
+  yes each time, also for the agent's own edits and its own scratch
+  files. Undo an own edit with the edit tool; run a scratch script
+  with `bash script.sh`.
+
+**Gradle and the emulator**
+
+- Offline, the Android unit tests need
+  `-x :integration_test:compileDebugJavaWithJavac` (the Flutter SDK's
+  `integration_test` plugin asks for a version Gradle cannot resolve
+  offline). It works as long as that plugin's classes from an earlier
+  run are in `build/`. After `flutter clean` one run with the network
+  is needed, and that needs a yes.
+- An offline Gradle run can report success without running a test
+  (`UP-TO-DATE`): `--rerun` after EACH task name, then look at the
+  dates of the XML files. Gradle's own output names no test count.
+- A release Gradle task fails after a debug build of the `flutter`
+  tool. Use the debug tasks.
+  `flutter build apk --config-only --no-pub` does not rewrite the
+  generated plugin list.
+- A channel object made in a field of `MainActivity` has no Android
+  context yet. Only registering is allowed there.
+- `adb` is not on the PATH: `~/Library/Android/sdk/platform-tools/adb`.
+  Start the emulator with `-read-only`. The image `pitak_s11_api36`
+  holds an `fdroid` install with another signature, which comes up in
+  front; the `play` debug build installs next to it as
+  `dev.khoj.pitaka`. Start it with
+  `adb shell am start -n dev.khoj.pitaka/dev.khoj.pitaka.MainActivity`
+  (`monkey` did not start it). After `am force-stop` the system's
+  share sheet can stay in front: press Back first. The share sheet
+  there has no target for a backup file and shows no file name.
+  `uiautomator dump` shows Flutter's labels as `content-desc` and none
+  for an empty text field; a tap "by label" can hit the page title of
+  the same name. The system picker remembers the last folder.
+  Passphrase fields give blank screenshots.
+
+**CI, Linux and this Mac**
+
+- A check that passed on this Mac has not passed on Linux, where CI
+  runs. `flutter test` runs with the Dart profiler on; on Linux and
+  Android the profiler interrupts every thread with a signal about
+  once a millisecond, on macOS it does not. A pause inside native
+  code (SQLite's own busy wait, for one) can end early there. Wait
+  with a Dart timer instead (`retryWhileSqliteBusy`).
+- A fix is not done before its CI run is green to the end. Look at
+  every job, not only at the first that finishes.
+- A test that failed "now and then" is run many times, also with the
+  machine busy (14 `yes > /dev/null` next to it), before and after the
+  fix. So are the NEW tests of the fix.
+- A new advisory can turn `cargo deny check` and the OSV scan red on
+  every branch although nothing changed. The fix is an update of the
+  named crate in `rust/Cargo.lock` (`372ad3b`, `5e8dfea`), not an
+  entry in an ignore list, when a fixed version exists.
+- Golden images are judged on Linux only. Never commit a picture made
+  on a Mac; the `update-goldens` workflow makes them.
+
+**The ZIP reader**
+
+- The inflater of `archive` 4 does not throw on damaged data: it
+  stops and keeps what it has. The rule "a deflate stream must reach
+  its end mark" is what refuses such a stream. `ZLibDecoder(raw:
+  true)` of `dart:io` does not report a missing end mark, which is why
+  the package's inflater is used.
+- Rule N2 and case C18 go together: two directory records that share
+  one content share one entry header. Whoever wants C18 accepted again
+  has to drop the name rule.
+- `ZipLimits` asserts that the total is at least the cap of one entry,
+  also when a policy makes that cap unused.
+- `BytesBuilder(copy: true).takeBytes()` can hand back a view into a
+  larger buffer; the reader gathers exact copies with `copy: false`.
+- A backup holds its databases with the sizes behind the data (a
+  "data descriptor"). The reader accepts that and must keep doing so.
+
+**Isolates**
+
+- `Isolate.run` copies everything its function can see. The workers
+  are started from a static function that sees only the job.
+- A worker returns plain data only, never a `Failure` object.
+- "In use" lives in memory: `FileBackupWorkArea` and `RunFolders` know
+  which folders this app session uses, which is why their providers
+  are kept alive. A new app start knows of none and sweeps them all.
+
+**Other**
+
+- Both numbers of a sentence for the user use the same unit.
+- A vault file is not the same bytes after a rollback, although its
+  content is. Compare rows, size and `PRAGMA integrity_check`.
+- After a failed backup build the work folder is empty, not absent.
+
+**For an agent in pi**
+
+- Tool calls of one block run at the same time. A `read` in the same
+  block as a write or an edit of that file can see it half-written or
+  not at all. An edit and an append to one file in one block lost the
+  appended text once. One write to a file per block, then look.
+- A long section is written as scratch files, joined, appended in ONE
+  command, and then compared.
+- Read-only calls to GitHub (`gh run view`, `gh pr view`) have been
+  used without asking; anything that changes something there needs a
+  yes.
+
+### Open items kept in the private tracker
+
+Nine things that are not fixed and are therefore not described here
+(D30). The private tracker has each with its place in the code.
+
+| T | Area | Belongs to |
+|---|---|---|
+| T1 | Import and Merge, picking a file | the stage of D24 |
+| T2 | Sharing a file | not in a stage; a question for the maintainer |
+| T3 | Restore, reading the databases | not in a stage (the rest of P3-B3 is near it) |
+| T4 | The picker's copy | D26, after the phone runs of BR10 |
+| T5 | Restore, the vault of a backup | not in a stage |
+| T6 | A backup and a restore at the same time | not in a stage |
+| T7 | The vault's files | not in a stage |
+| T8 | The texts inside failures | not in a stage; needs tracing first |
+| T9 | Restore, writing covers | not in a stage |
+
+### Questions the maintainer has not answered yet
+
+None of them blocks BR7 except the first.
+
+- **The go-ahead for BR7,** with its eight choices.
+- Pull request #30 is a draft. When is it made ready, and merged?
+- Decision points 5 and 6 (before BR9) and 7.
+- For each of T2, T3 and T5 to T9: is it built, in which stage, or
+  accepted as a known limit and written into `SECURITY.md`?
+- `CHANGELOG.md`: lines for `ede5a3e` and `0d3dcca` (a restore no
+  longer fails when the app saves at the same moment)? The maintainer
+  chose "no line" at the first of the two.
+- `PRIVACY.md`: does the sentence BR6 added (item 7) get a dated
+  "Changed" note at the top, and does the effective date move, now or
+  with the release?
+- A line for the Android unit tests in `AGENTS.md` §11 ("Required CI
+  gates"). That file says "update it deliberately".
+- A line on both pages that names each step and says "Please keep
+  Pitak open" (the rest of P4-M7; D27 left it open).
+- The note about a vault that was left out of a backup is small
+  print; and the older note still says "Everything else is inside"
+  when a cover or the vault is missing as well.
+- "Repair first" (D17 left it for later): let the backup repair a
+  cut-off vault write itself. Needs a Rust function over the FFI.
+- A sentence of its own for a full disk during a backup, now or with
+  BR9.
+- An ADR for D2, or fold it into ADR 0026.
+  `docs/adr/0014-catalogue-interchange-and-backup.md:191` still says
+  `BackupEntryOverflow` (now `BackupOverflow`).
+- Not yet seen on a device: an event alert with notifications 22.3.3
+  (D14); the file name in the share sheet.
+- Small clean-ups, each its own change: `PublishArtifactSpoolRoot`
+  onto `RunFolders`; `PickedDocumentChannel.kt` (455 lines) in two
+  files; `expectUnchanged` looking at the folders first; a helper in
+  the restore controller's tests that shows why a restore failed;
+  `sqlite_watched_libraries_source.dart` on `retryWhileSqliteBusy`.
+- CI housekeeping: `rust/osv-scanner.toml` has an ignore that no
+  longer matches anything (GHSA-qwgh-2vcv-g2f7), and the matching
+  entries in `deny.toml` were not looked at; `ubuntu-latest` moves to
+  Ubuntu 26; two actions still target Node 20.
+- In the private tracker 93 findings have an open box and 4 a ticked
+  one, although more are done. Tick them, with their commits?
+
+### How this work is run
+
+- One question at a time: a few plain sentences of background, the
+  question, lettered options, a recommendation.
+- A stop after each stage. A commit only after a yes to the exact
+  command; the same for a push, a package fetch, a deletion, a Gradle
+  run with the network and an emulator run.
+- A stage is not done before the checks are green, the result is
+  written down, and (since 2026-11-13) its CI run is green.
+- A test that proves a change is written first and run against the
+  old code where that is possible. That new tests can fail is tried
+  by hand. A trial change that no test catches is not left as a note:
+  either the code it showed to be redundant goes, or the test is made
+  to see it.
+- A design that rests on something only remembered gets an experiment
+  outside git, or the documentation is read and quoted, first. For
+  platform code the Android documentation is read; where it is
+  silent, the compiled class is read.
+- Where the old behaviour of security code matters, the old and the
+  new are run on the same files, and every change of verdict is shown
+  to the maintainer before the commit. A prediction that turns out
+  wrong is said first, not last.
+- What a test cannot reach is named in the result, with where its
+  proof will come from.
+- A check that reports "success" is looked at for whether it did the
+  work.
+- After each step a patch of that step is saved outside git; the
+  commits are made at the end, and what is staged is compared with
+  the saved files first.
+- A slip is written down where it happened.
+- When two instructions point different ways, the agent asks one
+  question instead of choosing.
+
+### Scratch folders outside git
+
+`/tmp/pitak_br7/` holds the logs and saved files of 2026-11-13. The
+folders of the earlier stages (`/tmp/pitak_br2/` to `/tmp/pitak_br6/`)
+were gone on 2026-11-13; the system empties `/tmp`. Nothing in the
+repository depends on any of them.
+
+## Log
+
+| Date | What |
+|---|---|
+| 2026-11-10 | The four review passes. Decisions D1 to D16. BR1, BR3, BR2, the core of BR4 and its rider 1 |
+| 2026-11-11 | Riders 3 and 2 of BR4. BR5. The first three steps of BR5b. D17 to D19 |
+| 2026-11-12 | BR5b step 4. BR6, with a run in the emulator. D20 to D28. The branch pushed; draft pull request #30 |
+| 2026-11-13 | The first CI runs: `rustix` (`5e8dfea`), and a restore test that failed now and then, fixed in two commits (`ede5a3e`, then `0d3dcca` after the first form failed on Linux). D29. BR7 designed. This file cut down (D30) |
