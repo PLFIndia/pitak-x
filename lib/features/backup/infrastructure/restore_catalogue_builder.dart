@@ -28,8 +28,32 @@ import 'package:pitaka/features/library/infrastructure/catalogue_item_mapper.dar
 import 'package:pitaka/features/wishlist/infrastructure/wishlist_mapper.dart';
 import 'package:sqlite3/sqlite3.dart';
 
+/// How long the snapshot of the live catalogue waits for a write that is
+/// being committed there, in milliseconds.
+///
+/// WHY A WAIT (beginner note): the app writes its catalogue on a background
+/// thread, with SQLite's default journal. For the moment a write is
+/// committed, SQLite lets nobody else read the file. Without a wait, a
+/// snapshot that arrives in that moment gives up at once with "database is
+/// locked", and a restore fails for no reason the user can see. With a
+/// wait, SQLite tries again until the write is through.
+///
+/// WHY THIS NUMBER: a commit takes milliseconds, so two seconds is ample.
+/// It must stay well under five seconds: the wait blocks the thread it runs
+/// on, the screen's, and Android shows "app isn't responding" when that
+/// thread does not answer a touch for five seconds.
+///
+/// The same rule as the background event check, which reads this catalogue
+/// the same way (`sqlite_watched_libraries_source.dart`).
+const int restoreSnapshotBusyWaitMs = 2000;
+
 /// Snapshots the live catalogue of [active] into [builder] and replaces its
 /// rows with [legacy], inside ONE transaction on that copy.
+///
+/// The snapshot waits up to [restoreSnapshotBusyWaitMs] for a write to the
+/// live catalogue to finish. A catalogue that is still locked after the
+/// wait is thrown on like any other SQLite trouble: the restore fails and
+/// nothing has changed.
 ///
 /// [openCatalogue] opens the builder's catalogue copy (the restorer's seam,
 /// so tests can inject faults into it). [scope] is the lease of the vault
@@ -59,7 +83,10 @@ Future<Either<Failure, Unit>> buildRestoredCatalogue({
       mode: OpenMode.readOnly,
     );
     try {
-      source.execute('VACUUM INTO ?', [builder.catalogueDbPath]);
+      source
+        // First, so that the copy waits out a write instead of failing.
+        ..execute('PRAGMA busy_timeout = $restoreSnapshotBusyWaitMs')
+        ..execute('VACUUM INTO ?', [builder.catalogueDbPath]);
     } finally {
       source.dispose();
     }
