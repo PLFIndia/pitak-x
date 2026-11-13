@@ -1,12 +1,13 @@
 /// Reads the CONTAINER of a ZIP file: the end record, the directory in front
 /// of it, and the small header in front of each entry's content
 /// (import/export domain, ADR 0009). It decompresses nothing and copies
-/// nothing: `BoundedZipExtractor` does that, under its limits.
+/// nothing: the reader, `BoundedZipFile` (infrastructure), does that, under
+/// its limits.
 ///
 /// WHY THIS FILE EXISTS (beginner note): a ZIP file ends with a directory
 /// that lists every entry (name, sizes, checksum, where it starts). Until
-/// BR2 the extractor let `package:archive` read that directory. Two things
-/// ended that:
+/// BR2 the app let `package:archive` read that directory. Two things ended
+/// that:
 ///  - `archive` 4 no longer hands out an entry's raw bytes, so the entry
 ///    header has to be read here anyway;
 ///  - the package's directory reader changed WHAT IT ACCEPTS between 3 and 4
@@ -14,8 +15,9 @@
 ///    field rename an entry). A security check must not change its verdict
 ///    because a dependency was updated.
 /// So the rules are written down here, once, in our own code, and the tests
-/// in `bounded_zip_extractor_container_test.dart` hold them to what the
-/// released reader (1.9.7) decided for each odd file.
+/// in `zip_container_verdicts_test.dart` hold them to what the released
+/// reader (1.9.7) decided for each odd file, or mark where they are
+/// stricter on purpose.
 ///
 /// Where the rules come from:
 ///  - the record layouts and the order of the checks follow `package:archive`
@@ -28,13 +30,14 @@
 ///    BSD-3-Clause, The Go Authors). The 3.6.1 code relied on a `RangeError`
 ///    to stop a read past the end; here every read is checked first.
 ///
-/// Stricter than the released reader in four places here, all for files no
+/// Stricter than the released reader in five places here, all for files no
 /// honest writer makes (each is marked "STRICTER" below): a second end
 /// record signature behind the one that is used, a directory record that
 /// does not fit inside the directory, an entry header that says "encrypted"
-/// while the directory does not, and a 64-bit size or offset with the top
-/// bit set. (The extractor adds two more, about a declared size that points
-/// beyond the file.)
+/// while the directory does not, an entry header that carries another name
+/// than the directory (rule N2 of BR5), and a 64-bit size or offset with
+/// the top bit set. (The reader adds more, about the sizes an entry
+/// declares: `zip_entry_rules.dart` and `bounded_zip_file.dart`.)
 ///
 /// Pure Dart: bytes in, numbers and views out. No `dart:io`.
 ///
@@ -43,17 +46,18 @@
 /// block, and an entry header is 30 bytes. So each reader also works on a
 /// part of the file when it is told where that part starts
 /// (`offsetInFile`), or is given a function that fetches bytes ([ZipRead]).
-/// The reader that holds the whole file in memory passes the file and 0;
-/// the reader that works from a file on disk passes what it has read. Both
-/// run the SAME code here, so they cannot give different verdicts on the
-/// container.
+/// The reader, which works from a file on disk, passes what it has read. A
+/// test that holds a whole archive in memory passes the archive and 0. Both
+/// run the SAME code here, so a part of a file cannot get another verdict
+/// than the whole file (`zip_container_parts_test.dart`).
 library;
 
 import 'dart:convert';
 import 'dart:typed_data';
 
-/// The container cannot be read. The extractor turns this into its own
-/// typed failure; no caller sees this type.
+/// The container cannot be read. The reader turns this into its own typed
+/// failure (`BoundedExtractionException`); no caller of the reader sees
+/// this type.
 final class ZipContainerException implements Exception {
   /// Creates the exception with a short reason.
   const ZipContainerException(this.message);
@@ -67,7 +71,8 @@ final class ZipContainerException implements Exception {
 
 /// The ZIP end-of-central-directory (EOCD) record: where the directory is
 /// and how many entries it claims. Every number in it comes from the file
-/// and is therefore a CLAIM, checked by the extractor before it is used.
+/// and is therefore a CLAIM, checked before it is used
+/// (`checkZipEndRecord`).
 final class ZipEndRecord {
   const ZipEndRecord._({
     required this.recordOffset,
@@ -111,8 +116,10 @@ final class ZipDirectoryEntry {
     required this.hasZip64Marker,
   });
 
-  /// The entry's name as the directory has it (the authoritative one; the
-  /// name in the entry header is ignored, so it cannot be used to spoof).
+  /// The entry's name as the directory has it. It is the one that counts:
+  /// an entry header that carries another name refuses the archive
+  /// ([ZipContainer.contentRange], rule N2), so a second name cannot be
+  /// used to spoof.
   final String name;
 
   /// Which system made the entry (high byte) and with which ZIP version.
@@ -140,29 +147,24 @@ final class ZipDirectoryEntry {
   final int localHeaderOffset;
 
   /// The bytes of [name] as they lie in the directory: a view, nothing is
-  /// copied. The reader that works from a file compares them with the name
-  /// in the entry header (BR5, rule N2).
+  /// copied. [ZipContainer.contentRange] compares them with the name in the
+  /// entry header (BR5, rule N2).
   final Uint8List nameBytes;
 
   /// True when one of the record's sizes, its offset or its disk number
   /// holds the "see the zip64 record" marker (all bits set), whether or
-  /// not such a record then gave a value. The reader that works from a
-  /// file refuses such an entry (BR5, rule N3); the in-memory reader does
-  /// not look at this.
+  /// not such a record then gave a value. The reader refuses such an entry
+  /// (BR5, rule N3).
   final bool hasZip64Marker;
 }
 
-/// Where an entry's content lies: a VIEW into the input (nothing is copied).
+/// Where an entry's content lies, as numbers: it starts at `start` of the
+/// file and `length` bytes of it are inside the file.
 ///
 /// `complete` is false when the declared compressed size points beyond the
-/// end of the file and the view was cut at the end. A deflate stream may
-/// still be whole (it carries its own end mark); a stored entry is not.
-typedef ZipBodyRange = ({Uint8List bytes, bool complete});
-
-/// Where an entry's content lies, as numbers: it starts at `start` of the
-/// file and `length` bytes of it are inside the file. `complete` as for
-/// [ZipBodyRange]: false when the declared compressed size points beyond
-/// the end of the file, and `length` then ends at the end of the file.
+/// end of the file; `length` then ends at the end of the file. A deflate
+/// stream may still be whole (it carries its own end mark); a stored entry
+/// is not.
 typedef ZipContentRange = ({int start, int length, bool complete});
 
 /// Hands out `length` bytes at `offset` of the file. [ZipContainer] asks
@@ -364,48 +366,27 @@ abstract final class ZipContainer {
     }
   }
 
-  /// The content of [entry] as a view into [bytes], the whole file in
-  /// memory. The rules are those of [contentRange].
-  static ZipBodyRange body(Uint8List bytes, ZipDirectoryEntry entry) {
-    final range = contentRange(
-      entry,
-      fileLength: bytes.length,
-      read: (offset, length) =>
-          Uint8List.sublistView(bytes, offset, offset + length),
-    );
-    return (
-      bytes: Uint8List.sublistView(
-        bytes,
-        range.start,
-        range.start + range.length,
-      ),
-      complete: range.complete,
-    );
-  }
-
   /// Where the content of [entry] lies in a file of [fileLength] bytes,
-  /// found through the entry header in front of it. Only the header's
-  /// signature, its flags and its two lengths are used; every other value
-  /// comes from the directory (adapted from Go's `findBodyOffset`).
+  /// found through the entry header in front of it. The header's signature,
+  /// its flags, its two lengths and its name are looked at; every other
+  /// value comes from the directory (adapted from Go's `findBodyOffset`).
+  ///
+  /// The name in the entry header has to be the name in the directory, byte
+  /// for byte (BR5, rule N2).
   ///
   /// [read] fetches bytes of the file. It is asked for the 30 bytes of the
-  /// entry header and, when the header announces a data descriptor, for
-  /// the four bytes behind the declared content; both only after the range
+  /// entry header, for the name behind them when it is as long as the
+  /// directory's, and, when the header announces a data descriptor, for
+  /// the four bytes behind the declared content; each only after the range
   /// was checked to lie inside the file.
   ///
-  /// With [nameMustMatch] the name in the entry header has to be the name
-  /// in the directory, byte for byte (BR5, rule N2), and [read] is also
-  /// asked for that name. The reader that works from a file asks for this.
-  /// The in-memory reader does not: it keeps the released reader's
-  /// verdict, which ignored the entry header's name, until it is removed.
-  ///
   /// Throws [ZipContainerException] when no entry header is where the
-  /// directory says, or when the content would start beyond the file.
+  /// directory says, when it names the entry differently, or when the
+  /// content would start beyond the file.
   static ZipContentRange contentRange(
     ZipDirectoryEntry entry, {
     required int fileLength,
     required ZipRead read,
-    bool nameMustMatch = false,
   }) {
     final offset = entry.localHeaderOffset;
     if (offset < 0 || offset > fileLength - _entryFixedLength) {
@@ -431,23 +412,23 @@ abstract final class ZipContainer {
     if (start > fileLength) {
       throw const ZipContainerException('entry content lies outside the file');
     }
-    if (nameMustMatch) {
-      // Two names for one entry are not the work of an honest writer, and
-      // a reader that picked the other one would see another archive.
-      final expected = entry.nameBytes;
-      var same = nameLength == expected.length;
-      if (same) {
-        // Inside the file: the name ends before `start`, checked above.
-        final actual = read(offset + _entryFixedLength, nameLength);
-        for (var i = 0; same && i < nameLength; i++) {
-          same = actual[i] == expected[i];
-        }
+    // STRICTER than the released reader, which ignored the entry header's
+    // name (BR5, rule N2). Two names for one entry are not the work of an
+    // honest writer, and a reader that picked the other one would see
+    // another archive.
+    final expected = entry.nameBytes;
+    var same = nameLength == expected.length;
+    if (same) {
+      // Inside the file: the name ends before `start`, checked above.
+      final actual = read(offset + _entryFixedLength, nameLength);
+      for (var i = 0; same && i < nameLength; i++) {
+        same = actual[i] == expected[i];
       }
-      if (!same) {
-        throw const ZipContainerException(
-          'entry header and directory name the entry differently',
-        );
-      }
+    }
+    if (!same) {
+      throw const ZipContainerException(
+        'entry header and directory name the entry differently',
+      );
     }
     // Compared by subtraction ON PURPOSE: a declared size can be any 64-bit
     // number, and `start + size` could overflow. Sizes are never negative

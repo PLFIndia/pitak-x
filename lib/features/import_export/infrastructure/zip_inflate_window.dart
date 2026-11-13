@@ -3,13 +3,13 @@
 /// (import/export infrastructure, backup rework BR5, ADR 0009).
 ///
 /// WHY THIS FILE EXISTS (beginner note): a ZIP entry is usually "deflated"
-/// (compressed). Unpacking it is called inflating. The older reader of the
-/// app inflates an entry from memory into memory, so a 200 MiB database
-/// needs 200 MiB of memory, and more while the buffer grows. A phone does
-/// not give an app that much. The classes here let the SAME inflater read
-/// its input from a file a little at a time, and hand its output on a
-/// little at a time, so the memory in use stays under 200 KiB whatever the
-/// size of the entry.
+/// (compressed). Unpacking it is called inflating. The first reader of the
+/// app (removed in BR7) inflated an entry from memory into memory, so a
+/// 200 MiB database needed 200 MiB of memory, and more while the buffer
+/// grew. A phone does not give an app that much. The classes here let the
+/// SAME inflater read its input from a file a little at a time, and hand
+/// its output on a little at a time, so the memory in use stays under
+/// 200 KiB whatever the size of the entry.
 ///
 /// How that is possible: deflate saves space by saying "repeat the N bytes
 /// that came D bytes ago", and D is never more than 32,768. So an inflater
@@ -252,9 +252,7 @@ final class ZipFileRangeInput extends InputStream {
 ///
 /// FOUR THINGS TO KNOW BEFORE CHANGING THIS CLASS. They were read in the
 /// source of `archive` 4.6.0, and `archive_sink_protocol_test.dart` fails
-/// when that source changes, so that the reading is repeated. (The first
-/// three are those of the older reader's sink in
-/// `bounded_zip_extractor.dart`.)
+/// when that source changes, so that the reading is repeated.
 ///
 ///  1. **It must extend `OutputMemoryStream`.** `Inflate` writes straight
 ///     into an `OutputMemoryStream`. Into any OTHER kind of output stream it

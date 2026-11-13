@@ -4,14 +4,14 @@ import 'dart:io';
 import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-/// The ZIP readers' output budget depends on HOW `package:archive`'s
-/// inflater writes its output, and (since BR5) reads its input. This test
-/// pins the five source files that decide it, by their content.
+/// The ZIP reader's output budget depends on HOW `package:archive`'s
+/// inflater writes its output and reads its input. This test pins the five
+/// source files that decide it, by their content.
 ///
-/// WHY (beginner note): `BoundedZipExtractor` stops a "zip bomb" by handing
-/// the inflater an output stream that refuses to grow past a budget
-/// (`_BudgetedSink`). That only works while three facts about the package
-/// stay true:
+/// WHY (beginner note): the reader (`BoundedZipFile`) stops a "zip bomb" by
+/// handing the inflater an output stream that refuses to produce more than
+/// a budget (`ZipWindowSink`). That only works while three facts about the
+/// package stay true:
 ///
 ///  1. the inflater writes straight into the stream when the stream is an
 ///     `OutputMemoryStream` (and through a buffer of its own otherwise);
@@ -24,9 +24,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// was added), and a port that had missed it would have let a small file
 /// unpack without limit. Nothing in the type system shows such a change.
 ///
-/// Since BR5 the app has a second reader, which works from a file
-/// (`BoundedZipFile`). Its sink, `ZipWindowSink`, rests on the same three
-/// facts. Its input, `ZipFileRangeInput`, rests on two more:
+/// The reader's input, `ZipFileRangeInput`, rests on two more:
 ///
 ///  4. the inflater reads through `isEOS`, `readByte` and `rewind`, and
 ///     for a block without compression through `length` and `readBytes`,
@@ -39,12 +37,16 @@ import 'package:flutter_test/flutter_test.dart';
 ///
 /// So: when this test fails after a dependency update, the package changed
 /// one of these files. Read the files in the new version, check the facts
-/// above against `_BudgetedSink` and `_inflateBounded` in
-/// `bounded_zip_extractor.dart` and against `ZipWindowSink` and
-/// `ZipFileRangeInput` in `zip_inflate_window.dart`, run the reader tests,
-/// and only then record the new hashes here. (Same idea as the reviewed
-/// lists in `cover_files_immutable_test.dart`: a change needs a look before
-/// it passes.)
+/// above against `ZipWindowSink` and `ZipFileRangeInput` in
+/// `zip_inflate_window.dart` and against the call of the inflater in
+/// `bounded_zip_file.dart`, run the reader tests, and only then record the
+/// new hashes here. (Same idea as the reviewed lists in
+/// `cover_files_immutable_test.dart`: a change needs a look before it
+/// passes.)
+///
+/// (Until backup rework BR7 the app had a second reader, which held the
+/// archive in memory, with a sink of its own; a second test here pinned
+/// that one. It was removed with the reader: ADR 0009, third amendment.)
 void main() {
   // Reviewed for archive 4.6.0 on 2026-11-10 (backup rework BR2).
   const reviewed = <String, String>{
@@ -92,41 +94,15 @@ void main() {
       reviewed,
       reason:
           'package:archive changed a file the ZIP output budget depends on. '
-          'Re-read it against _BudgetedSink (see the comment at the top of '
-          'this test) before recording the new hash.',
+          'Re-read it against ZipWindowSink and ZipFileRangeInput (see the '
+          'comment at the top of this test) before recording the new hash.',
     );
   });
 
-  test('the extractor still names the write paths it guards', () {
-    // The other half of the pin: the sink in OUR code. If one of these
-    // overrides disappears, the budget has a hole.
-    final extractor = File(
-      'lib/features/import_export/domain/bounded_zip_extractor.dart',
-    ).readAsStringSync();
-    expect(
-      extractor,
-      contains('final class _BudgetedSink extends OutputMemoryStream'),
-    );
-    const writeBytes =
-        'void writeBytes(List<int> bytes, {int? length}) {\n'
-        '    _guard(length ?? bytes.length);';
-    const writeBackReference =
-        'void writeBackReference(int distance, int count) {\n'
-        '    _guard(count);';
-    for (final guarded in const [
-      'void writeByte(int value) {\n    _guard(1);',
-      writeBytes,
-      'void writeStream(InputStream stream) {\n    _guard(stream.length);',
-      writeBackReference,
-      'if (!inflater.isFinished) {',
-    ]) {
-      expect(extractor, contains(guarded), reason: guarded);
-    }
-  });
-
-  test('the reader from a file still names the write paths it guards', () {
-    // The same pin for the second reader (BR5): its sink, and the end-mark
-    // rule where the inflater is called.
+  test('the reader still names the write paths it guards', () {
+    // The other half of the pin: the sink in OUR code, and the rules where
+    // the inflater is called. If one of these overrides disappears, the
+    // budget has a hole.
     final window = File(
       'lib/features/import_export/infrastructure/zip_inflate_window.dart',
     ).readAsStringSync();

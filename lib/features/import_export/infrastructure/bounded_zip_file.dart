@@ -1,19 +1,22 @@
 /// Reads a flat ZIP archive FROM A FILE, one entry at a time, under strict
 /// limits (import/export infrastructure, backup rework BR5, ADR 0009).
 ///
-/// WHY THIS FILE EXISTS (beginner note): the app's first ZIP reader,
-/// `BoundedZipExtractor`, takes the whole archive as bytes and gives back
-/// every entry unpacked. A backup with thousands of cover pictures then
-/// needs the archive AND all its content in memory at once, which a phone
-/// does not have (review finding P3-B3). This reader opens the file, checks
+/// It is the app's ONE ZIP reader, and its one caller is the restore of a
+/// backup.
+///
+/// WHY THIS FILE EXISTS (beginner note): the app's first ZIP reader took
+/// the whole archive as bytes and gave back every entry unpacked. A backup
+/// with thousands of cover pictures then needed the archive AND all its
+/// content in memory at once, which a phone does not have (review finding
+/// P3-B3). That reader was removed in BR7. This one opens the file, checks
 /// everything that can be checked without unpacking, and then hands out one
 /// entry at a time: into memory for a small one, or straight into a file
 /// for a large one. What it holds in memory does not grow with the archive.
 ///
 /// The RULES are not here. They are plain Dart in the domain layer
 /// (`zip_container.dart` reads the structure, `zip_entry_rules.dart` judges
-/// what the structure claims), shared with the older reader, so the two
-/// cannot disagree. This file does the part that needs a disk.
+/// what the structure claims), where a test can run them on bytes made by
+/// hand. This file does the part that needs a disk.
 ///
 /// ## What `open` checks, in order (nothing is unpacked)
 ///
@@ -217,7 +220,6 @@ final class BoundedZipFile {
       record,
       fileLength: source.length,
       read: source.read,
-      nameMustMatch: true,
     );
     final deflated = zipEntryIsDeflated(record);
     // A deflated entry carries its own end mark, so a declared size that

@@ -91,9 +91,10 @@ final class BackupLimits {
   /// Largest archive file, in bytes.
   int get maxArchiveBytes => maxContentBytes + archiveOverheadBytes;
 
-  /// The largest of the three per-kind caps. The reader still applies ONE
-  /// cap to every entry (it learns the per-kind caps in a later step), and
-  /// that one cap must admit the largest kind.
+  /// The largest of the three per-kind caps. A reader that is given no rule
+  /// per entry name applies ONE cap to every entry (`ZipLimits`), and that
+  /// one cap must admit the largest kind. A restore gives a rule per name
+  /// (`backupEntryRule`), with the cap of each kind.
   int get largestEntryBytes {
     var largest = maxCoverBytes;
     if (maxDatabaseBytes > largest) largest = maxDatabaseBytes;

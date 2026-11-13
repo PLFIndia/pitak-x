@@ -2,6 +2,9 @@
 
 - **Status:** Accepted
 - **Date:** 2026 (domain_purity_test allow-list; recorded 2026-10-16)
+- **Read first:** three amendments follow. Since the last one (2026-11-13)
+  the domain layer no longer imports `archive`; the Decision below is how
+  it started.
 
 ## Context
 
@@ -165,3 +168,66 @@ restore has to read from a file, one entry at a time.
 - More code of our own in a security path (about 1,200 lines in the two
   infrastructure files and the rules, comments included), in exchange for
   a reader whose memory use does not depend on the file it is given.
+
+## Amendment (2026-11-13): one reader; the domain imports no ZIP package
+
+- **Status:** Accepted (backup rework, stage BR7; `PLAN.md`, decisions D1
+  and D29)
+
+### Context
+
+Since BR6 a restore reads its backup through `BoundedZipFile`. The only
+caller left of the in-memory reader, `BoundedZipExtractor`, was the import
+of a bundle file (`.zip`, `.pitabundle`): rows together with their cover
+pictures, a format of the retired Kotlin app that this app has never
+written. Keeping that import meant keeping a second reader of hostile
+input, one that unpacked up to 500 MiB into memory. The maintainer decided
+to remove the import (D29).
+
+### Decision
+
+1. **Import reads text only:** Pitak JSON and Goodreads CSV. A file that
+   starts with the ZIP signature is refused with a sentence, by the import
+   controller and, before the file is read, by the Import page. It is
+   never unpacked. The restore from the user's own published site
+   (ADR 0021) keeps its import of rows with covers; it reads no ZIP.
+2. **`BoundedZipExtractor` is removed,** with its output sink. The app has
+   one ZIP reader, `BoundedZipFile`, and one caller of it, the restore of a
+   backup.
+3. **The domain imports no package for ZIP work.** `zip_container.dart`
+   and `zip_entry_rules.dart` are plain Dart on bytes. `archive` leaves the
+   allow-list of `test/architecture/domain_purity_test.dart`, and the test
+   that held the domain to five names of the package goes with its reason.
+   The original decision of this ADR and point 2 of the first amendment
+   now describe history. `package:archive` stays a dependency of the app:
+   infrastructure uses its inflater and its CRC function (the reader) and
+   its encoder (the backup writer).
+4. **Rule N2 is no longer a choice.** `ZipContainer.contentRange` always
+   compares the name in the entry header with the directory's. The switch
+   existed so that the in-memory reader could keep the released verdict.
+5. **The recorded containers are judged by one reader.** Of the 68, 52
+   keep the verdict of release 1.9.7, and 16 are refused where 1.9.7
+   accepted them: ten since the first amendment, six since the second.
+   What the in-memory reader still gave for those six can no longer be
+   asserted, because the code that gave it is gone; each case says it in a
+   sentence. The two files of cases have new names:
+   `zip_reader_cases_test.dart` (before: `bounded_zip_extractor_test.dart`)
+   and `zip_container_verdicts_test.dart` (before:
+   `bounded_zip_extractor_container_test.dart`).
+
+### Consequences
+
+- A bundle file from the Kotlin app can no longer be imported. The Import
+  page says which files it reads and where a backup is loaded.
+- One reader less to keep safe: 423 lines of security code and a second
+  output sink. `archive_sink_protocol_test.dart` pins the same five package
+  files and the one sink that is left.
+- What the app holds in memory while it reads a ZIP no longer depends on
+  the size of the ZIP, on any path.
+- Tests read an archive through `test/support/read_zip.dart`: the reader
+  that ships, with every entry taken twice (into memory and into a file),
+  and the two must agree. Where a test says "byte for byte" about an
+  honest archive, it compares with `package:archive`'s own ZIP reader, in
+  test code only.
+- The JSON importer lost its "bundle mode": a local cover reference in a
+  JSON file is always dropped.

@@ -9,27 +9,27 @@
 /// and touch no disk, so they are plain Dart that a test can run on a
 /// record made by hand.
 ///
-/// Since BR5 the app has two ZIP readers until the older one is removed
-/// (BR7): `BoundedZipExtractor`, which holds the archive in memory, and
-/// `BoundedZipFile`, which works from a file. Both use the name rule
-/// ([zipLeafName]) and the exception of this file.
-///
-/// The rest of the file is for the reader that works from a file:
+/// The app has one ZIP reader, `BoundedZipFile` (infrastructure), which
+/// works from a file. What is here for it:
+///  - the exception every refusal leaves as, and the name rule
+///    ([zipLeafName]);
 ///  - [ZipEntryRule] and [ZipEntryPolicy]: what the CALLER wants done with
 ///    an entry of a given name (unpack it up to a size, leave it out when
 ///    it is larger, or ignore it);
 ///  - [checkZipEndRecord] and [checkZipEntries]: every check that can be
 ///    made from declared values, for the whole archive, before anything is
 ///    unpacked.
-/// The in-memory reader keeps its own copy of these checks, in the order
-/// the released app ran them, until it is removed. The tests in
-/// `bounded_zip_extractor_test.dart` and
-/// `bounded_zip_extractor_container_test.dart` ask every case of both
-/// readers, so a difference between the two shows.
+/// The tests in `zip_reader_cases_test.dart` and
+/// `zip_container_verdicts_test.dart` hold the reader to these rules, case
+/// by case.
 ///
-/// Three rules here are STRICTER than the in-memory reader (`PLAN.md`,
-/// "BR5 in detail", rules N1 to N3; ADR 0009, amendment of 2026-11-11).
-/// No file an honest writer makes breaks them.
+/// The reader is STRICTER than the one release 1.9.7 shipped in three
+/// rules (`PLAN.md`, "BR5 in detail", rules N1 to N3; ADR 0009, amendment
+/// of 2026-11-11). No file an honest writer makes breaks them. Two are
+/// checked here: a stored entry declares ONE size (half of N1), and no
+/// entry uses zip64 (N3). The other half of N1, that what comes out is as
+/// long as declared, is checked where an entry is unpacked; N2, one name
+/// for an entry, in `zip_container.dart`.
 library;
 
 import 'package:pitaka/features/import_export/domain/zip_container.dart';
@@ -55,11 +55,11 @@ class BoundedExtractionException implements Exception {
 /// [isTaken] says whether an earlier entry of the same archive already has
 /// that leaf name.
 ///
-/// Uses the CENTRAL directory name (spoof-safe; the local header's name is
-/// ignored, cf. archive issue #266). "Directory" here means either a
-/// trailing slash or a UNIX mode that is not a regular file (symlink,
-/// device, ...), mirroring what `ZipDecoder` would have classified — but
-/// refused instead of followed.
+/// Uses the CENTRAL directory name (spoof-safe: an entry header that
+/// carries another name refuses the archive, rule N2; cf. archive issue
+/// #266). "Directory" here means either a trailing slash or a UNIX mode
+/// that is not a regular file (symlink, device, ...), mirroring what
+/// `ZipDecoder` would have classified — but refused instead of followed.
 ///
 /// Throws [BoundedExtractionException] for a name that breaks a rule.
 String zipLeafName(

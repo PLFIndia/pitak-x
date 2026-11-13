@@ -1,15 +1,14 @@
-/// Size and count caps for the bounded ZIP extractor (import/export domain,
+/// Size and count caps for the app's ZIP reader (import/export domain,
 /// ADR 0009).
 ///
-/// In its own file since BR3: `bounded_zip_extractor.dart` is security code
-/// at its line ceiling and must not grow. That file still exports this class,
-/// so existing imports keep working. Nothing about the caps changed in the
-/// move.
+/// Plain numbers, so they live in the domain layer: the rules that judge an
+/// archive (`zip_entry_rules.dart`) need them, and so does the backup
+/// writer, which must not build what the reader would refuse.
 library;
 
 import 'package:pitaka/features/backup/domain/backup_limits.dart';
 
-/// Size/count caps for `BoundedZipExtractor.extract`.
+/// Size/count caps for reading one ZIP archive (`BoundedZipFile.open`).
 class ZipLimits {
   /// Creates limits; all values must be positive and total ≥ per-entry.
   ///
@@ -49,8 +48,9 @@ class ZipLimits {
   /// caps from the same value means the two sides cannot drift apart: what
   /// the writer accepts, the reader accepts.
   ///
-  /// The reader still has ONE cap for every entry, so it gets the largest of
-  /// the per-kind caps.
+  /// [maxEntryBytes] gets the largest of the per-kind caps. It is what an
+  /// entry is held to when the caller gives no rule for its name; a
+  /// restore gives one for every name (`backupEntryRule`).
   factory ZipLimits.forBackup(BackupLimits limits) => ZipLimits(
     maxEntryBytes: limits.largestEntryBytes,
     maxTotalBytes: limits.maxContentBytes,
@@ -61,7 +61,8 @@ class ZipLimits {
   static const int _headerSlackBytes = 4 * 1024 * 1024;
   static const int _bytesPerDirectoryRecord = 1024;
 
-  /// Max decompressed bytes for any single entry.
+  /// Max decompressed bytes for a single entry that has no rule of its own
+  /// (see `ZipEntryPolicy`): the reader was opened without a policy.
   final int maxEntryBytes;
 
   /// Max sum of decompressed bytes across all entries.
@@ -70,15 +71,15 @@ class ZipLimits {
   /// Max number of entries.
   final int maxEntries;
 
-  /// Max size of the compressed archive itself (the picked file). Enforced by
-  /// the pickers while reading and again by the extractor.
+  /// Max size of the compressed archive itself (the picked file). Enforced
+  /// while the picked file is copied and again by the reader.
   final int maxArchiveBytes;
 
   /// Max size of the ZIP central directory (all entry headers together),
   /// checked from the EOCD record before any header is parsed.
   final int maxCentralDirectoryBytes;
 
-  /// Defaults for the Pitaka backup/bundle format (`PITAKA_BACKUP_LIMITS`):
+  /// Defaults for the Pitaka backup format (`PITAKA_BACKUP_LIMITS`):
   /// 200 MiB per entry, 500 MiB in total, 4,096 entries. Built from
   /// [BackupLimits.current], the one place that holds these numbers.
   static final ZipLimits pitakaBackup = ZipLimits.forBackup(

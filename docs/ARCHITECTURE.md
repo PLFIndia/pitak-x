@@ -141,11 +141,11 @@ These fail the build; change them deliberately, never to "make it pass".
 
 | Test | Enforces |
 |------|----------|
-| `test/architecture/domain_purity_test.dart` | domain imports only the allow-list (pure Dart, `fpdart`, `crypto`, `archive` — ADR 0009), and from `archive` only the inflater, its in-memory streams and the CRC function; `application/` performs no platform IO (`dart:io`, `dart:isolate`, `path`, `http`, `drift`, prefs, secure storage) |
+| `test/architecture/domain_purity_test.dart` | domain imports only the allow-list (pure Dart, `fpdart`, `crypto`; `archive` left it when the in-memory ZIP reader was removed — ADR 0009, third amendment); `application/` performs no platform IO (`dart:io`, `dart:isolate`, `path`, `http`, `drift`, prefs, secure storage) |
 | `test/architecture/layer_boundaries_test.dart` | no `presentation → infrastructure` imports; no `flutter/material` in `application`; no `print`/`debugPrint` outside `lib/core/platform/app_log.dart`; no `flutter_map` under `core/di` or `application/`; **file-size ratchet** (a file may not grow past its recorded line budget without an explicit allow-list entry — split it instead) |
 | `test/architecture/catalogue_item_validation_gate_test.dart` | every `CatalogueItem` construction site goes through `CatalogueItem.validate` (ADR 0004; the entity was `Book` until 2026-10) |
 | `test/core/database/migration_test.dart` | a drift schema snapshot exists for the current `schemaVersion`; every past version migrates forward with data intact (§5.4) |
-| `test/architecture/archive_sink_protocol_test.dart` | the ZIP output budget still fits `package:archive`: the five package files that decide how the inflater writes and reads are pinned by content (a package update that touches them fails until they are read again), and the sink of each of the two ZIP readers still guards every write path (ADR 0009, both amendments) |
+| `test/architecture/archive_sink_protocol_test.dart` | the ZIP output budget still fits `package:archive`: the five package files that decide how the inflater writes and reads are pinned by content (a package update that touches them fails until they are read again), and the sink of the ZIP reader still guards every write path (ADR 0009 and its amendments) |
 | `test/architecture/cover_files_immutable_test.dart` | a stored cover file never changes once saved (ADR 0020 Decision 1): every file that reaches the covers folder is reviewed, readers write nothing, and the four writers are pinned to fresh names, a not-yet-live generation, or a move that never overwrites |
 
 ---
@@ -437,28 +437,32 @@ to false** (the `hasX` forward-compat pattern):
   item kind in the Room shape, so a build older than ADR 0013 restores
   magazine issues and other items as plain books (it ignores the two
   kind entries above); a flag-less archive restores exactly as before.
-- Hostile-input bounds on read: bounded ZIP extraction (ADR 0009). The
-  extractor reads the ZIP container (end record, directory, entry headers)
-  with its own code, `zip_container.dart`, and uses `package:archive` only
-  to inflate and to compute the CRC; a deflate stream must reach its end
-  mark and the CRC must match. What the reader decides for odd containers
-  is recorded in `bounded_zip_extractor_container_test.dart`.
-  A second reader, `BoundedZipFile` (import/export infrastructure, BR5),
-  works from a FILE: it reads the last bytes, the directory and each entry
-  header, runs every rule on declared values for all entries
+- Hostile-input bounds on read: bounded ZIP extraction (ADR 0009). The app
+  has ONE ZIP reader, `BoundedZipFile` (import/export infrastructure), and
+  it works from a FILE. The ZIP container (end record, directory, entry
+  headers) is read by the app's own code, `zip_container.dart`;
+  `package:archive` is used only to inflate and to compute the CRC, and
+  only from infrastructure. The reader reads the last bytes, the directory
+  and each entry header, runs every rule on declared values for all entries
   (`zip_entry_rules.dart`, pure Dart) before it unpacks anything, and then
   takes one entry at a time, into memory or into a new file. Its inflater
   output keeps only the last 32 KiB (`zip_inflate_window.dart`), so memory
-  does not grow with the entry. It is stricter in three rules: an entry is
-  exactly the size it declares, its header carries the directory's name,
-  and no entry uses zip64. Its caller gives a rule per entry name; for a
-  backup that is `backupEntryRule`: a cover or an additive JSON entry above
-  its cap is left out, the manifest, a database or the key blob above its
-  cap refuses the backup, and an unknown name is ignored and never
-  unpacked. A restore reads its backup with this reader (see "A restore
-  reads its backup from a file" below); import and merge still use the
-  first one. Until the first reader is removed, the tests ask every case
-  of both. W2
+  does not grow with the entry. A deflate stream must reach its end mark
+  and the CRC must match. Three rules are stricter than the reader of
+  1.9.7: an entry is exactly the size it declares, its header carries the
+  directory's name, and no entry uses zip64. The caller gives a rule per
+  entry name; for a backup that is `backupEntryRule`: a cover or an
+  additive JSON entry above its cap is left out, the manifest, a database
+  or the key blob above its cap refuses the backup, and an unknown name is
+  ignored and never unpacked. Its one caller is the restore of a backup
+  (see "A restore reads its backup from a file" below). What the reader
+  decides for honest, damaged and hostile archives is held by
+  `zip_reader_cases_test.dart`, and for odd containers, with the verdict
+  release 1.9.7 gave for each, by `zip_container_verdicts_test.dart`.
+  Import reads no ZIP at all: it takes JSON and CSV text, and a file that
+  starts like a ZIP is refused with a sentence before it is read (the
+  import of a bundle file and the reader that held an archive in memory
+  were removed in BR7; ADR 0009, third amendment). W2
   `item_kinds.json` / `periodicals.json` entries are capped at 4 MiB of UTF-8
   bytes and 100,000 rows in each `kinds`, `periodicals`, or `issues`
   collection (the codec constants are authoritative; equality is accepted).

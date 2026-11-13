@@ -8,11 +8,12 @@ import 'hostile_zip_builder.dart';
 /// `ZipContainer` on PARTS of a file must say what it says on the whole
 /// file (backup rework BR5).
 ///
-/// WHY (beginner note): the reader that works from a file on disk does not
-/// load the file. It reads the last bytes (for the end record), the
-/// directory, and 30 bytes per entry, and hands those parts to the same
-/// `ZipContainer` the in-memory reader uses. These tests take archives of
-/// many shapes, honest and odd, and compare the answers both ways.
+/// WHY (beginner note): the app's ZIP reader works from a file on disk and
+/// does not load the file. It reads the last bytes (for the end record),
+/// the directory, and the small header in front of each entry, and hands
+/// those parts to `ZipContainer`. These tests take archives of many shapes,
+/// honest and odd, hold each one whole in memory, and compare what
+/// `ZipContainer` says about the parts with what it says about the whole.
 void main() {
   /// Everything `ZipContainer` knows about a record, as plain values.
   List<Object?> fieldsOf(ZipDirectoryEntry entry) => [
@@ -135,8 +136,9 @@ void main() {
       } on ZipContainerException {
         return; // no end record: nothing to compare (the test above did)
       }
-      // The extractor checks this before it reads the directory; an end
-      // record that fails it never reaches `directory`.
+      // The reader checks this before it reads the directory
+      // (`checkZipEndRecord`); an end record that fails it never reaches
+      // `directory`.
       final start = end.centralDirectoryOffset;
       final stop = start + end.centralDirectorySize;
       if (stop > end.recordOffset) return;
@@ -153,8 +155,8 @@ void main() {
       );
     });
 
-    test('$name: the content range in numbers is the view into the whole '
-        'file', () {
+    test('$name: the content range lies inside the file, and finding it '
+        'asks for nothing outside the file', () {
       final List<ZipDirectoryEntry> entries;
       try {
         entries = ZipContainer.directory(
@@ -176,17 +178,24 @@ void main() {
             },
           ),
         );
-        final view = outcome(() {
-          final body = ZipContainer.body(zip, entry);
-          return (
-            start: body.bytes.offsetInBytes - zip.offsetInBytes,
-            length: body.bytes.length,
-            complete: body.complete,
+        // A refusal is a text; an answer is the three numbers.
+        if (range is ZipContentRange) {
+          expect(range.start, inInclusiveRange(0, zip.length));
+          expect(
+            range.start + range.length,
+            lessThanOrEqualTo(zip.length),
+            reason: entry.name,
           );
-        });
-        expect(range, view, reason: entry.name);
+          // "Complete" means: all the bytes the directory declares.
+          expect(
+            range.complete,
+            range.length == entry.compressedSize,
+            reason: entry.name,
+          );
+        }
         // It never asks for bytes outside the file, and never for more
-        // than an entry header (30) or the start of a descriptor (4).
+        // than an entry header (30), the name behind it (as long as the
+        // directory's name, rule N2) or the start of a descriptor (4).
         for (final read in asked) {
           expect(read.offset, greaterThanOrEqualTo(0), reason: entry.name);
           expect(
@@ -194,7 +203,11 @@ void main() {
             lessThanOrEqualTo(zip.length),
             reason: entry.name,
           );
-          expect(read.length, anyOf(30, 4), reason: entry.name);
+          expect(
+            read.length,
+            anyOf(30, 4, entry.nameBytes.length),
+            reason: entry.name,
+          );
         }
       }
     });
@@ -219,6 +232,14 @@ void main() {
       beyond,
       ZipContainer.locateEndRecord(beyond),
     ).single;
-    expect(ZipContainer.body(beyond, entry).complete, isFalse);
+    expect(
+      ZipContainer.contentRange(
+        entry,
+        fileLength: beyond.length,
+        read: (offset, length) =>
+            Uint8List.sublistView(beyond, offset, offset + length),
+      ).complete,
+      isFalse,
+    );
   });
 }
