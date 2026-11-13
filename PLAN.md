@@ -21,7 +21,7 @@ went").
   | Decisions, the open part of the plan, ONE handoff, short results | this file |
   | The findings of the four review passes with their boxes, and the open items T1 to T9 | private: `review-tracker.md` |
   | Every design ("in detail"), result, safety check and older handoff, word for word | private: `plan-archive-2026-11-13.md` |
-  | The design of the stage that is being built | private: `br7-in-detail.md`, until its fix is pushed |
+  | The design of the stage that is being built | private: a file of its own (`<stage>-in-detail.md`), until its fix is pushed; then it goes into the archive. None today |
   | The four review reports, their prompts and the summary | private: `codeReviewReport1.md` to `4.md`, `codeReviewPrompt1.md` to `4.md`, `codeReviewSummary.md` |
 
   "Private" means: files the maintainer keeps outside git (the
@@ -104,7 +104,7 @@ under "D<number>". All are of November 2026.
 | D26 | 12 | No time limit in BR6 for the copy of a picked document. Looked at again after the phone runs of BR10 | open (T4) |
 | D27 | 12 | A restore shows "Cover 1,234 of 9,000" while covers are written | built (BR6) |
 | D28 | 12 | The changelog lines for BR1 to BR6 come as one commit at the end of BR6 | done (`847edd6`) |
-| D29 | 13 | The import of a bundle (`.zip`, `.pitabundle`) from a file is removed. Import takes JSON and CSV. "Restore from my published site" is not touched | BR7 |
+| D29 | 13 | The import of a bundle (`.zip`, `.pitabundle`) from a file is removed. Import takes JSON and CSV. "Restore from my published site" is not touched | built (BR7) |
 | D30 | 13 | This file is public and short. The findings, the history and the design of anything not yet fixed stay in private files until the open items T1 to T9 are closed | in force |
 
 Decision points of the plan that are still open: 5, 6 and 7 (see "The
@@ -144,9 +144,9 @@ small ones, on the branch `reviewFixes`.
 | BR5b | The app's own document picker for Android: it copies the chosen file into private storage under a size cap. CI runs the Android unit tests | done: `a3bb1e9`, `ccabe1e`, `806f162`, `876ff11` |
 | BR6 | Restore reads its backup from a file, in two worker isolates. The restore page says what happens. Changelog for BR1 to BR6 | done: `9ecdbb2`, `a91fe4b`, `da58a5c`, `6b508d0`, `709d1d6`, `847edd6` |
 | (CI) | `rustix` 1.1.6 for an advisory. The restore's copy of the catalogue waits for a write instead of failing (`retryWhileSqliteBusy`) | done: `5e8dfea`, `ede5a3e`, `0d3dcca` |
-| BR7 | The other readers: Import reads JSON and CSV only (D29); the in-memory ZIP reader is removed (ADR 0009, third amendment) | committed: `122545f`, `683b5f9`, `8cc4660`, `9511905`; waits for the push and a green CI run |
-| (D24) | Import and Merge on the app's own picker (T1) | after BR7; needs its own design |
-| BR8 | Raise the limits (D3, D4) | after BR7 and a passed run on a phone |
+| BR7 | The other readers: Import reads JSON and CSV only, and a ZIP that is picked anyway is refused with a sentence (D29). Every test reads ZIP files through the one reader that works from a file. The in-memory ZIP reader is removed, and the domain layer imports no package for ZIP work (ADR 0009, third amendment) | done: `122545f`, `683b5f9`, `8cc4660`, `9511905` |
+| (D24) | Import and Merge on the app's own picker (T1) | next; needs its own design |
+| BR8 | Raise the limits (D3, D4) | after a passed run on a phone |
 | BR9 | The resource notice (D5) | needs decision points 5 and 6 |
 | BR10 | Proof on devices, records, clean-up | last |
 
@@ -164,23 +164,6 @@ BR10                last; its phone runs can start now that BR6 is in
 After each of BR1, BR2, BR3, BR4, BR6 and BR7 the app is releasable.
 
 ### The open stages
-
-**BR7. The other readers; remove the in-memory reader.** Four steps,
-one commit each. The full design, with eight choices to review, is
-the private file `br7-in-detail.md`. Built and committed on 2026-11-13
-with the eight choices as proposed. Not pushed yet, and no CI run has
-seen it: until one is green the stage stays in this list.
-
-- [x] Import offers JSON and CSV. A ZIP that is picked anyway is
-  refused with a sentence. The bundle reader, its provider and its
-  tests go; the tests of the import step that it shares with "Restore
-  from my published site" stay, built on rows made in the test.
-- [x] Every test reads ZIP files through the reader that works from a
-  file. All 96 cases of odd and hostile files stay.
-- [x] `BoundedZipExtractor` is deleted. The domain layer then imports
-  no package for ZIP work: `archive` leaves the allow-list of
-  `domain_purity_test.dart`. Third amendment to ADR 0009.
-- [x] Changelog lines.
 
 **Import and Merge on the app's own picker (D24, T1).** Not designed.
 `test/support/fake_document_picker.dart` is there for it.
@@ -271,17 +254,17 @@ cargo clippy --offline --locked --all-targets -- -D warnings
 cargo test --offline --locked --release
 ```
 
-Numbers at `0d3dcca` (2026-11-13):
+Numbers at `9511905` (2026-11-13, after BR7):
 
 | Check | Result |
 |---|---|
 | `build_runner` | no diff in git (judge by `git status`, not by "wrote N outputs") |
-| format | 0 changed, 1,430 files |
+| format | 0 changed, 1,427 files |
 | analyze | 47 issues: 45 under `rust_builder/`, 2 in `pubspec.yaml`; none in `lib/`, `test/`, `integration_test/`, `tool/` |
-| `flutter test --exclude-tags golden` | 7,136 passed (4.5 to 6 minutes) |
+| `flutter test --exclude-tags golden` | 7,008 passed (4.5 to 6 minutes) |
 | Kotlin unit tests | 55 in each flavour (6, 18, 31) |
 | Rust | fmt and clippy clean; 37 passed, 2 ignored |
-| CI on pull request #30 | all jobs green, the first fully green run of this branch |
+| CI on pull request #30 | all jobs green (run 43461825246 at `2a91544`) |
 
 `cargo deny check` and the OSV scan fetch from the network: they are
 left to CI, or need a yes. Golden images are judged on Linux only; a
@@ -307,8 +290,8 @@ when it was written; check the repository before relying on it.
 
 1. "How to use this file", then this section.
 2. "Decisions" and "The plan".
-3. The private file `br7-in-detail.md` (the next stage), and in the
-   private tracker the open items T1 to T9.
+3. In the private tracker the open items T1 to T9; T1 is the next
+   stage.
 4. From the private archive only what the task needs: the design and
    the result of the stage it builds on. Its titles are listed at its
    top.
@@ -317,61 +300,58 @@ when it was written; check the repository before relying on it.
 
 - Branch `reviewFixes`: the 24 commits of the rework up to BR6 on top
   of `origin/main` (`fe8a2c4`), the last of them `0d3dcca`; the commit
-  that put this file into git (`5e8449b`); the four commits of BR7;
-  and the commit that brought this handoff up to date. Look at
-  `git status` for whether the branch is pushed.
+  that put this file into git (`5e8449b`); the four commits of BR7
+  (`122545f`, `683b5f9`, `8cc4660`, `9511905`); and two commits that
+  brought this handoff up to date (`2a91544`, and the one after BR7's
+  CI run). Look at `git status` for whether the branch is pushed.
 - Draft pull request #30 ("Backup and restore rework, stages BR1 to
-  BR6"). CI runs on a pull request and on a push to `main` only
-  (`ci.yml:7-10`); a push to `reviewFixes` runs it because of #30.
-  Run 43392871577 at `0d3dcca` is green in all jobs. No run has seen
-  BR7 yet.
+  BR6"; its title does not name BR7 yet). CI runs on a pull request
+  and on a push to `main` only (`ci.yml:7-10`); a push to
+  `reviewFixes` runs it because of #30. Run 43461825246 at `2a91544`,
+  the first with BR7, is green in all four jobs; so is the workflow
+  "Update goldens" of the same push, which changed nothing.
 - **Where the private files are:** in the root of the maintainer's
   working tree, next to the review files, as untracked files:
-  `review-tracker.md`, `plan-archive-2026-11-13.md`,
-  `br7-in-detail.md`. Three lines in `.git/info/exclude` (a setting
-  of that checkout only) keep them out of `git status` and
-  `git add`. Git does not keep them: they exist on that machine
-  only.
+  `review-tracker.md` and `plan-archive-2026-11-13.md`. Lines in
+  `.git/info/exclude` (a setting of that checkout only) keep them
+  out of `git status` and `git add`. Git does not keep them: they
+  exist on that machine only. `br7-in-detail.md`, the working copy of
+  BR7's design, was there too; its build log, its result and its
+  commits are in the archive now, word for word (the last sections),
+  so where the file still lies it is a duplicate.
 - Untracked files that `git status` shows. Do not add, move or
   delete them: the nine review files (`codeReviewPrompt1.md` to `4.md`,
   `codeReviewReport1.md` to `4.md`, `codeReviewSummary.md`), and five
   that are not part of this work (`docs/plans/handoff-2026-11-09.md`,
   `item-reminder.md`, `reminder-fixes.md`, `reminder-issues1.md`,
   `remoteImport-issues.md`).
-- **BR7 is committed and not pushed** (2026-11-13): `122545f` (Import
-  reads JSON and CSV only), `683b5f9` (the tests read ZIP files
-  through the one reader), `8cc4660` (the in-memory reader removed),
-  `9511905` (changelog). The go-ahead was "build as designed, with the
-  eight choices as proposed". The result, the trials by hand and what
-  differs from the design are at the end of `br7-in-detail.md` ("BR7
-  build log", "BR7 result").
-- Checks on the tree of `9511905`: `build_runner` no diff; format 0
-  changed of 1,427 files; analyze 47, none in `lib/`, `test/`,
-  `integration_test/`, `tool/`; 7,008 tests passed (7,136 before: the
-  tests of the bundle reader and its route went, and the 94 ZIP cases
-  no longer run a second time against the removed reader); Kotlin 55
-  in each flavour; Rust clean, 37 passed, 2 ignored. These are the
-  numbers a later stage compares its baseline with.
+- **BR7 is done** (2026-11-13): built as designed, with the eight
+  choices as proposed, committed, pushed, and green in CI. What it
+  built is in its line under "Stages"; how, with every trial by hand
+  and every point where the build left the design, is in the archive
+  ("BR7 build log", "BR7 result").
+- Checks on the tree of `9511905`, which later commits did not change
+  outside this file: `build_runner` no diff; format 0 changed of
+  1,427 files; analyze 47, none in `lib/`, `test/`,
+  `integration_test/`, `tool/`; 7,008 tests passed; Kotlin 55 in each
+  flavour; Rust clean, 37 passed, 2 ignored. These are the numbers the
+  next stage compares its baseline with.
+- Nothing of the next stage is designed or built.
 
 ### Next
 
 1. Confirm the state above and run the checks (baseline).
-2. The push of `reviewFixes`, after its yes. Then the CI run of pull
-   request #30 is watched to its end, every job.
-3. When that run is green, BR7 is done: give it its line with the
-   commits in "Stages", take its entry out of "The open stages", and
-   move `br7-in-detail.md` into the private archive, word for word.
-   When it is red, the fix comes first (see "CI, Linux and this Mac").
-4. After BR7: design "Import and Merge on the app's own picker" (D24)
-   and ask for its go-ahead.
+2. Design "Import and Merge on the app's own picker" (D24, T1): read
+   the tracker's T1 and the pieces listed below, write the design
+   into a private file of its own, and ask for the go-ahead. No code
+   before the answer.
 
 ### What each stage still waits for
 
 | Stage | Waits for |
 |---|---|
-| BR7 | a yes for the push, and a green CI run |
-| Import and Merge on the picker (D24, T1) | BR7; its own design and go-ahead |
-| BR8 raise the limits | BR7 and a passed run on a real phone; the time the share plugin needs to copy a large file on Android's main thread, measured first |
+| Import and Merge on the picker (D24, T1) | its own design and go-ahead |
+| BR8 raise the limits | a passed run on a real phone; the time the share plugin needs to copy a large file on Android's main thread, measured first |
 | BR9 resource notice | decision points 5 and 6 |
 | BR10 proof and records | a real phone; ADR 0025 and ADR 0026 |
 
@@ -391,6 +371,16 @@ For the stage of D24 (Import and Merge on the picker):
   `PickedDocumentChannelTest`.
 - `RestoreController` shows how a page and a controller share a
   picked copy (the table in its library comment, D25).
+- What BR7 left for it: the rule "Import reads no ZIP" lives in
+  `ImportController.importBytes`, with the sentence
+  `kImportZipRefusedMessage` (`import_library_use_case.dart`), and
+  `hasZipLocalFileHeader` is in `import_format_sniffer.dart`. The
+  Import page applies the same rule to a picked file before it reads
+  it; that part, and its read through `file_selector`
+  (`bounded_file_read.dart`), is what the new stage replaces. How
+  the controller behaves over time (one run at a time, a run that
+  outlives its page) is tested on the text route in
+  `import_controller_test.dart`.
 
 For BR8 (the limits):
 
@@ -700,13 +690,18 @@ Nine things that are not fixed and are therefore not described here
 
 ### Questions the maintainer has not answered yet
 
-None of them blocks BR7.
+None of them blocks the next stage.
 
-- Two things the trials of BR7 showed, with the detail in
-  `br7-in-detail.md`: a pair of guards in the import controller that
-  a test can see only together, and a test file about the covers
-  folder that does not notice when its coordinator is switched off
-  (another test file does). Change them, or leave them?
+- Two things the trials of BR7 showed, with the detail in the
+  archive ("BR7 build log", trials T4a and T16): a pair of guards in
+  the import controller that a test can see only together, and a
+  test file about the covers folder that does not notice when its
+  coordinator is switched off (another test file does). Change them,
+  or leave them?
+- The title of pull request #30 still says "stages BR1 to BR6".
+- How Android's picker shows a `.pitabak` now that Import asks for
+  `json` and `csv` only has not been looked at on a device (the page
+  refuses a ZIP either way).
 - Pull request #30 is a draft. When is it made ready, and merged?
 - Decision points 5 and 6 (before BR9) and 7.
 - For each of T2, T3 and T5 to T9: is it built, in which stage, or
@@ -794,4 +789,4 @@ repository depends on any of them.
 | 2026-11-10 | The four review passes. Decisions D1 to D16. BR1, BR3, BR2, the core of BR4 and its rider 1 |
 | 2026-11-11 | Riders 3 and 2 of BR4. BR5. The first three steps of BR5b. D17 to D19 |
 | 2026-11-12 | BR5b step 4. BR6, with a run in the emulator. D20 to D28. The branch pushed; draft pull request #30 |
-| 2026-11-13 | The first CI runs: `rustix` (`5e8dfea`), and a restore test that failed now and then, fixed in two commits (`ede5a3e`, then `0d3dcca` after the first form failed on Linux). D29. BR7 designed. This file cut down (D30). BR7 built and committed (`122545f` to `9511905`), not pushed |
+| 2026-11-13 | The first CI runs: `rustix` (`5e8dfea`), and a restore test that failed now and then, fixed in two commits (`ede5a3e`, then `0d3dcca` after the first form failed on Linux). D29. BR7 designed. This file cut down (D30). BR7 built, committed (`122545f` to `9511905`) and pushed; its CI run green |
