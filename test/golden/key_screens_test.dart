@@ -4,11 +4,6 @@ library;
 import 'dart:io';
 import 'dart:typed_data';
 
-// Transitive dependency of file_selector; imported only for the picker seam
-// (same pattern as restore_page_test.dart). Deliberately NOT added to
-// pubspec so the dependency surface stays unchanged.
-// ignore: depend_on_referenced_packages
-import 'package:file_selector_platform_interface/file_selector_platform_interface.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -517,7 +512,9 @@ void main() {
     });
 
     testWidgets('restore page, initial', (tester) async {
-      FileSelectorPlatform.instance = _GoldenFileSelector();
+      // BR6: the page chooses its file through the app's own picker, which
+      // it reaches only when "Choose" is tapped. The first state shown here
+      // needs no stand-in for it.
       await expectGolden(
         tester,
         ProviderScope(
@@ -663,14 +660,4 @@ class _GoldenLane extends AvailabilityAutoPublisher {
   AvailabilityLaneView build() => const AvailabilityLaneView(
     status: AvailabilityLaneNotReady('Connect a publishing host first.'),
   );
-}
-
-/// Picker seam so the restore page never touches real file IO.
-class _GoldenFileSelector extends FileSelectorPlatform {
-  @override
-  Future<XFile?> openFile({
-    List<XTypeGroup>? acceptedTypeGroups,
-    String? initialDirectory,
-    String? confirmButtonText,
-  }) async => null;
 }

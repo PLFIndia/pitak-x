@@ -61,7 +61,7 @@ dependencies:
   sqlite3_flutter_libs: ^0.5.27
   path_provider: ^2.1.6
   path: ^1.9.1
-  archive: ^3.6.1
+  archive: ^4.6.0
   # EXACT pin, mirroring rust/Cargo.toml (`flutter_rust_bridge = "=2.12.0"`).
   # Why: the generated bindings record the codegen version (2.12.0) and
   # `RustLib.init()` refuses to start if the Dart runtime package disagrees
@@ -108,13 +108,13 @@ dependencies:
   image_picker: ^1.1.2
   # Pure-Dart image decode/resize/JPEG-encode for cover downscaling (400x600
   # q80, the Kotlin ImagePipeline contract) and the publish cover pipeline.
-  image: ^4.2.0
+  image: ^4.12.0
   # PDF book-list export (Kotlin PdfLibraryRenderer parity): paginated A4,
   # header logo + library name, attribution footer, user-selectable weighted
   # columns. The canonical pure-Dart PDF generation package (no native deps,
   # works on every platform). Rendering only; the column/layout logic is a pure
   # port kept separately so it stays unit-testable without the pdf lib.
-  pdf: ^3.11.1
+  pdf: ^3.13.1
   # Biometric / device-credential gate for the optional vault unlock (#34 B2,
   # default OFF). The official flutter/packages plugin. It ONLY gates release of
   # the hardware-stored secret S; the vault key (MK) never passes through it and
@@ -165,7 +165,7 @@ dependencies:
   # androidx.media and gson (Apache-2.0). The notification plugin requires
   # core-library desugaring in android/app/build.gradle.kts.
   workmanager: ^0.6.0
-  flutter_local_notifications: ^20.1.0
+  flutter_local_notifications: ^22.3.3
   # NOTE (S36): the Play in-app update flow is our OWN flavor-split Kotlin
   # (android/app/src/play/kotlin/.../AppUpdateChannel.kt). Do not re-add the
   # `in_app_update` plugin: a plugin links Google's proprietary Play Core

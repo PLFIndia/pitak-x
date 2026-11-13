@@ -6,6 +6,10 @@
 ///  - text whose first line is comma-separated and contains `Exclusive Shelf`
 ///    or `Bookshelves` → Goodreads CSV;
 ///  - otherwise → null (caller reports "Unknown format").
+///
+/// Import reads TEXT only (JSON and CSV). A ZIP file is told apart by its
+/// first four bytes ([hasZipLocalFileHeader]) and refused, never unpacked
+/// (backup rework BR7, decision D29).
 library;
 
 import 'dart:convert';
@@ -15,12 +19,29 @@ enum ImportFormat {
   /// Pitaka JSON export (`PitakaExport`).
   pitakaJson,
 
-  /// Pitaka bundle (.zip with `library.json` + covers).
+  /// Rows that come together with their cover pictures. Today that is the
+  /// restore from the user's own published site (ADR 0021). It is never
+  /// found by looking at a text: [ImportFormatSniffer.detect] does not
+  /// answer it, and no file of this kind is imported any more (D29).
   pitakaBundle,
 
   /// Goodreads library CSV export.
   goodreadsCsv,
 }
+
+/// True when [bytes] starts with the ZIP local-file-header magic
+/// (`50 4B 03 04`, "PK\x03\x04").
+///
+/// The ONE place that knows these four bytes. Import uses it to refuse a
+/// ZIP file with a sentence instead of reading it: the import controller
+/// before it decodes anything, and the Import page before it loads the
+/// picked file into memory.
+bool hasZipLocalFileHeader(List<int> bytes) =>
+    bytes.length >= 4 &&
+    bytes[0] == 0x50 && // 'P'
+    bytes[1] == 0x4B && // 'K'
+    bytes[2] == 0x03 &&
+    bytes[3] == 0x04;
 
 /// Detects the [ImportFormat] of a text payload.
 abstract final class ImportFormatSniffer {

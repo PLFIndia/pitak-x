@@ -9,6 +9,8 @@ import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/crypto/secret_bytes.dart';
 import 'package:pitaka/core/database/app_database.dart';
 import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/features/backup/domain/backup_limits.dart';
+import 'package:pitaka/features/backup/infrastructure/backup_archive_writer.dart';
 import 'package:pitaka/features/backup/infrastructure/restore_backup.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/value_objects/item_details.dart';
@@ -22,13 +24,16 @@ import 'package:pitaka/features/vault/domain/entities/borrower.dart';
 import 'package:pitaka/features/vault/domain/entities/vault_data.dart';
 import 'package:pitaka/features/vault/domain/repositories/vault_repository.dart';
 import 'package:pitaka/features/vault/infrastructure/vault_store.dart';
+import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
 import 'package:sqlite3/common.dart';
 import 'package:sqlite3/sqlite3.dart';
 
+import '../import_export/hostile_zip_builder.dart';
 import '../library/replacement_test_guard.dart';
 import '../publish/support/publish_state_fixtures.dart';
 import '../vault/vault_repository_write_stub.dart';
 import 'generation_fixture.dart';
+import 'test_vault_gate.dart';
 
 /// A fake vault repo so the restore test never loads the native Rust lib.
 class _FakeVault with VaultWriteUnsupported implements VaultRepository {
@@ -163,11 +168,17 @@ void main() {
     return File(path).readAsBytesSync();
   }
 
-  Uint8List archive(Map<String, List<int>> entries) {
+  /// The bytes of a backup with [entries], as an honest writer packs them.
+  Uint8List archiveBytes(Map<String, List<int>> entries) {
     final a = Archive();
     entries.forEach((k, v) => a.addFile(ArchiveFile(k, v.length, v)));
-    return Uint8List.fromList(ZipEncoder().encode(a)!);
+    return Uint8List.fromList(ZipEncoder().encode(a));
   }
+
+  /// A backup FILE with [entries]; returns its path. BR6: a restore reads
+  /// the backup from a file, the private copy the app's picker made.
+  String archive(Map<String, List<int>> entries) =>
+      gen.archiveFile(archiveBytes(entries));
 
   String manifest({
     int schemaVersion = 1,
@@ -252,7 +263,7 @@ void main() {
 
     final r = restorer(_FakeVault(right(VaultData.empty)));
     final p = pass();
-    final result = await r.restore(archiveBytes: zip, passphrase: p);
+    final result = await r.restore(archivePath: zip, passphrase: p);
     p.dispose();
 
     final summary = result.getOrElse(
@@ -304,7 +315,7 @@ void main() {
       (path) => _FtsFailingDb(NativeDatabase(File(path))),
     );
     final p = pass();
-    final result = await r.restore(archiveBytes: zip, passphrase: p);
+    final result = await r.restore(archivePath: zip, passphrase: p);
     p.dispose();
 
     expect(result.isLeft(), isTrue);
@@ -326,7 +337,7 @@ void main() {
     });
     final r = restorer(_FakeVault(right(VaultData.empty)));
     final p = pass();
-    await r.restore(archiveBytes: zip, passphrase: p);
+    await r.restore(archivePath: zip, passphrase: p);
     p.dispose();
 
     final active = gen.openActiveCatalogue();
@@ -358,7 +369,7 @@ void main() {
     });
     final r = restorer(_FakeVault(right(VaultData.empty)));
     final p = pass();
-    await r.restore(archiveBytes: zip, passphrase: p);
+    await r.restore(archivePath: zip, passphrase: p);
     p.dispose();
 
     final books = await activeBooks();
@@ -374,7 +385,7 @@ void main() {
     });
     final r = restorer(_FakeVault(right(VaultData.empty)));
     final p = pass();
-    final result = await r.restore(archiveBytes: zip, passphrase: p);
+    final result = await r.restore(archivePath: zip, passphrase: p);
     p.dispose();
 
     result.match(
@@ -404,7 +415,7 @@ void main() {
     });
     final r = restorer(_FakeVault(left(const WrongPassphraseFailure())));
     final p = pass();
-    final result = await r.restore(archiveBytes: zip, passphrase: p);
+    final result = await r.restore(archivePath: zip, passphrase: p);
     p.dispose();
 
     result.match(
@@ -457,7 +468,7 @@ void main() {
         },
       );
       final p = pass();
-      final result = await r.restore(archiveBytes: zip, passphrase: p);
+      final result = await r.restore(archivePath: zip, passphrase: p);
       p.dispose();
 
       expect(result.isRight(), isTrue, reason: '$result');
@@ -503,7 +514,7 @@ void main() {
     );
     final r = restorer(vault);
     final p = pass();
-    final result = await r.restore(archiveBytes: zip, passphrase: p);
+    final result = await r.restore(archivePath: zip, passphrase: p);
     p.dispose();
 
     expect(result.isRight(), isTrue);
@@ -538,11 +549,13 @@ void main() {
       _FakeVault(right(VaultData.empty)),
       null,
       (path) => _AfterRebuildDb(NativeDatabase(File(path)), () {
-        File('${tmp.path}/restore_work/borrowers.db').deleteSync();
+        // BR6: the staged copy lies in the one run folder of this restore.
+        final run = gen.restoreRunFolders().single;
+        File('${gen.restoreWorkRoot}/$run/borrowers.db').deleteSync();
       }),
     );
     final p = pass();
-    final result = await r.restore(archiveBytes: zip, passphrase: p);
+    final result = await r.restore(archivePath: zip, passphrase: p);
     p.dispose();
 
     result.match(
@@ -565,7 +578,7 @@ void main() {
     });
     final r = restorer(_FakeVault(right(VaultData.empty)));
     final p = pass();
-    final result = await r.restore(archiveBytes: zip, passphrase: p);
+    final result = await r.restore(archivePath: zip, passphrase: p);
     p.dispose();
 
     expect(result.isRight(), isTrue);
@@ -600,7 +613,7 @@ void main() {
     });
     final r = restorer(_FakeVault(right(VaultData.empty)), store);
     final p = pass();
-    final result = await r.restore(archiveBytes: zip, passphrase: p);
+    final result = await r.restore(archivePath: zip, passphrase: p);
     p.dispose();
 
     expect(result.isLeft(), isTrue);
@@ -631,7 +644,7 @@ void main() {
     });
     final r = restorer(vault);
     final p = pass();
-    final result = await r.restore(archiveBytes: zip, passphrase: p);
+    final result = await r.restore(archivePath: zip, passphrase: p);
     p.dispose();
 
     final summary = result.getOrElse((f) => fail('unexpected: $f'));
@@ -644,7 +657,7 @@ void main() {
     final zip = archive({'books.db': buildBooksDb()});
     final r = restorer(_FakeVault(right(VaultData.empty)));
     final p = pass();
-    final result = await r.restore(archiveBytes: zip, passphrase: p);
+    final result = await r.restore(archivePath: zip, passphrase: p);
     p.dispose();
     result.match(
       (f) => expect(f, isA<BackupCorruptFailure>()),
@@ -686,9 +699,7 @@ void main() {
 
     test('inspectArchive rejects a corrupt archive', () async {
       final r = restorer(_FakeVault(right(VaultData.empty)));
-      final inspected = await r.inspectArchive(
-        Uint8List.fromList([0, 1, 2, 3]),
-      );
+      final inspected = await r.inspectArchive(gen.archiveFile([0, 1, 2, 3]));
       inspected.match(
         (f) => expect(f, isA<BackupCorruptFailure>()),
         (_) => fail('expected corrupt'),
@@ -715,7 +726,7 @@ void main() {
       });
       final r = restorer(_FakeVault(right(VaultData.empty)));
       // N13: a vault-free archive restores with NO passphrase argument.
-      final result = await r.restore(archiveBytes: zip);
+      final result = await r.restore(archivePath: zip);
       final summary = result.getOrElse((f) => fail('unexpected: $f'));
       expect(summary.booksRestored, 1);
       expect(summary.existingVaultKept, isFalse);
@@ -730,7 +741,7 @@ void main() {
         'backup_blob': utf8.encode('salt.iv.ct'),
       });
       final r = restorer(_FakeVault(right(VaultData.empty)));
-      final result = await r.restore(archiveBytes: zip);
+      final result = await r.restore(archivePath: zip);
       result.match(
         (f) => expect(f, isA<ValidationFailure>()),
         (_) => fail('expected validation failure'),
@@ -753,7 +764,7 @@ void main() {
       ),
     );
 
-    Uint8List zipWith({
+    String zipWith({
       required bool hasPublishState,
       bool hasCovers = true,
       String? publishState,
@@ -771,7 +782,7 @@ void main() {
         'their source (ADR 0020 Decision 7)', () async {
       final r = restorer(_FakeVault(right(VaultData.empty)));
       final summary = (await r.restore(
-        archiveBytes: zipWith(hasPublishState: true),
+        archivePath: zipWith(hasPublishState: true),
       )).getOrElse((f) => fail('unexpected: $f'));
       final state = summary.restoredPublishState!;
       expect(state.coverSalt, archiveSalt);
@@ -786,7 +797,7 @@ void main() {
     test('an archive without covers keeps no local source at all', () async {
       final r = restorer(_FakeVault(right(VaultData.empty)));
       final summary = (await r.restore(
-        archiveBytes: zipWith(hasPublishState: true, hasCovers: false),
+        archivePath: zipWith(hasPublishState: true, hasCovers: false),
       )).getOrElse((f) => fail('unexpected: $f'));
       expect(summary.restoredPublishState!.gitHubRecord.coverUrlByBookId, {
         '3': 'https://covers.openlibrary.org/b/id/1-L.jpg',
@@ -798,7 +809,7 @@ void main() {
       () async {
         final r = restorer(_FakeVault(right(VaultData.empty)));
         final summary = (await r.restore(
-          archiveBytes: zipWith(
+          archivePath: zipWith(
             hasPublishState: true,
             publishState: '{"schemaVersion": 1, "coverSalt": "AAAA"}',
           ),
@@ -812,7 +823,7 @@ void main() {
     test('an entry the manifest does not announce is not even read', () async {
       final r = restorer(_FakeVault(right(VaultData.empty)));
       final summary = (await r.restore(
-        archiveBytes: zipWith(hasPublishState: false),
+        archivePath: zipWith(hasPublishState: false),
       )).getOrElse((f) => fail('unexpected: $f'));
       expect(summary.restoredPublishState, isNull);
       expect(summary.publishStateInvalid, isFalse);
@@ -829,6 +840,35 @@ void main() {
         'https://degt3rt.github.io/my-library/',
       );
       expect(await db.select(db.books).get(), isEmpty);
+    });
+
+    test('a cover that is left out as too large keeps no local source '
+        'either (BR6, D18)', () async {
+      // `cover_carried.jpg` holds three bytes; this restore takes two. The
+      // picture is not written, so the record must not believe in it.
+      final r = gen.restorer(
+        vault: _FakeVault(right(VaultData.empty)),
+        guard: FakeReplacementGuard(),
+        limits: const BackupLimits(
+          maxCovers: 4086,
+          maxContentBytes: 500 * 1024 * 1024,
+          maxCoverBytes: 2,
+          maxDatabaseBytes: 200 * 1024 * 1024,
+          maxTextEntryBytes: 4 * 1024 * 1024,
+        ),
+      );
+      final summary = (await r.restore(
+        archivePath: zipWith(hasPublishState: true),
+      )).getOrElse((f) => fail('unexpected: $f'));
+
+      expect(summary.restoredPublishState!.gitHubRecord.coverUrlByBookId, {
+        '3': 'https://covers.openlibrary.org/b/id/1-L.jpg',
+      });
+      expect(
+        Directory(gen.current().coversDir).listSync(),
+        isEmpty,
+        reason: 'the picture was not written',
+      );
     });
   });
 
@@ -847,7 +887,7 @@ void main() {
       });
       final r = restorer(_FakeVault(right(VaultData.empty)));
       final summary = (await r.restore(
-        archiveBytes: zip,
+        archivePath: zip,
       )).getOrElse((f) => fail('unexpected: $f'));
       expect(summary.restoredIdentity, isNull);
       expect(summary.restoredNetwork, isNull);
@@ -871,7 +911,7 @@ void main() {
       });
       final r = restorer(_FakeVault(right(VaultData.empty)));
       final summary = (await r.restore(
-        archiveBytes: zip,
+        archivePath: zip,
       )).getOrElse((f) => fail('unexpected: $f'));
       expect(summary.restoredIdentity!.id, validId);
       expect(summary.restoredIdentity!.name, 'Meera Road');
@@ -890,7 +930,7 @@ void main() {
         'identity.json': utf8.encode('{"libraryId": "NOT-HEX"}'),
       });
       final r = restorer(_FakeVault(right(VaultData.empty)));
-      final result = await r.restore(archiveBytes: zip);
+      final result = await r.restore(archivePath: zip);
       // The catalogue restore itself is UNAFFECTED (additive extras never
       // roll it back); the summary carries the truth.
       final summary = result.getOrElse((f) => fail('unexpected: $f'));
@@ -916,7 +956,7 @@ void main() {
       });
       final r = restorer(_FakeVault(right(VaultData.empty)));
       final summary = (await r.restore(
-        archiveBytes: zip,
+        archivePath: zip,
       )).getOrElse((f) => fail('unexpected: $f'));
       expect(summary.booksRestored, 1); // the catalogue restore is unaffected
       expect(summary.restoredIdentity, isNull);
@@ -944,7 +984,7 @@ void main() {
         });
         final r = restorer(_FakeVault(right(VaultData.empty)));
         final summary = (await r.restore(
-          archiveBytes: zip,
+          archivePath: zip,
         )).getOrElse((f) => fail('unexpected: $f'));
         expect(summary.restoredNetwork, hasLength(1));
         expect(summary.restoredNetwork!.single.name, 'Good');
@@ -967,7 +1007,7 @@ void main() {
       });
       final r = restorer(_FakeVault(right(VaultData.empty)));
       final summary = (await r.restore(
-        archiveBytes: zip,
+        archivePath: zip,
       )).getOrElse((f) => fail('unexpected: $f'));
       expect(summary.restoredNetwork!.map((row) => row.name), [
         'First',
@@ -992,7 +1032,7 @@ void main() {
       });
       final r = restorer(_FakeVault(right(VaultData.empty)));
       final summary = (await r.restore(
-        archiveBytes: zip,
+        archivePath: zip,
       )).getOrElse((f) => fail('unexpected: $f'));
       expect(summary.restoredNetwork, isNull);
       expect(summary.networkInvalid, isTrue);
@@ -1007,7 +1047,7 @@ void main() {
       });
       final r = restorer(_FakeVault(right(VaultData.empty)));
       final summary = (await r.restore(
-        archiveBytes: zip,
+        archivePath: zip,
       )).getOrElse((f) => fail('unexpected: $f'));
       expect(summary.restoredNetwork, isNull);
       expect(summary.networkInvalid, isTrue);
@@ -1088,7 +1128,7 @@ void main() {
           'periodicals.json': utf8.encode(periodicalsJson),
         });
         final r = restorer(_FakeVault(right(VaultData.empty)));
-        final summary = (await r.restore(archiveBytes: zip)).getOrElse(
+        final summary = (await r.restore(archivePath: zip)).getOrElse(
           (f) => fail('unexpected: ${f is StorageFailure ? f.reason : f}'),
         );
         expect(summary.kindsApplied, 2);
@@ -1172,7 +1212,7 @@ void main() {
 
         final summary =
             (await restorer(_FakeVault(right(VaultData.empty))).restore(
-              archiveBytes: zip,
+              archivePath: zip,
             )).getOrElse((f) => fail('restore failed: $f'));
         expect(summary.issuesLinked, 1);
 
@@ -1224,7 +1264,7 @@ void main() {
         'wishlist.db': buildWishlistDb(),
       });
       final r = restorer(_FakeVault(right(VaultData.empty)));
-      final summary = (await r.restore(archiveBytes: zip)).getOrElse(
+      final summary = (await r.restore(archivePath: zip)).getOrElse(
         (f) => fail('unexpected: ${f is StorageFailure ? f.reason : f}'),
       );
       // Books/wishlist behave exactly as before S21…
@@ -1265,7 +1305,7 @@ void main() {
                           "issueNumber": 4 } ] }'''),
       });
       final r = restorer(_FakeVault(right(VaultData.empty)));
-      final summary = (await r.restore(archiveBytes: zip)).getOrElse(
+      final summary = (await r.restore(archivePath: zip)).getOrElse(
         (f) => fail('unexpected: ${f is StorageFailure ? f.reason : f}'),
       );
       // uid-8: declared an issue but no issues[] entry → one detached ROW.
@@ -1302,7 +1342,7 @@ void main() {
           // Both entries ABSENT despite the flags (a truncated archive).
         });
         final r = restorer(_FakeVault(right(VaultData.empty)));
-        final summary = (await r.restore(archiveBytes: zip)).getOrElse(
+        final summary = (await r.restore(archivePath: zip)).getOrElse(
           (f) => fail('unexpected: ${f is StorageFailure ? f.reason : f}'),
         );
         expect(summary.itemKindsInvalid, isTrue);
@@ -1349,12 +1389,344 @@ void main() {
                           "volume": 249, "issueNumber": 10 } ] }'''),
         });
         final r = restorer(_FakeVault(right(VaultData.empty)));
-        final result = await r.restore(archiveBytes: zip);
+        final result = await r.restore(archivePath: zip);
         expect(result.getLeft().toNullable(), isA<StorageFailure>());
         // Nothing switched: the pre-restore device state is byte-identical.
         expect(gen.switched, isEmpty);
         expect(await db.select(db.books).get(), isEmpty);
       },
     );
+  });
+
+  // BR6: the restore reads its backup from a file, in two workers. What the
+  // workers do entry by entry is proven in `restore_archive_reader_test.dart`
+  // and `restore_covers_builder_test.dart`; here it is the restore as a
+  // whole.
+  group('BR6 — cover pictures above their cap (D18, D23)', () {
+    /// Today's limits, with one difference: a cover may hold 100 bytes.
+    const smallCovers = BackupLimits(
+      maxCovers: 4086,
+      maxContentBytes: 500 * 1024 * 1024,
+      maxCoverBytes: 100,
+      maxDatabaseBytes: 200 * 1024 * 1024,
+      maxTextEntryBytes: 4 * 1024 * 1024,
+    );
+
+    /// A backup FILE made by the app's own writer, under the writer's own
+    /// (generous) limits; returns its path. [covers] are the cover files
+    /// of the phone the backup is made on, by file name.
+    Future<String> writtenBackup({
+      required List<CatalogueItem> books,
+      required Map<String, List<int>> covers,
+      List<WishlistBook> wishlist = const [],
+      List<Periodical> periodicals = const [],
+    }) async {
+      final coversDir = Directory('${tmp.path}/source_covers')..createSync();
+      covers.forEach(
+        (leaf, bytes) =>
+            File('${coversDir.path}/$leaf').writeAsBytesSync(bytes),
+      );
+      final built =
+          await BackupArchiveWriter(
+            vaultStore: VaultStore(baseDir: '${tmp.path}/no_source_vault'),
+            vaultGate: TestVaultGate(),
+            coversDir: coversDir.path,
+          ).build(
+            books: books,
+            wishlist: wishlist,
+            periodicals: periodicals,
+            workDir: '${tmp.path}/written',
+            exportedAt: 1,
+            identityJson: null,
+            networkJson: null,
+            publishStateJson: null,
+          );
+      return built.getOrElse((f) => fail('unexpected: $f')).path;
+    }
+
+    RestoreBackup restorerWith(BackupLimits limits) => gen.restorer(
+      vault: _FakeVault(right(VaultData.empty)),
+      guard: FakeReplacementGuard(),
+      limits: limits,
+    );
+
+    final small = List<int>.generate(60, (i) => i);
+    final big = List<int>.generate(101, (i) => i);
+
+    test('an oversized cover is left out, everything else is restored, and '
+        'the items that show it are named: books, wishlist, magazine '
+        'titles', () async {
+      final backup = await writtenBackup(
+        books: const [
+          CatalogueItem(
+            id: 1,
+            itemUid: 'u1',
+            title: 'Keeps its cover',
+            coverUrl: 'covers/small.jpg',
+          ),
+          CatalogueItem(
+            id: 2,
+            itemUid: 'u2',
+            title: 'Big cover',
+            coverUrl: 'covers/big.jpg',
+          ),
+          CatalogueItem(
+            id: 3,
+            itemUid: 'u3',
+            title: 'Shares the big cover',
+            coverUrl: 'covers/big.jpg',
+          ),
+          CatalogueItem(id: 4, itemUid: 'u4', title: 'No cover'),
+        ],
+        wishlist: const [
+          WishlistBook(id: 1, title: 'A wish', coverUrl: 'covers/big-wish.jpg'),
+        ],
+        periodicals: const [
+          Periodical(
+            title: 'A magazine',
+            periodicalUid: 'p1',
+            coverUrl: 'covers/big.jpg',
+          ),
+        ],
+        covers: {
+          'small.jpg': small,
+          'big.jpg': big,
+          'big-wish.jpg': [...big, ...big],
+          // Above the cap too, but no item refers to it: nobody to name.
+          'orphan.jpg': [...big, 1],
+        },
+      );
+
+      final summary = (await restorerWith(
+        smallCovers,
+      ).restore(archivePath: backup)).getOrElse((f) => fail('unexpected: $f'));
+
+      // Nothing but the pictures was left out.
+      expect(summary.booksRestored, 4);
+      expect(summary.wishlistRestored, 1);
+      expect(summary.periodicalsRestored, 1);
+      // Named in the order of D10: books, wishlist entries, magazine titles.
+      expect(summary.coverPicturesLeftOut, [
+        'Big cover',
+        'Shares the big cover',
+        'A wish',
+        'A magazine',
+      ]);
+      expect(summary.hasAdjustments, isTrue);
+      expect(summary.coversDropped, 0, reason: 'no cover LINK was removed');
+
+      // The new generation holds exactly the one cover that fits.
+      final covers = Directory(gen.current().coversDir);
+      expect(covers.listSync().map((e) => e.uri.pathSegments.last), [
+        'small.jpg',
+      ]);
+      expect(File('${covers.path}/small.jpg').readAsBytesSync(), small);
+      // The items keep their reference; the app shows the letter
+      // placeholder for a cover file that is not there.
+      final books = await activeBooks();
+      expect(books.firstWhere((b) => b.id == 2).coverUrl, 'covers/big.jpg');
+    });
+
+    test('with the limits of the app the same backup restores every cover '
+        'and names nobody', () async {
+      final backup = await writtenBackup(
+        books: const [
+          CatalogueItem(
+            id: 2,
+            itemUid: 'u2',
+            title: 'Big cover',
+            coverUrl: 'covers/big.jpg',
+          ),
+        ],
+        covers: {'small.jpg': small, 'big.jpg': big},
+      );
+
+      final summary = (await restorerWith(
+        BackupLimits.current,
+      ).restore(archivePath: backup)).getOrElse((f) => fail('unexpected: $f'));
+
+      expect(summary.coverPicturesLeftOut, isEmpty);
+      expect(summary.hasAdjustments, isFalse);
+      final covers = Directory(gen.current().coversDir);
+      expect(covers.listSync().map((e) => e.uri.pathSegments.last).toSet(), {
+        'small.jpg',
+        'big.jpg',
+      });
+      expect(File('${covers.path}/big.jpg').readAsBytesSync(), big);
+    });
+
+    test(
+      '200 oversized covers do not add up against the content cap',
+      () async {
+        // 200 covers of 6 KiB are 1.2 MiB: more than this backup may hold
+        // as a whole. They are left out, so they are not counted.
+        const limits = BackupLimits(
+          maxCovers: 4086,
+          maxContentBytes: 1024 * 1024,
+          maxCoverBytes: 1024,
+          maxDatabaseBytes: 512 * 1024,
+          maxTextEntryBytes: 64 * 1024,
+        );
+        final picture = List<int>.generate(6 * 1024, (i) => i % 256);
+        final zip = archive({
+          'manifest.json': utf8.encode(manifest(hasCovers: true)),
+          'books.db': buildBooksDb(),
+          'wishlist.db': buildWishlistDb(),
+          for (var i = 0; i < 200; i++) 'cover_big$i.jpg': picture,
+          'cover_fits.jpg': [1, 2, 3],
+        });
+
+        final summary = (await restorerWith(
+          limits,
+        ).restore(archivePath: zip)).getOrElse((f) => fail('unexpected: $f'));
+
+        expect(summary.booksRestored, 1);
+        // No restored item refers to one of them.
+        expect(summary.coverPicturesLeftOut, isEmpty);
+        final covers = Directory(gen.current().coversDir);
+        expect(covers.listSync().map((e) => e.uri.pathSegments.last), [
+          'fits.jpg',
+        ]);
+      },
+    );
+  });
+
+  group('BR6 — the backup is a file', () {
+    test('the file is still there, unchanged, after a restore that '
+        'succeeded and after one that failed', () async {
+      // The fixture makes each database file once per test.
+      final wishlistDb = buildWishlistDb();
+      final good = archive({
+        'manifest.json': utf8.encode(manifest(hasCovers: true)),
+        'books.db': buildBooksDb(),
+        'wishlist.db': wishlistDb,
+        'cover_a.jpg': [1, 2, 3],
+      });
+      final bad = archive({
+        'manifest.json': utf8.encode(manifest()),
+        'books.db': [0, 1, 2, 3],
+        'wishlist.db': wishlistDb,
+      });
+      final goodBytes = File(good).readAsBytesSync();
+      final badBytes = File(bad).readAsBytesSync();
+      final r = restorer(_FakeVault(right(VaultData.empty)));
+
+      expect((await r.restore(archivePath: bad)).isLeft(), isTrue);
+      expect((await r.restore(archivePath: good)).isRight(), isTrue);
+
+      expect(File(bad).readAsBytesSync(), badBytes);
+      expect(File(good).readAsBytesSync(), goodBytes);
+      expect(gen.restoreRunFolders(), isEmpty, reason: 'no run folder left');
+    });
+
+    test(
+      'a file that is gone: "choose it again", and nothing changes',
+      () async {
+        final r = restorer(_FakeVault(right(VaultData.empty)));
+
+        final inspected = await r.inspectArchive('${tmp.path}/never-there');
+        final restored = await r.restore(
+          archivePath: '${tmp.path}/never-there',
+        );
+
+        for (final failure in [
+          inspected.getLeft().toNullable(),
+          restored.getLeft().toNullable(),
+        ]) {
+          expect(failure, isA<ValidationFailure>());
+          expect(
+            (failure! as ValidationFailure).message,
+            'The backup file could not be read. Please choose it again.',
+          );
+        }
+        expect(gen.switched, isEmpty);
+        expect(gen.restoreRunFolders(), isEmpty);
+      },
+    );
+
+    test('an inspection stages nothing and makes no work folder', () async {
+      final zip = archive({
+        'manifest.json': utf8.encode(manifest()),
+        'books.db': buildBooksDb(),
+        'wishlist.db': buildWishlistDb(),
+      });
+      final r = restorer(_FakeVault(right(VaultData.empty)));
+
+      expect((await r.inspectArchive(zip)).isRight(), isTrue);
+
+      expect(Directory(gen.restoreWorkRoot).existsSync(), isFalse);
+    });
+
+    test('the limits a restorer is given reach its reader: one entry more '
+        'than a backup may have refuses the file', () async {
+      // Two covers and ten other entries are allowed: twelve in all. This
+      // backup has three other entries, so nine covers fit and ten do not.
+      const limits = BackupLimits(
+        maxCovers: 2,
+        maxContentBytes: 500 * 1024 * 1024,
+        maxCoverBytes: 4 * 1024 * 1024,
+        maxDatabaseBytes: 200 * 1024 * 1024,
+        maxTextEntryBytes: 4 * 1024 * 1024,
+      );
+      final booksDb = buildBooksDb();
+      final wishlistDb = buildWishlistDb();
+      String backupWith(int covers) => archive({
+        'manifest.json': utf8.encode(manifest(hasCovers: true)),
+        'books.db': booksDb,
+        'wishlist.db': wishlistDb,
+        for (var i = 0; i < covers; i++) 'cover_c$i.jpg': [i],
+      });
+      final r = gen.restorer(
+        vault: _FakeVault(right(VaultData.empty)),
+        guard: FakeReplacementGuard(),
+        limits: limits,
+      );
+
+      final tooMany = await r.restore(archivePath: backupWith(10));
+      final inspected = await r.inspectArchive(backupWith(10));
+
+      expect(tooMany.getLeft().toNullable(), isA<BackupCorruptFailure>());
+      expect(inspected.getLeft().toNullable(), isA<BackupCorruptFailure>());
+      expect(gen.switched, isEmpty);
+
+      final fits = await r.restore(archivePath: backupWith(9));
+
+      expect(fits.isRight(), isTrue);
+      expect(Directory(gen.current().coversDir).listSync(), hasLength(9));
+    });
+
+    test('a damaged cover is found when the restore unpacks it: the '
+        'inspection still shows the contents, the restore then fails with '
+        'nothing changed', () async {
+      // The first look checks everything the file DECLARES and unpacks
+      // only what it shows. A picture whose content does not fit its
+      // checksum is therefore found by the restore, not by the inspection.
+      final zip = gen.archiveFile(
+        buildHostileZip([
+          HostileEntry('manifest.json', utf8.encode(manifest(hasCovers: true))),
+          HostileEntry('books.db', buildBooksDb()),
+          HostileEntry('wishlist.db', buildWishlistDb()),
+          HostileEntry('cover_good.jpg', const [1, 2, 3]),
+          HostileEntry('cover_damaged.jpg', const [
+            4,
+            5,
+            6,
+          ], declaredCrc32: 0x12345678),
+        ]),
+      );
+      final r = restorer(_FakeVault(right(VaultData.empty)));
+
+      final inspected = await r.inspectArchive(zip);
+      expect(inspected.isRight(), isTrue);
+      expect(inspected.toNullable()!.manifest.hasCovers, isTrue);
+
+      final result = await r.restore(archivePath: zip);
+
+      expect(result.getLeft().toNullable(), isA<BackupCorruptFailure>());
+      expect(gen.switched, isEmpty);
+      expect(gen.current().name, gen.active.name);
+      expect(await db.select(db.books).get(), isEmpty);
+      expect(gen.restoreRunFolders(), isEmpty);
+    });
   });
 }

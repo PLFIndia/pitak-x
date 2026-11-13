@@ -332,7 +332,12 @@ builds (item 8):
    of libraries anywhere.
 7. **Exports and backups.** JSON/CSV/PDF exports and `.pitabak` backups are
    files the app hands to your device's share sheet; you choose where they
-   go. Backups you restore are read locally and never transmitted. Note:
+   go. Backups you restore are read locally and never transmitted. To
+   restore, the app makes a private temporary copy of the backup file you
+   choose, inside its own storage where no other app can read it, and
+   removes that copy again: when the restore has succeeded, when you choose
+   another file or leave the Restore screen, or at the next start of the
+   app. Note:
    `.pitabak` backups are **not fully encrypted** — books, magazine titles and
    issues, other items, wishlist and cover images inside are stored plainly;
    only the borrowers vault and its wrapped key blob remain encrypted inside

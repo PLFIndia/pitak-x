@@ -1,4 +1,4 @@
-/// Hands a generated file's bytes to the user via the OS share sheet
+/// Hands a generated file to the user via the OS share sheet
 /// (core/platform, AGENTS.md §3.1).
 ///
 /// Single source of truth for "let the user keep this file". On Android the
@@ -31,7 +31,8 @@ enum ShareOutcome {
   unavailable,
 }
 
-/// Shares in-memory bytes as a named file through the OS share sheet.
+/// Shares in-memory bytes, or a file that is already on disk, through the OS
+/// share sheet.
 ///
 /// Kept as an interface (not a single function) so it can be provided via DI
 /// and overridden with a fake in widget tests — the seam is the point.
@@ -52,6 +53,28 @@ abstract interface class FileShareService {
     required String fileName,
     required String mimeType,
     String? text,
+    Rect? sharePositionOrigin,
+  });
+
+  /// Presents the share sheet for the file at [path] with [mimeType]
+  /// (backup rework BR4).
+  ///
+  /// For a file that is too large to hold in memory, such as a backup.
+  /// Nothing is read into memory here: only the path is handed on.
+  ///
+  /// The receiving app is shown the file's OWN NAME on disk. There is no
+  /// way to give another name, so write the file under the name the user
+  /// should see.
+  ///
+  /// On Android the share plugin copies the file into its own cache folder
+  /// first and offers that copy. So when this call has returned, the file at
+  /// [path] is no longer needed and the caller may delete it, whatever the
+  /// outcome.
+  ///
+  /// [sharePositionOrigin] is as in [shareBytes].
+  Future<ShareOutcome> shareFile({
+    required String path,
+    required String mimeType,
     Rect? sharePositionOrigin,
   });
 
@@ -83,6 +106,25 @@ final class SharePlusFileShareService implements FileShareService {
         // items). A blank caption is sent as "no text" rather than an empty
         // string some targets would show as an empty message.
         text: (text == null || text.trim().isEmpty) ? null : text,
+        sharePositionOrigin: sharePositionOrigin,
+      ),
+    );
+    return _outcome(result);
+  }
+
+  @override
+  Future<ShareOutcome> shareFile({
+    required String path,
+    required String mimeType,
+    Rect? sharePositionOrigin,
+  }) async {
+    final result = await SharePlus.instance.share(
+      ShareParams(
+        // An `XFile` made from a path is passed on as that path. No
+        // `fileNameOverrides` here: the plugin ignores it for a file that
+        // has a path (read in share_plus_platform_interface 6.1.0,
+        // `method_channel_share.dart`, and share_plus 12.0.2, `Share.kt`).
+        files: [XFile(path, mimeType: mimeType)],
         sharePositionOrigin: sharePositionOrigin,
       ),
     );

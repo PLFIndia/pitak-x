@@ -11,8 +11,11 @@ import 'package:path/path.dart' as p;
 import 'package:pitaka/core/crypto/secret_bytes.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/core/platform/document_picker.dart';
 import 'package:pitaka/core/storage/active_data_generation.dart';
 import 'package:pitaka/features/backup/application/restore_controller.dart';
+import 'package:pitaka/features/backup/domain/backup_limits.dart';
+import 'package:pitaka/features/backup/domain/backup_progress.dart';
 import 'package:pitaka/features/library/application/library_controller.dart';
 import 'package:pitaka/features/network/application/network_controller.dart';
 import 'package:pitaka/features/network/application/network_refresh_controller.dart';
@@ -37,6 +40,7 @@ import 'package:pitaka/features/vault/domain/repositories/vault_repository.dart'
 import 'package:pitaka/features/wishlist/application/wishlist_controller.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../support/fake_document_picker.dart';
 import '../library/replacement_test_guard.dart';
 import '../periodicals/application/periodical_fakes.dart';
 import '../publish/support/availability_lane_fakes.dart';
@@ -53,6 +57,32 @@ class _FakeVault with VaultWriteUnsupported implements VaultRepository {
     required String blob,
     required String dbPath,
   }) async => right(VaultData.empty);
+}
+
+/// A vault that answers what the test scripted, one answer for each unlock
+/// (an empty vault when nothing is scripted), and can park an unlock until
+/// the test lets it go: this is how a test holds a restore half-way.
+class _ScriptedVault with VaultWriteUnsupported implements VaultRepository {
+  /// The answers of the next unlocks, in order.
+  final List<Either<Failure, VaultData>> answers = [];
+
+  /// Completed when the first unlock is reached, when set.
+  Completer<void>? entered;
+
+  /// The unlock waits for this, when set.
+  Completer<void>? gate;
+
+  @override
+  Future<Either<Failure, VaultData>> unlockAndRead({
+    required SecretBytes passphrase,
+    required String blob,
+    required String dbPath,
+  }) async {
+    final reached = entered;
+    if (reached != null && !reached.isCompleted) reached.complete();
+    await gate?.future;
+    return answers.isEmpty ? right(VaultData.empty) : answers.removeAt(0);
+  }
 }
 
 /// In-memory settings repo that records logo writes (N04 logo-hygiene tests).
@@ -129,8 +159,13 @@ class _LogoSettingsRepo implements SettingsRepository {
 void main() {
   late Directory tmp;
 
+  /// Plays the app's picker (BR6): hands out real files as "the private
+  /// copy of the chosen backup" and records who gave which copy back.
+  late FakeDocumentPicker picker;
+
   setUp(() {
     tmp = Directory.systemTemp.createTempSync('restore_ctrl_test');
+    picker = FakeDocumentPicker(Directory('${tmp.path}/picked'));
   });
 
   tearDown(() {
@@ -146,6 +181,7 @@ void main() {
     NetworkRepository? network,
     FakePeriodicals? periodicals,
     MemoryKeysReset? keys,
+    VaultRepository? vault,
     List<Override> extra = const [],
   }) {
     // Plan J9: the generation switch runs through the publish feature's
@@ -155,7 +191,14 @@ void main() {
       overrides: [
         catalogueKeysResetProvider.overrideWith((ref) async => keysReset.reset),
         appDocsDirProvider.overrideWith((ref) async => tmp),
-        vaultRepositoryProvider.overrideWithValue(_FakeVault()),
+        // BR6: a restore stages its databases under the temporary folder,
+        // and the copy of the backup comes from (and goes back to) the
+        // picker.
+        appTempDirProvider.overrideWith(
+          (ref) async => Directory('${tmp.path}/app_temp'),
+        ),
+        documentPickerProvider.overrideWith((ref) async => picker),
+        vaultRepositoryProvider.overrideWithValue(vault ?? _FakeVault()),
         nowTickProvider.overrideWith((ref) => 0),
         if (periodicals != null)
           periodicalRepositoryProvider.overrideWith((ref) async => periodicals),
@@ -180,7 +223,7 @@ void main() {
 
   /// A minimal VALID archive that carries only a vault (no books/wishlist):
   /// manifest + backup_blob + borrowers.db. Restore installs the vault pair.
-  Uint8List vaultOnlyArchive() {
+  PickedDocument vaultOnlyArchive() {
     final manifest = utf8.encode(
       jsonEncode({
         'schemaVersion': 1,
@@ -198,7 +241,7 @@ void main() {
       ..addFile(ArchiveFile('manifest.json', manifest.length, manifest))
       ..addFile(ArchiveFile('backup_blob', blob.length, blob))
       ..addFile(ArchiveFile('borrowers.db', borrowersDb.length, borrowersDb));
-    return Uint8List.fromList(ZipEncoder().encode(a)!);
+    return picker.place(ZipEncoder().encode(a));
   }
 
   test('maps a corrupt archive to AsyncError(BackupCorruptFailure)', () async {
@@ -208,7 +251,7 @@ void main() {
     await container
         .read(restoreControllerProvider.notifier)
         .restore(
-          archiveBytes: Uint8List.fromList([0, 1, 2, 3]), // not a zip
+          archive: picker.place([0, 1, 2, 3]), // not a zip
           passphrase: passphrase,
         );
 
@@ -223,10 +266,7 @@ void main() {
 
     await container
         .read(restoreControllerProvider.notifier)
-        .restore(
-          archiveBytes: Uint8List.fromList([0, 1, 2, 3]),
-          passphrase: passphrase,
-        );
+        .restore(archive: picker.place([0, 1, 2, 3]), passphrase: passphrase);
 
     // §6.1: the controller must wipe the secret; using it now must throw.
     expect(() => passphrase.use((b) => b), throwsStateError);
@@ -244,7 +284,7 @@ void main() {
     await container
         .read(restoreControllerProvider.notifier)
         .restore(
-          archiveBytes: vaultOnlyArchive(),
+          archive: vaultOnlyArchive(),
           passphrase: SecretBytes(Uint8List.fromList([1, 2, 3])),
         );
     expect(container.read(restoreControllerProvider).hasValue, isTrue);
@@ -270,7 +310,7 @@ void main() {
     await container
         .read(restoreControllerProvider.notifier)
         .restore(
-          archiveBytes: Uint8List.fromList([0, 1, 2, 3]), // not a zip
+          archive: picker.place([0, 1, 2, 3]), // not a zip
           passphrase: SecretBytes(Uint8List.fromList([1, 2, 3])),
         );
 
@@ -311,11 +351,11 @@ void main() {
     );
     final a = Archive()
       ..addFile(ArchiveFile('manifest.json', manifest.length, manifest));
-    final zip = Uint8List.fromList(ZipEncoder().encode(a)!);
+    final zip = picker.place(ZipEncoder().encode(a));
 
     await container
         .read(restoreControllerProvider.notifier)
-        .restore(archiveBytes: zip); // N13: null passphrase, no crash
+        .restore(archive: zip); // N13: null passphrase, no crash
 
     final state = container.read(restoreControllerProvider);
     expect(state.hasValue, isTrue);
@@ -323,7 +363,7 @@ void main() {
   });
 
   group('plan J9 — a restore marks the published keys unusable first', () {
-    Uint8List emptyArchive() {
+    PickedDocument emptyArchive() {
       final manifest = utf8.encode(
         jsonEncode({
           'schemaVersion': 1,
@@ -337,7 +377,7 @@ void main() {
       );
       final a = Archive()
         ..addFile(ArchiveFile('manifest.json', manifest.length, manifest));
-      return Uint8List.fromList(ZipEncoder().encode(a)!);
+      return picker.place(ZipEncoder().encode(a));
     }
 
     test('flags cleared before the switch, then the lane is told', () async {
@@ -352,7 +392,7 @@ void main() {
 
       await container
           .read(restoreControllerProvider.notifier)
-          .restore(archiveBytes: emptyArchive());
+          .restore(archive: emptyArchive());
 
       expect(container.read(restoreControllerProvider).hasValue, isTrue);
       final after = await container.read(activeDataGenerationProvider.future);
@@ -380,7 +420,7 @@ void main() {
 
       await container
           .read(restoreControllerProvider.notifier)
-          .restore(archiveBytes: emptyArchive());
+          .restore(archive: emptyArchive());
 
       expect(container.read(restoreControllerProvider).hasError, isTrue);
       final after = await container.read(activeDataGenerationProvider.future);
@@ -391,7 +431,7 @@ void main() {
   });
 
   group('plan CV7 — the publishing record is offered after the switch', () {
-    Uint8List archiveWith({String? publishState}) {
+    PickedDocument archiveWith({String? publishState}) {
       final manifest = utf8.encode(
         jsonEncode({
           'schemaVersion': 1,
@@ -410,7 +450,7 @@ void main() {
         final bytes = utf8.encode(publishState);
         a.addFile(ArchiveFile('publish_state.json', bytes.length, bytes));
       }
-      return Uint8List.fromList(ZipEncoder().encode(a)!);
+      return picker.place(ZipEncoder().encode(a));
     }
 
     List<Override> publishOverrides(PublishStateAdopter adopter) => [
@@ -437,7 +477,7 @@ void main() {
       await container
           .read(restoreControllerProvider.notifier)
           .restore(
-            archiveBytes: archiveWith(
+            archive: archiveWith(
               publishState: PublishStateBackupCodec.encode(archivedState()),
             ),
           );
@@ -457,7 +497,7 @@ void main() {
       await container
           .read(restoreControllerProvider.notifier)
           .restore(
-            archiveBytes: archiveWith(
+            archive: archiveWith(
               publishState: PublishStateBackupCodec.encode(archivedState()),
             ),
           );
@@ -479,7 +519,7 @@ void main() {
       await container
           .read(restoreControllerProvider.notifier)
           .restore(
-            archiveBytes: archiveWith(
+            archive: archiveWith(
               publishState: PublishStateBackupCodec.encode(archivedState()),
             ),
           );
@@ -501,7 +541,7 @@ void main() {
           ..listen(restoreControllerProvider, (_, _) {});
         await container
             .read(restoreControllerProvider.notifier)
-            .restore(archiveBytes: archiveWith(publishState: publishState));
+            .restore(archive: archiveWith(publishState: publishState));
         final state = container.read(restoreControllerProvider);
         expect(state.hasValue, isTrue);
         expect(state.value!.publishStateOutcome, isNull);
@@ -516,7 +556,7 @@ void main() {
     // reference pointing at a cover file the restored set does not have.
     // These archives carry no covers, so the device's set is carried over
     // verbatim — the logo file is present exactly when the test plants it.
-    Uint8List emptyArchive() {
+    PickedDocument emptyArchive() {
       final manifest = utf8.encode(
         jsonEncode({
           'schemaVersion': 1,
@@ -530,7 +570,7 @@ void main() {
       );
       final a = Archive()
         ..addFile(ArchiveFile('manifest.json', manifest.length, manifest));
-      return Uint8List.fromList(ZipEncoder().encode(a)!);
+      return picker.place(ZipEncoder().encode(a));
     }
 
     test('a dangling logo reference is cleared after a restore', () async {
@@ -543,7 +583,7 @@ void main() {
 
       await container
           .read(restoreControllerProvider.notifier)
-          .restore(archiveBytes: emptyArchive());
+          .restore(archive: emptyArchive());
 
       expect(
         container.read(restoreControllerProvider).hasValue,
@@ -572,7 +612,7 @@ void main() {
 
       await container
           .read(restoreControllerProvider.notifier)
-          .restore(archiveBytes: emptyArchive());
+          .restore(archive: emptyArchive());
 
       expect(settings.logoWrites, isEmpty);
       expect(
@@ -588,7 +628,7 @@ void main() {
 
       await container
           .read(restoreControllerProvider.notifier)
-          .restore(archiveBytes: emptyArchive());
+          .restore(archive: emptyArchive());
 
       expect(settings.logoWrites, isEmpty);
     });
@@ -611,6 +651,7 @@ void main() {
           }),
           vaultStoreProvider.overrideWith((ref) async => gen.store),
           vaultRepositoryProvider.overrideWithValue(_FakeVault()),
+          documentPickerProvider.overrideWith((ref) async => picker),
           settingsRepositoryProvider.overrideWith(
             (ref) async => _LogoSettingsRepo(),
           ),
@@ -633,7 +674,7 @@ void main() {
       final future = container
           .read(restoreControllerProvider.notifier)
           .restore(
-            archiveBytes: vaultOnlyArchive(),
+            archive: vaultOnlyArchive(),
             passphrase: SecretBytes(Uint8List.fromList([1, 2, 3])),
           );
       expect(container.read(restoreControllerProvider).isLoading, isTrue);
@@ -666,14 +707,14 @@ void main() {
       final first = container
           .read(restoreControllerProvider.notifier)
           .restore(
-            archiveBytes: vaultOnlyArchive(),
+            archive: vaultOnlyArchive(),
             passphrase: SecretBytes(Uint8List.fromList([1])),
           );
       final refusedSecret = SecretBytes(Uint8List.fromList([2]));
       var secondDone = false;
       final second = container
           .read(restoreControllerProvider.notifier)
-          .restore(archiveBytes: vaultOnlyArchive(), passphrase: refusedSecret)
+          .restore(archive: vaultOnlyArchive(), passphrase: refusedSecret)
           .then((_) => secondDone = true);
       await pumpEventQueue();
 
@@ -700,6 +741,7 @@ void main() {
           restoreBackupProvider.overrideWith(
             (ref) async => throw StateError('plugin exploded'),
           ),
+          documentPickerProvider.overrideWith((ref) async => picker),
         ],
       );
       addTearDown(container.dispose);
@@ -707,10 +749,7 @@ void main() {
 
       await container
           .read(restoreControllerProvider.notifier)
-          .restore(
-            archiveBytes: Uint8List.fromList([0]),
-            passphrase: passphrase,
-          );
+          .restore(archive: picker.place([0]), passphrase: passphrase);
 
       final state = container.read(restoreControllerProvider);
       expect(state.error, isA<UnexpectedFailure>());
@@ -755,7 +794,7 @@ void main() {
       await container
           .read(restoreControllerProvider.notifier)
           .restore(
-            archiveBytes: vaultOnlyArchive(),
+            archive: vaultOnlyArchive(),
             passphrase: SecretBytes(Uint8List.fromList([1, 2, 3])),
           );
       expect(container.read(restoreControllerProvider).hasValue, isTrue);
@@ -783,6 +822,7 @@ void main() {
           }),
           vaultStoreProvider.overrideWith((ref) async => gen.store),
           vaultRepositoryProvider.overrideWithValue(_FakeVault()),
+          documentPickerProvider.overrideWith((ref) async => picker),
           settingsRepositoryProvider.overrideWith(
             (ref) async => _LogoSettingsRepo(),
           ),
@@ -804,7 +844,7 @@ void main() {
       final future = container
           .read(restoreControllerProvider.notifier)
           .restore(
-            archiveBytes: vaultOnlyArchive(),
+            archive: vaultOnlyArchive(),
             passphrase: SecretBytes(Uint8List.fromList([1, 2, 3])),
           );
       sub.close(); // the page is popped: no listener at all
@@ -836,7 +876,7 @@ void main() {
       await container
           .read(restoreControllerProvider.notifier)
           .restore(
-            archiveBytes: Uint8List.fromList([0, 1, 2, 3]),
+            archive: picker.place([0, 1, 2, 3]),
             passphrase: SecretBytes(Uint8List.fromList([1])),
           );
       await pumpEventQueue();
@@ -853,7 +893,7 @@ void main() {
       final container = makeContainer();
       final notifier = container.read(restoreControllerProvider.notifier);
       await notifier.restore(
-        archiveBytes: Uint8List.fromList([0, 1, 2, 3]),
+        archive: picker.place([0, 1, 2, 3]),
         passphrase: SecretBytes(Uint8List.fromList([1])),
       );
       expect(container.read(restoreControllerProvider).hasError, isTrue);
@@ -871,7 +911,7 @@ void main() {
       final container = gatedContainer(gate: gate);
       final notifier = container.read(restoreControllerProvider.notifier);
       final future = notifier.restore(
-        archiveBytes: vaultOnlyArchive(),
+        archive: vaultOnlyArchive(),
         passphrase: SecretBytes(Uint8List.fromList([1, 2, 3])),
       );
       expect(container.read(restoreControllerProvider).isLoading, isTrue);
@@ -895,12 +935,12 @@ void main() {
       final notifier = container.read(restoreControllerProvider.notifier);
       final firstSecret = SecretBytes(Uint8List.fromList([1]));
       final first = notifier.restore(
-        archiveBytes: vaultOnlyArchive(),
+        archive: vaultOnlyArchive(),
         passphrase: firstSecret,
       );
       final refusedSecret = SecretBytes(Uint8List.fromList([2]));
       await notifier.restore(
-        archiveBytes: vaultOnlyArchive(),
+        archive: vaultOnlyArchive(),
         passphrase: refusedSecret,
       );
       expect(() => refusedSecret.use((b) => b), throwsStateError);
@@ -916,7 +956,7 @@ void main() {
     const archiveId = 'cccccccccccccccccccccccccccccccc';
 
     /// An archive carrying books + identity.json + network.json (no vault).
-    Uint8List identityNetworkArchive({String identityJson = ''}) {
+    PickedDocument identityNetworkArchive({String identityJson = ''}) {
       final manifest = utf8.encode(
         jsonEncode({
           'schemaVersion': 1,
@@ -942,7 +982,7 @@ void main() {
         ..addFile(ArchiveFile('manifest.json', manifest.length, manifest))
         ..addFile(ArchiveFile('identity.json', identity.length, identity))
         ..addFile(ArchiveFile('network.json', network.length, network));
-      return Uint8List.fromList(ZipEncoder().encode(a)!);
+      return picker.place(ZipEncoder().encode(a));
     }
 
     /// Holds the autoDispose restore chain alive for the whole test
@@ -995,7 +1035,7 @@ void main() {
 
       await container
           .read(restoreControllerProvider.notifier)
-          .restore(archiveBytes: identityNetworkArchive());
+          .restore(archive: identityNetworkArchive());
 
       final summary = container.read(restoreControllerProvider).value;
       expect(summary, isNotNull);
@@ -1038,7 +1078,7 @@ void main() {
         await container
             .read(restoreControllerProvider.notifier)
             .restore(
-              archiveBytes: identityNetworkArchive(
+              archive: identityNetworkArchive(
                 identityJson: jsonEncode({
                   'libraryId': archiveId,
                   'libraryName': 'Meera Road',
@@ -1069,7 +1109,7 @@ void main() {
 
       await container
           .read(restoreControllerProvider.notifier)
-          .restore(archiveBytes: identityNetworkArchive());
+          .restore(archive: identityNetworkArchive());
 
       final summary = container.read(restoreControllerProvider).value!;
       expect(summary.identityAdopted, isFalse);
@@ -1090,7 +1130,7 @@ void main() {
 
       await container
           .read(restoreControllerProvider.notifier)
-          .restore(archiveBytes: identityNetworkArchive());
+          .restore(archive: identityNetworkArchive());
 
       final summary = container.read(restoreControllerProvider).value!;
       expect(summary.identityAdopted, isFalse);
@@ -1116,7 +1156,7 @@ void main() {
         await container
             .read(restoreControllerProvider.notifier)
             .restore(
-              archiveBytes: identityNetworkArchive(
+              archive: identityNetworkArchive(
                 identityJson: '{"libraryId": "NOT-HEX", "libraryName": "X"}',
               ),
             );
@@ -1146,7 +1186,7 @@ void main() {
 
         await container
             .read(restoreControllerProvider.notifier)
-            .restore(archiveBytes: identityNetworkArchive());
+            .restore(archive: identityNetworkArchive());
 
         final summary = container.read(restoreControllerProvider).value!;
         expect(summary.networkApplied, isFalse);
@@ -1157,6 +1197,373 @@ void main() {
         await settleCascade(container);
       },
     );
+  });
+
+  // BR6: who owns the private copy of the chosen backup, and what a running
+  // restore tells the page. Every row of the table in the controller's
+  // library doc is looked at on disk, through the fake picker.
+  group('BR6 — the picked copy (D25) and the cover count (D27)', () {
+    /// An archive without a vault and without rows: restores at once.
+    List<int> emptyBackup() {
+      final manifest = utf8.encode(
+        jsonEncode({
+          'schemaVersion': 1,
+          'exportedAt': 123,
+          'hasBooks': false,
+          'hasWishlist': false,
+          'hasBorrowers': false,
+          'hasBackupBlob': false,
+          'hasCovers': false,
+        }),
+      );
+      final a = Archive()
+        ..addFile(ArchiveFile('manifest.json', manifest.length, manifest));
+      return ZipEncoder().encode(a);
+    }
+
+    /// An archive with a vault: the scripted vault decides how it ends.
+    List<int> vaultBackup() => File(vaultOnlyArchive().path).readAsBytesSync();
+
+    /// An archive with two cover pictures and nothing else.
+    List<int> coversBackup() {
+      final manifest = utf8.encode(
+        jsonEncode({
+          'schemaVersion': 1,
+          'exportedAt': 123,
+          'hasBooks': false,
+          'hasWishlist': false,
+          'hasBorrowers': false,
+          'hasBackupBlob': false,
+          'hasCovers': true,
+        }),
+      );
+      final a = Archive()
+        ..addFile(ArchiveFile('manifest.json', manifest.length, manifest))
+        ..addFile(ArchiveFile('cover_a.jpg', 3, [1, 2, 3]))
+        ..addFile(ArchiveFile('cover_b.jpg', 2, [4, 5]));
+      return ZipEncoder().encode(a);
+    }
+
+    SecretBytes secret() => SecretBytes(Uint8List.fromList([1, 2, 3]));
+
+    bool onDisk(PickedDocument document) => File(document.path).existsSync();
+
+    test('pickArchive asks for a copy under the archive cap, and nothing '
+        'else', () async {
+      final container = makeContainer();
+      final document = picker.place([1, 2, 3]);
+      picker
+        ..willAnswer(DocumentPicked(document))
+        ..willAnswer(const DocumentPickTooLarge());
+      final controller = container.read(restoreControllerProvider.notifier);
+
+      final first = await controller.pickArchive();
+      final second = await controller.pickArchive();
+      final third = await controller.pickArchive();
+
+      expect(picker.caps, List.filled(3, BackupLimits.current.maxArchiveBytes));
+      expect((first as DocumentPicked).document, same(document));
+      expect(second, isA<DocumentPickTooLarge>());
+      expect(third, isA<DocumentPickCancelled>());
+      // A pick does not touch the copy or the restore's state.
+      expect(onDisk(document), isTrue);
+      expect(picker.discarded, isEmpty);
+      expect(container.read(restoreControllerProvider).value, isNull);
+    });
+
+    test('a picker that cannot be resolved answers "failed"', () async {
+      final container = makeContainer(
+        extra: [
+          documentPickerProvider.overrideWith(
+            (ref) async => throw StateError('no temporary folder'),
+          ),
+        ],
+      );
+
+      final result = await container
+          .read(restoreControllerProvider.notifier)
+          .pickArchive();
+
+      expect(result, isA<DocumentPickFailed>());
+    });
+
+    test('releaseArchive removes a copy no restore is reading, at once, and '
+        'may be called twice', () async {
+      final container = makeContainer();
+      final controller = container.read(restoreControllerProvider.notifier);
+      final document = picker.place(emptyBackup());
+
+      await controller.releaseArchive(document);
+      expect(onDisk(document), isFalse);
+      await controller.releaseArchive(document);
+
+      expect(picker.discarded, [document.path, document.path]);
+    });
+
+    test('an inspection leaves the copy with its owner', () async {
+      final container = makeContainer();
+      final document = picker.place(emptyBackup());
+
+      final inspected = await container
+          .read(restoreControllerProvider.notifier)
+          .inspectArchive(document);
+
+      expect(inspected.isRight(), isTrue);
+      expect(onDisk(document), isTrue);
+      expect(picker.discarded, isEmpty);
+    });
+
+    test('after a restore that succeeded the copy is gone', () async {
+      final container = makeContainer();
+      final document = picker.place(emptyBackup());
+
+      await container
+          .read(restoreControllerProvider.notifier)
+          .restore(archive: document);
+
+      expect(container.read(restoreControllerProvider).value, isNotNull);
+      expect(onDisk(document), isFalse);
+      expect(picker.discarded, [document.path]);
+    });
+
+    test('after a restore that failed the copy stays with the page, '
+        'unchanged, and a second try works', () async {
+      final vault = _ScriptedVault()
+        ..answers.add(left(const WrongPassphraseFailure()));
+      final container = makeContainer(vault: vault);
+      final controller = container.read(restoreControllerProvider.notifier);
+      final bytes = vaultBackup();
+      final document = picker.place(bytes);
+
+      await controller.restore(archive: document, passphrase: secret());
+
+      expect(
+        container.read(restoreControllerProvider).error,
+        isA<WrongPassphraseFailure>(),
+      );
+      expect(File(document.path).readAsBytesSync(), bytes);
+      expect(picker.discarded, isEmpty);
+
+      // The second try, with the same copy: the vault now opens.
+      await controller.restore(archive: document, passphrase: secret());
+
+      expect(container.read(restoreControllerProvider).value, isNotNull);
+      expect(onDisk(document), isFalse);
+    });
+
+    test('a copy released DURING a restore is not removed under it; it goes '
+        'when that restore has failed', () async {
+      final vault = _ScriptedVault()
+        ..entered = Completer<void>()
+        ..gate = Completer<void>()
+        ..answers.add(left(const WrongPassphraseFailure()));
+      final container = makeContainer(vault: vault);
+      final controller = container.read(restoreControllerProvider.notifier);
+      final document = picker.place(vaultBackup());
+
+      final run = controller.restore(archive: document, passphrase: secret());
+      await vault.entered!.future;
+      // The page is left in the middle of the restore.
+      await controller.releaseArchive(document);
+
+      expect(onDisk(document), isTrue, reason: 'the restore is reading it');
+      expect(picker.discarded, isEmpty);
+
+      vault.gate!.complete();
+      await run;
+
+      expect(container.read(restoreControllerProvider).hasError, isTrue);
+      expect(onDisk(document), isFalse);
+      expect(picker.discarded, [document.path]);
+    });
+
+    test('a copy released during a restore that then succeeds is removed '
+        'once', () async {
+      final vault = _ScriptedVault()
+        ..entered = Completer<void>()
+        ..gate = Completer<void>();
+      final container = makeContainer(vault: vault);
+      final controller = container.read(restoreControllerProvider.notifier);
+      final document = picker.place(vaultBackup());
+
+      final run = controller.restore(archive: document, passphrase: secret());
+      await vault.entered!.future;
+      await controller.releaseArchive(document);
+      vault.gate!.complete();
+      await run;
+
+      expect(container.read(restoreControllerProvider).value, isNotNull);
+      expect(onDisk(document), isFalse);
+      expect(picker.discarded, [document.path]);
+    });
+
+    test(
+      'a release during one restore does not carry over to the next',
+      () async {
+        // The first restore fails after its copy was released: that copy
+        // goes. A second copy, restored afterwards and failing too, must
+        // stay with the page: the earlier release was not about it.
+        final vault = _ScriptedVault()
+          ..entered = Completer<void>()
+          ..gate = Completer<void>()
+          ..answers.addAll([
+            left(const WrongPassphraseFailure()),
+            left(const WrongPassphraseFailure()),
+          ]);
+        final container = makeContainer(vault: vault);
+        final controller = container.read(restoreControllerProvider.notifier);
+        final first = picker.place(vaultBackup());
+        final second = picker.place(vaultBackup());
+
+        final run = controller.restore(archive: first, passphrase: secret());
+        await vault.entered!.future;
+        await controller.releaseArchive(first);
+        vault.gate!.complete();
+        await run;
+        await controller.restore(archive: second, passphrase: secret());
+
+        expect(onDisk(first), isFalse);
+        expect(onDisk(second), isTrue);
+      },
+    );
+
+    test('releasing ANOTHER copy while a restore runs removes that one at '
+        'once', () async {
+      final vault = _ScriptedVault()
+        ..entered = Completer<void>()
+        ..gate = Completer<void>();
+      final container = makeContainer(vault: vault);
+      final controller = container.read(restoreControllerProvider.notifier);
+      final inUse = picker.place(vaultBackup());
+      final other = picker.place(emptyBackup());
+
+      final run = controller.restore(archive: inUse, passphrase: secret());
+      await vault.entered!.future;
+      await controller.releaseArchive(other);
+
+      expect(onDisk(other), isFalse);
+      expect(onDisk(inUse), isTrue);
+
+      vault.gate!.complete();
+      await run;
+    });
+
+    test('a restore that is refused because one runs already leaves its '
+        'copy untouched', () async {
+      final vault = _ScriptedVault()
+        ..entered = Completer<void>()
+        ..gate = Completer<void>();
+      final container = makeContainer(vault: vault);
+      final controller = container.read(restoreControllerProvider.notifier);
+      final running = picker.place(vaultBackup());
+      final refused = picker.place(emptyBackup());
+
+      final run = controller.restore(archive: running, passphrase: secret());
+      await vault.entered!.future;
+      await controller.restore(archive: refused);
+
+      expect(onDisk(refused), isTrue);
+      expect(picker.discarded, isEmpty);
+      // And the copy that is in use is still the first one: releasing the
+      // refused one removes it at once.
+      await controller.releaseArchive(refused);
+      expect(onDisk(refused), isFalse);
+      expect(onDisk(running), isTrue);
+
+      vault.gate!.complete();
+      await run;
+      expect(onDisk(running), isFalse);
+    });
+
+    test('a copy the system took away gives the "choose it again" sentence, '
+        'and nothing on the device changes', () async {
+      final container = makeContainer();
+      final controller = container.read(restoreControllerProvider.notifier);
+      final document = picker.place(emptyBackup());
+      File(document.path).deleteSync();
+
+      await controller.restore(archive: document);
+
+      final error = container.read(restoreControllerProvider).error;
+      expect(error, isA<ValidationFailure>());
+      expect(
+        (error! as ValidationFailure).message,
+        'The backup file could not be read. Please choose it again.',
+      );
+    });
+
+    group('the cover count', () {
+      test('is shown while covers are written and gone when the restore '
+          'ends', () async {
+        final container = makeContainer();
+        final seen = <BackupProgress?>[];
+        container.listen(restoreProgressProvider, (_, next) => seen.add(next));
+
+        await container
+            .read(restoreControllerProvider.notifier)
+            .restore(archive: picker.place(coversBackup()));
+
+        expect(container.read(restoreControllerProvider).value, isNotNull);
+        final counts = [
+          for (final progress in seen)
+            if (progress != null) (progress.coversDone, progress.coversTotal),
+        ];
+        expect(counts, isNotEmpty);
+        expect(counts.last, (2, 2));
+        expect(seen.last, isNull, reason: 'cleared when the restore ended');
+        expect(container.read(restoreProgressProvider), isNull);
+      });
+
+      test('a count left from an earlier restore is cleared when the next '
+          'one starts, and stays cleared after a failure', () async {
+        final vault = _ScriptedVault()
+          ..entered = Completer<void>()
+          ..gate = Completer<void>()
+          ..answers.add(left(const WrongPassphraseFailure()));
+        final container = makeContainer(vault: vault);
+        final stale = BackupProgress.tryCreate(coversDone: 1, coversTotal: 9);
+        container.read(restoreProgressProvider.notifier).show(stale);
+
+        final run = container
+            .read(restoreControllerProvider.notifier)
+            .restore(
+              archive: picker.place(vaultBackup()),
+              passphrase: secret(),
+            );
+        await vault.entered!.future;
+
+        // The restore is parked half-way: the old count is gone already.
+        expect(container.read(restoreProgressProvider), isNull);
+
+        vault.gate!.complete();
+        await run;
+
+        expect(container.read(restoreControllerProvider).hasError, isTrue);
+        expect(container.read(restoreProgressProvider), isNull);
+      });
+
+      test('is cleared after an unexpected throw too', () async {
+        final container = makeContainer(
+          extra: [
+            restoreBackupProvider.overrideWith(
+              (ref) async => throw StateError('plugin exploded'),
+            ),
+          ],
+        );
+        final stale = BackupProgress.tryCreate(coversDone: 1, coversTotal: 9);
+        container.read(restoreProgressProvider.notifier).show(stale);
+
+        await container
+            .read(restoreControllerProvider.notifier)
+            .restore(archive: picker.place(emptyBackup()));
+
+        expect(
+          container.read(restoreControllerProvider).error,
+          isA<UnexpectedFailure>(),
+        );
+        expect(container.read(restoreProgressProvider), isNull);
+      });
+    });
   });
 }
 

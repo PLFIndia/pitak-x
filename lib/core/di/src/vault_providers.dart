@@ -11,7 +11,6 @@
 /// never imports this module, so the graph stays acyclic.
 library;
 
-import 'package:path/path.dart' as p;
 import 'package:pitaka/core/di/src/database_providers.dart';
 import 'package:pitaka/core/di/src/library_providers.dart';
 import 'package:pitaka/core/di/src/platform_providers.dart';
@@ -36,7 +35,6 @@ import 'package:pitaka/features/vault/domain/repositories/vault_repository.dart'
 import 'package:pitaka/features/vault/infrastructure/ffi_vault_repository.dart';
 import 'package:pitaka/features/vault/infrastructure/keystore_biometric_secret_vault.dart';
 import 'package:pitaka/features/vault/infrastructure/local_auth_biometric_authenticator.dart';
-import 'package:pitaka/features/vault/infrastructure/open_vault_from_archive.dart';
 import 'package:pitaka/features/vault/infrastructure/prefs_borrower_limit_policy_store.dart';
 import 'package:pitaka/features/vault/infrastructure/prefs_reminder_template_store.dart';
 import 'package:pitaka/features/vault/infrastructure/vault_store.dart';
@@ -213,19 +211,5 @@ bool screenCaptureProtected(ScreenCaptureProtectedRef ref) {
   return shouldSecureForState(
     session ?? const VaultUninitialized(),
     passphraseEntryVisible: entering,
-  );
-}
-
-/// Read-only opener that unlocks + reads a vault from a `.pitabak` archive
-/// (writes nothing; stages the DB in a scratch dir under the app docs dir).
-@riverpod
-Future<OpenVaultFromArchive> openVaultFromArchive(
-  OpenVaultFromArchiveRef ref,
-) async {
-  final vault = ref.watch(vaultRepositoryProvider);
-  final dir = await ref.watch(appDocsDirProvider.future);
-  return OpenVaultFromArchive(
-    vault: vault,
-    workDir: p.join(dir.path, 'vault_view_work'),
   );
 }

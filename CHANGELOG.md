@@ -14,6 +14,119 @@ heading as part of the `chore(release):` commit.
 
 ## [Unreleased]
 
+The backup and restore rework so far (review of November 2026; stages BR1
+to BR7 in `PLAN.md`). The limits of a backup are the ones 1.9.7 had; they
+are raised in a later stage.
+
+### Changed
+- **Restore reads the backup from a file, off the screen's thread
+  (P3-B3):** the Restore page chooses the file through the app's own
+  Android code (`PickedDocumentChannel.kt`, port `DocumentPicker`), which
+  copies it into the app's private temporary folder under the size cap of
+  a backup file. The `file_selector` plugin loaded the whole file into
+  memory before any check could run. `RestoreBackup` takes a path and runs
+  two worker isolates: one checks the archive and takes the manifest, the
+  small entries and the three databases (`restore_archive_reader.dart`);
+  after the vault unlock and the catalogue write, the other unpacks each
+  cover straight into the new data generation
+  (`restore_covers_builder.dart`). What a restore holds in memory no
+  longer grows with the backup. All-or-nothing is unchanged.
+- **The Restore page says what happens (P4-M7):** a line while the chosen
+  file is copied; a sentence of its own when the file is too large, could
+  not be read, could not be copied, or the device has no picker; "Cover
+  1,234 of 9,000" while covers are written. After a failed restore the
+  chosen file is kept while the page is open, so a wrong passphrase can
+  be typed again without choosing the file again. After a restore that
+  succeeded the page forgets the file.
+- **A cover picture above its size cap inside a backup no longer refuses
+  the restore:** it is left out, everything else is restored, and the
+  page names the items that show it (first three titles, then "and N
+  more"). The website publishing record keeps a local cover source only
+  for covers that were written.
+- **A backup is written straight to a file (P3-B1):** `packBackupZip`
+  stores one cover at a time and feeds each database from its file, in a
+  folder of the build's own under the app's temporary folder. The page
+  shares the file by path under the name
+  `Pitak-backup-<date>-<time>.pitabak` and removes it when the share call
+  has returned. Each of the two SQLite files of a backup is written in
+  one transaction. "Cover 1,234 of 9,000" under the button while covers
+  are packed.
+- **The backup writer refuses what the reader would refuse (P1-M1):** a
+  library that does not fit a backup is refused before the ZIP is built,
+  with one sentence that names the limit and both numbers; before, it got
+  a backup that could not be restored. One value, `BackupLimits`, holds
+  the numbers for both sides. A cover file above the per-cover cap is
+  left out of the backup and its items are named.
+- **Photographed covers are stored at 240×360 at most, JPEG quality 70**
+  (`PhotoCoverRecipe`; before: 400×600, quality 80). Covers that are
+  already stored are not touched; the library logo and downloaded covers
+  keep their sizes.
+- **The create-backup page says that a backup made with this version may
+  not open in an older version of Pitak.** An older backup always opens
+  in a newer one; a test restores a frozen backup written by 1.9.7.
+- **Dependencies:** `archive` 4.6.0, `image` 4.12.0, `pdf` 3.13.1,
+  `flutter_local_notifications` 22.3.3.
+
+### Security
+- **Stricter ZIP reading.** The app reads the ZIP container itself
+  (`zip_container.dart`) and takes only the inflater and the CRC from
+  `package:archive`. Refused now, where 1.9.7 accepted: a directory
+  record that does not fit inside the directory, a second end record, an
+  entry header that says "encrypted", a 64-bit size with its top bit set,
+  a deflate stream that does not reach its end mark. A restore
+  (`BoundedZipFile`) is stricter still: an entry must be exactly the size
+  it declares, its header must carry the directory's name, no entry may
+  use zip64, and every entry has the cap of its kind. No file the app's
+  writer makes breaks one of these rules.
+- **The app has one ZIP reader, and Import no longer unpacks anything.**
+  The reader that held a whole archive in memory (`BoundedZipExtractor`,
+  up to 500 MiB of unpacked content) is removed; its last caller was the
+  import of a bundle file (see "Removed"). The only ZIP the app opens is
+  a backup the user chose to restore, through the reader that works from
+  a file (`BoundedZipFile`). The domain layer imports no package for ZIP
+  work any more: `archive` left the allow-list of
+  `domain_purity_test.dart` (ADR 0009, third amendment).
+- **A restore unpacks only what the manifest announces and only names
+  the app writes.** A file meant to sit next to a database
+  (`books.db-wal` and its kind) is never unpacked. The covers step checks
+  the file again and refuses when its covers are not the ones the first
+  look listed.
+- **The temporary files of a backup and of a restore have one owner and
+  are removed:** the built backup, the private copy of a chosen backup
+  file and the unpacked databases lie under the app's temporary folder
+  and are removed when their work is over (the copy of a chosen file
+  stays for another try after a failed restore, while the page is open).
+  What a killed app left is swept at the next start (`RunFolders`),
+  including the work folders older versions kept under Documents. A
+  sweep never runs into a pick that is on its way.
+- **The borrowers vault goes into a backup only as a whole database
+  (P1-m1):** it is copied while no vault operation runs. When a SQLite
+  side file lies next to it (a write was cut off), the vault is left out
+  and the page says so and what to do.
+
+### Removed
+- The read-only vault archive viewer, which no screen could reach.
+- **Importing a Pitak bundle (`.zip`, `.pitabundle`) from a file.** A
+  bundle was a library file with its cover pictures inside, a format of
+  the retired Kotlin app; this app has never written one. Import takes
+  Pitak JSON and Goodreads CSV, as text or as a file. A ZIP that is
+  picked anyway is refused before it is read, with a sentence that says
+  what Import reads and that a backup (`.pitabak`) is loaded with
+  "Restore backup". "Restore from my published site" is not touched. The
+  JSON importer lost its bundle mode: a local cover reference in a JSON
+  file is always dropped.
+
+### Tests
+- CI runs the Android unit tests (55 JUnit tests in both flavours) at the
+  end of the F-Droid purity job.
+- `tool/zip_reader_memory_check.dart`: a check by hand that reading and
+  restoring a 1 GiB backup stays within a capped heap.
+- Every test reads a ZIP through the reader that ships
+  (`test/support/read_zip.dart`): each entry is taken twice, into memory
+  and into a file, and the two must agree. The cases for odd and hostile
+  archives are `zip_reader_cases_test.dart` and
+  `zip_container_verdicts_test.dart`.
+
 ## [1.9.7] - 2026-11 (tag `1.9.7`, versionCode 39)
 
 Release sentinel (`tool/release_build.sh --sentinel`):

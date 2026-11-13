@@ -14,6 +14,8 @@ import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:pitaka/core/network/lookup_http_client.dart';
 import 'package:pitaka/core/network/timeout_http_client.dart';
+import 'package:pitaka/core/platform/channel_document_picker.dart';
+import 'package:pitaka/core/platform/document_picker.dart';
 import 'package:pitaka/core/platform/file_share.dart';
 import 'package:pitaka/core/platform/screen_security.dart';
 import 'package:pitaka/core/storage/data_generations.dart';
@@ -98,6 +100,21 @@ http.Client lookupHttpClient(LookupHttpClientRef ref) {
 @riverpod
 ScreenSecurity screenSecurity(ScreenSecurityRef ref) =>
     const MethodChannelScreenSecurity();
+
+/// The app's own document picker (backup rework BR5b): lets the user choose
+/// one document and keeps a private copy of it that is never larger than a
+/// cap. Android only; elsewhere every pick answers "not available" (D19).
+/// Overridden in tests with a fake.
+///
+/// keepAlive (justified): this object remembers which picked copies are IN
+/// USE in this app session, so that a sweep never deletes a file a restore
+/// is still reading. An auto-disposed instance would forget that between
+/// two reads (the same reason as `backupWorkArea`).
+@Riverpod(keepAlive: true)
+Future<DocumentPicker> documentPicker(DocumentPickerRef ref) async {
+  final temp = await ref.watch(appTempDirProvider.future);
+  return ChannelDocumentPicker(tempRoot: temp.path);
+}
 
 /// Hands generated files (exports, backups) to the OS share sheet. Overridden
 /// in widget tests with a fake to assert what would be shared.

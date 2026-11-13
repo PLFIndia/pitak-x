@@ -80,7 +80,7 @@ class ImportPayload {
 /// Common interface for every import-file reader (Kotlin `Importer`).
 //
 // Single-method, but kept as an interface so the sniffer and use cases can
-// depend on the abstraction across the JSON/CSV/bundle implementations.
+// depend on the abstraction across the JSON and CSV implementations.
 // ignore: one_member_abstracts
 abstract interface class Importer {
   /// Parses [text] into an [ImportPayload]. Implementations must not throw on

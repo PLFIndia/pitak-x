@@ -1,58 +1,61 @@
+/// What the app's ZIP reader does with honest archives, with damaged ones
+/// and with archives built to hurt (review finding M05).
+///
+/// Every case goes through `readZip` (`test/support/read_zip.dart`): the
+/// reader that works from a file, `BoundedZipFile`, with every entry taken
+/// twice, into memory and into a file.
+///
+/// A WORD ON HISTORY (beginner note): until backup rework BR7 the app had a
+/// second reader, `BoundedZipExtractor`, which held the whole archive in
+/// memory, and each case ran against both. Three cases ended differently
+/// there, because the reader from a file holds an entry to the size it
+/// DECLARES while the older one only knew its caps. Those cases say in a
+/// sentence what the in-memory reader did. Its code is gone, so that half
+/// can no longer be run.
+library;
+
 import 'dart:io' as io;
 import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:pitaka/features/import_export/domain/bounded_zip_extractor.dart';
+import 'package:pitaka/features/import_export/domain/zip_entry_rules.dart';
+import 'package:pitaka/features/import_export/domain/zip_limits.dart';
 
+import '../../support/read_zip.dart';
 import 'hostile_zip_builder.dart';
+
+/// An honest ZIP, written by the package's own encoder.
+Uint8List zipOf(Map<String, List<int>> entries) {
+  final archive = Archive();
+  entries.forEach((name, data) {
+    archive.addFile(ArchiveFile(name, data.length, data));
+  });
+  return Uint8List.fromList(ZipEncoder().encode(archive));
+}
 
 void main() {
   m05Regressions();
+  basicCases();
+}
 
-  Uint8List zipOf(Map<String, List<int>> entries) {
-    final archive = Archive();
-    entries.forEach((name, data) {
-      archive.addFile(ArchiveFile(name, data.length, data));
-    });
-    return Uint8List.fromList(ZipEncoder().encode(archive)!);
-  }
-
-  group('hasZipLocalFileHeader', () {
-    test('recognises the PK local-file-header magic', () {
-      expect(hasZipLocalFileHeader([0x50, 0x4B, 0x03, 0x04]), isTrue);
-      expect(
-        hasZipLocalFileHeader(
-          zipOf({
-            'a.txt': [1],
-          }),
-        ),
-        isTrue,
-      );
-    });
-
-    test('rejects text, short, and non-ZIP bytes', () {
-      expect(hasZipLocalFileHeader('{"a":1}'.codeUnits), isFalse);
-      expect(hasZipLocalFileHeader([0x50, 0x4B, 0x03]), isFalse);
-      expect(hasZipLocalFileHeader(const <int>[]), isFalse);
-      expect(hasZipLocalFileHeader([0x50, 0x4B, 0x05, 0x06]), isFalse);
-    });
-  });
-
-  group('BoundedZipExtractor', () {
+/// The oldest cases: honest archives from the package's encoder, and the
+/// first damaged ones.
+void basicCases() {
+  group('honest archives and the first damaged ones', () {
     test('extracts a flat zip into leaf→bytes', () {
       final zip = zipOf({
         'library.json': '{"a":1}'.codeUnits,
         'cover_x.jpg': [1, 2, 3],
       });
-      final out = BoundedZipExtractor.extract(zip);
+      final out = readZip(zip);
       expect(out.keys, containsAll(['library.json', 'cover_x.jpg']));
       expect(out['cover_x.jpg'], [1, 2, 3]);
     });
 
     test('strips directory components to the leaf (zip-slip defence)', () {
       final zip = zipOf({'sub/dir/library.json': '{}'.codeUnits});
-      final out = BoundedZipExtractor.extract(zip);
+      final out = readZip(zip);
       // The nested path reduces to its leaf and is accepted as a flat entry.
       expect(out.keys.single, 'library.json');
     });
@@ -69,7 +72,7 @@ void main() {
         'c': [3],
       });
       expect(
-        () => BoundedZipExtractor.extract(zip, limits: limits),
+        () => readZip(zip, limits: limits),
         throwsA(isA<BoundedExtractionException>()),
       );
     });
@@ -82,7 +85,7 @@ void main() {
       );
       final zip = zipOf({'big': List<int>.filled(100, 7)});
       expect(
-        () => BoundedZipExtractor.extract(zip, limits: limits),
+        () => readZip(zip, limits: limits),
         throwsA(isA<BoundedExtractionException>()),
       );
     });
@@ -98,14 +101,14 @@ void main() {
         'b': List<int>.filled(8, 2),
       });
       expect(
-        () => BoundedZipExtractor.extract(zip, limits: limits),
+        () => readZip(zip, limits: limits),
         throwsA(isA<BoundedExtractionException>()),
       );
     });
 
     test('rejects a non-zip payload cleanly', () {
       expect(
-        () => BoundedZipExtractor.extract(Uint8List.fromList([0, 1, 2, 3])),
+        () => readZip(Uint8List.fromList([0, 1, 2, 3])),
         throwsA(isA<BoundedExtractionException>()),
       );
     });
@@ -123,7 +126,7 @@ void main() {
       for (var cut = good.length - 1; cut > 4; cut -= 3) {
         final truncated = good.sublist(0, cut);
         try {
-          BoundedZipExtractor.extract(truncated);
+          readZip(truncated);
         } on BoundedExtractionException {
           // expected
         }
@@ -139,7 +142,7 @@ void main() {
       for (var i = 0; i < good.length; i += 2) {
         final flipped = Uint8List.fromList(good)..[i] ^= 0xFF;
         try {
-          BoundedZipExtractor.extract(flipped);
+          readZip(flipped);
         } on BoundedExtractionException {
           // expected
         }
@@ -151,9 +154,9 @@ void main() {
       // the ACTUAL-length check must still enforce the cap.
       final archive = Archive()
         ..addFile(ArchiveFile('x.bin', 1, List<int>.generate(64, (i) => i)));
-      final bytes = Uint8List.fromList(ZipEncoder().encode(archive)!);
+      final bytes = Uint8List.fromList(ZipEncoder().encode(archive));
       expect(
-        () => BoundedZipExtractor.extract(
+        () => readZip(
           bytes,
           limits: ZipLimits(
             maxEntries: 10,
@@ -195,7 +198,7 @@ void m05Regressions() {
         maxArchiveBytes: zip.length - 1,
       );
       expect(
-        () => BoundedZipExtractor.extract(zip, limits: limits),
+        () => readZip(zip, limits: limits),
         throwsA(
           isA<BoundedExtractionException>().having(
             (e) => e.message,
@@ -211,10 +214,7 @@ void m05Regressions() {
         maxEntries: 4,
         maxArchiveBytes: zip.length,
       );
-      expect(
-        BoundedZipExtractor.extract(zip, limits: ok)['a.bin']!.length,
-        3000,
-      );
+      expect(readZip(zip, limits: ok)['a.bin']!.length, 3000);
     });
 
     test('default input cap follows the total cap plus header slack', () {
@@ -251,7 +251,7 @@ void m05Regressions() {
         HostileEntry('a', [1]),
       ], eocdEntryCount: 0xFFFE);
       expect(
-        () => BoundedZipExtractor.extract(zip, limits: tiny),
+        () => readZip(zip, limits: tiny),
         throwsA(
           isA<BoundedExtractionException>().having(
             (e) => e.message,
@@ -267,7 +267,7 @@ void m05Regressions() {
         HostileEntry('a', [1]),
       ], eocdCentralDirectorySize: 0x7FFFFFFF);
       expect(
-        () => BoundedZipExtractor.extract(zip, limits: tiny),
+        () => readZip(zip, limits: tiny),
         throwsA(isA<BoundedExtractionException>()),
       );
     });
@@ -277,7 +277,7 @@ void m05Regressions() {
         HostileEntry('a', [1]),
       ], eocdCentralDirectoryOffset: 0x7FFFFFF0);
       expect(
-        () => BoundedZipExtractor.extract(zip, limits: tiny),
+        () => readZip(zip, limits: tiny),
         throwsA(isA<BoundedExtractionException>()),
       );
     });
@@ -295,7 +295,7 @@ void m05Regressions() {
         ], eocdCentralDirectoryOffset: 0xFFFFFFFF),
       ]) {
         expect(
-          () => BoundedZipExtractor.extract(zip, limits: tiny),
+          () => readZip(zip, limits: tiny),
           throwsA(isA<BoundedExtractionException>()),
         );
       }
@@ -305,7 +305,7 @@ void m05Regressions() {
       final zip = buildHostileZip([
         HostileEntry('a', [1, 2, 3]),
       ], eocdComment: List<int>.filled(300, 0x41));
-      expect(BoundedZipExtractor.extract(zip, limits: tiny)['a'], [1, 2, 3]);
+      expect(readZip(zip, limits: tiny)['a'], [1, 2, 3]);
     });
 
     test('rejects when no EOCD exists in the trailing window', () {
@@ -324,7 +324,7 @@ void m05Regressions() {
         maxArchiveBytes: 1024 * 1024,
       );
       expect(
-        () => BoundedZipExtractor.extract(buried, limits: roomy),
+        () => readZip(buried, limits: roomy),
         throwsA(isA<BoundedExtractionException>()),
       );
     });
@@ -334,8 +334,12 @@ void m05Regressions() {
     test('a high-expansion entry is cut off at the budget, not after', () {
       // ~64 KiB of deflate that inflates to 64 MiB (ratio ~1000). Declared
       // size LIES (says 512 bytes) so the header pre-check passes. The
-      // extractor must stop inflating at the per-entry cap: the probe
-      // records how many bytes were actually produced.
+      // reader's budget for an entry is the size the entry declares, so the
+      // 513th byte ends the work: the probe records how many bytes were
+      // actually produced.
+      //
+      // (The in-memory reader stopped LATER, at the cap for one entry,
+      // 1 MiB here, with "exceeds per-entry cap".)
       const bombSize = 64 * 1024 * 1024;
       final zip = buildHostileZip([
         HostileEntry(
@@ -354,30 +358,38 @@ void m05Regressions() {
       );
       var produced = -1;
       expect(
-        () => BoundedZipExtractor.extract(
+        () => readZip(
           zip,
           limits: limits,
-          inflatedBytesProbe: (n) => produced = n,
+          unpackedBytesProbe: (n) => produced = n,
         ),
         throwsA(
           isA<BoundedExtractionException>().having(
             (e) => e.message,
             'message',
-            contains('exceeds per-entry cap'),
+            contains('holds more than the 512 bytes it declares'),
           ),
         ),
       );
-      // The sink refuses BEFORE writing, so what was produced is at most the
-      // budget — and certainly not the full 64 MiB. Anything within one
-      // 64 KiB deflate block below the budget proves the inflate ran up to
-      // the cap and stopped there.
-      expect(produced, lessThanOrEqualTo(limits.maxEntryBytes));
-      expect(produced, greaterThan(limits.maxEntryBytes - 64 * 1024));
+      // Stopped at the declared size, and it did start: the stream repeats
+      // one byte, so the write that would pass 512 is refused when most of
+      // the 512 are already out. The sink refuses BEFORE writing, so what
+      // was produced is never more than the budget, and certainly not the
+      // full 64 MiB.
+      expect(produced, lessThanOrEqualTo(512));
+      expect(produced, greaterThan(0));
     });
 
-    test('the running total caps the LAST entry by what is left', () {
-      // Two truthful 1 KiB entries under a 1.5 KiB total: the second must be
-      // rejected while inflating, with at most ~512 bytes produced for it.
+    test('an entry that hides its size from the running total is held to '
+        'the size it declares', () {
+      // Two entries of 1 KiB under a total of 1.5 KiB; the second DECLARES
+      // one byte. The declared sizes add up to 1,025, under the total, so
+      // nothing refuses the archive up front. The second entry is then held
+      // to the one byte it declares.
+      //
+      // (The in-memory reader let it run until the total was passed, at
+      // most about 512 bytes in, and said "total exceeds cap". Refused
+      // either way; today earlier, and for the lie itself.)
       final zip = buildHostileZip([
         HostileEntry('a', List<int>.filled(1024, 1)),
         HostileEntry(
@@ -393,20 +405,20 @@ void m05Regressions() {
       );
       var produced = -1;
       expect(
-        () => BoundedZipExtractor.extract(
+        () => readZip(
           zip,
           limits: limits,
-          inflatedBytesProbe: (n) => produced = n,
+          unpackedBytesProbe: (n) => produced = n,
         ),
         throwsA(
           isA<BoundedExtractionException>().having(
             (e) => e.message,
             'message',
-            contains('total exceeds cap'),
+            contains("'b' holds more than the 1 bytes it declares"),
           ),
         ),
       );
-      expect(produced, lessThanOrEqualTo(1024 + 65536));
+      expect(produced, lessThanOrEqualTo(1));
     });
 
     test('declared size lies SMALL: real length still enforced', () {
@@ -418,7 +430,7 @@ void m05Regressions() {
         ),
       ]);
       expect(
-        () => BoundedZipExtractor.extract(zip, limits: tiny),
+        () => readZip(zip, limits: tiny),
         throwsA(isA<BoundedExtractionException>()),
       );
     });
@@ -429,11 +441,8 @@ void m05Regressions() {
       ]);
       var produced = 0;
       expect(
-        () => BoundedZipExtractor.extract(
-          zip,
-          limits: tiny,
-          inflatedBytesProbe: (n) => produced = n,
-        ),
+        () =>
+            readZip(zip, limits: tiny, unpackedBytesProbe: (n) => produced = n),
         throwsA(isA<BoundedExtractionException>()),
       );
       expect(produced, 0, reason: 'must not inflate a header-rejected entry');
@@ -449,10 +458,10 @@ void m05Regressions() {
         ]);
         var produced = 0;
         expect(
-          () => BoundedZipExtractor.extract(
+          () => readZip(
             zip,
             limits: tiny, // total 2048
-            inflatedBytesProbe: (n) => produced += n,
+            unpackedBytesProbe: (n) => produced += n,
           ),
           throwsA(isA<BoundedExtractionException>()),
         );
@@ -470,7 +479,7 @@ void m05Regressions() {
         ),
       ]);
       expect(
-        () => BoundedZipExtractor.extract(zip, limits: tiny),
+        () => readZip(zip, limits: tiny),
         throwsA(isA<BoundedExtractionException>()),
       );
     });
@@ -488,7 +497,7 @@ void m05Regressions() {
         ),
       ]);
       expect(
-        () => BoundedZipExtractor.extract(zip, limits: tiny),
+        () => readZip(zip, limits: tiny),
         throwsA(isA<BoundedExtractionException>()),
       );
     });
@@ -502,7 +511,7 @@ void m05Regressions() {
           HostileEntry('covers/', const <int>[], deflate: false),
         ]);
         expect(
-          () => BoundedZipExtractor.extract(zip, limits: tiny),
+          () => readZip(zip, limits: tiny),
           throwsA(
             isA<BoundedExtractionException>().having(
               (e) => e.message,
@@ -518,7 +527,7 @@ void m05Regressions() {
           HostileEntry('', [1, 2, 3]),
         ]);
         expect(
-          () => BoundedZipExtractor.extract(zip, limits: tiny),
+          () => readZip(zip, limits: tiny),
           throwsA(
             isA<BoundedExtractionException>().having(
               (e) => e.message,
@@ -534,7 +543,7 @@ void m05Regressions() {
           HostileEntry('a\u0000b', [1, 2, 3]),
         ]);
         expect(
-          () => BoundedZipExtractor.extract(zip, limits: tiny),
+          () => readZip(zip, limits: tiny),
           throwsA(
             isA<BoundedExtractionException>().having(
               (e) => e.message,
@@ -551,7 +560,7 @@ void m05Regressions() {
           HostileEntry('b/x', [2]),
         ]);
         expect(
-          () => BoundedZipExtractor.extract(zip, limits: tiny),
+          () => readZip(zip, limits: tiny),
           throwsA(
             isA<BoundedExtractionException>().having(
               (e) => e.message,
@@ -571,7 +580,7 @@ void m05Regressions() {
           HostileEntry('x', [2]),
         ]);
         expect(
-          () => BoundedZipExtractor.extract(zip, limits: tiny),
+          () => readZip(zip, limits: tiny),
           throwsA(
             isA<BoundedExtractionException>().having(
               (e) => e.message,
@@ -587,7 +596,7 @@ void m05Regressions() {
           for (var i = 0; i < 5; i++) HostileEntry('e$i', [i]),
         ], eocdEntryCount: 1);
         expect(
-          () => BoundedZipExtractor.extract(zip, limits: tiny), // maxEntries 4
+          () => readZip(zip, limits: tiny), // maxEntries 4
           throwsA(
             isA<BoundedExtractionException>().having(
               (e) => e.message,
@@ -615,10 +624,10 @@ void m05Regressions() {
         ]);
         var produced = -1;
         expect(
-          () => BoundedZipExtractor.extract(
+          () => readZip(
             zip,
             limits: tiny, // per-entry 1024
-            inflatedBytesProbe: (n) => produced = n,
+            unpackedBytesProbe: (n) => produced = n,
           ),
           throwsA(isA<BoundedExtractionException>()),
         );
@@ -635,10 +644,11 @@ void m05Regressions() {
             ).convert(small),
           ),
         ]);
-        expect(BoundedZipExtractor.extract(ok, limits: tiny)['y'], small);
+        expect(readZip(ok, limits: tiny)['y'], small);
       });
 
-      test('stored entry over budget reports zero produced bytes', () {
+      test('a stored entry that declares two sizes is refused before any '
+          'entry is worked on', () {
         final zip = buildHostileZip([
           HostileEntry(
             'x',
@@ -649,23 +659,24 @@ void m05Regressions() {
         ]);
         var produced = -1;
         expect(
-          () => BoundedZipExtractor.extract(
+          () => readZip(
             zip,
             limits: tiny,
-            inflatedBytesProbe: (n) => produced = n,
+            unpackedBytesProbe: (n) => produced = n,
           ),
           throwsA(isA<BoundedExtractionException>()),
         );
-        expect(produced, 0, reason: 'a stored overrun must not be copied');
+        // Rule N1 of BR5: a stored entry declares ONE size. This one is
+        // refused when the archive is opened, before any entry is worked
+        // on, so the probe is never called and the -1 from above is still
+        // there. (The in-memory reader got as far as this entry, refused
+        // it against its budget without copying, and reported 0 bytes.)
+        expect(produced, -1, reason: 'a stored overrun must not be copied');
         // Honest stored entry: probe reports the full copied length.
         final ok = buildHostileZip([
           HostileEntry('y', List<int>.filled(300, 1), deflate: false),
         ]);
-        BoundedZipExtractor.extract(
-          ok,
-          limits: tiny,
-          inflatedBytesProbe: (n) => produced = n,
-        );
+        readZip(ok, limits: tiny, unpackedBytesProbe: (n) => produced = n);
         expect(produced, 300);
       });
     },
@@ -675,7 +686,7 @@ void m05Regressions() {
     test('a UNIX-symlink-flagged bomb is refused without being inflated', () {
       // `ZipDecoder.decodeBytes` reads a symlink's TARGET by inflating its
       // content while still building the Archive — i.e. before any caller
-      // check can run, through the unbounded native path. The extractor must
+      // check can run, through the unbounded native path. The reader must
       // therefore not use decodeBytes at all. A symlink entry is refused as
       // "not a regular file", and the probe proves no inflate happened.
       const bombSize = 64 * 1024 * 1024;
@@ -699,10 +710,10 @@ void m05Regressions() {
       var probeCalls = 0;
       final sw = Stopwatch()..start();
       expect(
-        () => BoundedZipExtractor.extract(
+        () => readZip(
           zip,
           limits: limits,
-          inflatedBytesProbe: (_) => probeCalls++,
+          unpackedBytesProbe: (_) => probeCalls++,
         ),
         throwsA(
           isA<BoundedExtractionException>().having(
@@ -727,7 +738,7 @@ void m05Regressions() {
           externalAttributes: 0x81A4 << 16, // S_IFREG | 0644
         ),
       ]);
-      expect(BoundedZipExtractor.extract(zip, limits: tiny)['x'], [1, 2, 3]);
+      expect(readZip(zip, limits: tiny)['x'], [1, 2, 3]);
     });
 
     test('UNIX-made directory entries (mode 040755) are refused', () {
@@ -741,7 +752,7 @@ void m05Regressions() {
         ),
       ]);
       expect(
-        () => BoundedZipExtractor.extract(zip, limits: tiny),
+        () => readZip(zip, limits: tiny),
         throwsA(isA<BoundedExtractionException>()),
       );
     });
@@ -757,7 +768,7 @@ void m05Regressions() {
         ),
       ]);
       expect(
-        () => BoundedZipExtractor.extract(zip, limits: tiny),
+        () => readZip(zip, limits: tiny),
         throwsA(
           isA<BoundedExtractionException>().having(
             (e) => e.message,
@@ -782,7 +793,7 @@ void m05Regressions() {
       for (var i = bodyStart + 8; i < bodyStart + bodyLen - 8; i += 7) {
         final bad = Uint8List.fromList(good)..[i] ^= 0x55;
         try {
-          final out = BoundedZipExtractor.extract(
+          final out = readZip(
             bad,
             limits: ZipLimits(
               maxEntryBytes: 8192,
@@ -808,7 +819,7 @@ void m05Regressions() {
         HostileEntry('x', [1, 2, 3], flags: 0x1),
       ]);
       expect(
-        () => BoundedZipExtractor.extract(zip, limits: tiny),
+        () => readZip(zip, limits: tiny),
         throwsA(isA<BoundedExtractionException>()),
       );
     });
@@ -819,7 +830,7 @@ void m05Regressions() {
           HostileEntry('x', [1, 2, 3], method: method),
         ]);
         expect(
-          () => BoundedZipExtractor.extract(zip, limits: tiny),
+          () => readZip(zip, limits: tiny),
           throwsA(isA<BoundedExtractionException>()),
           reason: 'method $method',
         );
@@ -838,7 +849,7 @@ void m05Regressions() {
             localHeaderOverrides: {'uncompressedSize': 0xFFFFFFFF},
           ),
         ]);
-        final out = BoundedZipExtractor.extract(zip, limits: tiny);
+        final out = readZip(zip, limits: tiny);
         expect(out['x'], [1, 2, 3]);
       },
     );
@@ -849,7 +860,7 @@ void m05Regressions() {
         final zip = buildHostileZip([
           HostileEntry('x', List<int>.filled(700, 3)),
         ]);
-        final out = BoundedZipExtractor.extract(zip, limits: tiny)['x']!;
+        final out = readZip(zip, limits: tiny)['x']!;
         expect(out.length, 700);
         expect(out.buffer.lengthInBytes, 700);
       },

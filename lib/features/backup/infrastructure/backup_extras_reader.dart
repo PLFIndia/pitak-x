@@ -5,7 +5,13 @@
 ///
 /// Extracted from `restore_backup.dart` to keep that file under the
 /// architecture test's size ratchet — the readers are pure functions of the
-/// already-extracted zip bytes + the manifest, with no restorer state.
+/// entries a restore took from the archive + the manifest, with no restorer
+/// state.
+///
+/// Since the streamed restore (backup rework BR6) the entries come from the
+/// worker in `restore_archive_reader.dart`, which takes an entry only when
+/// the manifest announces it and it is not above its cap. An entry that
+/// was not handed over reads as "absent" here, like one that is missing.
 ///
 /// All entries are ADDITIVE over a catalogue restore: announced by manifest
 /// flags that default to false, validated on read, and NEVER allowed to abort
@@ -21,9 +27,6 @@ import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/backup/domain/backup_identity.dart';
 import 'package:pitaka/features/backup/domain/backup_manifest.dart';
 import 'package:pitaka/features/backup/infrastructure/item_details_archive_codec.dart';
-import 'package:pitaka/features/backup/infrastructure/restore_covers_builder.dart'
-    show coverEntryPrefix;
-import 'package:pitaka/features/import_export/domain/cover_paths.dart';
 import 'package:pitaka/features/network/domain/entities/network_library.dart';
 import 'package:pitaka/features/network/domain/network_archive_codec.dart';
 import 'package:pitaka/features/publish/domain/publish_state_backup.dart';
@@ -40,6 +43,21 @@ const String networkEntryName = 'network.json';
 
 /// The `publish_state.json` zip entry name (ADR 0014 amendment, plan CV6).
 const String publishStateEntryName = 'publish_state.json';
+
+/// The names of the additive entries [manifest] announces, in a fixed
+/// order. An entry the manifest does not announce is absent by design and
+/// is never looked at, not even to unpack it (backup rework BR6).
+///
+/// The list exists ONCE, here, next to the readers that parse these
+/// entries: the worker that reads a backup from its file asks it which
+/// entries to take.
+List<String> announcedExtraEntries(BackupManifest manifest) => [
+  if (manifest.hasIdentity) identityEntryName,
+  if (manifest.hasNetwork) networkEntryName,
+  if (manifest.hasItemKinds) itemKindsEntryName,
+  if (manifest.hasPeriodicals) periodicalsEntryName,
+  if (manifest.hasPublishState) publishStateEntryName,
+];
 
 /// Parses `manifest.json` out of the extracted [files], refusing a missing or
 /// invalid manifest and a `schemaVersion` newer than this build knows (the
@@ -99,16 +117,21 @@ final class BackupExtras {
 /// Parses the additive entries out of the extracted [files], gated on the
 /// manifest flags (a false flag means absent-by-design — the entry is not
 /// even looked at).
+///
+/// [carriedCoverLeaves] are the file names of the cover pictures the
+/// restore WRITES from this archive (empty when it writes none). The
+/// publishing record is believed only for those (see [_readPublishState]).
 BackupExtras readBackupExtras(
   Map<String, Uint8List> files,
-  BackupManifest manifest,
-) {
+  BackupManifest manifest, {
+  required Set<String> carriedCoverLeaves,
+}) {
   return BackupExtras(
     identity: _readIdentity(files, manifest),
     network: _readNetwork(files, manifest),
     itemKinds: _readItemKinds(files, manifest),
     periodicals: _readPeriodicals(files, manifest),
-    publishState: _readPublishState(files, manifest),
+    publishState: _readPublishState(files, manifest, carriedCoverLeaves),
   );
 }
 
@@ -116,9 +139,9 @@ BackupExtras readBackupExtras(
 /// invalid (oversized ⇒ unreadable ⇒ not adopted, counted as
 /// `identityInvalid` by the restore summary). The byte cap runs BEFORE UTF-8
 /// decoding, so a padded entry cannot even reach the JSON parser — the same
-/// "bound before parse" rule [_readNetwork] follows (review L2: the zip
-/// extractor's per-entry cap is 200 MiB, sized for covers — far too much to
-/// push through a JSON parse).
+/// "bound before parse" rule [_readNetwork] follows (review L2). Since BR6
+/// the worker that reads the archive does not even unpack an entry above
+/// this cap; the check here stays as the second line.
 BackupIdentity? _readIdentity(
   Map<String, Uint8List> files,
   BackupManifest manifest,
@@ -180,14 +203,17 @@ DecodedPeriodicals? _readPeriodicals(
 /// field checks; one bad field makes the whole entry unreadable).
 ///
 /// Its records may name the local cover file (`covers/<leaf>`) each published
-/// cover came from. They are believed only for covers THIS archive carries:
-/// those files are restored byte for byte next to the record that names
-/// them. Any other local name — or every one, when the archive carries no
-/// covers and the phone's own covers are kept — is forgotten, so the next
-/// publish reads that cover again (ADR 0020 Decisions 4 and 7).
+/// cover came from. They are believed only for the covers the restore
+/// WRITES from this archive ([carriedCoverLeaves]): those files are restored
+/// byte for byte next to the record that names them. Any other local name —
+/// a cover that was left out because it is too large, or every one when
+/// the archive carries no covers and the phone's own covers are kept — is
+/// forgotten, so the next publish reads that cover again (ADR 0020
+/// Decisions 4 and 7).
 PublishStateBackup? _readPublishState(
   Map<String, Uint8List> files,
   BackupManifest manifest,
+  Set<String> carriedCoverLeaves,
 ) {
   if (!manifest.hasPublishState) return null;
   final bytes = files[publishStateEntryName];
@@ -195,25 +221,7 @@ PublishStateBackup? _readPublishState(
     return null;
   }
   final decoded = PublishStateBackupCodec.decode(_utf8(bytes));
-  return decoded?.withLocalCoverSourcesFor(
-    _carriedCoverLeaves(files, manifest),
-  );
-}
-
-/// The cover file names the restore writes from this archive — the same
-/// entries and the same leaf check as `buildRestoredCovers`.
-Set<String> _carriedCoverLeaves(
-  Map<String, Uint8List> files,
-  BackupManifest manifest,
-) {
-  if (!manifest.hasCovers) return const {};
-  return {
-    for (final name in files.keys)
-      if (name.startsWith(coverEntryPrefix))
-        if (name.substring(coverEntryPrefix.length) case final leaf
-            when CoverPaths.leafOf('${CoverPaths.prefix}$leaf') == leaf)
-          leaf,
-  };
+  return decoded?.withLocalCoverSourcesFor(carriedCoverLeaves);
 }
 
 String _utf8(Uint8List bytes) =>

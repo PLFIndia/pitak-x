@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:typed_data';
 
+import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image/image.dart' as img;
 // The GIF fixture below needs the decoder's recorded frame offsets to corrupt
@@ -47,6 +48,32 @@ Uint8List _threeFrameGifWithBrokenSecondFrame() {
   expect(check.decodeFrame(1), isNull);
   expect(img.decodeImage(bad), isNull);
   return bad;
+}
+
+/// A small valid JPEG with an EXIF block whose two directories name each
+/// other as "next": IFD0 points at IFD1, IFD1 points back at IFD0.
+///
+/// `image` 4.3.0 (the version the app shipped up to 1.9.7) followed that
+/// chain forever: the decode never returned and kept adding to a map (review
+/// finding P2-M1; reproduced with exactly these bytes, killed after 15 s).
+/// 4.12.0 remembers the directories it has seen and stops.
+Uint8List _jpegWithLoopingExif() {
+  final plain = img.encodeJpg(img.Image(width: 16, height: 16));
+  const tiff = <int>[
+    0x49, 0x49, 0x2A, 0x00, // "II", 42: a little-endian TIFF header
+    0x08, 0x00, 0x00, 0x00, // the first directory is at offset 8
+    0x00, 0x00, // directory at 8: no entries
+    0x0E, 0x00, 0x00, 0x00, // next directory: offset 14
+    0x00, 0x00, // directory at 14: no entries
+    0x08, 0x00, 0x00, 0x00, // next directory: offset 8 again
+  ];
+  const payload = <int>[0x45, 0x78, 0x69, 0x66, 0x00, 0x00, ...tiff];
+  final length = payload.length + 2;
+  return Uint8List.fromList([
+    plain[0], plain[1], // start-of-image marker
+    0xFF, 0xE1, length >> 8, length & 0xFF, ...payload, // the EXIF segment
+    ...plain.sublist(2),
+  ]);
 }
 
 void main() {
@@ -272,6 +299,171 @@ void main() {
             'the timer must fire while the downscale is still running '
             '(fired at $firedAt ms, work took $total ms)',
       );
+    });
+  });
+
+  // BR2 (review finding P2-M1): the app decodes pictures other people
+  // control (covers of a saved library, covers from an ISBN look-up).
+  group('BR2 — the decoder cannot be stalled by a crafted picture', () {
+    test('EXIF directories that point at each other do not loop', () async {
+      // Run in the worker isolate ON PURPOSE: if the decoder ever loops
+      // again, this test fails after ten seconds instead of freezing the
+      // whole test run.
+      final out = await ImageDownscaler.downscaleJpegAsync(
+        _jpegWithLoopingExif(),
+      ).timeout(const Duration(seconds: 10));
+      expect(out, isNotNull, reason: 'the picture itself is a valid JPEG');
+      final decoded = img.decodeJpg(out!)!;
+      expect((decoded.width, decoded.height), (16, 16));
+      expect(decoded.exif.isEmpty, isTrue);
+    });
+
+    test("the package's own pixel limit is set to the app's", () async {
+      // The package keeps its limit in a static field (one per isolate) and
+      // defaults to 2^28 pixels. The downscaler lowers it to its own limit
+      // wherever it runs: here, and in its worker isolate.
+      img.Decoder.defaultMaxPixels = 1 << 28;
+      ImageDownscaler.downscaleJpeg(
+        img.encodeJpg(img.Image(width: 8, height: 8)),
+      );
+      expect(img.Decoder.defaultMaxPixels, ImageDownscaler.maxSourcePixels);
+    });
+
+    test('a decoder made after a call refuses a picture over the limit by '
+        'itself', () {
+      ImageDownscaler.downscaleJpeg(
+        img.encodeJpg(img.Image(width: 8, height: 8)),
+      );
+      // 6400 x 6400 = 41 Mpx, over the 40 Mpx limit. The downscaler's own
+      // header check is not involved here: this is the package refusing.
+      final huge = img.encodePng(
+        img.Image(width: 6400, height: 6400, numChannels: 1),
+      );
+      expect(
+        () => img.findDecoderForData(huge)!.startDecode(huge),
+        throwsA(isA<img.ImageException>()),
+      );
+    });
+  });
+
+  // Decision point 12 of the backup rework (BR2, 2026-11-10): the picture
+  // the app makes must not change because the `image` package changed.
+  // Between 4.3.0 and 4.12.0 the package's JPEG encoder began to blend
+  // transparent pixels onto white and to copy the source's colour profile
+  // into the output. The downscaler now removes both before encoding, so
+  // the output is what the app has always produced.
+  group('BR2 — the output stays what `image` 4.3.0 produced', () {
+    /// A fixed 64×96 picture. With [alpha], every pixel also carries a
+    /// transparency that grows from left (fully transparent) to right.
+    img.Image picture({required bool alpha, img.Format? format}) {
+      final deep = format == img.Format.uint16;
+      final scale = deep ? 257 : 1; // 255 * 257 = 65535
+      final image = img.Image(
+        width: 64,
+        height: 96,
+        numChannels: alpha ? 4 : 3,
+        format: format ?? img.Format.uint8,
+      );
+      for (var y = 0; y < 96; y++) {
+        for (var x = 0; x < 64; x++) {
+          final r = (x * 4) % 256 * scale;
+          final g = (y * 5) % 256 * scale;
+          final b = (x * 3 + y * 7) % 256 * scale;
+          if (alpha) {
+            image.setPixelRgba(x, y, r, g, b, (x * 255) ~/ 63 * scale);
+          } else {
+            image.setPixelRgb(x, y, r, g, b);
+          }
+        }
+      }
+      return image;
+    }
+
+    Uint8List kept(List<int> source) => ImageDownscaler.downscaleJpeg(source)!;
+    Uint8List resized(List<int> source) =>
+        ImageDownscaler.downscaleJpeg(source, maxW: 40, maxH: 60)!;
+
+    bool holds(Uint8List bytes, String text) {
+      final needle = text.codeUnits;
+      for (var i = 0; i + needle.length <= bytes.length; i++) {
+        var hit = true;
+        for (var j = 0; j < needle.length && hit; j++) {
+          hit = bytes[i + j] == needle[j];
+        }
+        if (hit) return true;
+      }
+      return false;
+    }
+
+    test('transparency is thrown away, never blended', () {
+      // The same picture with and without an alpha channel must give the
+      // same bytes: how transparent a pixel is plays no part.
+      final withAlpha = img.encodePng(picture(alpha: true));
+      final without = img.encodePng(picture(alpha: false));
+      expect(kept(withAlpha), kept(without), reason: 'no-resize path');
+      expect(resized(withAlpha), resized(without), reason: 'resize path');
+    });
+
+    test('a fully transparent area shows the colour stored under it, not '
+        'white', () {
+      final hidden = img.Image(width: 32, height: 32, numChannels: 4)
+        ..clear(img.ColorRgba8(200, 30, 30, 0));
+      final out = img.decodeJpg(kept(img.encodePng(hidden)))!;
+      final pixel = out.getPixel(16, 16);
+      // JPEG is lossy: a few steps of tolerance, far from white (255).
+      expect(pixel.r, closeTo(200, 6));
+      expect(pixel.g, closeTo(30, 6));
+      expect(pixel.b, closeTo(30, 6));
+    });
+
+    test('a 16-bit picture with transparency follows the same rule', () {
+      final withAlpha = img.encodePng(
+        picture(alpha: true, format: img.Format.uint16),
+      );
+      final without = img.encodePng(
+        picture(alpha: false, format: img.Format.uint16),
+      );
+      expect(kept(withAlpha), kept(without), reason: 'no-resize path');
+      expect(resized(withAlpha), resized(without), reason: 'resize path');
+    });
+
+    test('the bytes are the ones `image` 4.3.0 produced', () {
+      // Recorded by running these exact lines on `image` 4.3.0 (the version
+      // in 1.9.7) and on 4.12.0: the same two hashes on both.
+      //
+      // If this fails after an `image` update, the package now resizes or
+      // encodes differently. Do NOT just record the new hashes: compare old
+      // and new pictures first (PLAN.md, "P2-H1"), because a visible change
+      // in published covers needs a new `PublishCoverRendition` (ADR 0020).
+      final png = img.encodePng(picture(alpha: true));
+      expect(
+        sha256.convert(resized(png)).toString(),
+        'b825374315b2629a55b0af9b8e93bc5e44727b7f2f10f0e82e0107ddb8f6e991',
+      );
+      expect(
+        sha256.convert(kept(png)).toString(),
+        'a260663cd03f56c211f3bc4c8abea99a5767a7148e55853078268c6f4c801912',
+      );
+    });
+
+    test("the source's colour profile is not copied into the output", () {
+      final profile = img.IccProfile(
+        'test-profile',
+        img.IccProfileCompression.none,
+        Uint8List.fromList(List<int>.generate(600, (i) => i % 251)),
+      );
+      final source = picture(alpha: false)..iccProfile = profile;
+      for (final encoded in [img.encodeJpg(source), img.encodePng(source)]) {
+        // Fixture sanity: the decoder really hands the profile on.
+        expect(img.decodeImage(encoded)!.iccProfile, isNotNull);
+        for (final out in [kept(encoded), resized(encoded)]) {
+          expect(holds(out, 'ICC_PROFILE'), isFalse);
+          expect(img.decodeJpg(out)!.iccProfile, isNull);
+        }
+      }
+      // And the fixture's own JPEG does carry the marker, so the search
+      // above can find one.
+      expect(holds(img.encodeJpg(source), 'ICC_PROFILE'), isTrue);
     });
   });
 }

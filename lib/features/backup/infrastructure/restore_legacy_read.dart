@@ -5,15 +5,16 @@
 ///
 /// The per-table ROW mapping (and the refuse-on-first-invalid contract, M15)
 /// lives in `legacy_db_reader.dart`; this file is the orchestration around
-/// it: stage the extracted bytes to scratch files (sqlite3 needs paths), read
-/// both DBs through the one opener seam, and carry the combined result.
+/// it: read both DBs through the one opener seam, and carry the combined
+/// result.
+///
+/// Since the streamed restore (backup rework BR6) the two databases arrive
+/// as FILES: the worker in `restore_archive_reader.dart` unpacks them from
+/// the archive straight into the restore's scratch folder (sqlite3 needs
+/// paths). This file no longer writes anything.
 library;
 
-import 'dart:io';
-import 'dart:typed_data';
-
 import 'package:fpdart/fpdart.dart';
-import 'package:path/path.dart' as p;
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/backup/domain/backup_manifest.dart';
 import 'package:pitaka/features/backup/infrastructure/legacy_db_reader.dart';
@@ -49,32 +50,24 @@ class LegacyCatalogueRows {
   int coversDropped = 0;
 }
 
-/// Stages [bytes] to a scratch file under [work] (sqlite3 and the FFI vault
-/// need real paths) and returns the path. Shared by the legacy-DB read here
-/// and the vault staging in `restore_backup.dart`.
-String stageArchiveEntry(Directory work, String name, Uint8List bytes) {
-  final path = p.join(work.path, name);
-  File(path).writeAsBytesSync(bytes);
-  return path;
-}
-
-/// Stages and reads the archive's `books.db` / `wishlist.db` (whichever the
-/// manifest announces) into validated rows. A missing announced entry, an
-/// unreadable DB, or a row that fails validation (M15) refuses the whole
-/// archive with the typed failure — BEFORE any device write.
-Either<Failure, LegacyCatalogueRows> readLegacyCatalogue(
-  Directory work,
-  Map<String, Uint8List> files,
-  BackupManifest manifest,
-  LegacyDbOpener open,
-) {
+/// Reads the archive's staged `books.db` / `wishlist.db` (whichever the
+/// manifest announces) into validated rows. [booksDbPath] and
+/// [wishlistDbPath] are where the worker staged them, or null when the
+/// archive has no such entry. A missing announced entry, an unreadable DB,
+/// or a row that fails validation (M15) refuses the whole archive with the
+/// typed failure — BEFORE any device write.
+Either<Failure, LegacyCatalogueRows> readLegacyCatalogue({
+  required String? booksDbPath,
+  required String? wishlistDbPath,
+  required BackupManifest manifest,
+  required LegacyDbOpener open,
+}) {
   final rows = LegacyCatalogueRows();
   if (manifest.hasBooks) {
-    final bytes = files[booksDbEntryName];
-    if (bytes == null) {
+    final path = booksDbPath;
+    if (path == null) {
       return left(const BackupCorruptFailure('Archive missing books.db'));
     }
-    final path = stageArchiveEntry(work, booksDbEntryName, bytes);
     // M15: the reader validates every row; a Left here is either a typed
     // ValidationFailure (an invalid row — surfaced verbatim) or a
     // BackupCorruptFailure from _withDb (the DB could not be opened/read).
@@ -93,11 +86,10 @@ Either<Failure, LegacyCatalogueRows> readLegacyCatalogue(
       ..coversDropped = rows.coversDropped + books.coversDropped;
   }
   if (manifest.hasWishlist) {
-    final bytes = files[wishlistDbEntryName];
-    if (bytes == null) {
+    final path = wishlistDbPath;
+    if (path == null) {
       return left(const BackupCorruptFailure('Archive missing wishlist.db'));
     }
-    final path = stageArchiveEntry(work, wishlistDbEntryName, bytes);
     final readResult = _withDb(
       open,
       path,

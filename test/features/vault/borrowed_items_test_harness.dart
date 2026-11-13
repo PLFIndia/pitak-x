@@ -106,6 +106,14 @@ class ShareBytesCall {
 }
 
 class TestShare implements FileShareService {
+  // This screen never shares a file by path (only the backup does, BR4).
+  @override
+  Future<ShareOutcome> shareFile({
+    required String path,
+    required String mimeType,
+    Rect? sharePositionOrigin,
+  }) => throw UnimplementedError();
+
   final byteCalls = <ShareBytesCall>[];
   final textCalls = <({String text, Rect? origin})>[];
   ShareOutcome outcome = ShareOutcome.success;

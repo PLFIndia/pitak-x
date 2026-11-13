@@ -2,12 +2,24 @@
 ///
 /// Port of Kotlin `ImagePipeline.downscaleForPublish`: fit within a max
 /// width×height (book aspect, default 400×600) preserving aspect ratio, then
-/// re-encode as JPEG at a fixed quality (default 80). Used both for the stored
-/// book cover (camera capture) and the published cover bundle, so a captured
-/// photo never lands at multi-megapixel size on disk or in a git push.
+/// re-encode as JPEG at a fixed quality (default 80), so a picture never
+/// lands at multi-megapixel size on disk or on a published site.
+///
+/// Where each size applies (the caller chooses; this file only holds the
+/// shared default):
+///  - the default, 400×600 at quality 80: the publish step (the local cover
+///    reader and the bounded remote-cover download), a remote cover saved to
+///    the phone through that same download (an ISBN look-up), the library
+///    logo, and covers fetched from a published site;
+///  - 240×360 at quality 70: a cover photographed in the app. The two capture
+///    controllers pass the numbers of `PhotoCoverRecipe` (library domain);
+///  - 1080×1440: event posters (`events_providers.dart`).
 ///
 /// All EXIF metadata (including GPS) is stripped before encoding — see the
-/// comment in [ImageDownscaler.downscaleJpeg].
+/// comment in [ImageDownscaler.downscaleJpeg]. So is the source's colour
+/// profile. Transparency is thrown away without blending (JPEG has none).
+/// These three rules make the output independent of what a new `image`
+/// version does with metadata and transparency.
 ///
 /// Published covers depend on this function: a publish reuses a cover that
 /// is already online when it was made with the same recipe (ADR 0020,
@@ -79,6 +91,17 @@ abstract final class ImageDownscaler {
     int quality = jpegQuality,
   }) {
     final raw = Uint8List.fromList(bytes);
+    // The `image` package's own pixel limit (since 4.10.2 / 4.12.0), set to
+    // OUR limit. Why here and not once at start-up (beginner note): the
+    // package keeps this number in a static field, and every isolate has its
+    // own statics. This function also runs in a worker isolate
+    // ([downscaleJpegAsync]), so it sets the number each time it runs. The
+    // package's default is 2^28 pixels, about seven times our limit. Ours
+    // is checked from the header just below; this one makes the decoder
+    // itself refuse to go further, also for frames and sub-images the
+    // header does not announce. `findDecoderForData` builds its decoders
+    // with this default, which is why it is set BEFORE that call.
+    img.Decoder.defaultMaxPixels = maxSourcePixels;
     // Header-only pre-decode: reject absurd dimensions BEFORE the full decode
     // allocates the pixel buffer (see [maxSourceDimension] /
     // [maxSourcePixels]). Fail closed — undecodable or oversized input is "no
@@ -120,7 +143,17 @@ abstract final class ImageDownscaler {
     // tagging would otherwise publish the photographer's coordinates onto the
     // public site. Clearing here covers covers, posters and logos at the
     // single choke point, on both the resize and no-resize paths.
-    decoded.exif = img.ExifData();
+    decoded
+      ..exif = img.ExifData()
+      // The same rule for the colour profile (ICC) of the source picture.
+      // Until `image` 4.3.0 the JPEG encoder never wrote one, so no stored
+      // or published picture has one. Newer versions read the profile from
+      // JPEG, PNG and WebP sources and write it into the output, which
+      // would copy a block of the source's metadata into every such picture
+      // and make it up to several kilobytes larger. Dropped here, so the
+      // output stays what it has always been (decision point 12 of the
+      // backup rework, 2026-11-10).
+      ..iccProfile = null;
 
     final img.Image fitted;
     if (decoded.width <= maxW && decoded.height <= maxH) {
@@ -138,7 +171,38 @@ abstract final class ImageDownscaler {
         interpolation: img.Interpolation.average,
       );
     }
-    return img.encodeJpg(fitted, quality: quality);
+    return img.encodeJpg(_withoutTransparency(fitted), quality: quality);
+  }
+
+  /// [image] with its transparency thrown away: every pixel keeps the red,
+  /// green and blue values it has, and nothing is blended.
+  ///
+  /// Why (beginner note; decision point 12 of the backup rework, 2026-11-10):
+  /// JPEG cannot store transparency. Until `image` 4.3.0 the encoder wrote
+  /// each pixel's stored colour and ignored how transparent it was. Since
+  /// 4.5.3 it blends transparent pixels onto white instead, so a logo or a
+  /// poster picked as a PNG would suddenly look different. The maintainer
+  /// chose to keep the picture the app has always made. The transparency is
+  /// therefore removed HERE, before the encoder sees it, and the result no
+  /// longer depends on what the package does with transparency.
+  ///
+  /// Changing this on purpose changes how published pictures look and needs
+  /// a new `PublishCoverRendition.current` (ADR 0020).
+  static img.Image _withoutTransparency(img.Image image) {
+    // The encoder blends exactly when a pixel has a fourth channel (read in
+    // `image` 4.12.0, `jpeg_encoder.dart`). A palette picture counts by the
+    // channels of its palette, which `numChannels` reports.
+    if (image.numChannels <= 3) return image;
+    final opaque = img.Image(width: image.width, height: image.height);
+    for (final pixel in image) {
+      // Read as the old encoder read it: brought to 8 bits per channel
+      // first (a 16-bit PNG), then red, green and blue as they are.
+      final colour = pixel.format == img.Format.uint8
+          ? pixel
+          : pixel.convert(format: img.Format.uint8);
+      opaque.setPixelRgb(pixel.x, pixel.y, colour.r, colour.g, colour.b);
+    }
+    return opaque;
   }
 
   /// [downscaleJpeg], run in a one-shot worker isolate so the UI isolate keeps

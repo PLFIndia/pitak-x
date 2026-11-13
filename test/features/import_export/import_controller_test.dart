@@ -1,5 +1,5 @@
+import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
@@ -11,7 +11,6 @@ import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/import_export/application/import_controller.dart';
 import 'package:pitaka/features/import_export/application/import_library_use_case.dart';
 import 'package:pitaka/features/import_export/domain/import_format_sniffer.dart';
-import 'package:pitaka/features/import_export/infrastructure/library_bundle_reader.dart';
 import 'package:pitaka/features/import_export/infrastructure/pitaka_json_importer.dart';
 import 'package:pitaka/features/library/application/library_controller.dart';
 import 'package:pitaka/features/library/domain/catalogue_item_page.dart';
@@ -94,6 +93,35 @@ class _MemBookRepo implements CatalogueItemRepository {
   @override
   Future<Either<Failure, int>> replaceAll(List<CatalogueItem> b) async =>
       right(b.length);
+}
+
+/// A catalogue whose transaction waits until the test lets it go. It plays
+/// "an import that is still running", so a test can do something in the
+/// middle of one: submit again, leave the page, dispose the controller.
+class _HeldBookRepo extends _MemBookRepo {
+  /// Completes when the import has reached its database transaction.
+  final Completer<void> entered = Completer<void>();
+
+  /// The test completes this to let the import go on.
+  final Completer<void> release = Completer<void>();
+
+  /// How many imports got as far as the database.
+  int transactions = 0;
+
+  /// When true, the transaction throws once it is let go: a bug or a broken
+  /// database in the middle of an import.
+  bool throwsWhenReleased = false;
+
+  @override
+  Future<Either<Failure, T>> runInTransaction<T>(
+    Future<Either<Failure, T>> Function() action,
+  ) async {
+    transactions++;
+    if (!entered.isCompleted) entered.complete();
+    await release.future;
+    if (throwsWhenReleased) throw StateError('private path');
+    return action();
+  }
 }
 
 class _MemWishlistRepo implements WishlistRepository {
@@ -251,44 +279,45 @@ void main() {
     expect(state.value!.booksAdded, 1);
   });
 
-  test('importBytes routes ZIP-magic bytes to the bundle reader', () async {
-    final tmp = Directory.systemTemp.createTempSync('import_bytes_test');
-    addTearDown(() => tmp.deleteSync(recursive: true));
-
-    final useCase = ImportLibraryUseCase(
-      jsonParser: const PitakaJsonImporter(),
-      bookRepo: _MemBookRepo(),
-      wishlistRepo: _MemWishlistRepo(),
-      periodicalRepo: FakePeriodicals(),
+  test('importBytes refuses ZIP bytes with the sentence: nothing is read, '
+      'nothing is written, no cover store is asked for (D29)', () async {
+    // Until BR7 this file was a valid Pitak bundle and its book was
+    // imported: `library.json` with one row, written by a real ZIP encoder.
+    final libraryJson = utf8.encode(
+      jsonEncode({
+        'schemaVersion': 3,
+        'exportedAt': 0,
+        'books': [
+          {'title': 'Bundled', 'isbn': '333'},
+        ],
+        'wishlist': <dynamic>[],
+      }),
     );
-    // A minimal valid Pitaka bundle: just library.json (no covers).
-    final libraryJson = jsonEncode({
-      'schemaVersion': 3,
-      'exportedAt': 0,
-      'books': [
-        {'title': 'Bundled', 'isbn': '333'},
-      ],
-      'wishlist': <dynamic>[],
-    });
     final archive = Archive()
-      ..addFile(
-        ArchiveFile(
-          kBundleLibraryJsonEntry,
-          utf8.encode(libraryJson).length,
-          utf8.encode(libraryJson),
-        ),
-      );
-    final zipBytes = Uint8List.fromList(ZipEncoder().encode(archive)!);
+      ..addFile(ArchiveFile('library.json', libraryJson.length, libraryJson));
+    final zipBytes = Uint8List.fromList(ZipEncoder().encode(archive));
     // Sanity: the bytes really start with the ZIP magic.
     expect(zipBytes.sublist(0, 4), [0x50, 0x4B, 0x03, 0x04]);
 
+    final books = _MemBookRepo();
+    final asked = <String>[];
     final container = ProviderContainer(
       overrides: [
-        importLibraryUseCaseProvider.overrideWith((ref) async => useCase),
-        libraryBundleReaderProvider.overrideWith(
-          (ref) async => const LibraryBundleReader(),
-        ),
-        coversDirProvider.overrideWith((ref) async => '${tmp.path}/covers'),
+        // Neither may be asked for: the refusal needs no use case, and a
+        // cover store is what an import WITH pictures would open.
+        importLibraryUseCaseProvider.overrideWith((ref) async {
+          asked.add('use case');
+          return ImportLibraryUseCase(
+            jsonParser: const PitakaJsonImporter(),
+            bookRepo: books,
+            wishlistRepo: _MemWishlistRepo(),
+            periodicalRepo: FakePeriodicals(),
+          );
+        }),
+        bundleCoverFilesProvider.overrideWith((ref) async {
+          asked.add('cover store');
+          throw StateError('Import must not ask for a cover store');
+        }),
       ],
     );
     addTearDown(container.dispose);
@@ -298,9 +327,152 @@ void main() {
         .importBytes(zipBytes);
     final state = container.read(importControllerProvider);
 
+    // "Import failed" with the sentence, the way an unknown text ends.
     expect(state.hasValue, isTrue);
-    expect(state.value!.format, ImportFormat.pitakaBundle);
-    expect(state.value!.booksAdded, 1);
+    expect(state.value!.format, isNull);
+    expect(state.value!.parseErrors, [kImportZipRefusedMessage]);
+    expect(state.value!.booksAdded, 0);
+    expect(books.stored, isEmpty);
+    expect(asked, isEmpty);
+  });
+
+  // How the controller behaves OVER TIME. These rules were tested through
+  // the bundle route until BR7 removed it; they belong to every import, so
+  // they are held here on the route that stays.
+  group('one import at a time, and it outlives its page', () {
+    final oneBook = jsonEncode({
+      'schemaVersion': 3,
+      'exportedAt': 0,
+      'books': [
+        {'title': 'A', 'isbn': '111'},
+      ],
+      'wishlist': <dynamic>[],
+    });
+
+    ProviderContainer containerOver(_MemBookRepo books) => ProviderContainer(
+      overrides: [
+        importLibraryUseCaseProvider.overrideWith(
+          (ref) async => ImportLibraryUseCase(
+            jsonParser: const PitakaJsonImporter(),
+            bookRepo: books,
+            wishlistRepo: _MemWishlistRepo(),
+            periodicalRepo: FakePeriodicals(),
+          ),
+        ),
+      ],
+    );
+
+    test('a second submit while one runs is ignored', () async {
+      final books = _HeldBookRepo();
+      final c = containerOver(books);
+      addTearDown(c.dispose);
+      final sub = c.listen(importControllerProvider, (_, _) {});
+      addTearDown(sub.close);
+      final controller = c.read(importControllerProvider.notifier);
+
+      final running = controller.importText(oneBook);
+      await books.entered.future;
+      expect(c.read(importControllerProvider).isLoading, isTrue);
+
+      // Both ways in. An ignored submit returns at once; one that was NOT
+      // ignored would wait for the held transaction and never get here.
+      var ignored = 0;
+      unawaited(controller.importText(oneBook).then((_) => ignored++));
+      unawaited(
+        controller
+            .importBytes(Uint8List.fromList(utf8.encode(oneBook)))
+            .then((_) => ignored++),
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(ignored, 2);
+      expect(books.transactions, 1);
+      expect(c.read(importControllerProvider).isLoading, isTrue);
+
+      books.release.complete();
+      await running;
+      expect(c.read(importControllerProvider).requireValue!.booksAdded, 1);
+      expect(books.stored, hasLength(1));
+    });
+
+    test('the run survives its page: nobody listens, and the controller '
+        'stays until the import is over', () async {
+      final books = _HeldBookRepo();
+      final c = containerOver(books);
+      addTearDown(c.dispose);
+      // No listener, as after the Import page was left.
+      final running = c
+          .read(importControllerProvider.notifier)
+          .importText(oneBook);
+      await books.entered.future;
+      await c.pump();
+      expect(c.exists(importControllerProvider), isTrue);
+      expect(c.read(importControllerProvider).isLoading, isTrue);
+
+      books.release.complete();
+      await running;
+      expect(c.read(importControllerProvider).requireValue!.booksAdded, 1);
+      expect(books.stored, hasLength(1));
+      // And it is let go once the run is over.
+      await c.pump();
+      expect(c.exists(importControllerProvider), isFalse);
+    });
+
+    test('a disposal in the middle of a run: the import still finishes, '
+        'and the controller touches no state afterwards', () async {
+      final books = _HeldBookRepo();
+      final c = containerOver(books);
+      final controller = c.read(importControllerProvider.notifier);
+      final running = controller.importText(oneBook);
+      await books.entered.future;
+
+      c.dispose();
+      books.release.complete();
+      // Setting state, or refreshing the lists, on a disposed controller
+      // throws. The run must end without doing either.
+      await running;
+      expect(books.stored, hasLength(1));
+
+      // A disposed controller starts nothing new.
+      await controller.importText(oneBook);
+      expect(books.transactions, 1);
+      expect(books.stored, hasLength(1));
+    });
+
+    test('a disposal in the middle of a run that then THROWS: nothing '
+        'reaches the caller', () async {
+      // The page that started the run is gone; an error it can no longer
+      // show must not come back at it as an unhandled one.
+      final books = _HeldBookRepo()..throwsWhenReleased = true;
+      final c = containerOver(books);
+      final running = c
+          .read(importControllerProvider.notifier)
+          .importText(oneBook);
+      await books.entered.future;
+
+      c.dispose();
+      books.release.complete();
+      await running;
+      expect(books.stored, isEmpty);
+    });
+
+    test('an unexpected throw becomes a safe failure, without the private '
+        'text of the error', () async {
+      final c = ProviderContainer(
+        overrides: [
+          importLibraryUseCaseProvider.overrideWith(
+            (ref) => throw StateError('private path /data/user/0/secret'),
+          ),
+        ],
+      );
+      addTearDown(c.dispose);
+
+      await c.read(importControllerProvider.notifier).importText(oneBook);
+
+      final error = c.read(importControllerProvider).error;
+      expect(error, isA<UnexpectedFailure>());
+      expect((error! as UnexpectedFailure).debugReason, 'Import failed.');
+      expect('$error', isNot(contains('private path')));
+    });
   });
 
   test('S9: import refreshes a kept-alive Magazines list through the shared '

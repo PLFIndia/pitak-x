@@ -42,10 +42,12 @@ void main() {
   // passes around, or the literal folder name.
   final reachesCovers = RegExp('coversDir|CoversDir|\'covers\'|"covers"');
 
-  // Calls that create, overwrite, copy or move a file.
+  // Calls that create, overwrite, copy or move a file. `writeTo` is the
+  // ZIP reader's "unpack this entry into a NEW file" (`BoundedZipFile`,
+  // backup rework BR6); it refuses a file that exists.
   final writes = RegExp(
     r'\.(writeAsBytes|writeAsBytesSync|writeAsString|writeAsStringSync|'
-    r'openWrite|copy|copySync|rename|renameSync)\(|create\(exclusive',
+    r'openWrite|copy|copySync|rename|renameSync|writeTo)\(|create\(exclusive',
   );
 
   // The reviewed writers, each with its exact write calls (trimmed lines).
@@ -60,9 +62,10 @@ void main() {
       'await file.writeAsBytes(bytes, flush: true);',
     ],
     // Restore: fills the NEW generation's folder (not live yet) with the
-    // archive's covers, or a copy of the active folder.
+    // archive's covers, each unpacked straight into a new file, or with a
+    // copy of the active folder.
     'lib/features/backup/infrastructure/restore_covers_builder.dart': [
-      'File(p.join(target.path, leaf)).writeAsBytesSync(entry.value);',
+      'zip.writeTo(entry, p.join(target.path, leaf));',
       'entity.copySync(p.join(target.path, p.basename(entity.path)));',
     ],
     // The one-time move of the flat layout into the first generation; the
@@ -155,7 +158,7 @@ void main() {
     final builder = File(
       'lib/features/backup/infrastructure/restore_covers_builder.dart',
     ).readAsStringSync();
-    expect(builder, contains('final target = Directory(builderCoversDir)'));
+    expect(builder, contains('final target = Directory(job.builderCoversDir)'));
     final restore = File(
       'lib/features/backup/infrastructure/restore_backup.dart',
     ).readAsStringSync();

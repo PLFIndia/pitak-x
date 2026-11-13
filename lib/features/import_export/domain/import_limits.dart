@@ -7,10 +7,11 @@
 /// store. This is the SINGLE SOURCE OF TRUTH for those caps; every importer
 /// enforces the same `ImportLimits.defaults`.
 ///
-/// Philosophy mirrors `BoundedZipExtractor`: cheap early rejects, then
-/// fail-closed — but, matching the importers' "collect errors, never throw"
-/// contract (Kotlin D26), enforcement TRUNCATES and reports rather than
-/// throwing, so a partially-valid file still imports what it safely can.
+/// Philosophy mirrors the ZIP reader's (`zip_entry_rules.dart`): cheap
+/// early rejects, then fail-closed — but, matching the importers' "collect
+/// errors, never throw" contract (Kotlin D26), enforcement TRUNCATES and
+/// reports rather than throwing, so a partially-valid file still imports
+/// what it safely can.
 library;
 
 import 'package:pitaka/features/library/domain/catalogue_rules.dart';

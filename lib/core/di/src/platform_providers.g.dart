@@ -166,6 +166,33 @@ final screenSecurityProvider = AutoDisposeProvider<ScreenSecurity>.internal(
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef ScreenSecurityRef = AutoDisposeProviderRef<ScreenSecurity>;
+String _$documentPickerHash() => r'9b3b7b966893793152339777d4fa3513c0080695';
+
+/// The app's own document picker (backup rework BR5b): lets the user choose
+/// one document and keeps a private copy of it that is never larger than a
+/// cap. Android only; elsewhere every pick answers "not available" (D19).
+/// Overridden in tests with a fake.
+///
+/// keepAlive (justified): this object remembers which picked copies are IN
+/// USE in this app session, so that a sweep never deletes a file a restore
+/// is still reading. An auto-disposed instance would forget that between
+/// two reads (the same reason as `backupWorkArea`).
+///
+/// Copied from [documentPicker].
+@ProviderFor(documentPicker)
+final documentPickerProvider = FutureProvider<DocumentPicker>.internal(
+  documentPicker,
+  name: r'documentPickerProvider',
+  debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+      ? null
+      : _$documentPickerHash,
+  dependencies: null,
+  allTransitiveDependencies: null,
+);
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef DocumentPickerRef = FutureProviderRef<DocumentPicker>;
 String _$fileShareServiceHash() => r'4caa4196352d292bcbf88099f9a02fb2e0deb5ba';
 
 /// Hands generated files (exports, backups) to the OS share sheet. Overridden

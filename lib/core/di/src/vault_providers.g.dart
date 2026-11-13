@@ -601,28 +601,5 @@ final screenCaptureProtectedProvider = AutoDisposeProvider<bool>.internal(
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef ScreenCaptureProtectedRef = AutoDisposeProviderRef<bool>;
-String _$openVaultFromArchiveHash() =>
-    r'7334e4b18b46429af479f790753432f8036db7d0';
-
-/// Read-only opener that unlocks + reads a vault from a `.pitabak` archive
-/// (writes nothing; stages the DB in a scratch dir under the app docs dir).
-///
-/// Copied from [openVaultFromArchive].
-@ProviderFor(openVaultFromArchive)
-final openVaultFromArchiveProvider =
-    AutoDisposeFutureProvider<OpenVaultFromArchive>.internal(
-      openVaultFromArchive,
-      name: r'openVaultFromArchiveProvider',
-      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
-          ? null
-          : _$openVaultFromArchiveHash,
-      dependencies: null,
-      allTransitiveDependencies: null,
-    );
-
-@Deprecated('Will be removed in 3.0. Use Ref instead')
-// ignore: unused_element
-typedef OpenVaultFromArchiveRef =
-    AutoDisposeFutureProviderRef<OpenVaultFromArchive>;
 // ignore_for_file: type=lint
 // ignore_for_file: subtype_of_sealed_class, invalid_use_of_internal_member, invalid_use_of_visible_for_testing_member, deprecated_member_use_from_same_package

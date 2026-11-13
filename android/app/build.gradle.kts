@@ -177,8 +177,9 @@ dependencies {
     implementation("androidx.biometric:biometric:1.1.0")
 
     // Pairs with `isCoreLibraryDesugaringEnabled` above (ADR 0024). Version
-    // taken from the flutter_local_notifications 20.1.0 README; both flavors
-    // need it because the plugin links into every flavor.
+    // taken from the flutter_local_notifications README (20.1.0; the same in
+    // 22.3.3, which the app moved to on 2026-11-10); both flavors need it
+    // because the plugin links into every flavor.
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
 
     // Native buffer-wiping tests use fake crypto/prompt outcomes only.

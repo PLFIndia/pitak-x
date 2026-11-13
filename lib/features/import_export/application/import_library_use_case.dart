@@ -18,7 +18,12 @@
 /// a UNIQUE collision in a crafted file) rolls back rows 1..N-1 too, so an
 /// import is all-or-nothing and the reported counts always match the DB.
 ///
-/// Bundles are validated without IO, then imported with operation-owned cover
+/// Two ways in. `importText` takes the text of a JSON or CSV file. A ZIP
+/// file is not read at all (backup rework BR7, decision D29): the import
+/// controller refuses it with [kImportZipRefusedMessage]. `importBundle`
+/// takes rows that come together with their cover pictures; its one caller
+/// is the restore from the user's own published site (ADR 0021). Such a
+/// bundle is validated without IO, then imported with operation-owned cover
 /// files. File ownership lasts until the outermost database transaction ends.
 library;
 
@@ -44,6 +49,18 @@ import 'package:pitaka/features/periodicals/application/issue_reprojection.dart'
 import 'package:pitaka/features/periodicals/domain/repositories/periodical_repository.dart';
 import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
 import 'package:pitaka/features/wishlist/domain/repositories/wishlist_repository.dart';
+
+/// What Import says about a text that is neither Pitak JSON nor a Goodreads
+/// CSV.
+const String kImportUnrecognizedFormatMessage = 'Unrecognized file format.';
+
+/// What Import says about a ZIP file (D29). One constant, because two places
+/// say it: the import controller, where the rule lives, and the Import page,
+/// which refuses a picked ZIP before loading it. It names no file and no
+/// path. A backup is a ZIP too, so the sentence points to where one is read.
+const String kImportZipRefusedMessage =
+    'Import reads Pitak JSON and Goodreads CSV files, not ZIP files. '
+    'To load a backup (.pitabak), use \u201cRestore backup\u201d.';
 
 /// Result of an import run.
 class ImportSummary {
@@ -100,7 +117,7 @@ class ImportSummary {
   final List<String> warnings;
 }
 
-/// Imports a text payload (JSON/CSV) or an already-parsed bundle payload.
+/// Imports a text payload (JSON/CSV), or rows that come with their covers.
 final class ImportLibraryUseCase {
   /// Creates the use case over its collaborators.
   ///
@@ -134,24 +151,20 @@ final class ImportLibraryUseCase {
   /// Sniffs [text], parses with the right importer, and applies it.
   Future<Either<Failure, ImportSummary>> importText(String text) async {
     final format = ImportFormatSniffer.detect(text);
-    if (format == null) {
-      return right(
-        const ImportSummary(
-          format: null,
-          parseErrors: ['Unrecognized file format.'],
-        ),
-      );
-    }
     switch (format) {
       case ImportFormat.pitakaJson:
-        return _applyPayload(_json.parse(text), format);
+        return _applyPayload(_json.parse(text), ImportFormat.pitakaJson);
       case ImportFormat.goodreadsCsv:
-        return _applyPayload(_goodreads.parse(text), format);
+        return _applyPayload(_goodreads.parse(text), ImportFormat.goodreadsCsv);
+      // The sniffer never answers `pitakaBundle` for a text (it is not a
+      // text format). Should it ever, the text is as unknown as any other:
+      // refuse it, never guess.
+      case null:
       case ImportFormat.pitakaBundle:
         return right(
           const ImportSummary(
             format: null,
-            parseErrors: ['Bundle files are imported as a ZIP, not as text.'],
+            parseErrors: [kImportUnrecognizedFormatMessage],
           ),
         );
     }

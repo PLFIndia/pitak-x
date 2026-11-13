@@ -1,5 +1,10 @@
-/// UI-facing import controller. File ownership belongs to the use case, not
-/// the widget: leaving the page must not abandon a partially written bundle.
+/// UI-facing import controller. The run belongs to this controller, not to
+/// the widget: leaving the page must not abandon an import half-way.
+///
+/// Import reads text: Pitak JSON and Goodreads CSV. A ZIP file is refused
+/// here with a sentence and is never unpacked (backup rework BR7, decision
+/// D29). This is where that RULE lives; the Import page only applies it
+/// earlier, before it loads a picked file.
 library;
 
 import 'dart:convert';
@@ -9,7 +14,7 @@ import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/import_export/application/import_library_use_case.dart';
-import 'package:pitaka/features/import_export/domain/bounded_zip_extractor.dart'
+import 'package:pitaka/features/import_export/domain/import_format_sniffer.dart'
     show hasZipLocalFileHeader;
 import 'package:pitaka/features/library/application/library_controller.dart';
 import 'package:pitaka/features/wishlist/application/wishlist_controller.dart';
@@ -35,28 +40,25 @@ class ImportController extends _$ImportController {
     return useCase.importText(text);
   });
 
-  /// Routes by content, not the file's unreliable name/MIME type.
+  /// Imports the bytes of a file. Judged by content, not by the file's
+  /// unreliable name or MIME type.
+  ///
+  /// Bytes that start like a ZIP are not read: the run ends as "Import
+  /// failed" with [kImportZipRefusedMessage], the way a text of unknown
+  /// format does. Nothing is unpacked, no cover store is asked for and
+  /// nothing is written. Everything else is decoded as text.
   Future<void> importBytes(Uint8List bytes) {
-    if (!hasZipLocalFileHeader(bytes)) {
-      return importText(utf8.decode(bytes, allowMalformed: true));
-    }
-    return _run(() async {
-      final reader = await ref.read(libraryBundleReaderProvider.future);
-      final decoded = await reader.read(bytes);
-      return decoded.match(
-        (failure) async => left<Failure, ImportSummary>(failure),
-        (bundle) async {
-          final useCase = await ref.read(importLibraryUseCaseProvider.future);
-          final covers = await ref.read(bundleCoverFilesProvider.future);
-          final coordinator = ref.read(coverFileCoordinatorProvider);
-          return useCase.importBundle(
-            bundle,
-            coverFiles: covers,
-            coordinator: coordinator,
-          );
-        },
+    if (hasZipLocalFileHeader(bytes)) {
+      return _run(
+        () async => right(
+          const ImportSummary(
+            format: null,
+            parseErrors: [kImportZipRefusedMessage],
+          ),
+        ),
       );
-    });
+    }
+    return importText(utf8.decode(bytes, allowMalformed: true));
   }
 
   Future<void> _run(

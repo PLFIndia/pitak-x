@@ -72,6 +72,11 @@ a **library network** (pins on a map, hub/member cards).
   restore leaves your current data untouched. The previous folder is deleted
   after a successful switch; if the system refuses the delete, Pitak removes
   the leftover on the next launch.
+  While you restore, Pitak keeps a **private temporary copy** of the backup
+  file you chose (inside the app's own storage, where no other app can read
+  it) and reads the backup from that copy. The copy is removed when the
+  restore has succeeded, when you choose another file or leave the Restore
+  screen, and at the next start of the app if it was closed in between.
 - **Publish** — push a read-only library viewer to **one active host**:
   **GitHub Pages** (device-flow auth + git data API) or **Cloudflare Workers**
   (a pasted `Workers Scripts · Edit` token, one account, assets-only Worker),
@@ -321,6 +326,7 @@ fvm flutter test --coverage --exclude-tags golden
 ( cd rust && cargo clippy --all-targets -- -D warnings )  # lints as errors
 ( cd rust && cargo deny check )                # advisories + licenses + bans + sources
 ( cd rust && cargo test --release )            # native crate tests (2 #[ignore]d — need a real vault via PITAK_* env)
+( cd android && ./gradlew :app:testFdroidDebugUnitTest :app:testPlayDebugUnitTest )  # Android unit tests (JUnit); needs the network, `--offline` fails
 ```
 
 These are the main local checks; the build-runner/diff pair is also what

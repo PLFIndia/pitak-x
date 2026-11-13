@@ -1,9 +1,11 @@
 /// Import screen (presentation layer, AGENTS.md §3.1).
 ///
-/// Two ways in: paste JSON/CSV text, or pick a file (JSON/CSV/Pitaka bundle
-/// .zip). Both run [ImportController]; file content is routed by magic bytes,
-/// not filename. On success it shows an [ImportSummary] and refreshes the
-/// library + wishlist lists so imported rows appear immediately.
+/// Two ways in: paste JSON/CSV text, or pick a JSON or CSV file. Both run
+/// [ImportController]. A file is judged by its first bytes, not by its name:
+/// a ZIP is refused with a sentence before it is read (backup rework BR7,
+/// decision D29). On success the page shows an [ImportSummary]; the
+/// controller refreshes the library + wishlist lists so imported rows appear
+/// immediately.
 library;
 
 import 'dart:typed_data';
@@ -15,8 +17,6 @@ import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/core/platform/bounded_file_read.dart';
 import 'package:pitaka/features/import_export/application/import_controller.dart';
 import 'package:pitaka/features/import_export/application/import_library_use_case.dart';
-import 'package:pitaka/features/import_export/domain/bounded_zip_extractor.dart'
-    show ZipLimits, hasZipLocalFileHeader;
 import 'package:pitaka/features/import_export/domain/import_format_sniffer.dart';
 import 'package:pitaka/features/import_export/domain/import_limits.dart';
 
@@ -63,7 +63,7 @@ class _ImportPageState extends ConsumerState<ImportPage> {
   Future<void> _importFile() async {
     const group = XTypeGroup(
       label: 'Library export',
-      extensions: ['json', 'csv', 'zip', 'pitabundle'],
+      extensions: ['json', 'csv'],
     );
     // N11: the picker plugin and the bounded read can throw (platform
     // errors, disappearing files) — fail closed with safe copy instead of an
@@ -74,21 +74,29 @@ class _ImportPageState extends ConsumerState<ImportPage> {
       final picked = await openFile(acceptedTypeGroups: [group]);
       if (picked == null) return;
       file = picked;
+      // D29: Import reads no ZIP. The system's picker can show every file
+      // whatever extensions it was asked for, so a ZIP (a backup, most
+      // likely) can still arrive here. It is refused on its first four
+      // bytes, BEFORE it is read: a 300 MB backup picked by mistake is not
+      // loaded into memory just to be turned away. The controller holds the
+      // same rule for every other caller, with the same sentence.
+      if (await _hasZipMagic(file)) {
+        if (!mounted) return;
+        setState(() => _fileError = kImportZipRefusedMessage);
+        return;
+      }
       // Bounded read (REVIEW_FINDINGS_2 S4, hardened by M05): the parsers'
       // limits only run AFTER the whole file is in memory, so the cap has to
-      // be enforced while reading. The cap depends on the format, sniffed
-      // from the first four bytes without loading the file:
-      //  - text (JSON/CSV): ImportLimits.maxTextChars — UTF-8 never has more
-      //    characters than bytes, so a byte cap is a sound early reject and
-      //    the parser re-checks the decoded length regardless;
-      //  - bundle (ZIP magic): ZipLimits.maxArchiveBytes — the extractor
-      //    re-checks it and bounds the decompressed contents separately.
-      // `readPickedFileBounded` counts the bytes that actually arrive, so a
-      // lying file length cannot get around either cap.
-      final maxBytes = await _hasZipMagic(file)
-          ? ZipLimits.pitakaBackup.maxArchiveBytes
-          : ImportLimits.defaults.maxTextChars;
-      final read = await readPickedFileBounded(file, maxBytes: maxBytes);
+      // be enforced while reading. One cap, the text cap
+      // (ImportLimits.maxTextChars): UTF-8 never has more characters than
+      // bytes, so a byte cap is a sound early reject, and the parser
+      // re-checks the decoded length regardless. `readPickedFileBounded`
+      // counts the bytes that actually arrive, so a lying file length
+      // cannot get around the cap.
+      final read = await readPickedFileBounded(
+        file,
+        maxBytes: ImportLimits.defaults.maxTextChars,
+      );
       if (read == null) {
         if (!mounted) return;
         setState(() => _fileError = 'File is too large to import safely.');
@@ -108,8 +116,8 @@ class _ImportPageState extends ConsumerState<ImportPage> {
     await ref.read(importControllerProvider.notifier).importBytes(bytes);
   }
 
-  /// Sniffs the 4-byte ZIP local-file-header magic WITHOUT loading the file,
-  /// so the size guard above applies only to text formats.
+  /// Looks for the 4-byte ZIP local-file-header magic WITHOUT loading the
+  /// file: only its first four bytes are read.
   static Future<bool> _hasZipMagic(XFile file) async {
     final header = await file
         .openRead(0, 4)
@@ -129,7 +137,7 @@ class _ImportPageState extends ConsumerState<ImportPage> {
         children: [
           Text(
             'Paste a Pitak JSON or Goodreads CSV export below, or choose a '
-            'file (JSON, CSV, or a Pitak bundle).\n\n'
+            'file (JSON or CSV).\n\n'
             'Import ADDS to your library — nothing is deleted. A book that is '
             'already here (same Pitak identity) is updated with the '
             'file\u2019s details; one with the same ISBN is skipped. Wishlist '

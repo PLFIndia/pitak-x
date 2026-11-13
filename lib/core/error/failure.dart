@@ -175,13 +175,28 @@ final class SchemaTooNewFailure extends Failure {
 /// every `other` row back to a book, every issue link detached — i.e. a backup
 /// that looks fine and silently loses data on restore. This failure is
 /// returned INSTEAD of such an archive, before anything is written out.
+///
+/// Since BR3 the same failure also covers sizes and counts: too many cover
+/// pictures, too much content, a single part that is too large. The reader
+/// refuses such a file outright, so the writer does not build it.
 final class BackupTooLargeFailure extends Failure {
-  /// Creates a too-large failure. [detail] is a short diagnostic, never shown
-  /// verbatim (the UI maps this type to one plain sentence).
-  const BackupTooLargeFailure([this.detail = '']);
+  /// Creates a too-large failure. [detail] is the name of the limit that was
+  /// hit (a `BackupOverflow` code of the backup feature), never shown
+  /// verbatim. [actual] and [limit] are what the library has and what a
+  /// backup can hold, in the same unit (bytes or a count, depending on the
+  /// code). The UI builds one plain sentence from the three.
+  const BackupTooLargeFailure([this.detail = '', this.actual, this.limit]);
 
-  /// Short diagnostic for logs/tests.
+  /// Which limit was hit: the name of a `BackupOverflow` code. A plain
+  /// String because `core/` must not import a feature.
   final String detail;
+
+  /// What the library has. Null when the creator did not say; the UI then
+  /// falls back to a sentence without numbers.
+  final int? actual;
+
+  /// What a backup can hold. Null under the same rule as [actual].
+  final int? limit;
 }
 
 /// A cryptographic operation failed (KDF, AEAD, or SQLCipher open).

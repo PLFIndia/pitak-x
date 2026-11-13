@@ -141,10 +141,11 @@ These fail the build; change them deliberately, never to "make it pass".
 
 | Test | Enforces |
 |------|----------|
-| `test/architecture/domain_purity_test.dart` | domain imports only the allow-list (pure Dart, `fpdart`, `crypto`, `archive` — ADR 0009); `application/` performs no platform IO (`dart:io`, `dart:isolate`, `path`, `http`, `drift`, prefs, secure storage) |
+| `test/architecture/domain_purity_test.dart` | domain imports only the allow-list (pure Dart, `fpdart`, `crypto`; `archive` left it when the in-memory ZIP reader was removed — ADR 0009, third amendment); `application/` performs no platform IO (`dart:io`, `dart:isolate`, `path`, `http`, `drift`, prefs, secure storage) |
 | `test/architecture/layer_boundaries_test.dart` | no `presentation → infrastructure` imports; no `flutter/material` in `application`; no `print`/`debugPrint` outside `lib/core/platform/app_log.dart`; no `flutter_map` under `core/di` or `application/`; **file-size ratchet** (a file may not grow past its recorded line budget without an explicit allow-list entry — split it instead) |
 | `test/architecture/catalogue_item_validation_gate_test.dart` | every `CatalogueItem` construction site goes through `CatalogueItem.validate` (ADR 0004; the entity was `Book` until 2026-10) |
 | `test/core/database/migration_test.dart` | a drift schema snapshot exists for the current `schemaVersion`; every past version migrates forward with data intact (§5.4) |
+| `test/architecture/archive_sink_protocol_test.dart` | the ZIP output budget still fits `package:archive`: the five package files that decide how the inflater writes and reads are pinned by content (a package update that touches them fails until they are read again), and the sink of the ZIP reader still guards every write path (ADR 0009 and its amendments) |
 | `test/architecture/cover_files_immutable_test.dart` | a stored cover file never changes once saved (ADR 0020 Decision 1): every file that reaches the covers folder is reviewed, readers write nothing, and the four writers are pinned to fresh names, a not-yet-live generation, or a move that never overwrites |
 
 ---
@@ -168,15 +169,23 @@ lib/
     di/                   providers.dart + src/<feature>_providers.dart
     error/                sealed Failure hierarchy
     images/               image_downscaler.dart — single choke point for every
-                          decoded image (size caps from the header, EXIF/GPS stripped,
-                          frame 0 only, runs in Isolate.run)
+                          decoded image (size caps from the header, EXIF/GPS and the
+                          colour profile stripped, transparency dropped without
+                          blending, frame 0 only, runs in Isolate.run)
     network/              bounded_http_fetcher.dart (size cap, deadline, ≤3 re-validated
                           redirects), app_user_agent.dart, osm_tiles.dart,
                           workers_dev_url.dart (the ONE workers.dev grammar, shared
                           by the reader and the publisher)
-    platform/             screen_security.dart (FLAG_SECURE), app_log.dart
+    platform/             screen_security.dart (FLAG_SECURE), app_log.dart,
+                          document_picker.dart (port: pick ONE document and get a
+                          private copy under a size cap) with
+                          channel_document_picker.dart (Android side:
+                          PickedDocumentChannel.kt; elsewhere "not available";
+                          the Restore page chooses its backup file with it)
     security/             hardened_secure_storage.dart — the ONE hardened
                           flutter_secure_storage configuration
+    storage/              data_generations.dart (atomic restore), run_folders.dart
+                          (the ONE set of rules for deleting a private work folder)
     widgets/              app_gate.dart (splash → lock → Library), qr_view/qr_scan_page
   features/
     library/              catalogue items (`CatalogueItem`, the base row of every
@@ -205,6 +214,7 @@ lib/
                           Refresh/discovery, membership, native catalogue/events
                           viewers (ADR 0015/0016), consent-gated images/OSM map
     backup/               .pitabak writer (worker isolate) + all-or-nothing restore
+                          (reads its file in worker isolates, one entry at a time)
     import_export/        JSON/CSV/PDF export, Goodreads import, merge UI
     settings/             Appearance · Data · Security (SettingsPage.initialTab)
     app_update/           Play-only flexible updates; inert on F-Droid
@@ -427,7 +437,32 @@ to false** (the `hasX` forward-compat pattern):
   item kind in the Room shape, so a build older than ADR 0013 restores
   magazine issues and other items as plain books (it ignores the two
   kind entries above); a flag-less archive restores exactly as before.
-- Hostile-input bounds on read: bounded ZIP extraction (ADR 0009); W2
+- Hostile-input bounds on read: bounded ZIP extraction (ADR 0009). The app
+  has ONE ZIP reader, `BoundedZipFile` (import/export infrastructure), and
+  it works from a FILE. The ZIP container (end record, directory, entry
+  headers) is read by the app's own code, `zip_container.dart`;
+  `package:archive` is used only to inflate and to compute the CRC, and
+  only from infrastructure. The reader reads the last bytes, the directory
+  and each entry header, runs every rule on declared values for all entries
+  (`zip_entry_rules.dart`, pure Dart) before it unpacks anything, and then
+  takes one entry at a time, into memory or into a new file. Its inflater
+  output keeps only the last 32 KiB (`zip_inflate_window.dart`), so memory
+  does not grow with the entry. A deflate stream must reach its end mark
+  and the CRC must match. Three rules are stricter than the reader of
+  1.9.7: an entry is exactly the size it declares, its header carries the
+  directory's name, and no entry uses zip64. The caller gives a rule per
+  entry name; for a backup that is `backupEntryRule`: a cover or an
+  additive JSON entry above its cap is left out, the manifest, a database
+  or the key blob above its cap refuses the backup, and an unknown name is
+  ignored and never unpacked. Its one caller is the restore of a backup
+  (see "A restore reads its backup from a file" below). What the reader
+  decides for honest, damaged and hostile archives is held by
+  `zip_reader_cases_test.dart`, and for odd containers, with the verdict
+  release 1.9.7 gave for each, by `zip_container_verdicts_test.dart`.
+  Import reads no ZIP at all: it takes JSON and CSV text, and a file that
+  starts like a ZIP is refused with a sentence before it is read (the
+  import of a bundle file and the reader that held an archive in memory
+  were removed in BR7; ADR 0009, third amendment). W2
   `item_kinds.json` / `periodicals.json` entries are capped at 4 MiB of UTF-8
   bytes and 100,000 rows in each `kinds`, `periodicals`, or `issues`
   collection (the codec constants are authoritative; equality is accepted).
@@ -439,12 +474,152 @@ to false** (the `hasX` forward-compat pattern):
   decoder empties, a target whose URL disagrees with its parts) makes the
   whole entry unreadable (`PublishStateBackupCodec`). The writer re-decodes it
   before including it, so it never emits an entry its reader refuses.
-- The writer mirrors the W2 reader's `maxBytes` / `maxRows`: it encodes and
-  checks both W2 entries before creating a scratch directory, SQLite file, or
-  archive bytes. An entry exactly at a cap is readable; anything larger fails
+- The writer mirrors the W2 reader's `maxBytes` / `maxRows`: its worker
+  encodes and checks both W2 entries before it writes a SQLite file or
+  starts the ZIP. An entry exactly at a cap is readable; anything larger fails
   creation with `BackupTooLargeFailure`, never a backup that its own reader
-  would silently downgrade. The worker OUTCOME is plain data only (`Uint8List`
-  or a `BackupEntryOverflow` code), which the calling isolate maps to `Either`.
+  would silently downgrade. The worker OUTCOME is plain data only (the size
+  of the finished file with the titles of left-out covers, or a
+  `BackupOverflow` code with two numbers), which the calling isolate maps to
+  `Either`.
+- The writer refuses what the reader refuses (review finding P1-M1). One
+  value, `BackupLimits` (backup domain), holds the numbers of a backup:
+  4,086 covers plus 10 other entries (4,096 entries), 500 MiB of content,
+  4 MiB per cover, 200 MiB per database, 4 MiB for a text entry without a
+  decoder cap. `ZipLimits.pitakaBackup` is built from it, so writer and
+  reader cannot drift apart. `backupEntryCap` maps an entry name to its cap
+  and uses the decoders' own constants where they exist. After the two
+  SQLite files are written and before the ZIP is started, the writer
+  measures every entry without reading a cover (`backup_preflight.dart`) and
+  refuses, in this order: more covers than fit, one entry above its cap, too
+  much content in total. The finished file is checked against the archive
+  cap. Exactly at a limit is accepted. A refusal carries a code, the actual
+  number and the limit, leaves nothing in its work folder, and the page
+  turns it into one sentence with both numbers in the same unit.
+- The backup is written straight to a **file**, never held in memory
+  (review finding P3-B1). `packBackupZip` (`backup_zip_file.dart`) writes
+  text entries deflated from memory, each cover read whole and **stored**
+  (one in memory at a time), and each database **streamed** from its file
+  and deflated, with its sizes behind the data (a ZIP "data descriptor",
+  which the reader accepts). The vault database is copied into the scratch
+  folder first (`VaultArtifactsStore.snapshotDatabaseTo`), so every
+  database is packed from a file nothing else can write. The ZIP gets its
+  final name, `Pitak-backup-<date>-<time>.pitabak` (`backupFileName`), only
+  when it is complete and within the archive cap.
+- Where a backup is built and who removes it (`BackupWorkArea`, a domain
+  port; `FileBackupWorkArea`): each build gets its own folder
+  `<temp>/backup_work/run-<random>/` under the app's temporary directory.
+  The writer removes its `scratch/` subfolder on every way out. The use
+  case discards the run when the build fails; after a build the page shares
+  the file by path (`FileShareService.shareFile`) and discards the run when
+  the share call has returned, whatever the outcome, or at once when the
+  page is gone. A sweep before every build and once per app start
+  (`staleBackupWorkSweep`) removes what a killed app left, including the
+  `<Documents>/backup_create_work` folder of older versions. Only a real
+  directory named `run-…` directly under `backup_work` is ever deleted, and
+  a run this app session is using is never swept. Those two rules live in
+  one class, `RunFolders` (`core/storage/run_folders.dart`), so that every
+  private work folder is removed by the same code. On Android the share
+  plugin offers its own copy of the file, which it removes at the next
+  share.
+- A restore reads its backup from a **file**, in worker isolates, one
+  entry at a time (review finding P3-B3). The Restore page chooses the file
+  through the app's own picker (`DocumentPicker`, `core/platform`), which
+  hands back a private copy that is never larger than the archive cap of
+  `BackupLimits`; no code of the restore holds the backup in memory.
+  `RestoreBackup` then runs two workers with `Isolate.run`, each of which
+  opens the copy under the same rules (`openBackupArchive`:
+  `ZipLimits.forBackup` and `backupEntryRule`):
+  1. `readRestoreArchive` (`restore_archive_reader.dart`) takes the
+     manifest, then only what the manifest announces: the small text
+     entries into memory, each under its own cap, and the three databases
+     with `writeTo` into a fresh work folder under three fixed names. Of
+     the covers it only lists the names: those it will write and those
+     above their cap. An inspection (the look before the passphrase is
+     asked) takes the manifest, `identity.json` and `publish_state.json`
+     and stages nothing.
+  2. After the vault unlock, the catalogue read and the catalogue write
+     (all on the calling isolate, so a wrong passphrase or a refused row is
+     found before any cover is written), `buildRestoredCovers`
+     (`restore_covers_builder.dart`) lists the covers again, refuses when
+     the list is not the one the first look made (the file changed), and
+     unpacks each cover with `writeTo` straight into the covers folder of
+     the generation being built. A backup without covers has the phone's
+     own covers copied there instead, by the same worker.
+  A name the app does not write is never unpacked, which includes
+  `books.db-wal` and its kind. A worker hands back plain data only: a
+  refusal as its text (`BackupCorruptFailure` is made on the calling
+  isolate), trouble with the disk as a code (`RestoreDiskTrouble`); a
+  backup file that can no longer be read gives "The backup file could not
+  be read. Please choose it again." A damaged entry is found when it is
+  unpacked: an inspection can therefore succeed on a file whose restore
+  then fails, with nothing changed.
+- A cover above its cap inside a backup does not fail the restore: it is
+  left out, everything else is restored, and `RestoreSummary`
+  (`coverPicturesLeftOut`) names the restored items that refer to it, by
+  the same rule and with the same note as the backup page
+  (`titlesOfItemsWithCover`, `LeftOutCoversNote`). The publishing record
+  keeps a local cover source only for the covers that were written.
+- Where a restore keeps its files and who removes them. The picked copy
+  lies in `<temp>/picked_documents/pick-<random>/document`. It has one
+  owner at a time (`RestoreController`'s library doc has the table): the
+  page from the pick on, the controller while a restore reads it, the page
+  again after a restore that failed, so a wrong passphrase can be typed
+  again without choosing the file again. It is removed
+  (`DocumentPicker.discard`) after a restore that succeeded, when another
+  file is chosen, when the file turns out not to be a backup, and when the
+  page is left; a copy released during a restore is removed when that
+  restore has ended. The staged databases lie in
+  `<temp>/restore_work/run-<random>/` (`restoreWorkFolders`, a
+  `RunFolders`), made at the start of a restore and removed at its end on
+  every way out. A sweep once per app start (`staleRestoreFilesSweep`,
+  started by the Library screen) and before every restore removes what a
+  killed app left, including the `<Documents>/restore_work` folder of
+  older versions. The picker counts the picks that are on their way: a
+  sweep does nothing while there is one, and a pick lets a running sweep
+  finish first, so a sweep can never delete the folder a copy is being
+  written into. Nothing of a restore is written under Documents any more
+  except the new data generation itself.
+- Progress while a restore runs (review finding P4-M7, the restore part).
+  The covers worker counts every cover it writes and reports through the
+  port and the rule of the backup (`backup_progress_port.dart`).
+  `RestoreController` puts the latest count into `RestoreProgress`, a
+  notifier of its own that outlives the page as the controller does, and
+  clears it when a restore starts and ends. The page shows "Cover 1,234 of
+  9,000" under its button. There is no Cancel.
+- Progress while a backup is built (review finding P4-M7, the backup part
+  only). `packBackupZip` counts every cover it has written. In the worker,
+  `BackupProgressReporter` passes on at most ten counts a second and always
+  the last one, as two whole numbers through a port
+  (`backup_progress_port.dart`). `BackupArchiveWriter.build` opens that port
+  only when a listener is given and closes it on every way out; the calling
+  isolate turns each message into a checked `BackupProgress` (backup
+  domain). The page shows "Cover 1,234 of 9,000" under its button until
+  the build has returned. Reading the catalogue, the vault copy and the
+  databases report nothing: the spinner alone. There is no Cancel.
+- The vault goes into a backup only as a whole database (review finding
+  P1-m1). "Is there a vault", the copy of `borrowers.db` and the key blob
+  are taken in ONE turn at the `VaultIdleGate` (vault domain; implemented
+  by `VaultSessionController` with its operation queue), so no vault
+  operation of the app runs meanwhile (`backup_vault_snapshot.dart`). The
+  turn needs no secret and works with a locked vault; a failed copy locks
+  nothing. If a SQLite side file (`-journal`, `-wal`, `-shm`) lies next to
+  the database (`VaultArtifactsStore.hasUnfinishedWrite`), a write was cut
+  off and the file alone is not a whole database: it can open and show a
+  wrong list. Such a vault is **left out**: the backup is built without
+  `borrowers.db` and the key blob, the manifest says so, and the page
+  tells the user to unlock the vault once and create the backup again
+  (`vaultLeftOut`). Unlocking repairs a cut-off write; a test in
+  `rust/src/vault.rs` proves it. The backup never writes to the vault.
+- A cover file above the per-cover cap does not fail the backup: it is left
+  out, the item stays inside, and the page names the items (count, first
+  three titles). An oversized file that no item refers to is skipped without
+  a note. An entry is read only when it goes into the ZIP; if its size then
+  differs from the measured one, the build fails as a whole. The three
+  best-effort entries (`identity.json`, `network.json`,
+  `publish_state.json`) are checked against their decoder caps in the use
+  case; an oversized one is left out and reported like an unreadable one.
+  The reader itself still applies one 200 MiB cap per entry.
 - Restore adjustment counters preserve units. `issueEntriesDropped` counts
   decode-time raw-entry drops and decoded entries left unconsulted because
   their UID is absent from `books.db` or belongs to a non-issue row.
@@ -481,7 +656,7 @@ to false** (the `hasX` forward-compat pattern):
 | Rows per Refresh run | ≤ 500 (stop discovering, report); discovery ≤ 2 hops | `NetworkDiscoveryPlan` |
 | Concurrency | 4 in-flight fetches | `RefreshNetworkUseCase` |
 | QR payload | ≤ 512 bytes; URL validated before fragment | `LibraryCardPayload` |
-| Images | reject > 8192 px / > 40 Mpx from the header; frame 0 only; 400×600 q80 JPEG out | `ImageDownscaler` |
+| Images | reject > 8192 px / > 40 Mpx from the header, and the decoder's own pixel limit is set to the same 40 Mpx; frame 0 only; JPEG out at the caller's size: 400×600 q80 by default, 240×360 q70 for a cover photographed in the app, 1080×1440 q80 for an event poster. The output carries no EXIF block and no colour profile, and transparency is dropped without blending, so it does not change with the `image` package (two SHA-256 pins in `image_downscaler_test.dart`) | `ImageDownscaler`, `PhotoCoverRecipe` |
 | Publish target URL | derived from the sealed target's identity parts, cross-checked against the stored one; never accepted as an arbitrary `{host, url}` pair | `PublishTarget`, `PrefsPublishHostStore` |
 | Publish read-back body | marker ≤ 4 KiB; `library.json` / `events.json` ≤ 64 KiB; catalogue by its own rule; exact expected origin and site directory, **no** redirect followed, one `?rb=` buster allowed | `BoundedPublishedSiteVerifier`, `PublishedSiteUrlPolicy.readBackUrl` |
 | Cloudflare API body | ≤ 1 MiB streamed, cancelled over cap; string-aware depth ≤ 16 **before** `jsonDecode`; endpoint-specific string/list/map bounds; whitelisted fields only | `CloudflareJson`, `HttpCloudflareApi` |
@@ -971,6 +1146,15 @@ loan never rebuilds the catalogue or reads a cover.
   source names one picture for good, which is what lets a publish skip a
   cover it already put online (§5.8). Enforced by
   `cover_files_immutable_test.dart`.
+- **A photographed cover is small on purpose** (decision of 2026-11-10). A
+  cover taken with the camera is stored at most 240 × 360 at JPEG quality 70
+  (`PhotoCoverRecipe`, used by both capture controllers): it only has to show
+  what the item looks like, and thousands of them must fit into one backup.
+  A downloaded ISBN cover and the library logo keep the shared default of
+  `ImageDownscaler` (400 × 600, q80). Covers already on the phone are not
+  re-encoded. The publish recipe is unchanged and never enlarges a picture,
+  so a photographed cover is published at the size it was stored and no new
+  `PublishCoverRendition.current` is needed (§5.8).
 - **Availability has its own lane** (ADR 0019, §5.9). The coarse *Available /
   Not available* tag is the only public data that changes all day, so it is a
   separate tiny file published by itself after a loan or return, bound to the

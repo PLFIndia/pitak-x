@@ -13,6 +13,8 @@ import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/core/text/display_date.dart';
 import 'package:pitaka/features/backup/domain/archive_inspection.dart';
 import 'package:pitaka/features/backup/domain/restore_summary.dart';
+import 'package:pitaka/features/backup/presentation/restore_messages.dart';
+import 'package:pitaka/features/backup/presentation/widgets/left_out_covers_note.dart';
 import 'package:pitaka/features/library/domain/catalogue_rules.dart';
 import 'package:pitaka/features/publish/domain/publish_state_adoption.dart';
 
@@ -217,6 +219,17 @@ class RestoreOutcome extends StatelessWidget {
                   '${summary.coversDropped} cover link(s) were removed '
                   'because they pointed to unsupported sites.',
                   style: textTheme.bodySmall,
+                ),
+              // D18 + D23: a cover PICTURE above the size a restore takes
+              // is skipped and its items are named, the way the
+              // create-backup page names the ones it left out (D10).
+              if (summary.coverPicturesLeftOut.isNotEmpty)
+                LeftOutCoversNote(
+                  key: const Key('restore-covers-left-out'),
+                  sentence: restoreCoversLeftOutMessage(
+                    summary.coverPicturesLeftOut.length,
+                  ),
+                  titles: summary.coverPicturesLeftOut,
                 ),
               // W2: detached/skipped rows restore as plain books — said
               // plainly, never silently (§5.5: dropped and counted).
