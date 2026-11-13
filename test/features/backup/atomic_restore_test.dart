@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:isolate';
 
 import 'package:archive/archive.dart';
 import 'package:drift/drift.dart';
@@ -15,7 +14,6 @@ import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/core/storage/data_generations.dart';
 import 'package:pitaka/core/storage/run_folders.dart';
 import 'package:pitaka/features/backup/infrastructure/restore_backup.dart';
-import 'package:pitaka/features/backup/infrastructure/restore_catalogue_builder.dart';
 import 'package:pitaka/features/backup/infrastructure/restore_legacy_read.dart';
 import 'package:pitaka/features/library/domain/catalogue_replacement_guard.dart';
 import 'package:pitaka/features/vault/domain/entities/borrower.dart';
@@ -68,78 +66,6 @@ class _FaultyDb extends AppDatabase {
     if (_factory.failRebuild) throw StateError('synthetic FTS failure');
     await super.rebuildFts();
     await _factory.afterRebuild?.call();
-  }
-}
-
-/// What the lock-holding isolate is told. Plain data only, as for every
-/// worker: a database handle cannot cross to another isolate.
-typedef _WriteLockJob = ({String dbPath, SendPort events, int holdMs});
-
-/// Runs in an isolate of its own and plays "the app is committing a write to
-/// the catalogue right now": takes SQLite's exclusive lock on the file, says
-/// so, and lets go when it is told to or when `holdMs` milliseconds have
-/// passed, whichever comes first.
-Future<void> _holdWriteLock(_WriteLockJob job) async {
-  final release = ReceivePort();
-  final db = sqlite3.open(job.dbPath);
-  try {
-    db.execute('BEGIN EXCLUSIVE');
-    // "The lock is held", together with the way to end it early.
-    job.events.send(release.sendPort);
-    await release.first.timeout(
-      Duration(milliseconds: job.holdMs),
-      onTimeout: () => null,
-    );
-    db.execute('ROLLBACK');
-  } finally {
-    release.close();
-    db.dispose();
-  }
-}
-
-/// A write lock on a catalogue file, held by ANOTHER isolate.
-///
-/// Why another isolate (beginner note): SQLite's busy wait blocks the thread
-/// that waits. A lock held by the test's own isolate could never be let go
-/// while the restore waits for it, so the test would only ever see the wait
-/// run out.
-final class _HeldWriteLock {
-  _HeldWriteLock._(this._release, this.gone);
-
-  final SendPort _release;
-
-  /// Completes when the lock is gone (the other isolate has ended).
-  final Future<void> gone;
-
-  /// Lets go now, without waiting for the time to run out.
-  void release() => _release.send(null);
-
-  /// Takes the lock on [dbPath] and answers once it IS held. It is let go
-  /// after [atMost] at the latest, so a test that dies leaves no lock.
-  static Future<_HeldWriteLock> take(
-    String dbPath, {
-    required Duration atMost,
-  }) async {
-    final events = ReceivePort();
-    final next = StreamIterator<Object?>(events);
-    await Isolate.spawn(
-      _holdWriteLock,
-      (dbPath: dbPath, events: events.sendPort, holdMs: atMost.inMilliseconds),
-      // The isolate's last word, however it ends.
-      onExit: events.sendPort,
-    );
-    await next.moveNext();
-    final release = next.current;
-    if (release is! SendPort) {
-      events.close();
-      fail('the other isolate ended without taking the lock');
-    }
-    Future<void> gone() async {
-      await next.moveNext();
-      events.close();
-    }
-
-    return _HeldWriteLock._(release, gone());
   }
 }
 
@@ -813,23 +739,41 @@ void main() {
     // it copies the catalogue. Taking the lock inside that question puts it
     // exactly where the copy meets it, however long the steps before took.
 
+    /// Plays "the app is committing a write to the catalogue right now": a
+    /// second connection takes SQLite's exclusive lock on the live file.
+    /// The answer lets go of it, and may be called twice.
+    void Function() lockLiveCatalogue() {
+      final writer = sqlite3.open(active.catalogueDbPath)
+        ..execute('BEGIN EXCLUSIVE');
+      var held = true;
+      void release() {
+        if (!held) return;
+        held = false;
+        writer
+          ..execute('ROLLBACK')
+          ..dispose();
+      }
+
+      // Whatever the test does: no lock is left for `tearDown`.
+      addTearDown(release);
+      return release;
+    }
+
     test('the copy waits for a write lock that goes away, and the restore '
         'succeeds', () async {
       await seedDevice();
-      late _HeldWriteLock lock;
 
       final result = await restorer(
         activeGeneration: () async {
-          lock = await _HeldWriteLock.take(
-            active.catalogueDbPath,
-            // Far longer than the few lines between here and the copy, far
-            // shorter than the copy is willing to wait.
-            atMost: const Duration(milliseconds: 300),
-          );
+          // Let go while the copy is waiting. This does not depend on how
+          // fast the machine is: timers run in the order they are due, the
+          // copy tries again every 25 ms, and it gives up only after 80
+          // tries. A copy that did not wait, or that kept this thread
+          // busy while it waited, would never see the lock go.
+          Timer(const Duration(milliseconds: 150), lockLiveCatalogue());
           return active;
         },
       ).restore(archivePath: vaultFreeArchive());
-      await lock.gone;
 
       final summary = result.getOrElse((f) => fail('unexpected: $f'));
       expect(summary.booksRestored, 1);
@@ -841,32 +785,20 @@ void main() {
     test('a write lock that outlasts the wait fails closed: a typed '
         'failure, the device unchanged, nothing left behind', () async {
       await seedDevice();
-      late _HeldWriteLock lock;
+      late void Function() release;
 
-      // This test sits out the app's real wait (about two seconds): the
-      // wait is one number in one place, with no second way in for tests.
+      // This test sits out the whole wait, about two seconds.
       final result = await restorer(
         activeGeneration: () async {
-          lock = await _HeldWriteLock.take(
-            active.catalogueDbPath,
-            // Held until this test lets go, below: the wait cannot win.
-            atMost: const Duration(seconds: 30),
-          );
+          release = lockLiveCatalogue();
           return active;
         },
       ).restore(archivePath: vaultFreeArchive());
       // `expectUnchanged` reads the live catalogue: only once it is free.
-      lock.release();
-      await lock.gone;
+      release();
 
       expect(result.getLeft().toNullable(), isA<StorageFailure>());
       await expectUnchanged();
-    });
-
-    test('the wait stays under the five seconds after which Android calls '
-        'an app unresponsive', () {
-      // The wait blocks the screen's thread (see the constant's comment).
-      expect(restoreSnapshotBusyWaitMs, lessThan(5000));
     });
   });
 
