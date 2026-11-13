@@ -11,14 +11,14 @@ import 'package:pitaka/features/import_export/infrastructure/bounded_zip_file.da
 import 'hostile_zip_builder.dart';
 
 /// `BoundedZipFile`, the ZIP reader that works from a file (backup rework
-/// BR5): what only THIS reader does.
+/// BR5): how it hands out entries.
 ///
-/// WHY (beginner note): what a reader decides about a ZIP file's structure
-/// is tested for both readers at once, in `bounded_zip_extractor_test.dart`
-/// and `bounded_zip_extractor_container_test.dart`. This file is about the
-/// rest: taking one entry at a time, into memory or into a file; what
-/// happens to a half-written file; a file that changes while it is read;
-/// and entries that are left out or ignored because of their rule.
+/// WHY (beginner note): what the reader decides about a ZIP file's
+/// structure is tested in `zip_reader_cases_test.dart` and
+/// `zip_container_verdicts_test.dart`. This file is about the rest: taking
+/// one entry at a time, into memory or into a file; what happens to a
+/// half-written file; a file that changes while it is read; and entries
+/// that are left out or ignored because of their rule.
 void main() {
   late Directory folder;
 

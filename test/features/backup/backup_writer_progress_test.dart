@@ -8,9 +8,9 @@ import 'package:pitaka/features/backup/domain/backup_archive_builder.dart';
 import 'package:pitaka/features/backup/domain/backup_limits.dart';
 import 'package:pitaka/features/backup/domain/backup_progress.dart';
 import 'package:pitaka/features/backup/infrastructure/backup_archive_writer.dart';
-import 'package:pitaka/features/import_export/domain/bounded_zip_extractor.dart';
 import 'package:pitaka/features/vault/infrastructure/vault_store.dart';
 
+import '../../support/read_zip.dart';
 import 'test_vault_gate.dart';
 
 /// What one build gave: its result, every report in the order it arrived,
@@ -77,8 +77,8 @@ void main() {
     return (result: result, reports: reports, took: clock.elapsed);
   }
 
-  int coversInArchive(BuiltBackup built) => BoundedZipExtractor.extract(
-    File(built.path).readAsBytesSync(),
+  int coversInArchive(BuiltBackup built) => readZipFile(
+    built.path,
   ).keys.where((name) => name.startsWith('cover_')).length;
 
   void expectRising(List<BackupProgress> reports, {required int total}) {

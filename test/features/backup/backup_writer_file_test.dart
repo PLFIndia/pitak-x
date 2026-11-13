@@ -11,9 +11,9 @@ import 'package:pitaka/features/backup/domain/backup_manifest.dart';
 import 'package:pitaka/features/backup/infrastructure/backup_archive_writer.dart';
 import 'package:pitaka/features/backup/infrastructure/backup_entry_bounds.dart';
 import 'package:pitaka/features/backup/infrastructure/legacy_db_reader.dart';
-import 'package:pitaka/features/import_export/domain/bounded_zip_extractor.dart';
 import 'package:pitaka/features/import_export/domain/zip_container.dart';
 import 'package:pitaka/features/import_export/domain/zip_entry_rules.dart';
+import 'package:pitaka/features/import_export/domain/zip_limits.dart';
 import 'package:pitaka/features/import_export/infrastructure/bounded_zip_file.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/value_objects/item_details.dart';
@@ -23,6 +23,7 @@ import 'package:pitaka/features/vault/infrastructure/vault_store.dart';
 import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
 import 'package:sqlite3/sqlite3.dart';
 
+import '../../support/read_zip.dart';
 import 'test_vault_gate.dart';
 
 /// A vault whose COPY for the backup differs from the file at [dbPath]. Only
@@ -156,7 +157,7 @@ void main() {
   ];
 
   Map<String, Uint8List> entriesOf(BuiltBackup built) =>
-      BoundedZipExtractor.extract(File(built.path).readAsBytesSync());
+      readZipFile(built.path);
 
   test('the work folder holds exactly the finished backup, under the name '
       'the user will see', () async {
@@ -255,8 +256,14 @@ void main() {
       writerFor(vaultWith(noise(50 * 1024, seed: 3))),
       '${tmp.path}/run',
     );
-    final expected = entriesOf(built);
+    // What is in the file, as a reader that is NOT ours sees it: the ZIP
+    // reader of `package:archive`. (Until BR7 this was the app's in-memory
+    // reader. A second opinion keeps the test from comparing the reader
+    // with itself.)
+    final expected = readZipWithPackage(File(built.path).readAsBytesSync());
     expect(expected, hasLength(BackupLimits.otherEntries + 2));
+    expect(expected['cover_a.jpg'], pictureA);
+    expect(expected['cover_b.jpg'], pictureB);
 
     const limits = BackupLimits.current;
     final file = BoundedZipFile.open(
@@ -269,7 +276,7 @@ void main() {
     expect([for (final e in file.entries) e.name], expected.keys.toList());
     for (final entry in file.entries) {
       expect(entry.verdict, ZipEntryVerdict.take, reason: entry.name);
-      // Both ways of taking an entry, each against the in-memory reader.
+      // Both ways of taking an entry, each against the second opinion.
       // `maxBytes` is the entry's own cap: the writer kept under it.
       expect(
         file.read(entry, maxBytes: backupEntryCap(entry.name, limits)!),

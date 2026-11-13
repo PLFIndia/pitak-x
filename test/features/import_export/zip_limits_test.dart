@@ -1,8 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/features/backup/domain/backup_limits.dart';
-// Imported through the extractor ON PURPOSE: `ZipLimits` moved to its own
-// file in BR3, and this proves the old import path still exports it.
-import 'package:pitaka/features/import_export/domain/bounded_zip_extractor.dart';
+import 'package:pitaka/features/import_export/domain/zip_limits.dart';
 
 /// BR3: the reader's caps for a backup are built from `BackupLimits`. The
 /// numbers below are what the released app (1.9.7) enforces; a change here

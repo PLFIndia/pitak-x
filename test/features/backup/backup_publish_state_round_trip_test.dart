@@ -5,11 +5,11 @@ import 'package:pitaka/features/backup/domain/backup_limits.dart';
 import 'package:pitaka/features/backup/infrastructure/backup_archive_writer.dart';
 import 'package:pitaka/features/backup/infrastructure/backup_extras_reader.dart';
 import 'package:pitaka/features/backup/infrastructure/restore_archive_reader.dart';
-import 'package:pitaka/features/import_export/domain/bounded_zip_extractor.dart';
 import 'package:pitaka/features/publish/domain/publish_state_backup_codec.dart';
 import 'package:pitaka/features/publish/domain/publish_target.dart';
 import 'package:pitaka/features/vault/infrastructure/vault_store.dart';
 
+import '../../support/read_zip.dart';
 import '../publish/support/publish_state_fixtures.dart';
 import 'test_vault_gate.dart';
 
@@ -69,9 +69,7 @@ void main() {
 
       // Every entry unpacked, for the scan below (the reader a restore
       // uses never unpacks them all).
-      final files = BoundedZipExtractor.extract(
-        File(built.path).readAsBytesSync(),
-      );
+      final files = readZipFile(built.path);
 
       expect(read.coverSalt, archiveSalt);
       expect(read.verifiedTarget!.isSameExactTarget(archiveGitHub), isTrue);

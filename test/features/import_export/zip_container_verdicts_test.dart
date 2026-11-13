@@ -4,42 +4,50 @@ import 'dart:typed_data';
 
 import 'package:archive/archive.dart' show getCrc32;
 import 'package:flutter_test/flutter_test.dart';
-import 'package:pitaka/features/import_export/domain/bounded_zip_extractor.dart';
+import 'package:pitaka/features/import_export/domain/zip_entry_rules.dart';
+import 'package:pitaka/features/import_export/domain/zip_limits.dart';
 
+import '../../support/read_zip.dart';
 import 'hostile_zip_builder.dart';
-import 'zip_reader_table.dart';
 
-/// What the extractor does with ODD ZIP CONTAINERS: files that are not what
+/// What the ZIP reader does with ODD ZIP CONTAINERS: files that are not what
 /// an honest writer produces, but that the reader has to give a verdict on.
 ///
 /// WHY THIS FILE EXISTS (beginner note): in BR2 the app moved from `archive`
-/// 3 to `archive` 4. The old extractor let the package read the ZIP's
+/// 3 to `archive` 4. The reader of that time let the package read the ZIP's
 /// directory and entry headers; the package's reader changed what it accepts
 /// between the two versions. So before the move, every case below was run
 /// against the RELEASED reader (1.9.7, `archive` 3.6.1) and its verdict
-/// written down here. The extractor now reads the directory and the entry
-/// headers itself (`zip_container.dart`), and these tests hold it to the
-/// recorded verdicts.
+/// written down here. The app now reads the directory and the entry headers
+/// itself (`zip_container.dart`), and these tests hold it to the recorded
+/// verdicts.
 ///
-/// Ten recorded verdicts changed on purpose, each to the STRICTER side (the
-/// old reader accepted the file, the new one refuses it). They are marked
-/// "stricter than 1.9.7" below, with the reason. No verdict changed the
-/// other way.
+/// Sixteen recorded verdicts changed on purpose, each to the STRICTER side
+/// (the released reader accepted the file, today's reader refuses it):
+///  - ten in BR2, marked "stricter than 1.9.7" below, with the reason;
+///  - six in BR5, through the three rules of the reader that works from a
+///    file (N1: an entry is exactly the size it declares; N2: its header
+///    carries the directory's name; N3: no zip64 on an entry). The cases
+///    marked "rule N1" to "rule N3" hold them, and a few more files of the
+///    same kinds.
+/// No verdict changed the other way.
 ///
 /// The verdicts of the released reader were taken with a copy of the 1.9.7
 /// extractor on `archive` 3.6.1, kept outside the repository; the list is
-/// in `PLAN.md` ("BR2 result").
+/// in `PLAN.md` ("BR2 result"). Until BR7 the app also shipped a reader
+/// that held the archive in memory. It did not have the rules N1 to N3 and
+/// kept the verdicts of 1.9.7 there, and every case ran against both
+/// readers. It was removed (ADR 0009, third amendment). What it gave for
+/// the "rule N" cases is kept as a sentence in each ("the in-memory reader
+/// accepted ..."), because the code that gave it can no longer be run.
 ///
-/// Since BR5 every case runs against every ZIP reader the app ships (see
-/// `zip_reader_table.dart`).
+/// Every case goes through `readZip` (`test/support/read_zip.dart`).
 void main() {
-  for (final reader in zipReadersUnderTest) {
-    group(reader.name, () => containerCases(reader));
-  }
+  containerCases();
 }
 
-/// The recorded verdicts, asked of [reader].
-void containerCases(ZipReaderUnderTest reader) {
+/// The recorded verdicts, asked of the app's ZIP reader.
+void containerCases() {
   final roomy = ZipLimits(
     maxEntryBytes: 64 * 1024,
     maxTotalBytes: 256 * 1024,
@@ -48,39 +56,28 @@ void containerCases(ZipReaderUnderTest reader) {
   );
 
   Map<String, List<int>> accepted(Uint8List zip) => {
-    for (final entry in reader.extract(zip, limits: roomy).entries)
+    for (final entry in readZip(zip, limits: roomy).entries)
       entry.key: entry.value,
   };
 
   void refused(Uint8List zip) => expect(
-    () => reader.extract(zip, limits: roomy),
+    () => readZip(zip, limits: roomy),
     throwsA(isA<BoundedExtractionException>()),
   );
 
-  /// A case where the reader from a file is STRICTER on purpose (backup
-  /// rework BR5, rules N1 to N3): it refuses the file, and its reason holds
-  /// [because]. The in-memory reader keeps the verdict of the released
-  /// reader, [inMemory], until it is removed (BR7).
-  void stricterFromFile(
-    Uint8List zip, {
-    required Map<String, List<int>> inMemory,
-    required String because,
-  }) {
-    if (!reader.fromFile) {
-      expect(accepted(zip), inMemory);
-      return;
-    }
-    expect(
-      () => reader.extract(zip, limits: roomy),
-      throwsA(
-        isA<BoundedExtractionException>().having(
-          (e) => e.message,
-          'message',
-          contains(because),
-        ),
+  /// A case of one of the rules N1 to N3 (backup rework BR5): the reader
+  /// refuses the file, and its reason holds [because]. Each call says what
+  /// the in-memory reader gave before it was removed.
+  void refusedBecause(Uint8List zip, String because) => expect(
+    () => readZip(zip, limits: roomy),
+    throwsA(
+      isA<BoundedExtractionException>().having(
+        (e) => e.message,
+        'message',
+        contains(because),
       ),
-    );
-  }
+    ),
+  );
 
   Uint8List u16(int value) =>
       Uint8List(2)..buffer.asByteData().setUint16(0, value, Endian.little);
@@ -284,7 +281,7 @@ void containerCases(ZipReaderUnderTest reader) {
           ),
         );
         expect(
-          () => reader.extract(zip, limits: roomy),
+          () => readZip(zip, limits: roomy),
           throwsA(
             isA<BoundedExtractionException>().having(
               (e) => e.message,
@@ -344,8 +341,10 @@ void containerCases(ZipReaderUnderTest reader) {
       expect(accepted(zip).keys, ['plain.txt']);
     });
 
-    test('the directory name wins over the name in the entry header '
-        '(from a file: refused, rule N2)', () {
+    test('an entry header that carries another name than the directory is '
+        'refused (rule N2)', () {
+      // The in-memory reader took the directory's name and accepted the
+      // file, as `central.txt` with the content 1, 2, 3.
       final zip = buildHostileZip([
         HostileEntry('central.txt', [
           1,
@@ -353,17 +352,16 @@ void containerCases(ZipReaderUnderTest reader) {
           3,
         ], localNameBytes: utf8.encode('local-name-longer.txt')),
       ]);
-      stricterFromFile(
+      refusedBecause(
         zip,
-        inMemory: {
-          'central.txt': [1, 2, 3],
-        },
-        because: 'entry header and directory name the entry differently',
+        'entry header and directory name the entry differently',
       );
     });
 
-    test('an entry-header name of the same length but other letters '
-        '(from a file: refused, rule N2)', () {
+    test('an entry-header name of the same length but other letters is '
+        'refused (rule N2)', () {
+      // The in-memory reader accepted the file, as `cover_a.jpg` with the
+      // content 1, 2, 3.
       final zip = buildHostileZip([
         HostileEntry('cover_a.jpg', [
           1,
@@ -371,12 +369,9 @@ void containerCases(ZipReaderUnderTest reader) {
           3,
         ], localNameBytes: utf8.encode('cover_b.jpg')),
       ]);
-      stricterFromFile(
+      refusedBecause(
         zip,
-        inMemory: {
-          'cover_a.jpg': [1, 2, 3],
-        },
-        because: 'entry header and directory name the entry differently',
+        'entry header and directory name the entry differently',
       );
     });
 
@@ -479,9 +474,10 @@ void containerCases(ZipReaderUnderTest reader) {
 
     group('zip64 sizes on ONE entry (the end record itself may not be '
         'zip64)', () {
-      test('a 64-bit size that fits is used '
-          '(from a file: refused, rule N3)', () {
-        stricterFromFile(
+      test('a 64-bit size that fits is refused all the same (rule N3)', () {
+        // The in-memory reader used the 64-bit value and accepted both
+        // files, as `a` with the 300 bytes of `data`.
+        refusedBecause(
           buildHostileZip([
             HostileEntry(
               'a',
@@ -490,10 +486,9 @@ void containerCases(ZipReaderUnderTest reader) {
               centralExtra: extra(1, u64(300)),
             ),
           ]),
-          inMemory: {'a': data},
-          because: "'a' uses zip64",
+          "'a' uses zip64",
         );
-        stricterFromFile(
+        refusedBecause(
           buildHostileZip([
             HostileEntry(
               'a',
@@ -502,13 +497,13 @@ void containerCases(ZipReaderUnderTest reader) {
               centralExtra: extra(1, u64(deflated.length)),
             ),
           ]),
-          inMemory: {'a': data},
-          because: "'a' uses zip64",
+          "'a' uses zip64",
         );
       });
 
-      test('a 64-bit offset of the entry header is used '
-          '(from a file: refused, rule N3)', () {
+      test('a 64-bit offset of the entry header is refused (rule N3)', () {
+        // The in-memory reader used the 64-bit offset and accepted the
+        // file, as `a` with the 300 bytes of `data`.
         final zip = buildHostileZip([
           HostileEntry(
             'a',
@@ -517,7 +512,7 @@ void containerCases(ZipReaderUnderTest reader) {
             centralExtra: extra(1, u64(0)),
           ),
         ]);
-        stricterFromFile(zip, inMemory: {'a': data}, because: "'a' uses zip64");
+        refusedBecause(zip, "'a' uses zip64");
       });
 
       test('a 64-bit size over the cap is refused', () {
@@ -681,21 +676,18 @@ void containerCases(ZipReaderUnderTest reader) {
       refused(longExtra);
     });
 
-    test('two directory records may share one content '
-        '(from a file: refused, rule N2)', () {
+    test('two directory records that share one content are refused '
+        '(rule N2)', () {
       // The shared entry header can carry only one of the two names, so the
-      // rule about names refuses this shape as well.
+      // rule about names refuses this shape as well. (The in-memory reader
+      // accepted the file, as `a` and `b`, each with the content 1, 2, 3.)
       final zip = buildHostileZip([
         HostileEntry('a', [1, 2, 3]),
         HostileEntry('b', [1, 2, 3], localHeaderOffsetOverride: 0),
       ]);
-      stricterFromFile(
+      refusedBecause(
         zip,
-        inMemory: {
-          'a': [1, 2, 3],
-          'b': [1, 2, 3],
-        },
-        because: 'entry header and directory name the entry differently',
+        'entry header and directory name the entry differently',
       );
     });
 
@@ -803,7 +795,7 @@ void containerCases(ZipReaderUnderTest reader) {
       final stopsEarly = [0x00, 5, 0, 0xFA, 0xFF, ...first, 0x06];
 
       void refusedForMissingEnd(Uint8List zip) => expect(
-        () => reader.extract(zip, limits: roomy),
+        () => readZip(zip, limits: roomy),
         throwsA(
           isA<BoundedExtractionException>().having(
             (e) => e.message,
@@ -876,7 +868,7 @@ void containerCases(ZipReaderUnderTest reader) {
         (crc: getCrc32(const [0, 0, 0]), size: 3), // "three zero bytes"
       ]) {
         expect(
-          () => reader.extract(
+          () => readZip(
             buildHostileZip([
               HostileEntry(
                 'a',
@@ -906,7 +898,7 @@ void containerCases(ZipReaderUnderTest reader) {
       // source), so a checksum made to fit would have passed. A stored
       // entry has no end mark; a size beyond the file is refused outright.
       expect(
-        () => reader.extract(
+        () => readZip(
           buildHostileZip([
             HostileEntry(
               'a',
@@ -956,8 +948,10 @@ void containerCases(ZipReaderUnderTest reader) {
       );
     });
 
-    test('stored: the compressed size decides the length, not the declared '
-        'uncompressed size (from a file: refused, rule N1)', () {
+    test('stored: an entry that declares two different sizes is refused '
+        '(rule N1)', () {
+      // The in-memory reader let the compressed size decide the length and
+      // accepted the file, as `a` with the content 1, 2, 3.
       final zip = buildHostileZip([
         HostileEntry(
           'a',
@@ -966,32 +960,25 @@ void containerCases(ZipReaderUnderTest reader) {
           declaredUncompressedSize: 9,
         ),
       ]);
-      stricterFromFile(
-        zip,
-        inMemory: {
-          'a': [1, 2, 3],
-        },
-        because: 'stored, but declares two different sizes',
-      );
+      refusedBecause(zip, 'stored, but declares two different sizes');
     });
 
     test('deflate: an uncompressed size declared too LARGE or too small, '
-        'under the cap (from a file: refused, rule N1)', () {
+        'under the cap, is refused (rule N1)', () {
       // The released reader never compared what came out with what was
-      // declared: the cap and the checksum decided alone.
-      stricterFromFile(
+      // declared: the cap and the checksum decided alone. The in-memory
+      // reader accepted both files, as `a` with the 300 bytes of `data`.
+      refusedBecause(
         buildHostileZip([
           HostileEntry('a', data, declaredUncompressedSize: data.length + 9),
         ]),
-        inMemory: {'a': data},
-        because: "'a' holds 300 bytes, not the 309 it declares",
+        "'a' holds 300 bytes, not the 309 it declares",
       );
-      stricterFromFile(
+      refusedBecause(
         buildHostileZip([
           HostileEntry('a', data, declaredUncompressedSize: data.length - 9),
         ]),
-        inMemory: {'a': data},
-        because: "'a' holds more than the 291 bytes it declares",
+        "'a' holds more than the 291 bytes it declares",
       );
     });
   });

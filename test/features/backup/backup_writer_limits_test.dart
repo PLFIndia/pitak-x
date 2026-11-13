@@ -13,7 +13,7 @@ import 'package:pitaka/features/backup/domain/backup_overflow.dart';
 import 'package:pitaka/features/backup/infrastructure/backup_archive_writer.dart';
 import 'package:pitaka/features/backup/infrastructure/backup_entry_bounds.dart';
 import 'package:pitaka/features/backup/infrastructure/legacy_db_reader.dart';
-import 'package:pitaka/features/import_export/domain/bounded_zip_extractor.dart';
+import 'package:pitaka/features/import_export/domain/zip_limits.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/value_objects/item_details.dart';
 import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
@@ -21,12 +21,13 @@ import 'package:pitaka/features/vault/infrastructure/vault_store.dart';
 import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
 import 'package:sqlite3/sqlite3.dart';
 
+import '../../support/read_zip.dart';
 import 'test_vault_gate.dart';
 
 /// BR3 (review finding P1-M1): the writer refuses what the reader refuses.
 ///
 /// Every test here runs the REAL writer on real files, and checks an
-/// accepted archive with the REAL reader (`BoundedZipExtractor`) under the
+/// accepted archive with the REAL reader (`BoundedZipFile`) under the
 /// caps built from the same `BackupLimits`. The pattern is always the same:
 /// exactly at a limit the backup is built and the reader takes it; one over,
 /// the writer refuses with the code and both numbers, and leaves no work
@@ -119,10 +120,7 @@ void main() {
       reason: 'only the finished backup may be left in the work folder',
     );
     expect(built.sizeBytes, file.lengthSync());
-    return BoundedZipExtractor.extract(
-      file.readAsBytesSync(),
-      limits: ZipLimits.forBackup(limits),
-    );
+    return readZipFile(file.path, limits: ZipLimits.forBackup(limits));
   }
 
   /// The build was refused with [code] and the two numbers, returned no
@@ -552,12 +550,7 @@ void main() {
       final files = accepted(run, limits);
       expect(files, hasLength(4096));
       expect(files, hasLength(ZipLimits.pitakaBackup.maxEntries));
-      expect(
-        BoundedZipExtractor.extract(
-          File(run.result.toNullable()!.path).readAsBytesSync(),
-        ),
-        hasLength(4096),
-      );
+      expect(readZipFile(run.result.toNullable()!.path), hasLength(4096));
 
       cover('one_more.jpg', 1);
       refused(

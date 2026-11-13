@@ -2,12 +2,14 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:pitaka/features/import_export/domain/bounded_zip_extractor.dart';
 import 'package:pitaka/features/import_export/domain/goodreads_csv_importer.dart';
 import 'package:pitaka/features/import_export/domain/import_format_sniffer.dart';
+import 'package:pitaka/features/import_export/domain/zip_entry_rules.dart';
+import 'package:pitaka/features/import_export/domain/zip_limits.dart';
 import 'package:pitaka/features/import_export/infrastructure/pitaka_json_importer.dart';
 
 import '../../support/fuzz.dart';
+import '../../support/read_zip.dart';
 import 'hostile_zip_builder.dart';
 
 /// Property tests: hostile input must NEVER crash a parser
@@ -104,7 +106,7 @@ void main() {
     });
   });
 
-  group('BoundedZipExtractor', () {
+  group('the ZIP reader', () {
     test('random bytes and mutated archives are read or refused, and '
         'nothing else', () {
       // An honest tiny archive to mutate.
@@ -124,7 +126,7 @@ void main() {
             // The entries, or the ONE typed refusal: the property under
             // test is that no other error ever leaves the reader (a
             // `RangeError` from a read past the end, for one).
-            BoundedZipExtractor.extract(input);
+            readZip(input);
           } on BoundedExtractionException {
             // Refused: fine.
           } catch (e) {
@@ -148,10 +150,7 @@ void main() {
         maxEntries: 4,
       );
       expect(
-        () => BoundedZipExtractor.extract(
-          Uint8List.fromList(manyEntries),
-          limits: limits,
-        ),
+        () => readZip(Uint8List.fromList(manyEntries), limits: limits),
         throwsA(isA<BoundedExtractionException>()),
         reason: 'a 40-entry archive under a 4-entry cap must be refused',
       );
@@ -173,10 +172,7 @@ void main() {
         maxEntries: 16,
       );
       expect(
-        () => BoundedZipExtractor.extract(
-          Uint8List.fromList(liar),
-          limits: limits,
-        ),
+        () => readZip(Uint8List.fromList(liar), limits: limits),
         throwsA(isA<BoundedExtractionException>()),
         reason: 'a header lying about a 10 MiB payload must be refused',
       );

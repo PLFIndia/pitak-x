@@ -6,8 +6,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/features/backup/domain/backup_limits.dart';
 import 'package:pitaka/features/backup/infrastructure/backup_preflight.dart';
 import 'package:pitaka/features/backup/infrastructure/backup_zip_file.dart';
-import 'package:pitaka/features/import_export/domain/bounded_zip_extractor.dart';
 import 'package:pitaka/features/import_export/domain/zip_container.dart';
+import 'package:pitaka/features/import_export/domain/zip_limits.dart';
+
+import '../../support/read_zip.dart';
 
 /// BR4 (review finding P3-B1): the ZIP of a backup is written straight to a
 /// file. These tests drive the packer alone, with entries made by hand, so
@@ -79,10 +81,8 @@ void main() {
         maxArchiveBytes: maxArchiveBytes ?? limits.maxArchiveBytes,
       );
 
-  Map<String, Uint8List> readBack() => BoundedZipExtractor.extract(
-    File(finalPath).readAsBytesSync(),
-    limits: ZipLimits.forBackup(limits),
-  );
+  Map<String, Uint8List> readBack() =>
+      readZipFile(finalPath, limits: ZipLimits.forBackup(limits));
 
   /// The directory records of the finished file, by entry name.
   Map<String, ZipDirectoryEntry> directory() {
