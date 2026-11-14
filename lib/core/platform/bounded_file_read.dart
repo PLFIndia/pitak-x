@@ -29,8 +29,6 @@ library;
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:file_selector/file_selector.dart' show XFile;
-
 /// Reads the file at [path] fully if it holds at most [maxBytes]; otherwise
 /// returns null.
 ///
@@ -86,18 +84,4 @@ Future<Uint8List?> collectBounded(
     builder.add(chunk);
   }
   return builder.takeBytes();
-}
-
-/// Reads [file] fully if it holds at most [maxBytes]; otherwise returns null.
-///
-/// The form for a file the `file_selector` plugin picked. It goes when the
-/// last page has moved to the app's own picker (decision D24).
-///
-/// The cap is inclusive: a file of exactly [maxBytes] is accepted.
-Future<Uint8List?> readPickedFileBounded(XFile file, {required int maxBytes}) {
-  return readBounded(
-    length: file.length,
-    open: file.openRead,
-    maxBytes: maxBytes,
-  );
 }
