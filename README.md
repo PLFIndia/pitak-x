@@ -51,6 +51,9 @@ a **library network** (pins on a map, hub/member cards).
 - **Wishlist** — track books to acquire; move to the library on purchase.
 - **Import / Export** — JSON, CSV (incl. Goodreads import), and **PDF** (a
   paginated A4 library list with Indic-script support via shaped-image text).
+  A file you choose to import or to merge is read from a **private temporary
+  copy** inside the app's own storage (where no other app can read it); the
+  copy is removed as soon as the file has been read.
 - **Backup / Restore** — `.pitabak` archives. Pitak restores its own archives
   **and** archives made by the original Kotlin app (one-way: Kotlin → Pitak;
   the Kotlin app is retired and is not a restore target). **Honest limit:**

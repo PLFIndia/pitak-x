@@ -15,10 +15,47 @@ heading as part of the `chore(release):` commit.
 ## [Unreleased]
 
 The backup and restore rework so far (review of November 2026; stages BR1
-to BR7 in `PLAN.md`). The limits of a backup are the ones 1.9.7 had; they
+to BR7 in `PLAN.md`, and the stage after them: Import and Merge on the
+app's own picker). The limits of a backup are the ones 1.9.7 had; they
 are raised in a later stage.
 
 ### Changed
+- **Import and Merge choose their file through the app's own picker:**
+  the one the Restore page uses (`DocumentPicker`,
+  `PickedDocumentChannel.kt`). It copies the chosen document into the
+  app's private temporary folder and stops at 64 MiB, the cap the parsers
+  have for a text. The controller reads that copy (port
+  `PickedDocumentReader`) and removes it on every way out; one function
+  holds the copy from "picked" to "removed" (`pickAndReadText`). The
+  pages no longer see a file or its bytes: they call
+  `ImportController.importFile()` or `MergeController.mergeFile()` and
+  show a sentence when no file was taken. The picker offers every file,
+  as it does for a restore; a file of the wrong kind is turned away with
+  a sentence. Where the app's Android code is missing (a desktop run
+  while developing), choosing a file answers "not available"; Import
+  still takes pasted text there.
+- **Import and Merge say why a file was not taken:** too large (the
+  sentence names the 64 MB), could not be read, could not be copied to
+  the phone, no picker on this device, or something else went wrong. The
+  last four are the Restore page's sentences, kept in one place
+  (`document_pick_messages.dart`). Before, both pages had two sentences
+  for everything.
+- **While the picker is open the page is busy:** Import shows its
+  spinner and both buttons are off; Merge shows "running", and a choice
+  or review rows of an earlier merge are hidden until the picker is
+  closed. When no file is taken, the page shows again what it showed
+  before.
+- `PRIVACY.md` (item 7) and `README.md` say that a file chosen for
+  Import or Merge is read from a private temporary copy that is removed
+  as soon as it has been read, and that the copies earlier versions left
+  in the cache folder are removed at the first start.
+- `bounded_file_read.dart` reads a file by its path with `dart:io`
+  (`readFileBounded`); the cover reader uses it as before. The rule
+  "count what really arrives" is a function of its own
+  (`collectBounded`).
+- The states of the Merge page moved, unchanged, from
+  `merge_controller.dart` to `merge_ui_state.dart` (the file had reached
+  the 500-line ceiling).
 - **Restore reads the backup from a file, off the screen's thread
   (P3-B3):** the Restore page chooses the file through the app's own
   Android code (`PickedDocumentChannel.kt`, port `DocumentPicker`), which
@@ -68,6 +105,34 @@ are raised in a later stage.
   `flutter_local_notifications` 22.3.3.
 
 ### Security
+- **A file chosen for Import or Merge is under its size cap before any
+  of it is in memory.** Both pages took their file from the
+  `file_selector` plugin, which on Android read the whole document into
+  memory, on the main thread, before the app's own cap could run (the
+  same fault the Restore page was freed of in the stage before). The
+  app's picker refuses a document that announces more than the cap
+  before a byte is written, counts while it copies, and the read of the
+  copy counts again.
+- **The `file_selector` plugin is no longer part of the app.** Nothing
+  under `lib/` used it any more. `test/architecture/
+  document_picking_test.dart` keeps it out of `lib/`, of `pubspec.yaml`
+  and, for the parts that run on a phone, of `pubspec.lock`.
+- **The copies the plugin left behind are removed.** For every file
+  chosen through it, the plugin also wrote a plain copy into the app's
+  private cache folder and never removed it: library files chosen for
+  Import or Merge, and whole backups chosen for a restore in 1.9.7 and
+  before. Once after the update, at the first start, the app removes
+  them (`LegacyPickerCopies`, started by the Library screen): a folder
+  directly inside the cache folder whose name is a version 3 UUID in
+  lower case, the kind the plugin made, and which holds plain files
+  only. Its files are deleted, then the folder; nothing below it, and no
+  link is followed. A flag in the preferences is set when nothing is
+  left. Android only, by the real system (`Platform.isAndroid`).
+- **Merge no longer starts a second write.** While a Join or a Replace
+  was being written, another file could be chosen and merged at the
+  same time, and whichever ended last set what the page showed. A merge
+  is now refused while a choice is being applied, as it already was
+  while a review row was written, and the button is off.
 - **Stricter ZIP reading.** The app reads the ZIP container itself
   (`zip_container.dart`) and takes only the inflater and the CRC from
   `package:archive`. Refused now, where 1.9.7 accepted: a directory
@@ -106,6 +171,12 @@ are raised in a later stage.
 
 ### Removed
 - The read-only vault archive viewer, which no screen could reach.
+- **The dependency `file_selector`** (with `file_selector_android`,
+  `file_selector_ios` and `file_selector_web`). Its desktop parts stay
+  in `pubspec.lock`: the desktop packages of `image_picker` ask for
+  them.
+- `ImportController.importBytes`: a picked file now comes in through
+  `importFile()`, and nothing else handed the controller bytes.
 - **Importing a Pitak bundle (`.zip`, `.pitabundle`) from a file.** A
   bundle was a library file with its cover pictures inside, a format of
   the retired Kotlin app; this app has never written one. Import takes
@@ -119,6 +190,14 @@ are raised in a later stage.
 ### Tests
 - CI runs the Android unit tests (55 JUnit tests in both flavours) at the
   end of the F-Droid purity job.
+- The tests of the Import and Merge pages no longer replace the
+  `file_selector` plugin's platform object. They use the fake picker of
+  the restore tests (`test/support/fake_document_picker.dart`) and a
+  reader that reads at once (`fake_picked_document_reader.dart`); the
+  controller tests read the fake's copies with the real reader.
+- Three tests make a file unreadable or a folder read-only with `chmod`.
+  Each skips itself, with a message, where the account may read and
+  write everything.
 - `tool/zip_reader_memory_check.dart`: a check by hand that reading and
   restoring a 1 GiB backup stays within a capped heap.
 - Every test reads a ZIP through the reader that ships

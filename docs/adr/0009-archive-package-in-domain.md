@@ -231,3 +231,16 @@ to remove the import (D29).
   test code only.
 - The JSON importer lost its "bundle mode": a local cover reference in a
   JSON file is always dropped.
+
+## Note (2026-11-14): where a picked ZIP is refused
+
+Point 1 of the amendment of 2026-11-13 names two places that refuse a
+ZIP: the import controller, and the Import page before it read the
+picked file. Since Import chooses its file through the app's own picker
+(`PLAN.md`, decision D24) there is one: `pickAndReadText`
+(`import_export/application/picked_text_file.dart`), which the import
+controller calls with `refuseZip: true`. It looks at the first four bytes
+of the picker's private copy before the copy is read, and the copy is
+removed either way. The Import page shows the sentence and reads nothing.
+`ImportController.importBytes` is gone. The decision itself is unchanged:
+Import reads no ZIP, and never unpacks one.

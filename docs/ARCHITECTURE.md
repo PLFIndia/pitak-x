@@ -147,6 +147,7 @@ These fail the build; change them deliberately, never to "make it pass".
 | `test/core/database/migration_test.dart` | a drift schema snapshot exists for the current `schemaVersion`; every past version migrates forward with data intact (§5.4) |
 | `test/architecture/archive_sink_protocol_test.dart` | the ZIP output budget still fits `package:archive`: the five package files that decide how the inflater writes and reads are pinned by content (a package update that touches them fails until they are read again), and the sink of the ZIP reader still guards every write path (ADR 0009 and its amendments) |
 | `test/architecture/cover_files_immutable_test.dart` | a stored cover file never changes once saved (ADR 0020 Decision 1): every file that reaches the covers folder is reviewed, readers write nothing, and the four writers are pinned to fresh names, a not-yet-live generation, or a move that never overwrites |
+| `test/architecture/document_picking_test.dart` | a file the user chooses reaches the app through its own picker only: no file under `lib/`, `test/` or `integration_test/` imports the `file_selector` plugin, `pubspec.yaml` does not name it, and `pubspec.lock` holds none of its parts that run on a phone (decisions D8, D24, D32) |
 
 ---
 
@@ -181,11 +182,18 @@ lib/
                           private copy under a size cap) with
                           channel_document_picker.dart (Android side:
                           PickedDocumentChannel.kt; elsewhere "not available";
-                          the Restore page chooses its backup file with it)
+                          Restore, Import and Merge choose their file with it),
+                          picked_document_reader.dart (port: the bytes of such a
+                          copy, under a cap) with file_picked_document_reader.dart,
+                          bounded_file_read.dart (the ONE "read this file, but
+                          never more than a cap"), document_pick_messages.dart
+                          (the sentences every picking page shares)
     security/             hardened_secure_storage.dart — the ONE hardened
                           flutter_secure_storage configuration
     storage/              data_generations.dart (atomic restore), run_folders.dart
-                          (the ONE set of rules for deleting a private work folder)
+                          (the ONE set of rules for deleting a private work folder),
+                          legacy_picker_copies.dart (removes, once, the copies the
+                          old file picker left in the cache folder)
     widgets/              app_gate.dart (splash → lock → Library), qr_view/qr_scan_page
   features/
     library/              catalogue items (`CatalogueItem`, the base row of every
@@ -580,6 +588,38 @@ to false** (the `hasX` forward-compat pattern):
   finish first, so a sweep can never delete the folder a copy is being
   written into. Nothing of a restore is written under Documents any more
   except the new data generation itself.
+- Import and Merge read a chosen file through the same picker. Their cap
+  is the text cap of `ImportLimits` (64 MiB), and a copy lives only for
+  the time of one read: one function, `pickAndReadText`
+  (`import_export/application/picked_text_file.dart`), asks the picker,
+  looks at the first four bytes when the caller wants a ZIP refused
+  (Import does, Merge does not), reads the copy through the port
+  `PickedDocumentReader`, and removes it in a `finally`. No page and no
+  field of a controller holds the copy, so there is no table of owners
+  as for a restore. `ImportController.importFile()` and
+  `MergeController.mergeFile()` run it inside their one run at a time:
+  the state is "loading" or `MergeRunning` from the tap on, and when no
+  file is taken the state from before the tap is put back. That is safe
+  because nothing else can write the state meanwhile: a merge is refused
+  while another merge, a Join or Replace, or a review row is being
+  worked on (`MergeController._mayStart`). The page gets the reason when
+  no file was taken (`PickedFileProblem`) and turns it into a sentence
+  (`picked_file_messages.dart`).
+- The copies the `file_selector` plugin left. Until 2026-11 a chosen
+  file came through that plugin, which on Android also wrote a plain
+  copy of it to `<cache>/<uuid>/<file name>` and never removed it. The
+  plugin is no longer part of the app. `LegacyPickerCopies`
+  (`core/storage`) removes what it left, started once by the Library
+  screen (`legacyPickerCopiesSweep`): only a real directory directly
+  inside the cache folder whose name is a version 3 UUID in lower case
+  (what `UUID.nameUUIDFromBytes` makes; `image_picker` names its folders
+  with a random UUID, version 4) and which holds plain files only; its
+  files, then the folder, never anything below, no link followed. A
+  flag in the preferences is set when nothing is left. It runs on
+  Android only, and "Android" is `Platform.isAndroid`
+  (`runsOnAndroidProvider`): a widget test reports itself as Android on
+  every machine, and on Linux the temporary folder is one that every
+  program shares.
 - Progress while a restore runs (review finding P4-M7, the restore part).
   The covers worker counts every cover it writes and reports through the
   port and the rule of the backup (`backup_progress_port.dart`).

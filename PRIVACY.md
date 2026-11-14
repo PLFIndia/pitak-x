@@ -337,7 +337,10 @@ builds (item 8):
    choose, inside its own storage where no other app can read it, and
    removes that copy again: when the restore has succeeded, when you choose
    another file or leave the Restore screen, or at the next start of the
-   app. Note:
+   app. The same happens when you choose a file to import or to merge; that
+   copy is removed as soon as the file has been read. Earlier versions left a
+   copy of every file you chose in the app's cache folder; this version
+   removes those copies the first time it starts. Note:
    `.pitabak` backups are **not fully encrypted** — books, magazine titles and
    issues, other items, wishlist and cover images inside are stored plainly;
    only the borrowers vault and its wrapped key blob remain encrypted inside
