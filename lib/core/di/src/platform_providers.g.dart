@@ -47,6 +47,32 @@ final appTempDirProvider = FutureProvider<Directory>.internal(
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef AppTempDirRef = FutureProviderRef<Directory>;
+String _$runsOnAndroidHash() => r'e98a592fb3acab10ed5eee8ebdc5ace58986c7a2';
+
+/// Whether the app REALLY runs on Android: `Platform.isAndroid`, the system
+/// underneath.
+///
+/// Not `defaultTargetPlatform`: a widget test pretends to be Android, and
+/// code that deletes files by the shape of their name (the clean-up of the
+/// old file picker's copies, decision D33) must not believe that on a
+/// developer's machine. Overridden only by a test that brings a folder of
+/// its own.
+///
+/// Copied from [runsOnAndroid].
+@ProviderFor(runsOnAndroid)
+final runsOnAndroidProvider = AutoDisposeProvider<bool>.internal(
+  runsOnAndroid,
+  name: r'runsOnAndroidProvider',
+  debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+      ? null
+      : _$runsOnAndroidHash,
+  dependencies: null,
+  allTransitiveDependencies: null,
+);
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef RunsOnAndroidRef = AutoDisposeProviderRef<bool>;
 String _$appCacheDirHash() => r'8e7b3bf55b87c922ed208502df9677c7d8a4bb18';
 
 /// The app's cache directory, where saved copies of other libraries'

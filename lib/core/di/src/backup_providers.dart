@@ -15,6 +15,8 @@ import 'package:pitaka/core/di/src/platform_providers.dart';
 import 'package:pitaka/core/di/src/publish_state_providers.dart';
 import 'package:pitaka/core/di/src/vault_providers.dart';
 import 'package:pitaka/core/storage/active_data_generation.dart';
+import 'package:pitaka/core/storage/legacy_picker_copies.dart';
+import 'package:pitaka/core/storage/prefs_write.dart';
 import 'package:pitaka/core/storage/run_folders.dart';
 import 'package:pitaka/features/backup/application/create_backup_use_case.dart';
 import 'package:pitaka/features/backup/domain/backup_work_area.dart';
@@ -143,6 +145,43 @@ Future<void> staleRestoreFilesSweep(StaleRestoreFilesSweepRef ref) async {
   await picker.sweep();
   final workFolders = await ref.watch(restoreWorkFoldersProvider.future);
   await workFolders.sweep();
+}
+
+/// Clean-up after the update that took the `file_selector` plugin out of
+/// the app (decision D33): removes the plain copies of chosen files that
+/// the plugin left in the app's cache folder, among them whole backups that
+/// were chosen for a restore. See `legacy_picker_copies.dart` for how such
+/// a copy is told apart from everything else in that folder. Triggered next
+/// to the other sweeps, by the Library screen's first build.
+///
+/// ONCE: when nothing is left, a flag is written to the preferences and
+/// later app starts do nothing here. When something could not be removed,
+/// no flag is written and a later look tries again.
+///
+/// Auto-disposed, unlike the other sweeps: the flag is what makes this run
+/// once, so nothing has to be remembered in memory. The result is not shown
+/// anywhere.
+@riverpod
+Future<void> legacyPickerCopiesSweep(LegacyPickerCopiesSweepRef ref) async {
+  // The plugin made these copies on Android only. Elsewhere the temporary
+  // folder can be one that every program shares (`/tmp` on Linux), and
+  // nothing in it is ours to delete by the shape of its name.
+  if (!ref.watch(runsOnAndroidProvider)) return;
+  final prefs = await ref.watch(sharedPreferencesProvider.future);
+  if (prefs.getBool(LegacyPickerCopies.removedFlagKey) ?? false) return;
+  // On Android the temporary folder IS the cache folder the plugin wrote
+  // into (`Context.getCacheDir()`).
+  final temp = await ref.watch(appTempDirProvider.future);
+  final allGone = await LegacyPickerCopies(cacheRoot: temp.path).remove();
+  if (!allGone) return;
+  // The answer is deliberately not used: a flag that could not be saved
+  // costs one more look at the next start, and nothing else.
+  await writePrefsBool(
+    prefs,
+    LegacyPickerCopies.removedFlagKey,
+    value: true,
+    what: 'legacy picker copies flag',
+  );
 }
 
 /// Backup-archive restorer (authoritative overwrite of local state).

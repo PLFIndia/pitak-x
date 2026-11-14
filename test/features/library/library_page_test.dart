@@ -264,6 +264,36 @@ void main() {
     expect(picker.sweeps, 1);
   });
 
+  // D33: the copies of chosen files that the old file picker left in the
+  // cache folder are removed from the same place, the same way. (What the
+  // clean-up itself does is tested in `legacy_picker_copies_test.dart`.)
+  testWidgets('D33: the clean-up of the old file picker\u2019s copies is '
+      'started once, after the list has loaded', (tester) async {
+    var started = 0;
+    final repo = _GatedRepo(books)..gate = Completer<void>();
+    await tester.pumpWidget(
+      _app(
+        repo,
+        extraOverrides: [
+          legacyPickerCopiesSweepProvider.overrideWith((ref) async {
+            started++;
+          }),
+        ],
+      ),
+    );
+    await tester.pump();
+    expect(started, 0, reason: 'not before the first paint of rows');
+
+    repo.gate!.complete();
+    await tester.pumpAndSettle();
+    expect(started, 1);
+
+    // Rebuilding the screen does not start it again in the same session.
+    await _enterQuery(tester, 'dune');
+    await _enterQuery(tester, '');
+    expect(started, 1);
+  });
+
   testWidgets('renders all books newest-first on load', (tester) async {
     await tester.pumpWidget(_app(_FakeBookRepo(books)));
     await tester.pumpAndSettle();

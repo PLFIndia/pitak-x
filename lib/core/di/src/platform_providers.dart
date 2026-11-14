@@ -37,6 +37,17 @@ Future<Directory> appDocsDir(AppDocsDirRef ref) =>
 @Riverpod(keepAlive: true)
 Future<Directory> appTempDir(AppTempDirRef ref) => getTemporaryDirectory();
 
+/// Whether the app REALLY runs on Android: `Platform.isAndroid`, the system
+/// underneath.
+///
+/// Not `defaultTargetPlatform`: a widget test pretends to be Android, and
+/// code that deletes files by the shape of their name (the clean-up of the
+/// old file picker's copies, decision D33) must not believe that on a
+/// developer's machine. Overridden only by a test that brings a folder of
+/// its own.
+@riverpod
+bool runsOnAndroid(RunsOnAndroidRef ref) => Platform.isAndroid;
+
 /// The app's cache directory, where saved copies of other libraries'
 /// published files live (ADR 0018).
 ///

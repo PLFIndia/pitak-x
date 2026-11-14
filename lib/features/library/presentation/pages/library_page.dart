@@ -127,7 +127,10 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
         ..listen(staleBackupWorkSweepProvider, (_, _) {})
         // And the same for a restore (backup rework BR6): the private copy
         // of a chosen backup file, and the databases unpacked from it.
-        ..listen(staleRestoreFilesSweepProvider, (_, _) {});
+        ..listen(staleRestoreFilesSweepProvider, (_, _) {})
+        // Once after the update that removed the old file picker (decision
+        // D33): the copies of chosen files it left in the cache folder.
+        ..listen(legacyPickerCopiesSweepProvider, (_, _) {});
     }
 
     return Scaffold(

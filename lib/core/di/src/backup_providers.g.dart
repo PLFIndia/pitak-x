@@ -147,6 +147,40 @@ final staleRestoreFilesSweepProvider = FutureProvider<void>.internal(
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef StaleRestoreFilesSweepRef = FutureProviderRef<void>;
+String _$legacyPickerCopiesSweepHash() =>
+    r'f08bbc5181de0a62415e9db685f2e776abceb07a';
+
+/// Clean-up after the update that took the `file_selector` plugin out of
+/// the app (decision D33): removes the plain copies of chosen files that
+/// the plugin left in the app's cache folder, among them whole backups that
+/// were chosen for a restore. See `legacy_picker_copies.dart` for how such
+/// a copy is told apart from everything else in that folder. Triggered next
+/// to the other sweeps, by the Library screen's first build.
+///
+/// ONCE: when nothing is left, a flag is written to the preferences and
+/// later app starts do nothing here. When something could not be removed,
+/// no flag is written and a later look tries again.
+///
+/// Auto-disposed, unlike the other sweeps: the flag is what makes this run
+/// once, so nothing has to be remembered in memory. The result is not shown
+/// anywhere.
+///
+/// Copied from [legacyPickerCopiesSweep].
+@ProviderFor(legacyPickerCopiesSweep)
+final legacyPickerCopiesSweepProvider =
+    AutoDisposeFutureProvider<void>.internal(
+      legacyPickerCopiesSweep,
+      name: r'legacyPickerCopiesSweepProvider',
+      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+          ? null
+          : _$legacyPickerCopiesSweepHash,
+      dependencies: null,
+      allTransitiveDependencies: null,
+    );
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef LegacyPickerCopiesSweepRef = AutoDisposeFutureProviderRef<void>;
 String _$restoreBackupHash() => r'03509172b3a51bd62503a9809a606eb18a94bb5c';
 
 /// Backup-archive restorer (authoritative overwrite of local state).
