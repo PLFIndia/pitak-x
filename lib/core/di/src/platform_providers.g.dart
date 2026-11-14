@@ -193,6 +193,30 @@ final documentPickerProvider = FutureProvider<DocumentPicker>.internal(
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef DocumentPickerRef = FutureProviderRef<DocumentPicker>;
+String _$pickedDocumentReaderHash() =>
+    r'7fe31d241c380fb1482b9f3b49ba903cde1d439c';
+
+/// Reads the private copy of a picked document into memory, under a cap
+/// (decision D24). Import and Merge use it: they need a file's text, and
+/// the picker above hands out a copy on disk. Overridden in widget tests
+/// with a fake that reads at once.
+///
+/// Copied from [pickedDocumentReader].
+@ProviderFor(pickedDocumentReader)
+final pickedDocumentReaderProvider =
+    AutoDisposeProvider<PickedDocumentReader>.internal(
+      pickedDocumentReader,
+      name: r'pickedDocumentReaderProvider',
+      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+          ? null
+          : _$pickedDocumentReaderHash,
+      dependencies: null,
+      allTransitiveDependencies: null,
+    );
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef PickedDocumentReaderRef = AutoDisposeProviderRef<PickedDocumentReader>;
 String _$fileShareServiceHash() => r'4caa4196352d292bcbf88099f9a02fb2e0deb5ba';
 
 /// Hands generated files (exports, backups) to the OS share sheet. Overridden

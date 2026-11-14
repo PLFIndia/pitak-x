@@ -16,7 +16,9 @@ import 'package:pitaka/core/network/lookup_http_client.dart';
 import 'package:pitaka/core/network/timeout_http_client.dart';
 import 'package:pitaka/core/platform/channel_document_picker.dart';
 import 'package:pitaka/core/platform/document_picker.dart';
+import 'package:pitaka/core/platform/file_picked_document_reader.dart';
 import 'package:pitaka/core/platform/file_share.dart';
+import 'package:pitaka/core/platform/picked_document_reader.dart';
 import 'package:pitaka/core/platform/screen_security.dart';
 import 'package:pitaka/core/storage/data_generations.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
@@ -115,6 +117,14 @@ Future<DocumentPicker> documentPicker(DocumentPickerRef ref) async {
   final temp = await ref.watch(appTempDirProvider.future);
   return ChannelDocumentPicker(tempRoot: temp.path);
 }
+
+/// Reads the private copy of a picked document into memory, under a cap
+/// (decision D24). Import and Merge use it: they need a file's text, and
+/// the picker above hands out a copy on disk. Overridden in widget tests
+/// with a fake that reads at once.
+@riverpod
+PickedDocumentReader pickedDocumentReader(PickedDocumentReaderRef ref) =>
+    const FilePickedDocumentReader();
 
 /// Hands generated files (exports, backups) to the OS share sheet. Overridden
 /// in widget tests with a fake to assert what would be shared.
