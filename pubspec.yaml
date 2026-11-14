@@ -75,9 +75,6 @@ dependencies:
   # Reads the legacy Room books.db / wishlist.db (plain, no secrets) during
   # backup restore — exhaustive row/column migration into Drift (Step 7).
   sqlite3: ^2.9.4
-  # Official flutter/packages file picker (lighter native footprint than
-  # file_picker). Used by the Restore screen to choose a .pitabak archive.
-  file_selector: ^1.0.3
   # Non-secret key-value preferences (theme, library name, maintainer name,
   # sort/filter). Secrets stay in flutter_secure_storage — never here.
   shared_preferences: ^2.3.2
@@ -128,9 +125,10 @@ dependencies:
   # Hands generated files (export JSON/CSV/PDF, .pitabak backup) to the OS share
   # sheet — which includes "Save to Files" plus WhatsApp/Drive/email, matching
   # the Kotlin app's ACTION_SEND export and the merge "pass a file" workflow.
-  # Needed because file_selector has no save-dialog on Android (open only), so
-  # the old getSaveLocation path silently failed there. No secrets are shared;
-  # the user explicitly picks the target app.
+  # Needed because Android has no save dialog a plugin could open for us: the
+  # `getSaveLocation` of the file picker the app once used silently did
+  # nothing there. No secrets are shared; the user explicitly picks the
+  # target app.
   share_plus: ^12.0.2
   # Opens user-saved "other library" links in the device's EXTERNAL browser.
   # The canonical Flutter URL package. Only ever launches https links the app
