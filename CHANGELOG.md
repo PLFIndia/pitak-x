@@ -43,8 +43,13 @@ are raised in a later stage.
 - **While the picker is open the page is busy:** Import shows its
   spinner and both buttons are off; Merge shows "running", and a choice
   or review rows of an earlier merge are hidden until the picker is
-  closed. When no file is taken, the page shows again what it showed
-  before.
+  closed. When the picker is closed without a choice, the page shows
+  again what it showed before.
+- **A refused file's sentence does not stand next to an older result.**
+  Import shows the sentence alone; before, the "Import complete" of the
+  file before stayed directly under it. On Merge the sentence goes with
+  the next thing the user does (Join, a confirmed Replace, a review
+  row); before, it stayed above "Merge complete".
 - `PRIVACY.md` (item 7) and `README.md` say that a file chosen for
   Import or Merge is read from a private temporary copy that is removed
   as soon as it has been read, and that the copies earlier versions left

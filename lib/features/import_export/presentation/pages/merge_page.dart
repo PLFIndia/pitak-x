@@ -76,6 +76,24 @@ class _MergePageState extends ConsumerState<MergePage> {
     );
   }
 
+  /// Forgets the sentence about a file that was not taken. Called when the
+  /// user does the next thing on this page (Join, Replace, a review row):
+  /// the sentence is about an earlier pick and would otherwise stay next
+  /// to the result of what is done now.
+  void _forgetPickError() {
+    if (_pickError != null) setState(() => _pickError = null);
+  }
+
+  Future<void> _join() async {
+    _forgetPickError();
+    await ref.read(mergeControllerProvider.notifier).applyJoin();
+  }
+
+  Future<void> _resolve(int index, MergeResolution resolution) async {
+    _forgetPickError();
+    await ref.read(mergeControllerProvider.notifier).resolve(index, resolution);
+  }
+
   Future<void> _overwrite(MergeDiffersDecision decision) async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -106,6 +124,7 @@ class _MergePageState extends ConsumerState<MergePage> {
       ),
     );
     if (confirmed != true || !mounted) return;
+    _forgetPickError();
     await ref.read(mergeControllerProvider.notifier).applyOverwrite();
   }
 
@@ -163,9 +182,7 @@ class _MergePageState extends ConsumerState<MergePage> {
               ),
             _DecisionView(
               decision: mergeState.decision,
-              onJoin: mergeState.applying
-                  ? null
-                  : ref.read(mergeControllerProvider.notifier).applyJoin,
+              onJoin: mergeState.applying ? null : _join,
               onOverwrite: mergeState.applying
                   ? null
                   : () => _overwrite(mergeState.decision),
@@ -174,10 +191,7 @@ class _MergePageState extends ConsumerState<MergePage> {
           if (mergeState is MergeDone) ...[
             _ResultView(result: mergeState.result),
             if (mergeState.review.isNotEmpty)
-              MergeReviewSection(
-                done: mergeState,
-                onResolve: ref.read(mergeControllerProvider.notifier).resolve,
-              ),
+              MergeReviewSection(done: mergeState, onResolve: _resolve),
           ],
         ],
       ),

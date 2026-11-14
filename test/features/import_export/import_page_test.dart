@@ -314,6 +314,38 @@ void main() {
       expect(find.byType(CircularProgressIndicator), findsNothing);
     });
 
+    testWidgets('a refused file shows its sentence ALONE: the summary of '
+        'the import before is not shown next to it', (tester) async {
+      // Seen in the emulator on 2026-11-14: "This file is too large to
+      // import…" stood directly above the "Import complete" of the file
+      // before, which reads as if the large file had been imported.
+      final books = _MemBookRepo();
+      picker
+        ..willPick(smallJson)
+        ..willAnswer(const DocumentPickTooLarge());
+      await tester.pumpWidget(page(useCaseWith(books)));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Choose file'));
+      await tester.pumpAndSettle();
+      expect(find.text('Import complete'), findsOneWidget);
+
+      // The second file is refused.
+      await tester.tap(find.text('Choose file'));
+      await tester.pumpAndSettle();
+      expect(find.text(tooLargeSentence), findsOneWidget);
+      expect(find.text('Import complete'), findsNothing);
+      expect(find.textContaining('Books added'), findsNothing);
+
+      // The picker is opened again and closed without a choice: nothing
+      // was refused, so the result of the last import is back.
+      await tester.tap(find.text('Choose file'));
+      await tester.pumpAndSettle();
+      expect(find.text(tooLargeSentence), findsNothing);
+      expect(find.text('Import complete'), findsOneWidget);
+      expect(books.stored, hasLength(1));
+    });
+
     testWidgets('while the picker is open both buttons are off and the '
         'spinner shows', (tester) async {
       final books = _MemBookRepo();

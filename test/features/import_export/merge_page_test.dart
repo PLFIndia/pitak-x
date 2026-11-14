@@ -403,6 +403,113 @@ void main() {
       expect(find.byType(CircularProgressIndicator), findsNothing);
     });
 
+    // Seen in the emulator on 2026-11-14: the sentence about a refused
+    // file stayed on the page after the Join, above "Merge complete".
+    group('the sentence about a refused file goes with the next thing the '
+        'user does', () {
+      /// A choice between Join and Replace on the page, and above it the
+      /// sentence about a second file that was too large.
+      Future<void> pumpChoiceAndRefusal(WidgetTester tester) async {
+        picker
+          ..willPick(_otherLibraryJson)
+          ..willAnswer(const DocumentPickTooLarge());
+        await tester.pumpWidget(page());
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Choose a library file'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Choose a library file'));
+        await tester.pumpAndSettle();
+        expect(find.text(tooLargeSentence), findsOneWidget);
+        expect(find.text('Join (recommended)'), findsOneWidget);
+      }
+
+      testWidgets('Join', (tester) async {
+        await pumpChoiceAndRefusal(tester);
+
+        await tester.tap(find.text('Join (recommended)'));
+        await tester.pumpAndSettle();
+
+        expect(find.text(tooLargeSentence), findsNothing);
+      });
+
+      testWidgets('Replace, once it is confirmed; not when the question is '
+          'answered with Cancel', (tester) async {
+        await pumpChoiceAndRefusal(tester);
+
+        await tester.ensureVisible(find.text('Replace my library'));
+        await tester.tap(find.text('Replace my library'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Cancel'));
+        await tester.pumpAndSettle();
+        expect(find.text(tooLargeSentence), findsOneWidget);
+
+        await tester.ensureVisible(find.text('Replace my library'));
+        await tester.tap(find.text('Replace my library'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Replace'));
+        await tester.pumpAndSettle();
+        expect(find.text(tooLargeSentence), findsNothing);
+      });
+
+      testWidgets('a review row that is resolved', (tester) async {
+        // A tall screen: with the sentence above it, the row's buttons
+        // would otherwise lie below the edge of the test's small screen.
+        tester.view.physicalSize = const Size(800, 2000);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.reset);
+        const local = CatalogueItem(
+          id: 1,
+          itemUid: 'u1',
+          title: 'Godaan',
+          genre: 'Fiction',
+          addedDate: 1,
+        );
+        const incoming = CatalogueItem(
+          itemUid: 'u1',
+          title: 'Godaan',
+          genre: 'Classic',
+          addedDate: 2,
+        );
+        // A finished merge with one row to review; its `resolve` is
+        // scripted, its `mergeFile` is the real one.
+        final controller = _ScriptedController(
+          const MergeResult(
+            added: 0,
+            identical: 0,
+            conflicts: [
+              MergeConflict(
+                local: local,
+                incoming: incoming,
+                matchedBy: MatchKind.uid,
+              ),
+            ],
+            possibleDuplicates: [],
+          ),
+        );
+        picker.willAnswer(const DocumentPickTooLarge());
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: [
+              ...pickerOverrides(),
+              mergeControllerProvider.overrideWith(() => controller),
+            ],
+            child: const MaterialApp(home: MergePage()),
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Choose a library file'));
+        await tester.pumpAndSettle();
+        expect(find.text(tooLargeSentence), findsOneWidget);
+        expect(find.text('Take theirs'), findsOneWidget);
+
+        await tester.tap(find.text('Take theirs'));
+        await tester.pumpAndSettle();
+
+        expect(controller.calls, [(0, MergeResolution.takeTheirs)]);
+        expect(find.text(tooLargeSentence), findsNothing);
+      });
+    });
+
     testWidgets('while the picker is open the button is off, the spinner '
         'shows, and an earlier choice cannot be acted on', (tester) async {
       final pickerOpen = Completer<void>();

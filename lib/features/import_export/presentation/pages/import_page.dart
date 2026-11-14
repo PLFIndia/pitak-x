@@ -135,20 +135,26 @@ class _ImportPageState extends ConsumerState<ImportPage> {
           ),
           const SizedBox(height: 24),
           if (busy) const Center(child: CircularProgressIndicator.adaptive()),
+          // A file that was not taken shows its sentence ALONE. The
+          // controller still holds the result of the import before, and
+          // "too large" directly above an older "Import complete" would
+          // read as if the large file had been imported. That result is
+          // shown again once the sentence is gone (the next tap clears it).
           if (_fileError != null)
             Text(
               _fileError!,
               style: TextStyle(color: Theme.of(context).colorScheme.error),
+            )
+          else
+            state.when(
+              loading: () => const SizedBox.shrink(),
+              error: (error, _) => Text(
+                _importErrorMessage(error),
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+              data: (summary) =>
+                  summary == null ? const SizedBox.shrink() : _Summary(summary),
             ),
-          state.when(
-            loading: () => const SizedBox.shrink(),
-            error: (error, _) => Text(
-              _importErrorMessage(error),
-              style: TextStyle(color: Theme.of(context).colorScheme.error),
-            ),
-            data: (summary) =>
-                summary == null ? const SizedBox.shrink() : _Summary(summary),
-          ),
         ],
       ),
     );
