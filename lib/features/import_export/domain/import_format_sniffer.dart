@@ -33,9 +33,9 @@ enum ImportFormat {
 /// (`50 4B 03 04`, "PK\x03\x04").
 ///
 /// The ONE place that knows these four bytes. Import uses it to refuse a
-/// ZIP file with a sentence instead of reading it: the import controller
-/// before it decodes anything, and the Import page before it loads the
-/// picked file into memory.
+/// ZIP file with a sentence instead of reading it: a picked file's first
+/// four bytes are looked at before the file is loaded into memory
+/// (`picked_text_file.dart` in the application layer).
 bool hasZipLocalFileHeader(List<int> bytes) =>
     bytes.length >= 4 &&
     bytes[0] == 0x50 && // 'P'

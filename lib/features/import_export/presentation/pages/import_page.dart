@@ -1,24 +1,23 @@
 /// Import screen (presentation layer, AGENTS.md §3.1).
 ///
-/// Two ways in: paste JSON/CSV text, or pick a JSON or CSV file. Both run
-/// [ImportController]. A file is judged by its first bytes, not by its name:
-/// a ZIP is refused with a sentence before it is read (backup rework BR7,
-/// decision D29). On success the page shows an [ImportSummary]; the
-/// controller refreshes the library + wishlist lists so imported rows appear
-/// immediately.
+/// Two ways in: paste JSON/CSV text, or choose a JSON or CSV file. Both run
+/// [ImportController]. A file is chosen through the app's own picker and
+/// read by the controller (decision D24): this page never holds a file or
+/// its bytes, it only shows a sentence when no file was taken. A file is
+/// judged by its first bytes, not by its name: a ZIP is refused with a
+/// sentence before it is read (backup rework BR7, decision D29). On success
+/// the page shows an [ImportSummary]; the controller refreshes the library
+/// + wishlist lists so imported rows appear immediately.
 library;
 
-import 'dart:typed_data';
-
-import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pitaka/core/error/failure.dart';
-import 'package:pitaka/core/platform/bounded_file_read.dart';
 import 'package:pitaka/features/import_export/application/import_controller.dart';
 import 'package:pitaka/features/import_export/application/import_library_use_case.dart';
 import 'package:pitaka/features/import_export/domain/import_format_sniffer.dart';
 import 'package:pitaka/features/import_export/domain/import_limits.dart';
+import 'package:pitaka/features/import_export/presentation/picked_file_messages.dart';
 
 String _importErrorMessage(Object error) {
   if (error is SchemaTooNewFailure) {
@@ -40,8 +39,9 @@ class ImportPage extends ConsumerStatefulWidget {
 class _ImportPageState extends ConsumerState<ImportPage> {
   final TextEditingController _text = TextEditingController();
 
-  /// Pre-read guard rejection for a picked file (shown like a controller
-  /// error; the controller never sees an oversized text pick).
+  /// Why the chosen file was not taken (too large, a ZIP, could not be
+  /// read, …), as a sentence. Shown like a controller error. Null when
+  /// there is nothing to say.
   String? _fileError;
 
   @override
@@ -61,68 +61,25 @@ class _ImportPageState extends ConsumerState<ImportPage> {
   }
 
   Future<void> _importFile() async {
-    const group = XTypeGroup(
-      label: 'Library export',
-      extensions: ['json', 'csv'],
-    );
-    // N11: the picker plugin and the bounded read can throw (platform
-    // errors, disappearing files) — fail closed with safe copy instead of an
-    // unhandled async error.
-    final XFile file;
-    final Uint8List bytes;
-    try {
-      final picked = await openFile(acceptedTypeGroups: [group]);
-      if (picked == null) return;
-      file = picked;
-      // D29: Import reads no ZIP. The system's picker can show every file
-      // whatever extensions it was asked for, so a ZIP (a backup, most
-      // likely) can still arrive here. It is refused on its first four
-      // bytes, BEFORE it is read: a 300 MB backup picked by mistake is not
-      // loaded into memory just to be turned away. The controller holds the
-      // same rule for every other caller, with the same sentence.
-      if (await _hasZipMagic(file)) {
-        if (!mounted) return;
-        setState(() => _fileError = kImportZipRefusedMessage);
-        return;
-      }
-      // Bounded read (REVIEW_FINDINGS_2 S4, hardened by M05): the parsers'
-      // limits only run AFTER the whole file is in memory, so the cap has to
-      // be enforced while reading. One cap, the text cap
-      // (ImportLimits.maxTextChars): UTF-8 never has more characters than
-      // bytes, so a byte cap is a sound early reject, and the parser
-      // re-checks the decoded length regardless. `readPickedFileBounded`
-      // counts the bytes that actually arrive, so a lying file length
-      // cannot get around the cap.
-      final read = await readPickedFileBounded(
-        file,
-        maxBytes: ImportLimits.defaults.maxTextChars,
-      );
-      if (read == null) {
-        if (!mounted) return;
-        setState(() => _fileError = 'File is too large to import safely.');
-        return;
-      }
-      bytes = read;
-    } on Object {
-      if (!mounted) return;
-      setState(
-        () => _fileError = 'Could not read that file. Please try again.',
-      );
-      return;
-    }
-    if (!mounted) return;
     setState(() => _fileError = null);
-    // See _importText: the controller owns the run and the refresh.
-    await ref.read(importControllerProvider.notifier).importBytes(bytes);
-  }
-
-  /// Looks for the 4-byte ZIP local-file-header magic WITHOUT loading the
-  /// file: only its first four bytes are read.
-  static Future<bool> _hasZipMagic(XFile file) async {
-    final header = await file
-        .openRead(0, 4)
-        .fold<List<int>>([], (acc, chunk) => acc..addAll(chunk));
-    return hasZipLocalFileHeader(header);
+    // The controller owns the whole way of the file: the system's picker,
+    // the private copy under the size cap, the read, the removal of the
+    // copy, and the import (decision D24). It answers only when no file
+    // was taken, with the reason.
+    //
+    // N11: nothing after this await touches `ref`, so leaving the page
+    // while the picker is open or the import runs cannot crash.
+    final problem = await ref
+        .read(importControllerProvider.notifier)
+        .importFile();
+    if (problem == null || !mounted) return;
+    setState(
+      () => _fileError = pickedFileProblemMessage(
+        problem,
+        use: PickedFileUse.import,
+        maxBytes: ImportLimits.defaults.maxTextChars,
+      ),
+    );
   }
 
   @override

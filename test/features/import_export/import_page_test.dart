@@ -1,18 +1,14 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:typed_data';
+import 'dart:io';
 
-// Transitive dependency of file_selector; imported only for the picker seam
-// below (it also re-exports XFile). Deliberately NOT added to pubspec so the
-// dependency surface stays unchanged (same seam as restore_page_test.dart).
-// ignore: depend_on_referenced_packages
-import 'package:file_selector_platform_interface/file_selector_platform_interface.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/core/platform/document_picker.dart';
 import 'package:pitaka/features/import_export/application/import_library_use_case.dart';
 import 'package:pitaka/features/import_export/infrastructure/pitaka_json_importer.dart';
 import 'package:pitaka/features/import_export/presentation/pages/import_page.dart';
@@ -24,6 +20,8 @@ import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
 import 'package:pitaka/features/wishlist/domain/repositories/wishlist_repository.dart';
 
 import '../../support/a11y.dart';
+import '../../support/fake_document_picker.dart';
+import '../../support/fake_picked_document_reader.dart';
 
 import '../periodicals/application/periodical_fakes.dart';
 
@@ -123,74 +121,24 @@ class _MemWishlistRepo implements WishlistRepository {
       right(b.length);
 }
 
-/// Picker seam (M05): an in-memory file whose REPORTED length can lie.
-class _FakeFileSelector extends FileSelectorPlatform {
-  _FakeFileSelector(this.bytes, {this.reportedLength});
-  final Uint8List bytes;
-  final int? reportedLength;
-
-  /// The file endings the page asked the picker for, once it was opened.
-  List<String>? askedExtensions;
-
-  @override
-  Future<XFile?> openFile({
-    List<XTypeGroup>? acceptedTypeGroups,
-    String? initialDirectory,
-    String? confirmButtonText,
-  }) async {
-    askedExtensions = [
-      for (final group in acceptedTypeGroups ?? const <XTypeGroup>[])
-        ...?group.extensions,
-    ];
-    return XFile.fromData(bytes, name: 'pick', length: reportedLength);
-  }
-}
-
-/// A picked file that writes down what is asked of it, so a test can show
-/// that the page LOOKED at a file it refuses (its first four bytes) and
-/// never loaded it.
-///
-/// It records instead of failing on the spot: the page catches every error
-/// of a read on purpose, so a `fail` in here would be swallowed.
-class _RecordingFile extends XFile {
-  _RecordingFile(super.bytes) : super.fromData(name: 'pick');
-
-  /// Every call, as text: `openRead(0, 4)`, `length`, `readAsBytes`.
-  final List<String> asked = [];
-
-  @override
-  Stream<Uint8List> openRead([int? start, int? end]) {
-    asked.add('openRead($start, $end)');
-    return super.openRead(start, end);
-  }
-
-  @override
-  Future<Uint8List> readAsBytes() {
-    asked.add('readAsBytes');
-    return super.readAsBytes();
-  }
-
-  @override
-  Future<int> length() {
-    asked.add('length');
-    return super.length();
-  }
-}
-
-/// Picker seam that hands back one prepared file.
-class _OneFileSelector extends FileSelectorPlatform {
-  _OneFileSelector(this.file);
-  final XFile file;
-
-  @override
-  Future<XFile?> openFile({
-    List<XTypeGroup>? acceptedTypeGroups,
-    String? initialDirectory,
-    String? confirmButtonText,
-  }) async => file;
-}
-
 void main() {
+  // The system's picker and the private copy it makes, played by a fake
+  // that writes real files; and a reader that reads them at once (a widget
+  // test cannot wait for real file work). Decision D24.
+  late Directory tmp;
+  late FakeDocumentPicker picker;
+  late FakePickedDocumentReader reader;
+
+  setUp(() {
+    tmp = Directory.systemTemp.createTempSync('import_page_test');
+    picker = FakeDocumentPicker(Directory('${tmp.path}/picked_documents'));
+    reader = FakePickedDocumentReader();
+  });
+
+  tearDown(() {
+    if (tmp.existsSync()) tmp.deleteSync(recursive: true);
+  });
+
   Widget page(ImportLibraryUseCase useCase) => ProviderScope(
     overrides: [
       importLibraryUseCaseProvider.overrideWith((ref) async => useCase),
@@ -201,6 +149,8 @@ void main() {
       wishlistRepositoryProvider.overrideWith(
         (ref) async => _MemWishlistRepo(),
       ),
+      documentPickerProvider.overrideWith((ref) async => picker),
+      pickedDocumentReaderProvider.overrideWith((ref) => reader),
     ],
     child: const MaterialApp(home: ImportPage()),
   );
@@ -212,36 +162,38 @@ void main() {
     periodicalRepo: FakePeriodicals(),
   );
 
-  group('M05: picked files are read under a cap', () {
-    final smallJson = Uint8List.fromList(
-      utf8.encode(
-        jsonEncode({
-          'schemaVersion': 3,
-          'exportedAt': 0,
-          'books': [
-            {'title': 'From file', 'isbn': '888'},
-          ],
-          'wishlist': <dynamic>[],
-        }),
-      ),
+  const tooLargeSentence =
+      'This file is too large to import. Import reads files of up to '
+      '64.0 MB. To load a backup (.pitabak), use \u201cRestore backup\u201d.';
+
+  group("a chosen file comes through the app's own picker (D24, M05)", () {
+    final smallJson = utf8.encode(
+      jsonEncode({
+        'schemaVersion': 3,
+        'exportedAt': 0,
+        'books': [
+          {'title': 'From file', 'isbn': '888'},
+        ],
+        'wishlist': <dynamic>[],
+      }),
     );
 
-    testWidgets('a text pick reporting > maxTextChars is refused unread', (
-      tester,
-    ) async {
+    testWidgets('a file above the cap is refused with a sentence that names '
+        'the cap, and nothing is read', (tester) async {
       final books = _MemBookRepo();
-      FileSelectorPlatform.instance = _FakeFileSelector(
-        smallJson,
-        reportedLength: 5 * 1024 * 1024 * 1024,
-      );
+      picker.willAnswer(const DocumentPickTooLarge());
       await tester.pumpWidget(page(useCaseWith(books)));
       await tester.pumpAndSettle();
 
       await tester.tap(find.text('Choose file'));
       await tester.pumpAndSettle();
 
-      expect(find.text('File is too large to import safely.'), findsOneWidget);
+      expect(find.text(tooLargeSentence), findsOneWidget);
       expect(find.text('Import complete'), findsNothing);
+      expect(find.text('Import failed'), findsNothing);
+      // The cap the picker copies under is the one the parsers have.
+      expect(picker.caps, [64 * 1024 * 1024]);
+      expect(reader.asked, isEmpty);
       expect(books.stored, isEmpty, reason: 'nothing may reach the use case');
     });
 
@@ -251,17 +203,15 @@ void main() {
       // Import reads no ZIP (BR7). A picked file that starts like one is
       // turned away on its first four bytes, and nothing more of it is
       // asked for.
-      final zipish = Uint8List.fromList([0x50, 0x4B, 0x03, 0x04, 0, 0, 0, 0]);
       final books = _MemBookRepo();
-      final file = _RecordingFile(zipish);
-      FileSelectorPlatform.instance = _OneFileSelector(file);
+      picker.willPick([0x50, 0x4B, 0x03, 0x04, 0, 0, 0, 0]);
       await tester.pumpWidget(page(useCaseWith(books)));
       await tester.pumpAndSettle();
 
       await tester.tap(find.text('Choose file'));
       await tester.pumpAndSettle();
 
-      expect(file.asked, ['openRead(0, 4)']);
+      expect(reader.asked, ['firstBytes 4']);
       expect(find.text(kImportZipRefusedMessage), findsOneWidget);
       expect(
         kImportZipRefusedMessage,
@@ -271,23 +221,129 @@ void main() {
       expect(find.text('Import complete'), findsNothing);
       expect(find.text('Import failed'), findsNothing);
       expect(books.stored, isEmpty, reason: 'nothing may reach the use case');
+      expect(picker.copiesOnDisk(), isEmpty, reason: 'the copy is removed');
     });
 
     testWidgets('an honest small text pick still imports', (tester) async {
       final books = _MemBookRepo();
-      final picker = _FakeFileSelector(smallJson);
-      FileSelectorPlatform.instance = picker;
+      picker.willPick(smallJson);
       await tester.pumpWidget(page(useCaseWith(books)));
       await tester.pumpAndSettle();
 
       await tester.tap(find.text('Choose file'));
       await tester.pumpAndSettle();
 
-      expect(find.text('File is too large to import safely.'), findsNothing);
+      expect(find.textContaining('too large'), findsNothing);
       expect(find.text('Import complete'), findsOneWidget);
       expect(books.stored.single.title, 'From file');
-      // The picker is asked for the two kinds of file Import reads.
-      expect(picker.askedExtensions, ['json', 'csv']);
+      expect(picker.caps, [64 * 1024 * 1024]);
+      expect(picker.copiesOnDisk(), isEmpty, reason: 'the copy is removed');
+    });
+
+    // The four answers that read the same on every page that picks a file.
+    const sentences = <(DocumentPickResult, String)>[
+      (
+        DocumentPickUnreadable(),
+        'That file could not be read. If it is kept online, check the '
+            'connection and try again.',
+      ),
+      (
+        DocumentPickNotSaved(),
+        'The file could not be copied to this phone. Free some storage and '
+            'try again.',
+      ),
+      (
+        DocumentPickUnavailable(),
+        'Choosing a file is not available on this device.',
+      ),
+      (
+        DocumentPickFailed(),
+        'Something went wrong choosing the file. Please try again.',
+      ),
+    ];
+    for (final (answer, sentence) in sentences) {
+      testWidgets('${answer.runtimeType} shows its own sentence', (
+        tester,
+      ) async {
+        final books = _MemBookRepo();
+        picker.willAnswer(answer);
+        await tester.pumpWidget(page(useCaseWith(books)));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.text('Choose file'));
+        await tester.pumpAndSettle();
+
+        expect(find.text(sentence), findsOneWidget);
+        expect(find.text('Import complete'), findsNothing);
+        expect(books.stored, isEmpty);
+      });
+    }
+
+    testWidgets('a copy that cannot be read shows the "could not be read" '
+        'sentence', (tester) async {
+      picker.willPick(smallJson);
+      reader.failing = true;
+      await tester.pumpWidget(page(useCaseWith(_MemBookRepo())));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Choose file'));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('could not be read'), findsOneWidget);
+      expect(picker.copiesOnDisk(), isEmpty, reason: 'the copy is removed');
+    });
+
+    testWidgets('closing the picker says nothing, and a new tap clears the '
+        'sentence of the pick before', (tester) async {
+      picker.willAnswer(const DocumentPickTooLarge());
+      await tester.pumpWidget(page(useCaseWith(_MemBookRepo())));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Choose file'));
+      await tester.pumpAndSettle();
+      expect(find.text(tooLargeSentence), findsOneWidget);
+
+      // Nothing is scripted now: the fake picker answers "cancelled".
+      await tester.tap(find.text('Choose file'));
+      await tester.pumpAndSettle();
+
+      expect(picker.caps, hasLength(2));
+      expect(find.text(tooLargeSentence), findsNothing);
+      expect(find.text('Import complete'), findsNothing);
+      expect(find.text('Import failed'), findsNothing);
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+    });
+
+    testWidgets('while the picker is open both buttons are off and the '
+        'spinner shows', (tester) async {
+      final books = _MemBookRepo();
+      final pickerOpen = Completer<void>();
+      picker
+        ..holdNextPick = pickerOpen
+        ..willPick(smallJson);
+      await tester.pumpWidget(page(useCaseWith(books)));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Choose file'));
+      // Not `pumpAndSettle`: the spinner never comes to rest.
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+      final choose = tester.widget<OutlinedButton>(
+        find.widgetWithText(OutlinedButton, 'Choose file'),
+      );
+      final paste = tester.widget<FilledButton>(
+        find.widgetWithText(FilledButton, 'Import text'),
+      );
+      expect(choose.onPressed, isNull);
+      expect(paste.onPressed, isNull);
+      expect(picker.caps, hasLength(1));
+
+      pickerOpen.complete();
+      await tester.pumpAndSettle();
+      expect(find.text('Import complete'), findsOneWidget);
+      expect(books.stored.single.title, 'From file');
     });
   });
 

@@ -19,8 +19,8 @@
 /// import is all-or-nothing and the reported counts always match the DB.
 ///
 /// Two ways in. `importText` takes the text of a JSON or CSV file. A ZIP
-/// file is not read at all (backup rework BR7, decision D29): the import
-/// controller refuses it with [kImportZipRefusedMessage]. `importBundle`
+/// file is not read at all (backup rework BR7, decision D29): a picked one
+/// is refused unread, with [kImportZipRefusedMessage]. `importBundle`
 /// takes rows that come together with their cover pictures; its one caller
 /// is the restore from the user's own published site (ADR 0021). Such a
 /// bundle is validated without IO, then imported with operation-owned cover
@@ -54,9 +54,9 @@ import 'package:pitaka/features/wishlist/domain/repositories/wishlist_repository
 /// CSV.
 const String kImportUnrecognizedFormatMessage = 'Unrecognized file format.';
 
-/// What Import says about a ZIP file (D29). One constant, because two places
-/// say it: the import controller, where the rule lives, and the Import page,
-/// which refuses a picked ZIP before loading it. It names no file and no
+/// What Import says about a ZIP file (D29). The rule is applied where a
+/// picked file is read (`picked_text_file.dart`, asked for by the import
+/// controller); the Import page shows this sentence. It names no file and no
 /// path. A backup is a ZIP too, so the sentence points to where one is read.
 const String kImportZipRefusedMessage =
     'Import reads Pitak JSON and Goodreads CSV files, not ZIP files. '

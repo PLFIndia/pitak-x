@@ -7,13 +7,16 @@
 /// rework BR6) the page no longer reads the chosen file itself. The app's
 /// own picker copies it into a private folder and answers in one of seven
 /// ways (`DocumentPickResult`). Each answer a user can do something about
-/// gets its own plain sentence here.
+/// gets its own plain sentence. The four that read the same on every page
+/// that picks a file come from `document_pick_messages.dart`; the one that
+/// names a backup and its size is here.
 ///
 /// Pure functions, kept out of the page so they can be tested without
 /// pumping a widget, as `create_backup_messages.dart` does for the backup
 /// page.
 library;
 
+import 'package:pitaka/core/platform/document_pick_messages.dart';
 import 'package:pitaka/core/platform/document_picker.dart';
 import 'package:pitaka/core/text/display_number.dart';
 
@@ -43,16 +46,10 @@ String? restorePickMessage(
   DocumentPickTooLarge() =>
     'This file is too large to be a Pitak backup. A backup file can be at '
         'most ${_size(maxArchiveBytes)}.',
-  DocumentPickUnreadable() =>
-    'That file could not be read. If it is kept online, check the '
-        'connection and try again.',
-  DocumentPickNotSaved() =>
-    'The file could not be copied to this phone. Free some storage and '
-        'try again.',
-  DocumentPickUnavailable() =>
-    'Choosing a file is not available on this device.',
-  DocumentPickFailed() =>
-    'Something went wrong choosing the file. Please try again.',
+  DocumentPickUnreadable() => documentUnreadableMessage,
+  DocumentPickNotSaved() => documentNotSavedMessage,
+  DocumentPickUnavailable() => documentPickUnavailableMessage,
+  DocumentPickFailed() => documentPickFailedMessage,
 };
 
 /// One size as the other pages write sizes ("504.0 MB").

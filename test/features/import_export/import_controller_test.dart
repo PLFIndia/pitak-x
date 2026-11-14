@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
@@ -8,9 +9,12 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/core/platform/document_picker.dart';
 import 'package:pitaka/features/import_export/application/import_controller.dart';
 import 'package:pitaka/features/import_export/application/import_library_use_case.dart';
+import 'package:pitaka/features/import_export/application/picked_text_file.dart';
 import 'package:pitaka/features/import_export/domain/import_format_sniffer.dart';
+import 'package:pitaka/features/import_export/domain/import_limits.dart';
 import 'package:pitaka/features/import_export/infrastructure/pitaka_json_importer.dart';
 import 'package:pitaka/features/library/application/library_controller.dart';
 import 'package:pitaka/features/library/domain/catalogue_item_page.dart';
@@ -21,6 +25,7 @@ import 'package:pitaka/features/periodicals/application/periodicals_controller.d
 import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
 import 'package:pitaka/features/wishlist/domain/repositories/wishlist_repository.dart';
 
+import '../../support/fake_document_picker.dart';
 import '../periodicals/application/periodical_fakes.dart';
 
 class _MemBookRepo implements CatalogueItemRepository {
@@ -149,6 +154,21 @@ class _MemWishlistRepo implements WishlistRepository {
 }
 
 void main() {
+  // The system's picker and the copy it makes, played by a fake that
+  // writes real files (decision D24). The copy is read by the REAL reader:
+  // these tests run on the real clock.
+  late Directory tmp;
+  late FakeDocumentPicker picker;
+
+  setUp(() {
+    tmp = Directory.systemTemp.createTempSync('import_controller_test');
+    picker = FakeDocumentPicker(Directory('${tmp.path}/picked_documents'));
+  });
+
+  tearDown(() {
+    if (tmp.existsSync()) tmp.deleteSync(recursive: true);
+  });
+
   test('ImportController exposes a summary after importText', () async {
     final useCase = ImportLibraryUseCase(
       jsonParser: const PitakaJsonImporter(),
@@ -182,7 +202,7 @@ void main() {
   });
 
   test(
-    'controller surfaces SchemaTooNewFailure for too-new JSON bytes',
+    'controller surfaces SchemaTooNewFailure for a too-new JSON file',
     () async {
       final books = _MemBookRepo();
       final periodicals = FakePeriodicals();
@@ -195,6 +215,7 @@ void main() {
       final container = ProviderContainer(
         overrides: [
           importLibraryUseCaseProvider.overrideWith((ref) async => useCase),
+          documentPickerProvider.overrideWith((ref) async => picker),
         ],
       );
       addTearDown(container.dispose);
@@ -206,10 +227,13 @@ void main() {
         ],
         'wishlist': <dynamic>[],
       });
-      await container
+      picker.willPick(utf8.encode(json));
+      final problem = await container
           .read(importControllerProvider.notifier)
-          .importBytes(Uint8List.fromList(utf8.encode(json)));
+          .importFile();
 
+      // The file WAS taken: what is wrong with it is the import's result.
+      expect(problem, isNull);
       final state = container.read(importControllerProvider);
       expect(state.error, isA<SchemaTooNewFailure>());
       expect((state.error! as SchemaTooNewFailure).schemaVersion, 99);
@@ -247,7 +271,8 @@ void main() {
     },
   );
 
-  test('importBytes routes JSON bytes through the text path', () async {
+  test('importFile reads the picked file under the text cap, imports it '
+      'through the text path and removes the copy', () async {
     final useCase = ImportLibraryUseCase(
       jsonParser: const PitakaJsonImporter(),
       bookRepo: _MemBookRepo(),
@@ -257,6 +282,7 @@ void main() {
     final container = ProviderContainer(
       overrides: [
         importLibraryUseCaseProvider.overrideWith((ref) async => useCase),
+        documentPickerProvider.overrideWith((ref) async => picker),
       ],
     );
     addTearDown(container.dispose);
@@ -270,17 +296,26 @@ void main() {
       'wishlist': <dynamic>[],
     });
 
-    await container
+    picker.willPick(utf8.encode(json));
+    final problem = await container
         .read(importControllerProvider.notifier)
-        .importBytes(Uint8List.fromList(utf8.encode(json)));
+        .importFile();
     final state = container.read(importControllerProvider);
 
+    expect(problem, isNull);
     expect(state.value!.format, ImportFormat.pitakaJson);
     expect(state.value!.booksAdded, 1);
+    // The picker was asked once, with the cap the parsers have for a text.
+    expect(picker.caps, [ImportLimits.defaults.maxTextChars]);
+    expect(picker.caps.single, 64 * 1024 * 1024);
+    // The copy was a plain duplicate of the user's file: it is gone.
+    expect(picker.discarded, hasLength(1));
+    expect(picker.copiesOnDisk(), isEmpty);
   });
 
-  test('importBytes refuses ZIP bytes with the sentence: nothing is read, '
-      'nothing is written, no cover store is asked for (D29)', () async {
+  test('importFile refuses a picked ZIP: nothing is written, no use case '
+      'and no cover store is asked for, and the copy is removed '
+      '(D29)', () async {
     // Until BR7 this file was a valid Pitak bundle and its book was
     // imported: `library.json` with one row, written by a real ZIP encoder.
     final libraryJson = utf8.encode(
@@ -318,22 +353,26 @@ void main() {
           asked.add('cover store');
           throw StateError('Import must not ask for a cover store');
         }),
+        documentPickerProvider.overrideWith((ref) async => picker),
       ],
     );
     addTearDown(container.dispose);
 
-    await container
+    picker.willPick(zipBytes);
+    final problem = await container
         .read(importControllerProvider.notifier)
-        .importBytes(zipBytes);
+        .importFile();
     final state = container.read(importControllerProvider);
 
-    // "Import failed" with the sentence, the way an unknown text ends.
+    // The page is told why, and says so. Nothing was imported, so the
+    // state is what it was before: idle, with no summary and no error.
+    expect(problem, PickedFileProblem.zipFile);
     expect(state.hasValue, isTrue);
-    expect(state.value!.format, isNull);
-    expect(state.value!.parseErrors, [kImportZipRefusedMessage]);
-    expect(state.value!.booksAdded, 0);
+    expect(state.value, isNull);
     expect(books.stored, isEmpty);
     expect(asked, isEmpty);
+    expect(picker.discarded, hasLength(1));
+    expect(picker.copiesOnDisk(), isEmpty);
   });
 
   // How the controller behaves OVER TIME. These rules were tested through
@@ -359,6 +398,7 @@ void main() {
             periodicalRepo: FakePeriodicals(),
           ),
         ),
+        documentPickerProvider.overrideWith((ref) async => picker),
       ],
     );
 
@@ -378,13 +418,11 @@ void main() {
       // ignored would wait for the held transaction and never get here.
       var ignored = 0;
       unawaited(controller.importText(oneBook).then((_) => ignored++));
-      unawaited(
-        controller
-            .importBytes(Uint8List.fromList(utf8.encode(oneBook)))
-            .then((_) => ignored++),
-      );
+      unawaited(controller.importFile().then((_) => ignored++));
       await Future<void>.delayed(Duration.zero);
       expect(ignored, 2);
+      // The second way in did not even open the picker.
+      expect(picker.caps, isEmpty);
       expect(books.transactions, 1);
       expect(c.read(importControllerProvider).isLoading, isTrue);
 
@@ -472,6 +510,250 @@ void main() {
       expect(error, isA<UnexpectedFailure>());
       expect((error! as UnexpectedFailure).debugReason, 'Import failed.');
       expect('$error', isNot(contains('private path')));
+    });
+  });
+
+  // Decision D24: what the CONTROLLER does between the tap on "Choose
+  // file" and the import. The file's own way (pick, look, read, remove the
+  // copy) is tested in `picked_text_file_test.dart`.
+  group('a chosen file (D24)', () {
+    final oneBook = jsonEncode({
+      'schemaVersion': 3,
+      'exportedAt': 0,
+      'books': [
+        {'title': 'A', 'isbn': '111'},
+      ],
+      'wishlist': <dynamic>[],
+    });
+    final oneBookFile = utf8.encode(oneBook);
+
+    late _MemBookRepo books;
+
+    /// How often the use case was asked for: 0 means "no import started".
+    late int useCasesAsked;
+
+    setUp(() {
+      books = _MemBookRepo();
+      useCasesAsked = 0;
+    });
+
+    ProviderContainer container() => ProviderContainer(
+      overrides: [
+        importLibraryUseCaseProvider.overrideWith((ref) async {
+          useCasesAsked++;
+          return ImportLibraryUseCase(
+            jsonParser: const PitakaJsonImporter(),
+            bookRepo: books,
+            wishlistRepo: _MemWishlistRepo(),
+            periodicalRepo: FakePeriodicals(),
+          );
+        }),
+        documentPickerProvider.overrideWith((ref) async => picker),
+      ],
+    );
+
+    /// A container somebody listens to, as while the Import page is open.
+    ProviderContainer watched() {
+      final c = container();
+      addTearDown(c.dispose);
+      final sub = c.listen(importControllerProvider, (_, _) {});
+      addTearDown(sub.close);
+      return c;
+    }
+
+    const answers = <(DocumentPickResult, PickedFileProblem)>[
+      (DocumentPickTooLarge(), PickedFileProblem.tooLarge),
+      (DocumentPickUnreadable(), PickedFileProblem.unreadable),
+      (DocumentPickNotSaved(), PickedFileProblem.notSaved),
+      (DocumentPickUnavailable(), PickedFileProblem.unavailable),
+      (DocumentPickFailed(), PickedFileProblem.failed),
+    ];
+    for (final (answer, expected) in answers) {
+      test('${answer.runtimeType}: the page is told "${expected.name}", '
+          'nothing is imported, and the state is what it was', () async {
+        final c = watched();
+        picker.willAnswer(answer);
+
+        final problem = await c
+            .read(importControllerProvider.notifier)
+            .importFile();
+
+        expect(problem, expected);
+        final state = c.read(importControllerProvider);
+        expect(state.isLoading, isFalse);
+        expect(state.hasError, isFalse);
+        expect(state.value, isNull);
+        expect(useCasesAsked, 0);
+        expect(books.stored, isEmpty);
+      });
+    }
+
+    test('closing the picker says nothing and keeps an earlier '
+        'summary', () async {
+      final c = watched();
+      final controller = c.read(importControllerProvider.notifier);
+      await controller.importText(oneBook);
+      final earlier = c.read(importControllerProvider).requireValue;
+      expect(earlier!.booksAdded, 1);
+
+      // Nothing is scripted: the fake picker answers "cancelled".
+      expect(await controller.importFile(), isNull);
+
+      expect(picker.caps, hasLength(1), reason: 'the picker did open');
+      expect(c.read(importControllerProvider).value, same(earlier));
+      expect(books.stored, hasLength(1));
+    });
+
+    test('a file that is not taken keeps an earlier summary too', () async {
+      final c = watched();
+      final controller = c.read(importControllerProvider.notifier);
+      await controller.importText(oneBook);
+      final earlier = c.read(importControllerProvider).requireValue;
+
+      picker.willPick([0x50, 0x4B, 0x03, 0x04, 1, 2, 3]);
+      expect(await controller.importFile(), PickedFileProblem.zipFile);
+
+      expect(c.read(importControllerProvider).value, same(earlier));
+      expect(books.stored, hasLength(1));
+    });
+
+    test('closing the picker keeps an earlier FAILURE on the page', () async {
+      final c = watched();
+      final controller = c.read(importControllerProvider.notifier);
+      await controller.importText(
+        jsonEncode({
+          'schemaVersion': 99,
+          'books': <dynamic>[],
+          'wishlist': <dynamic>[],
+        }),
+      );
+      expect(
+        c.read(importControllerProvider).error,
+        isA<SchemaTooNewFailure>(),
+      );
+
+      expect(await controller.importFile(), isNull);
+
+      expect(
+        c.read(importControllerProvider).error,
+        isA<SchemaTooNewFailure>(),
+      );
+    });
+
+    test('"loading" from the tap on; while the picker is open a second '
+        'tap and a pasted text are ignored', () async {
+      final c = watched();
+      final controller = c.read(importControllerProvider.notifier);
+      final pickerOpen = Completer<void>();
+      picker
+        ..holdNextPick = pickerOpen
+        ..willPick(oneBookFile);
+
+      final running = controller.importFile();
+      await pumpEventQueue();
+      expect(picker.caps, hasLength(1), reason: 'the picker is open');
+      expect(c.read(importControllerProvider).isLoading, isTrue);
+
+      // Both return at once. One that was NOT ignored would open a second
+      // picker, or import the pasted text.
+      expect(await controller.importFile(), isNull);
+      await controller.importText(oneBook);
+      expect(picker.caps, hasLength(1));
+      expect(useCasesAsked, 0);
+      expect(books.stored, isEmpty);
+      expect(c.read(importControllerProvider).isLoading, isTrue);
+
+      pickerOpen.complete();
+      expect(await running, isNull);
+      expect(c.read(importControllerProvider).requireValue!.booksAdded, 1);
+      expect(books.stored, hasLength(1));
+    });
+
+    test('the run survives its page while the picker is open: nobody '
+        'listens, and the file is still imported', () async {
+      final c = container();
+      addTearDown(c.dispose);
+      final pickerOpen = Completer<void>();
+      picker
+        ..holdNextPick = pickerOpen
+        ..willPick(oneBookFile);
+
+      // No listener, as after the Import page was left.
+      final running = c.read(importControllerProvider.notifier).importFile();
+      await pumpEventQueue();
+      await c.pump();
+      expect(c.exists(importControllerProvider), isTrue);
+
+      pickerOpen.complete();
+      expect(await running, isNull);
+      expect(books.stored, hasLength(1));
+      expect(picker.copiesOnDisk(), isEmpty);
+      // And it is let go once the run is over.
+      await c.pump();
+      expect(c.exists(importControllerProvider), isFalse);
+    });
+
+    test('a teardown while the picker is open: the copy is still removed, '
+        'nothing is imported, and nothing throws', () async {
+      final c = container();
+      final pickerOpen = Completer<void>();
+      picker
+        ..holdNextPick = pickerOpen
+        ..willPick(oneBookFile);
+
+      final running = c.read(importControllerProvider.notifier).importFile();
+      await pumpEventQueue();
+      expect(picker.caps, hasLength(1), reason: 'the picker is open');
+
+      c.dispose();
+      pickerOpen.complete();
+      // Reading a provider, or setting state, on a disposed controller
+      // throws. The run must end without doing either.
+      expect(await running, isNull);
+
+      expect(picker.discarded, hasLength(1));
+      expect(picker.copiesOnDisk(), isEmpty);
+      expect(useCasesAsked, 0);
+      expect(books.stored, isEmpty);
+    });
+
+    test('a picker that cannot be set up is a pick that failed, without '
+        'the private text of the error', () async {
+      final c = ProviderContainer(
+        overrides: [
+          documentPickerProvider.overrideWith(
+            (ref) => throw StateError('private path /data/user/0/secret'),
+          ),
+        ],
+      );
+      addTearDown(c.dispose);
+      final sub = c.listen(importControllerProvider, (_, _) {});
+      addTearDown(sub.close);
+
+      final problem = await c
+          .read(importControllerProvider.notifier)
+          .importFile();
+
+      expect(problem, PickedFileProblem.failed);
+      final state = c.read(importControllerProvider);
+      expect(state.hasError, isFalse);
+      expect(state.value, isNull);
+    });
+
+    test('bytes that are not UTF-8 reach the importer as text and end as '
+        '"import failed", not as a crash', () async {
+      final c = watched();
+      picker.willPick([0xFF, 0xFE, 0xFD, 0x00, 0x01]);
+
+      final problem = await c
+          .read(importControllerProvider.notifier)
+          .importFile();
+
+      expect(problem, isNull, reason: 'the file was taken');
+      final summary = c.read(importControllerProvider).requireValue!;
+      expect(summary.format, isNull);
+      expect(summary.parseErrors, [kImportUnrecognizedFormatMessage]);
+      expect(books.stored, isEmpty);
     });
   });
 
