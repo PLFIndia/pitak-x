@@ -19,9 +19,9 @@ went").
   | What | Where |
   |---|---|
   | Decisions, the open part of the plan, ONE handoff, short results | this file |
-  | The findings of the four review passes with their boxes, and the open items T1 to T9 | private: `review-tracker.md` |
+  | The findings of the four review passes with their boxes, and the open items T1 to T11 | private: `review-tracker.md` |
   | Every design ("in detail"), result, safety check and older handoff, word for word | private: `plan-archive-2026-11-13.md` |
-  | The design of the stage that is being built | private: a file of its own (`<stage>-in-detail.md`), until its fix is pushed; then it goes into the archive. None today |
+  | The design of the stage that is being built | private: a file of its own (`<stage>-in-detail.md`), until its fix is pushed; then it goes into the archive. Today: `d24-in-detail.md` |
   | The four review reports, their prompts and the summary | private: `codeReviewReport1.md` to `4.md`, `codeReviewPrompt1.md` to `4.md`, `codeReviewSummary.md` |
 
   "Private" means: files the maintainer keeps outside git (the
@@ -106,6 +106,11 @@ under "D<number>". All are of November 2026.
 | D28 | 12 | The changelog lines for BR1 to BR6 come as one commit at the end of BR6 | done (`847edd6`) |
 | D29 | 13 | The import of a bundle (`.zip`, `.pitabundle`) from a file is removed. Import takes JSON and CSV. "Restore from my published site" is not touched | built (BR7) |
 | D30 | 13 | This file is public and short. The findings, the history and the design of anything not yet fixed stay in private files until the open items T1 to T9 are closed | in force |
+| D31 | 14 | For Import and Merge the app's picker offers every file, as it does for Restore. A file of the wrong kind is turned away with a sentence. No file type comes from Dart, and no Kotlin changes for it | open (the stage of D24) |
+| D32 | 14 | The `file_selector` package leaves the app in the stage of D24, as a step of its own. After that stage nothing under `lib/` uses it, and a test keeps it out | open (the stage of D24) |
+| D33 | 14 | A clean-up that belongs to T1 is built in the stage of D24, as its last code step. Its text stays private until the fix is pushed (D30) | open (the stage of D24) |
+| D34 | 14 | D19 holds for Import and Merge too: where the app's Android code is missing, choosing a file answers "not available", and Merge from a file cannot be tried in a desktop run. That T4 then reaches these two pages is accepted; D26 stays as it is | in force |
+| D35 | 14 | `PRIVACY.md` (item 7) and `README.md` say that a file chosen for Import or Merge is read from a private temporary copy that is removed at once, and that copies of earlier versions are removed. They change in the same push as the code. No dated "Changed" note and no new effective date yet | open (the stage of D24) |
 
 Decision points of the plan that are still open: 5, 6 and 7 (see "The
 plan").
@@ -145,7 +150,7 @@ small ones, on the branch `reviewFixes`.
 | BR6 | Restore reads its backup from a file, in two worker isolates. The restore page says what happens. Changelog for BR1 to BR6 | done: `9ecdbb2`, `a91fe4b`, `da58a5c`, `6b508d0`, `709d1d6`, `847edd6` |
 | (CI) | `rustix` 1.1.6 for an advisory. The restore's copy of the catalogue waits for a write instead of failing (`retryWhileSqliteBusy`) | done: `5e8dfea`, `ede5a3e`, `0d3dcca` |
 | BR7 | The other readers: Import reads JSON and CSV only, and a ZIP that is picked anyway is refused with a sentence (D29). Every test reads ZIP files through the one reader that works from a file. The in-memory ZIP reader is removed, and the domain layer imports no package for ZIP work (ADR 0009, third amendment) | done: `122545f`, `683b5f9`, `8cc4660`, `9511905` |
-| (D24) | Import and Merge on the app's own picker (T1) | next; needs its own design |
+| (D24) | Import and Merge on the app's own picker (T1, T10): both pages choose their file through the app's own picker; the `file_selector` package leaves the app (D31 to D35) | committed on 2026-11-14, NOT pushed: `43fb8d4`, `fb21ace`, `5088e02`, `4e5d782`, `1651c11`, `69d5e66`, `a4b456d` |
 | BR8 | Raise the limits (D3, D4) | after a passed run on a phone |
 | BR9 | The resource notice (D5) | needs decision points 5 and 6 |
 | BR10 | Proof on devices, records, clean-up | last |
@@ -165,8 +170,10 @@ After each of BR1, BR2, BR3, BR4, BR6 and BR7 the app is releasable.
 
 ### The open stages
 
-**Import and Merge on the app's own picker (D24, T1).** Not designed.
-`test/support/fake_document_picker.dart` is there for it.
+**Import and Merge on the app's own picker (D24, T1).** Built and
+committed on 2026-11-14 (seven commits, see "Stages"), not pushed. It
+is done when the push's CI run is green; then T1 and T10 are closed in
+the tracker and its design (`d24-in-detail.md`) goes into the archive.
 
 **BR8. Raise the limits (D3, D4).** Only after the phone run of the
 old numbers has passed, or together with it.
@@ -226,6 +233,10 @@ old numbers has passed, or together with it.
    stage has ended with a stop for review, and every commit and push
    has had its own yes.
 
+The three decision points of the stage of D24 (13 to 15, numbered on
+from 12, the last number the earlier stages used) are answered: D31,
+D32 and D33.
+
 Not part of this plan, on purpose: "Save to this phone" (P4-M6),
 reading and writing the catalogue off the screen's thread (the rest
 of P3-B3), Cancel for long runs, a change to the archive's format.
@@ -283,31 +294,48 @@ workflow after a push.
 ## Handoff
 
 For an agent or a person who starts with no memory of the earlier
-sessions. Brought up to date on 2026-11-13. Everything here was true
+sessions. Brought up to date on 2026-11-14. Everything here was true
 when it was written; check the repository before relying on it.
 
 ### Read in this order
 
 1. "How to use this file", then this section.
 2. "Decisions" and "The plan".
-3. In the private tracker the open items T1 to T9; T1 is the next
-   stage.
+3. In the private tracker the open items T1 to T11; T1 and T10 are
+   the next stage. Then its design, `d24-in-detail.md`.
 4. From the private archive only what the task needs: the design and
    the result of the stage it builds on. Its titles are listed at its
    top.
 
 ### State of the repository
 
+- **An accident on 2026-11-14, repaired the same evening:** this
+  checkout's `.git/config` had its remote `origin` rewritten (its
+  address became a folder under `~/fvm/`, and its fetch lines mapped
+  the other side's branches onto LOCAL branches). The pre-commit hook
+  had fallen back to `fvm dart` in a temporary second checkout without
+  `.fvm/flutter_sdk`, and `fvm`'s own git commands, run under the
+  hook's `GIT_DIR`, acted on this repository. Branches, tags and
+  objects were not touched. The section was put back by hand
+  (`https://github.com/PLFIndia/pitak-x`, git's usual fetch line) and
+  checked against GitHub. Whether it held other lines before is not
+  known. `git remote -v` must show `github.com/PLFIndia/pitak-x`. The
+  full record is in the private design file ("INCIDENT while
+  committing"); the trap is under "Git hooks and `fvm`" below.
+  `~/fvm/cache.git` is an empty folder since then and was left alone.
 - Branch `reviewFixes`: the 24 commits of the rework up to BR6 on top
   of `origin/main` (`fe8a2c4`), the last of them `0d3dcca`; the commit
   that put this file into git (`5e8449b`); the four commits of BR7
   (`122545f`, `683b5f9`, `8cc4660`, `9511905`); and two commits that
-  brought this handoff up to date (`2a91544`, and the one after BR7's
-  CI run). Look at `git status` for whether the branch is pushed.
+  brought this handoff up to date (`2a91544` and `b49901e`). Up to
+  there the branch is pushed; the seven commits of the stage of D24
+  on top of it are not (see below).
 - Draft pull request #30 ("Backup and restore rework, stages BR1 to
   BR6"; its title does not name BR7 yet). CI runs on a pull request
   and on a push to `main` only (`ci.yml:7-10`); a push to
-  `reviewFixes` runs it because of #30. Run 43461825246 at `2a91544`,
+  `reviewFixes` runs it because of #30. Run 43468053387 at `b49901e`,
+  the head of the branch, is green in all four jobs (looked at on
+  2026-11-14). Run 43461825246 at `2a91544`,
   the first with BR7, is green in all four jobs; so is the workflow
   "Update goldens" of the same push, which changed nothing.
 - **Where the private files are:** in the root of the maintainer's
@@ -319,6 +347,9 @@ when it was written; check the repository before relying on it.
   BR7's design, was there too; its build log, its result and its
   commits are in the archive now, word for word (the last sections),
   so where the file still lies it is a duplicate.
+  `d24-in-detail.md`, the design and the whole record of the stage
+  of D24, lies there as well since 2026-11-14, with its own line in
+  `.git/info/exclude`.
 - Untracked files that `git status` shows. Do not add, move or
   delete them: the nine review files (`codeReviewPrompt1.md` to `4.md`,
   `codeReviewReport1.md` to `4.md`, `codeReviewSummary.md`), and five
@@ -330,27 +361,51 @@ when it was written; check the repository before relying on it.
   built is in its line under "Stages"; how, with every trial by hand
   and every point where the build left the design, is in the archive
   ("BR7 build log", "BR7 result").
-- Checks on the tree of `9511905`, which later commits did not change
-  outside this file: `build_runner` no diff; format 0 changed of
-  1,427 files; analyze 47, none in `lib/`, `test/`,
-  `integration_test/`, `tool/`; 7,008 tests passed; Kotlin 55 in each
-  flavour; Rust clean, 37 passed, 2 ignored. These are the numbers the
-  next stage compares its baseline with.
-- Nothing of the next stage is designed or built.
+- **The stage of D24 is built and committed, not pushed**
+  (2026-11-14). `reviewFixes` is at `a4b456d`, seven commits ahead of
+  `origin/reviewFixes` (`b49901e`): `43fb8d4`, `fb21ace`, `5088e02`,
+  `4e5d782`, `1651c11`, `69d5e66`, `a4b456d`. `git status` shows this
+  file as the only change.
+- The tree of `a4b456d` is, file for file, the tree the last checks
+  ran on: `build_runner` no diff; format 0 changed of 1,441 files;
+  analyze 47, none in `lib/`, `test/`, `integration_test/`, `tool/`;
+  7,132 tests passed; Kotlin 55 in each flavour; Rust clean, 37
+  passed, 2 ignored. These are the numbers the next stage compares
+  its baseline with. A run in the emulator showed the real picker for
+  Import and Merge and the clean-up at the first start.
+- How it was built, where the build left the design, every trial by
+  hand, the emulator run, the review stop, the accident above and the
+  commits are in the private design file `d24-in-detail.md`.
+- The commits were made in a temporary plain clone
+  (`/tmp/pitak_d24/clone`, still there) and brought over with
+  `git fetch <that folder>` and `git reset <commit>`, which changes no
+  file; see the traps for why not in a worktree. `/tmp/pitak_d24/`
+  also holds the snapshots, patches, logs and screenshots; the system
+  empties `/tmp`, and nothing in the repository depends on them.
+- What changed outside git: the design file, two new rows (T10, T11)
+  in the private tracker, the decisions D31 to D35 at the end of the
+  private archive, and the line in `.git/info/exclude`.
 
 ### Next
 
-1. Confirm the state above and run the checks (baseline).
-2. Design "Import and Merge on the app's own picker" (D24, T1): read
-   the tracker's T1 and the pieces listed below, write the design
-   into a private file of its own, and ask for the go-ahead. No code
-   before the answer.
+1. Confirm the state above (`git status`, `git log`, `git remote -v`).
+2. Commit this file (its own yes), then the push (its own yes). Look
+   at every job of the CI run, and at the workflow "Update goldens"
+   (no screen with a golden changed). The three tests that use
+   `chmod` have never run on Linux; they skip themselves where the
+   account may read and write everything.
+3. When the run is green: move T1 and T10 to "Closed" in the tracker
+   with the commits; put `d24-in-detail.md` into the archive, word
+   for word; set the stage's line under "Stages" to "done"; set D31
+   to D35 to "built".
+4. Then the next stage. BR8 waits for a passed run on a real phone;
+   BR9 for decision points 5 and 6; BR10 is last.
 
 ### What each stage still waits for
 
 | Stage | Waits for |
 |---|---|
-| Import and Merge on the picker (D24, T1) | its own design and go-ahead |
+| Import and Merge on the picker (D24, T1, T10) | the push and a green CI run |
 | BR8 raise the limits | a passed run on a real phone; the time the share plugin needs to copy a large file on Android's main thread, measured first |
 | BR9 resource notice | decision points 5 and 6 |
 | BR10 proof and records | a real phone; ADR 0025 and ADR 0026 |
@@ -377,7 +432,9 @@ For the stage of D24 (Import and Merge on the picker):
   `hasZipLocalFileHeader` is in `import_format_sniffer.dart`. The
   Import page applies the same rule to a picked file before it reads
   it; that part, and its read through `file_selector`
-  (`bounded_file_read.dart`), is what the new stage replaces. How
+  (`bounded_file_read.dart`), is what the new stage replaces. That
+  helper has a third caller, `LocalCoverReader`
+  (`library/infrastructure/`), which reads a cover file with it. How
   the controller behaves over time (one run at a time, a run that
   outlives its page) is tested on the text route in
   `import_controller_test.dart`.
@@ -606,6 +663,28 @@ Each cost time once.
   the same name. The system picker remembers the last folder.
   Passphrase fields give blank screenshots.
 
+**Git hooks and `fvm`**
+
+- `.githooks/pre-commit` uses `.fvm/flutter_sdk/bin/dart` when it is
+  there and falls back to `fvm dart` when it is not. `.fvm/` is not in
+  git, so a NEW clone or a new `git worktree` has no such folder until
+  `fvm use` has run in it. A `git commit` there runs `fvm` under the
+  variables git sets for a hook (`GIT_DIR`), and `fvm` then runs its
+  own git housekeeping against THIS repository: on 2026-11-14 it
+  rewrote the remote `origin` in `.git/config`. Before the first
+  commit in a new checkout: make `.fvm/flutter_sdk` (a link to the
+  installed SDK, as in the main checkout), and never start `fvm` from
+  inside a git hook.
+- **The hook cannot work in a linked worktree (`git worktree add`) at
+  all.** There git hands a hook an ABSOLUTE `GIT_DIR`, and a tool that
+  runs `git -C <its own folder>` still lands in this repository. In
+  the main checkout (and in a plain clone) `GIT_DIR` is `.git`,
+  relative, and the same call lands in the tool's own folder. With an
+  absolute `GIT_DIR` Flutter's `bin/dart` takes this repository's
+  commit for its own revision, removes its version files, and `pub`
+  then fails with "requires the Flutter SDK". After such a run:
+  `fvm flutter --version` from a normal shell writes them again.
+
 **CI, Linux and this Mac**
 
 - A check that passed on this Mac has not passed on Linux, where CI
@@ -673,8 +752,10 @@ Each cost time once.
 
 ### Open items kept in the private tracker
 
-Nine things that are not fixed and are therefore not described here
-(D30). The private tracker has each with its place in the code.
+Eleven things that are not fixed and are therefore not described
+here (D30). The private tracker has each with its place in the code.
+T10 and T11 were found on 2026-11-14, while the stage of D24 was
+designed; T11 is outside that stage.
 
 | T | Area | Belongs to |
 |---|---|---|
@@ -687,6 +768,8 @@ Nine things that are not fixed and are therefore not described here
 | T7 | The vault's files | not in a stage |
 | T8 | The texts inside failures | not in a stage; needs tracing first |
 | T9 | Restore, writing covers | not in a stage |
+| T10 | Merge, choosing a file | the stage of D24 |
+| T11 | Cover photos, temporary files (not traced yet) | not in a stage |
 
 ### Questions the maintainer has not answered yet
 
@@ -699,10 +782,16 @@ None of them blocks the next stage.
   coordinator is switched off (another test file does). Change them,
   or leave them?
 - The title of pull request #30 still says "stages BR1 to BR6".
-- How Android's picker shows a `.pitabak` now that Import asks for
-  `json` and `csv` only has not been looked at on a device (the page
-  refuses a ZIP either way).
 - Pull request #30 is a draft. When is it made ready, and merged?
+- `zip_reader_cases_test.dart:729` (the assertion on wall-clock time
+  the traps name) failed in two of about ten full runs on 2026-11-14,
+  with 259 ms and 209 ms against its bound of 200, and passed alone
+  every time. Raise the bound, or leave it?
+- Does D30's "until the open items T1 to T9 are closed" now mean T1
+  to T11? (T10 is closed by the stage of D24 as designed; T11 is
+  not.)
+- For T11: trace it first (read the two plugins, look at a device),
+  then decide as for T2.
 - Decision points 5 and 6 (before BR9) and 7.
 - For each of T2, T3 and T5 to T9: is it built, in which stage, or
   accepted as a known limit and written into `SECURITY.md`?
@@ -732,7 +821,10 @@ None of them blocks the next stage.
   onto `RunFolders`; `PickedDocumentChannel.kt` (455 lines) in two
   files; `expectUnchanged` looking at the folders first; a helper in
   the restore controller's tests that shows why a restore failed;
-  `sqlite_watched_libraries_source.dart` on `retryWhileSqliteBusy`.
+  `sqlite_watched_libraries_source.dart` on `retryWhileSqliteBusy`;
+  `writePrefsBool` reading the earlier value untyped, as
+  `writePrefsString` does (today a value of another type under the
+  key makes it throw).
 - CI housekeeping: `rust/osv-scanner.toml` has an ignore that no
   longer matches anything (GHSA-qwgh-2vcv-g2f7), and the matching
   entries in `deny.toml` were not looked at; `ubuntu-latest` moves to
@@ -775,6 +867,10 @@ None of them blocks the next stage.
 
 ### Scratch folders outside git
 
+`/tmp/pitak_d24/` holds the baseline logs of 2026-11-14 (`baseline/`),
+the parts the design file was joined from (`design/`), the build's
+logs, snapshots, patches and trials (`build/`), and the emulator run
+(`emulator/`).
 `/tmp/pitak_br7/` holds the logs and saved files of 2026-11-13; its
 folder `build/` holds those of BR7 (the logs of every check, a
 snapshot and a patch of each step, the trial script and its logs). The
@@ -790,3 +886,4 @@ repository depends on any of them.
 | 2026-11-11 | Riders 3 and 2 of BR4. BR5. The first three steps of BR5b. D17 to D19 |
 | 2026-11-12 | BR5b step 4. BR6, with a run in the emulator. D20 to D28. The branch pushed; draft pull request #30 |
 | 2026-11-13 | The first CI runs: `rustix` (`5e8dfea`), and a restore test that failed now and then, fixed in two commits (`ede5a3e`, then `0d3dcca` after the first form failed on Linux). D29. BR7 designed. This file cut down (D30). BR7 built, committed (`122545f` to `9511905`) and pushed; its CI run green |
+| 2026-11-14 | Baseline for the stage of D24: unchanged. The stage designed (private file); T10 found. D31 to D35. The CI run of `b49901e` seen green. The go-ahead; all six steps of the stage built; its run in the emulator; the review stop (D35, two small fixes, T11); an accident with this checkout's git settings, repaired; seven commits, not pushed |
