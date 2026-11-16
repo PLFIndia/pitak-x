@@ -372,10 +372,11 @@ when it was written; check the repository before relying on it.
   commits are in the archive now, word for word (the last sections),
   so where the file still lies it is a duplicate.
   `d24-in-detail.md`, the design and the whole record of the stage
-  of D24, lies there as well since 2026-11-14, with its own line in
-  `.git/info/exclude`. Since 2026-11-16 the archive holds it byte for
-  byte (the section "The stage of D24: its design file, word for
-  word"), so the file is a duplicate; removing it needs a yes.
+  of D24, lay there as well from 2026-11-14. Since 2026-11-16 the
+  archive holds it byte for byte (the section "The stage of D24: its
+  design file, word for word"); the file itself was removed that day
+  with the maintainer's yes, after one more comparison. Its line in
+  `.git/info/exclude` is still there.
   `br10-in-detail.md`, written 2026-11-16, is the working file of the
   device runs: the design of the tool for synthetic backups (waiting
   for its go-ahead), and later one row per run. It has its line in
@@ -478,8 +479,9 @@ in the last section of this file, "Device runs", under "State on
 
 On the phone (a OnePlus 9R) the F-Droid install now is a build of
 `dde1e80` from this Mac, with the made-up library of 4,000 books.
-Five made-up backups lie in its Download folder, and the backup the
-app made in the maintainer's own backups folder there.
+The five made-up backups were removed from its Download folder again
+(the maintainer's yes); the backup the app made is in the maintainer's
+own backups folder there.
 
 ### What each stage still waits for
 
@@ -993,15 +995,13 @@ None of them blocks the next stage.
   signature check of the JDK fails the job (a key change at the
   vendor would then turn CI red), or leave the default, which only
   warns?
-- `d24-in-detail.md` is now a duplicate of what the archive holds.
-  Remove it?
-- Left from the device runs of 2026-11-16, each to be removed with a
-  yes or kept: the five made-up backups in the phone's Download
-  folder (about 750 MB); `/tmp/pitak_br10/` on the Mac (logs, helper
-  scripts and screenshots, one of them with file names of the
-  maintainer's own). The F-Droid install on the phone is a build of
-  `dde1e80` from this Mac with 4,000 made-up books: put a released
-  build there before it is used for a real library?
+- The F-Droid install on the phone is a build of `dde1e80` from this
+  Mac with 4,000 made-up books: put a released build there before it
+  is used for a real library?
+- Still on the Mac under `/tmp`, not asked about:
+  `/tmp/pitak_bookkeeping/` (it holds copies of the private files as
+  they were before the bookkeeping of 2026-11-16) and the CI logs
+  `/tmp/pitak_ci_*.log`. Remove them, or leave them to the system?
 - `docs/RELEASING.md`, "Local test installs", gives the release build
   command without `flutter clean` and without the look inside
   `libapp.so` that its own §4 and §6.5 ask for. That is how a wrong
@@ -1053,9 +1053,11 @@ None of them blocks the next stage.
 `~/pitak-device-runs/` (NOT under `/tmp`: it is kept) holds the five
 made-up backups with their checksums, the result tables of run A and
 run B, and the backups pulled back from the emulator and the phone.
-`/tmp/pitak_br10/` holds the logs, helper scripts and screenshots of
-the device runs of 2026-11-16; one screenshot there shows file names
-of the maintainer's own.
+Its folder `helpers/` holds the scratch scripts that drove the
+emulator and the phone through `adb` (their `README.txt` says how to
+use them again for run E). `/tmp/pitak_br10/`, where the logs and
+screenshots of the device runs of 2026-11-16 lay, was removed that
+day with the maintainer's yes.
 `/tmp/pitak_bookkeeping/` holds the copies of the private files and
 of this file that were made before the bookkeeping of 2026-11-16,
 with their checksums, and the two scripts that changed the tracker
