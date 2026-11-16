@@ -205,6 +205,10 @@ are raised in a later stage.
   write everything.
 - `tool/zip_reader_memory_check.dart`: a check by hand that reading and
   restoring a 1 GiB backup stays within a capped heap.
+- `tool/make_synthetic_backup.dart`: makes a backup of a chosen size out
+  of made-up books and cover pictures, with the app's own writer, for
+  the runs on a device. The reader of a restore looks at every file
+  before it is handed out, and the tool's tests restore one.
 - Every test reads a ZIP through the reader that ships
   (`test/support/read_zip.dart`): each entry is taken twice, into memory
   and into a file, and the two must agree. The cases for odd and hostile
