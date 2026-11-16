@@ -218,6 +218,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      # The JDK that runs Gradle is named HERE, not left to the runner.
+      # Until 2026-11 this job used whatever Java `ubuntu-latest` shipped.
+      # When that label moved from ubuntu-24.04 to ubuntu-26.04, the first
+      # `./gradlew` call of this job failed after 19 seconds with nothing
+      # but "What went wrong: 25.0.5" (run 43811850151): the Gradle 8.14
+      # this build uses does not start on so new a Java. 21 is the newest
+      # JDK the build allows (docs/RELEASING.md §7: "JDK ≤ 21").
+      # This is the only job that runs Gradle, so it is the only one that
+      # needs a JDK. SHA looked up at pin time, 2026-11-16.
+      - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
+        with:
+          distribution: temurin
+          java-version: '21'
       - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with:
           flutter-version-file: .fvmrc
