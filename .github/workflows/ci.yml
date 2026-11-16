@@ -104,6 +104,11 @@ jobs:
         run: |
           python3 tool/check_fastlane_changelog_chars.py 33
           python3 -m unittest discover -s tool -p 'test_check_fastlane_changelog_chars.py'
+      # The script that measures a backup or a restore on a device is run by
+      # hand, with a phone attached. Its tests need no device: they read
+      # texts that were copied from one.
+      - name: Device-run measuring script (its tests)
+        run: python3 -m unittest discover -s tool -p 'test_device_run_measure.py'
       # Includes the migration matrix (all 25 book + 16 wishlist columns survive
       # restore) and the fail-closed restore/vault-mapping tests. Goldens run
       # in their own step below so a renderer mismatch is never mistaken for

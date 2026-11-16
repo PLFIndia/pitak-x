@@ -209,6 +209,11 @@ are raised in a later stage.
   of made-up books and cover pictures, with the app's own writer, for
   the runs on a device. The reader of a restore looks at every file
   before it is handed out, and the tool's tests restore one.
+- `tool/device_run_measure.py`: measures one backup or restore on a
+  device through `adb` (time, the app's largest memory, storage, crash
+  lines in the device log, leftover work files) and writes one table
+  row. It only reads on the device. CI runs its tests, which need no
+  device.
 - Every test reads a ZIP through the reader that ships
   (`test/support/read_zip.dart`): each entry is taken twice, into memory
   and into a file, and the two must agree. The cases for odd and hostile
