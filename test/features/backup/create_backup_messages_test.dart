@@ -16,25 +16,35 @@ void main() {
   group('backupTooLargeMessage', () {
     test('too many cover pictures', () {
       expect(
-        message(BackupOverflow.tooManyCovers, 4300, 4086),
-        'This library has 4,300 cover pictures; a backup can hold 4,086. '
+        message(BackupOverflow.tooManyCovers, 10300, 10000),
+        'This library has 10,300 cover pictures; a backup can hold 10,000. '
         'Nothing was exported.',
       );
     });
 
     test('too much content', () {
       expect(
-        message(BackupOverflow.contentTooLarge, 537 * mb, 500 * mb),
-        'This library needs 537.0 MB in a backup; a backup can hold '
-        '500.0 MB. Nothing was exported.',
+        message(BackupOverflow.contentTooLarge, 1126 * mb, 1024 * mb),
+        'This library needs 1.1 GB in a backup; a backup can hold '
+        '1.0 GB. Nothing was exported.',
+      );
+    });
+
+    test('too much content by a little: the two sizes still read '
+        'differently', () {
+      // In GB both would read "1.0"; the pair then drops to the next unit.
+      expect(
+        message(BackupOverflow.contentTooLarge, 1030 * mb, 1024 * mb),
+        'This library needs 1,030.0 MB in a backup; a backup can hold '
+        '1,024.0 MB. Nothing was exported.',
       );
     });
 
     test('the archive file is too large', () {
       expect(
-        message(BackupOverflow.archiveTooLarge, 505 * mb, 504 * mb),
-        'The backup file would be 505.0 MB; the largest backup this app can '
-        'read back is 504.0 MB. Nothing was exported.',
+        message(BackupOverflow.archiveTooLarge, 1029 * mb, 1028 * mb),
+        'The backup file would be 1,029.0 MB; the largest backup this app '
+        'can read back is 1,028.0 MB. Nothing was exported.',
       );
     });
 

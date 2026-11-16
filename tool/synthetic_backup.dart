@@ -2,9 +2,9 @@
 // (Backup rework, PLAN.md "Device runs", step 3; the first item of BR10.)
 //
 // WHY THIS EXISTS (beginner note): the device runs have to show what the
-// app does with a large backup on a real phone: 4,000 covers, 4,086 (the
-// most a backup holds today), one more than that, and a file close to the
-// size limit. Nobody has a real library of exactly those sizes, and a real
+// app does with a large backup on a real phone: thousands of covers, as
+// many as a backup holds, more than that, and a file close to the size
+// limit. Nobody has a real library of exactly those sizes, and a real
 // library must not be used for a test anyway. So this file invents one.
 //
 // What makes the result trustworthy:

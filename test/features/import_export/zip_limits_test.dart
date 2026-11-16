@@ -2,21 +2,24 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/features/backup/domain/backup_limits.dart';
 import 'package:pitaka/features/import_export/domain/zip_limits.dart';
 
-/// BR3: the reader's caps for a backup are built from `BackupLimits`. The
-/// numbers below are what the released app (1.9.7) enforces; a change here
-/// changes which backups can be restored.
+/// BR3: the reader's caps for a backup are built from `BackupLimits`. A
+/// change of the numbers below changes which backups can be restored.
+///
+/// Since BR8 they are higher than what release 1.9.7 enforces (4,096
+/// entries, 500 MiB): this app reads back every backup that one could
+/// read, and larger ones too (decisions D3, D4 and D12).
 void main() {
   const mebibyte = 1024 * 1024;
 
-  test("ZipLimits.pitakaBackup still holds the released reader's numbers", () {
+  test('ZipLimits.pitakaBackup holds the numbers of a backup', () {
     final limits = ZipLimits.pitakaBackup;
-    expect(limits.maxEntries, 4096);
-    expect(limits.maxTotalBytes, 500 * mebibyte);
+    expect(limits.maxEntries, 10010);
+    expect(limits.maxTotalBytes, 1024 * mebibyte);
     expect(limits.maxEntryBytes, 200 * mebibyte);
-    // The two derived caps, as the old defaults computed them: content plus
-    // 4 MiB, and 1 KiB of directory per entry.
-    expect(limits.maxArchiveBytes, 504 * mebibyte);
-    expect(limits.maxCentralDirectoryBytes, 4096 * 1024);
+    // The two derived caps: content plus 4 MiB, and 1 KiB of directory per
+    // entry.
+    expect(limits.maxArchiveBytes, 1028 * mebibyte);
+    expect(limits.maxCentralDirectoryBytes, 10010 * 1024);
   });
 
   test('pitakaBackup is BackupLimits.current, not a second set of numbers', () {

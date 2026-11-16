@@ -338,7 +338,7 @@ void main() {
     await tester.pumpWidget(
       page(
         useCase: _FakeCreateBackup(
-          left(const BackupTooLargeFailure('tooManyCovers', 4300, 4086)),
+          left(const BackupTooLargeFailure('tooManyCovers', 10300, 10000)),
         ),
       ),
     );
@@ -346,7 +346,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(
       find.text(
-        'This library has 4,300 cover pictures; a backup can hold 4,086. '
+        'This library has 10,300 cover pictures; a backup can hold 10,000. '
         'Nothing was exported.',
       ),
       findsOneWidget,

@@ -50,12 +50,23 @@ final class BackupLimits {
   /// compares the count with this number.
   static const int otherEntries = 10;
 
-  /// The limits in force today. They equal what the reader has always
-  /// enforced (4,096 entries, 500 MiB of content, 200 MiB per entry), so no
-  /// existing backup is treated differently.
+  /// The limits in force today: 10,000 cover pictures and 1 GiB of content
+  /// (backup rework BR8, decisions D3 and D4).
+  ///
+  /// Why these may be higher than what older versions read (beginner note):
+  /// up to release 1.9.7 the reader enforced 4,096 entries and 500 MiB of
+  /// content. This version reads back everything those versions could, and
+  /// more. A backup above the OLD numbers does not open in such a version;
+  /// that direction is not promised, and the create-backup page says so
+  /// (decision D12). The caps per kind of entry did not change (decision
+  /// D9).
+  ///
+  /// The higher numbers are safe only because backup and restore work from
+  /// files and hold neither the archive nor its content in memory (BR4 to
+  /// BR6, decision D5). Do not raise them without measuring on a phone.
   static const BackupLimits current = BackupLimits(
-    maxCovers: 4086,
-    maxContentBytes: 500 * _mebibyte,
+    maxCovers: 10000,
+    maxContentBytes: 1024 * _mebibyte,
     maxCoverBytes: 4 * _mebibyte,
     maxDatabaseBytes: 200 * _mebibyte,
     maxTextEntryBytes: 4 * _mebibyte,

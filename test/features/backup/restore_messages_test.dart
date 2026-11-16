@@ -14,7 +14,7 @@ void main() {
   );
   const mebibyte = 1024 * 1024;
 
-  String? message(DocumentPickResult result, {int max = 504 * mebibyte}) =>
+  String? message(DocumentPickResult result, {int max = 1028 * mebibyte}) =>
       restorePickMessage(result, maxArchiveBytes: max);
 
   group('restorePickMessage', () {
@@ -27,12 +27,12 @@ void main() {
       expect(
         message(const DocumentPickTooLarge()),
         'This file is too large to be a Pitak backup. A backup file can be '
-        'at most 504.0 MB.',
+        'at most 1.0 GB.',
       );
       // The number is the caller's, in the unit it reaches.
       expect(
-        message(const DocumentPickTooLarge(), max: 1028 * mebibyte),
-        contains('at most 1.0 GB.'),
+        message(const DocumentPickTooLarge(), max: 504 * mebibyte),
+        contains('at most 504.0 MB.'),
       );
       expect(
         message(const DocumentPickTooLarge(), max: 2048),
@@ -46,7 +46,7 @@ void main() {
           const DocumentPickTooLarge(),
           max: BackupLimits.current.maxArchiveBytes,
         ),
-        contains('at most 504.0 MB.'),
+        contains('at most 1.0 GB.'),
       );
     });
 

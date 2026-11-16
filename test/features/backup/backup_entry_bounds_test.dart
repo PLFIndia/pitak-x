@@ -250,18 +250,25 @@ void main() {
       });
 
       test('many oversized covers do not add up against the content cap', () {
-        // 200 covers that each declare 4 MiB + 1: 800 MiB, more than a
-        // backup may hold (500 MiB). They are left out, so they count for
-        // nothing (BR5, choice 4).
+        // As many covers as it takes to declare MORE than a backup may
+        // hold, each one byte above the cap of a cover. They are left out,
+        // so they count for nothing (BR5, choice 4). The count follows the
+        // limits: with a fixed count, higher limits would quietly turn this
+        // into a test of covers that fit anyway.
+        final count = current.maxContentBytes ~/ current.maxCoverBytes + 1;
+        expect(
+          count * (current.maxCoverBytes + 1),
+          greaterThan(current.maxContentBytes),
+        );
         final verdicts = verdictsOf([
           declaring('manifest.json', 100),
-          for (var i = 0; i < 200; i++)
+          for (var i = 0; i < count; i++)
             declaring('cover_$i.jpg', current.maxCoverBytes + 1),
         ]);
-        expect(verdicts, hasLength(201));
+        expect(verdicts, hasLength(count + 1));
         expect(
           verdicts.values.where((v) => v == ZipEntryVerdict.leftOut),
-          hasLength(200),
+          hasLength(count),
         );
       });
 
@@ -342,13 +349,25 @@ void main() {
 
       test('the content cap still refuses a backup whose TAKEN entries '
           'declare too much', () {
-        // Three databases at their cap of 200 MiB: 600 MiB, over the 500
-        // a backup may hold.
+        // Every entry is within its OWN cap and is taken: the three
+        // databases at theirs, and covers at theirs, one more than still
+        // fits beside the databases. Together they declare more than a
+        // backup may hold. The number of covers follows the limits, for
+        // the reason the test of the oversized covers gives.
+        final databases = 3 * current.maxDatabaseBytes;
+        final room = current.maxContentBytes - databases;
+        final covers = room <= 0 ? 0 : room ~/ current.maxCoverBytes + 1;
+        expect(
+          databases + covers * current.maxCoverBytes,
+          greaterThan(current.maxContentBytes),
+        );
         expect(
           () => verdictsOf([
             declaring('books.db', current.maxDatabaseBytes),
             declaring('wishlist.db', current.maxDatabaseBytes),
             declaring('borrowers.db', current.maxDatabaseBytes),
+            for (var i = 0; i < covers; i++)
+              declaring('cover_$i.jpg', current.maxCoverBytes),
           ]),
           refusedWith('Archive total exceeds cap'),
         );

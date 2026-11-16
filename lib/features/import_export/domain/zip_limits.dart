@@ -79,9 +79,9 @@ class ZipLimits {
   /// checked from the EOCD record before any header is parsed.
   final int maxCentralDirectoryBytes;
 
-  /// Defaults for the Pitaka backup format (`PITAKA_BACKUP_LIMITS`):
-  /// 200 MiB per entry, 500 MiB in total, 4,096 entries. Built from
-  /// [BackupLimits.current], the one place that holds these numbers.
+  /// Defaults for the Pitaka backup format (`PITAKA_BACKUP_LIMITS`). Built
+  /// from [BackupLimits.current], the one place that holds the numbers; they
+  /// are not repeated here, so this comment cannot go stale.
   static final ZipLimits pitakaBackup = ZipLimits.forBackup(
     BackupLimits.current,
   );

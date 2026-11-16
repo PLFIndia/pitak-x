@@ -492,10 +492,13 @@ to false** (the `hasX` forward-compat pattern):
   `Either`.
 - The writer refuses what the reader refuses (review finding P1-M1). One
   value, `BackupLimits` (backup domain), holds the numbers of a backup:
-  4,086 covers plus 10 other entries (4,096 entries), 500 MiB of content,
+  10,000 covers plus 10 other entries (10,010 entries), 1 GiB of content,
   4 MiB per cover, 200 MiB per database, 4 MiB for a text entry without a
-  decoder cap. `ZipLimits.pitakaBackup` is built from it, so writer and
-  reader cannot drift apart. `backupEntryCap` maps an entry name to its cap
+  decoder cap. (Up to release 1.9.7 the reader enforced 4,096 entries and
+  500 MiB; a backup above those does not open in such a version, and the
+  create-backup page says so.) `ZipLimits.pitakaBackup` is built from it,
+  so writer and reader cannot drift apart. The edges are tested at these
+  numbers on declared sizes (`backup_limits_edges_test.dart`). `backupEntryCap` maps an entry name to its cap
   and uses the decoders' own constants where they exist. After the two
   SQLite files are written and before the ZIP is started, the writer
   measures every entry without reading a cover (`backup_preflight.dart`) and

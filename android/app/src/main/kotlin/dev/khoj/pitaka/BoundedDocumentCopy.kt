@@ -36,7 +36,8 @@ internal object BoundedDocumentCopy {
      * The highest cap a caller may ask for: 2 GiB.
      *
      * This is a stop for a WRONG caller, not the limit of a backup. The real
-     * limit is the cap Dart sends (about 504 MiB today), which is far below.
+     * limit is the cap Dart sends (`BackupLimits.maxArchiveBytes`; about
+     * 1 GiB since the limits were raised), which is below.
      */
     const val MAX_BYTES_CEILING: Long = 2L * 1024 * 1024 * 1024
 

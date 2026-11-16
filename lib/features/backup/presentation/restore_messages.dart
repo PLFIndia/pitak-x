@@ -52,7 +52,7 @@ String? restorePickMessage(
   DocumentPickFailed() => documentPickFailedMessage,
 };
 
-/// One size as the other pages write sizes ("504.0 MB").
+/// One size as the other pages write sizes ("1.0 GB").
 String _size(int bytes) => formatSizePair(bytes, bytes).first;
 
 /// The sentence above the list of items whose cover picture was too large

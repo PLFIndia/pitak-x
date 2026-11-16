@@ -8,7 +8,7 @@
 // program is much faster at making thousands of pictures.
 //
 //   dart compile exe tool/make_synthetic_backup.dart -o /tmp/make_synthetic_backup
-//   /tmp/make_synthetic_backup --covers 4086 --cover-bytes 20000 --out <folder>
+//   /tmp/make_synthetic_backup --covers 10000 --cover-bytes 20000 --out <folder>
 //
 // Arguments:
 //   --covers N         how many books, each with one cover picture
@@ -22,19 +22,22 @@
 // -BEYOND-LIMITS before the ending when that was asked for). An existing
 // file is never overwritten.
 //
-// The files for the runs at today's limits (4,086 covers, 4,096 entries,
-// 500 MiB of content):
-//   --covers 4000 --cover-bytes 20000
-//   --covers 4086 --cover-bytes 20000
-//   --covers 4094 --cover-bytes 20000 --beyond-limits
-//   --covers 4000 --cover-bytes 125000
+// The files for the runs at today's limits (10,000 covers, 10,010
+// entries, 1 GiB of content; backup rework BR8):
+//   --covers 10000 --cover-bytes 20000
+//   --covers 10000 --cover-bytes 107000     (close to 1 GiB of content)
+//   --covers 10008 --cover-bytes 20000 --beyond-limits
 //
-// Why 4,094 and not 4,087 for the file that must be refused: the app's
-// WRITER refuses more than 4,086 covers, but the READER of a restore
+// Why 10,008 and not 10,001 for the file that must be refused: the app's
+// WRITER refuses more than 10,000 covers, but the READER of a restore
 // counts entries, and a made-up backup has only three files besides its
-// covers. 4,094 covers are 4,097 entries, one more than the reader takes.
-// (Asked for 4,087 covers, this tool prints the writer's refusal; with
-// --beyond-limits it says that the reader would take the file.)
+// covers. 10,008 covers are 10,011 entries, one more than the reader
+// takes. (Asked for 10,001 covers, this tool prints the writer's refusal;
+// with --beyond-limits it says that the reader would take the file.)
+//
+// The runs at the limits release 1.9.7 had (4,086 covers, 4,096 entries,
+// 500 MiB) used 4,000 and 4,086 covers of 20,000 bytes, 4,094 covers with
+// --beyond-limits, and 4,000 covers of 125,000 bytes.
 import 'dart:io';
 
 import 'package:pitaka/core/error/failure.dart';

@@ -4,6 +4,11 @@ import 'package:pitaka/features/backup/domain/backup_limits.dart';
 /// BR3: the backup limits live in one value. These tests pin today's numbers
 /// (a change here is a change of what the app can restore) and the rules the
 /// constructor enforces.
+///
+/// The numbers were raised once, in BR8 (decisions D3 and D4): from 4,086
+/// covers and 500 MiB, which is what release 1.9.7 reads back, to 10,000
+/// covers and 1 GiB. The edges of the numbers are tested in
+/// `backup_limits_edges_test.dart`.
 void main() {
   const mebibyte = 1024 * 1024;
 
@@ -11,8 +16,8 @@ void main() {
     const limits = BackupLimits.current;
 
     test("holds today's numbers", () {
-      expect(limits.maxCovers, 4086);
-      expect(limits.maxContentBytes, 500 * mebibyte);
+      expect(limits.maxCovers, 10000);
+      expect(limits.maxContentBytes, 1024 * mebibyte);
       expect(limits.maxCoverBytes, 4 * mebibyte);
       expect(limits.maxDatabaseBytes, 200 * mebibyte);
       expect(limits.maxTextEntryBytes, 4 * mebibyte);
@@ -21,11 +26,11 @@ void main() {
 
     test('the entry count is the covers plus the ten other entries', () {
       expect(BackupLimits.otherEntries, 10);
-      expect(limits.maxEntries, 4096);
+      expect(limits.maxEntries, 10010);
     });
 
     test('the archive may be larger than its content by the overhead', () {
-      expect(limits.maxArchiveBytes, 504 * mebibyte);
+      expect(limits.maxArchiveBytes, 1028 * mebibyte);
     });
 
     test('the largest single entry is a database', () {

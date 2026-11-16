@@ -555,7 +555,7 @@ void main() {
       (
         const DocumentPickTooLarge(),
         'This file is too large to be a Pitak backup. A backup file can be '
-            'at most 504.0 MB.',
+            'at most 1.0 GB.',
       ),
       (
         const DocumentPickUnreadable(),
