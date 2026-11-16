@@ -114,6 +114,7 @@ under "D<number>". All are of November 2026.
 | D35 | 14 | `PRIVACY.md` (item 7) and `README.md` say that a file chosen for Import or Merge is read from a private temporary copy that is removed at once, and that copies of earlier versions are removed. They change in the same push as the code. No dated "Changed" note and no new effective date yet | built (`69d5e66`) |
 | D36 | 16 | The phone run of today's limits (run B) has passed when every backup and every restore ends with its normal result (no crash, no "app is not responding", no half-restored library) and nothing is left behind in the cache. Times, memory and a screen that stands still are written down and judged by the maintainer; they do not fail the run by themselves | in force |
 | D37 | 16 | The writer of a backup counts covers and the reader of a restore counts entries; that stays as it is. The runs use four made-up files: 4,000 covers, 4,086 covers, 4,094 covers (which the reader refuses) and one of about 477 MiB. No file of 4,087 covers is made | in force |
+| D38 | 16 | The phone run of today's limits (run B) has passed (D36): every backup and restore ended with its normal result, and no freeze was seen. BR8 goes ahead as planned. What run B did not run (a backup with a vault, a look into the app's cache on the phone, the phone locked in the middle of a restore) is done in run E, after BR8. Said with it: a fast phone | in force |
 
 Decision points of the plan that are still open: 5, 6 and 7 (see
 "The plan").
@@ -155,7 +156,7 @@ small ones, on the branch `reviewFixes`.
 | BR7 | The other readers: Import reads JSON and CSV only, and a ZIP that is picked anyway is refused with a sentence (D29). Every test reads ZIP files through the one reader that works from a file. The in-memory ZIP reader is removed, and the domain layer imports no package for ZIP work (ADR 0009, third amendment) | done: `122545f`, `683b5f9`, `8cc4660`, `9511905` |
 | (D24) | Import and Merge on the app's own picker (T1, T10): both pages choose their file through the app's own picker; the `file_selector` package leaves the app (D31 to D35) | done: `43fb8d4`, `fb21ace`, `5088e02`, `4e5d782`, `1651c11`, `69d5e66`, `a4b456d` |
 | (CI) | The one CI job that runs Gradle names its JDK (Temurin 21) instead of taking the one the runner happens to have | done: `3ea1812` |
-| BR8 | Raise the limits (D3, D4) | after a passed run on a phone |
+| BR8 | Raise the limits (D3, D4) | NEXT: to be designed. The phone run of today's limits has passed (D38) |
 | BR9 | The resource notice (D5) | needs decision points 5 and 6 |
 | BR10 | Proof on devices, records, clean-up | last |
 
@@ -174,8 +175,10 @@ After each of BR1, BR2, BR3, BR4, BR6 and BR7 the app is releasable.
 
 ### The open stages
 
-**BR8. Raise the limits (D3, D4).** Only after the phone run of the
-old numbers has passed, or together with it.
+**BR8. Raise the limits (D3, D4).** The phone run of the old numbers
+has passed (run B, 2026-11-16; D38). Next is its design, in a private
+file of its own, and the maintainer's go-ahead; no code before that
+(D21). What run B left out is done in run E, after BR8 is built.
 
 - [ ] `BackupLimits`: 10,000 covers, entries derived, 1 GiB content;
   the caps per kind as D9 says.
@@ -308,8 +311,9 @@ when it was written; check the repository before relying on it.
 1. "How to use this file", then this section.
 2. "Decisions" and "The plan".
 3. In the private tracker the open items (T2 to T9 and T11; T1 and
-   T10 are under "Closed"). Then the last section of this file,
-   "Device runs": it is the next work.
+   T10 are under "Closed"). Then "Next" below: the next work is the
+   design of BR8. The private working file of the device runs is
+   `br10-in-detail.md`.
 4. From the private archive only what the task needs: the design and
    the result of the stage it builds on. Its titles are listed at its
    top.
@@ -341,15 +345,20 @@ when it was written; check the repository before relying on it.
   the same day for the device runs: `549b93c` (the tool for synthetic
   backups), `dde1e80` (the script that measures a run), a small
   commit that lets that script watch for several sentences, and the
-  commit that brings this file up to date. `git status` and `git log`
-  say whether they are committed and pushed; no CI run had seen them
-  when this was written.
+  commit that brings this file up to date (`5cecdcf`, `3797288`).
+  Those four were pushed on 2026-11-16 too. One more commit of this
+  file, with the handoff for BR8, comes on top: `git status` and `git
+  log` say whether it is committed and pushed.
 - Draft pull request #30 ("Backup and restore rework, stages BR1 to
   BR6"; its title does not name BR7 yet). CI runs on a pull request
   and on a push to `main` only (`ci.yml:7-10`); a push to
-  `reviewFixes` runs it because of #30. Run 43815445508 at `3ea1812`
-  is green in all four jobs on its second attempt, and so is the
-  workflow "Update goldens" of the same push (2026-11-16). It is the
+  `reviewFixes` runs it because of #30. **Run 43866666335 at `3797288`
+  is green in all four jobs at its first attempt** (2026-11-16), and
+  so is "Update goldens": 7,148 tests, the 25 tests of the measuring
+  script in a step of their own, both purity checks and the Android
+  unit tests. Before it, run 43815445508 at `3ea1812`
+  was green in all four jobs on its second attempt, and so was the
+  workflow "Update goldens" of the same push (2026-11-16). It was the
   first green run with the stage of D24 and the first on the runner
   image `ubuntu-26.04`. How it got there is under "The push of
   2026-11-16" below.
@@ -432,27 +441,40 @@ when it was written; check the repository before relying on it.
 
 ### Next
 
-The device runs were begun on 2026-11-16 and STOPPED by the maintainer
-after most of run B ("stop the test here and go ahead for the next
-steps"). What was done and seen is in the last section of this file,
-"Device runs", under "State on 2026-11-16". In short, for the next
-session:
+**The next session plans BR8** (the maintainer, 2026-11-16: "write
+handoff now and we will plan BR8 in next session"). It is a planning
+session: it writes a design and asks; it writes no code before the
+go-ahead (D21).
 
-1. Confirm the state above (`git status`, `git log`, `git remote -v`),
-   and look at the CI run of the last push: every job.
-2. **The maintainer's judgement of run B (D36) is open:** does BR8 go
-   ahead as planned? Run B's first condition is met as far as it was
-   run; the second (nothing left in the cache) is not known on the
-   phone; the numbers are from a fast phone.
-3. Not run, and still wanted by the plan unless the maintainer says
-   otherwise: in run B a backup WITH a vault, a phone locked in the
-   middle of a restore, and a look into the cache (it needs a debug
-   build on the phone, or the cache figure of the phone's Settings);
-   all of run C (Import and Merge on the phone's picker, a file kept
-   online, the clean-up of the old picker's copies, T4); run D (how
-   photographed covers look).
-4. Then BR8 (its design, its go-ahead), run E after it. BR9 still
-   waits for decision points 5 and 6; BR10 is last.
+The device runs were begun on 2026-11-16 and stopped by the maintainer
+after most of run B. Run B has PASSED (D38). What was done and seen is
+in the last section of this file, "Device runs", under "State on
+2026-11-16".
+
+1. Confirm the state above (`git status`, `git log`, `git remote -v`);
+   if a commit of this file was pushed after `3797288`, look at its CI
+   run, every job.
+2. Read for BR8: "The open stages" (its three boxes), the decisions
+   D3, D4, D9, D10, D12, D37 and D38, "For BR8" under "What the built
+   stages left in place", and in the private `br10-in-detail.md` what
+   the runs measured. Then the code the numbers live in, before any
+   line of the design is written.
+3. Baseline: the four Dart checks (under `caffeinate`). After the
+   `flutter clean` of 2026-11-16 `build_runner` starts from nothing
+   and may take long, and the offline Gradle run of the Android unit
+   tests needs the network once (a yes).
+4. Write BR8's design into a private file of its own
+   (`br8-in-detail.md`, with its line in `.git/info/exclude`): what
+   changes, the tests at the new edges and how their size is handled,
+   the sentences, what it means for storage and time on a phone, the
+   steps and commits, what cannot be checked while planning. Put its
+   decision points to the maintainer one at a time. Stop for the
+   go-ahead.
+5. After BR8 is built: run E (emulator, then the phone), which also
+   does what run B left out. Still not begun: run C (Import and Merge
+   on the phone's picker, a file kept online, the clean-up of the old
+   picker's copies, T4) and run D (how photographed covers look).
+   BR9 still waits for decision points 5 and 6; BR10 is last.
 
 On the phone (a OnePlus 9R) the F-Droid install now is a build of
 `dde1e80` from this Mac, with the made-up library of 4,000 books.
@@ -464,7 +486,7 @@ app made in the maintainer's own backups folder there.
 | Stage | Waits for |
 |---|---|
 | Import and Merge on the picker (D24, T1, T10) | nothing: done. Run C of "Device runs" is for what no test reached |
-| BR8 raise the limits | the maintainer's judgement of run B (D36). Measured on 2026-11-16, on a fast phone: a 500 MB backup reached the share sheet 2.7 seconds after the tap, build and the share plugin's copy together, and no freeze was seen |
+| BR8 raise the limits | its design and the go-ahead. Run B has passed (D38). Measured on 2026-11-16, on a fast phone: a 500 MB backup reached the share sheet 2.7 seconds after the tap, build and the share plugin's copy together, and no freeze was seen |
 | BR9 resource notice | decision points 5 and 6 |
 | BR10 proof and records | a real phone; ADR 0025 and ADR 0026 |
 
@@ -519,6 +541,30 @@ For BR8 (the limits):
 - The memory checks by hand: `tool/backup_memory_check.dart` and
   `tool/zip_reader_memory_check.dart` (with `--restore`).
 - `released_backup_fixture_test.dart` must stay green (D12).
+- Since 2026-11-16: `tool/make_synthetic_backup.dart` makes a backup
+  of N covers of a chosen size with the app's real writer and asks
+  the reader of a restore about it before it hands it out
+  (`--beyond-limits` for a file that must be refused). It takes its
+  limits from `BackupLimits.current`, so after BR8 it makes the files
+  of run E without a change. `tool/device_run_measure.py` measures a
+  run on a device.
+- **The writer counts covers, the reader counts entries** (D37):
+  `maxEntries` is `maxCovers + otherEntries` (10). A test or a file
+  for "one too many" has to say which side it means: the writer
+  refuses `maxCovers + 1` covers; the reader refuses `maxEntries + 1`
+  entries, which for a backup with three other files is `maxCovers +
+  8` covers.
+- What run B measured at today's limits, on a fast phone (OnePlus 9R,
+  a release build): the app's largest resident memory was 229.8 MB
+  and did not grow with the size of the backup; a restore needed
+  about the size of the backup in storage once more (the picker's
+  copy), a backup twice its size for a moment; every restore, also of
+  477 MiB, was over within about six seconds, and a 500 MB backup
+  reached the share sheet in 2.7 seconds. At 1 GiB that is about 1
+  GiB and 2 GiB of free storage at the worst moment.
+- The sentence for a backup with too many entries is the general
+  "This file doesn’t look like a valid Pitak backup." (seen in the
+  emulator and on the phone): for the box about P4-m19.
 
 For BR9 (the notice):
 
@@ -700,6 +746,30 @@ Each cost time once.
   yes each time, also for the agent's own edits and its own scratch
   files. Undo an own edit with the edit tool; run a scratch script
   with `bash script.sh`.
+
+**The phone (OnePlus 9R, Android 14), learned on 2026-11-16**
+
+- It refuses `adb shell pm clear`, `svc power stayon` and `settings
+  put global`, and `screenrecord` crashes on it. Its screen timeout
+  is 30 minutes. To empty an install the maintainer clears its data
+  in the phone's Settings.
+- A restore into an install that HAS a borrowers vault asks for the
+  vault to be unlocked, and with loans in it refuses a backup with
+  another catalogue ("Cannot safely match this catalogue …"). Made-up
+  backups need an emptied install.
+- A release build does not let `adb` look into the app's files
+  (`run-as`), but the shell may read `/proc/<pid>/status` (the
+  largest memory) and `dumpsys meminfo`.
+- The helpers that drive the system's picker by `adb` work with the
+  phone UPRIGHT only. Files that came through `adb push` are not
+  found by the picker's search; they are in the list, which is long
+  and sorted by date: the made-up files are near its top.
+- What `adb` prints of the screen holds whatever is on it (the
+  maintainer's folder names, a borrower). Print only what the task
+  needs, and write none of it down.
+- With `--until-label`, give the measuring script the sentences of a
+  refusal too, or a run that is refused is only noticed at the time
+  limit.
 
 **Gradle and the emulator**
 
@@ -925,6 +995,21 @@ None of them blocks the next stage.
   warns?
 - `d24-in-detail.md` is now a duplicate of what the archive holds.
   Remove it?
+- Left from the device runs of 2026-11-16, each to be removed with a
+  yes or kept: the five made-up backups in the phone's Download
+  folder (about 750 MB); `/tmp/pitak_br10/` on the Mac (logs, helper
+  scripts and screenshots, one of them with file names of the
+  maintainer's own). The F-Droid install on the phone is a build of
+  `dde1e80` from this Mac with 4,000 made-up books: put a released
+  build there before it is used for a real library?
+- `docs/RELEASING.md`, "Local test installs", gives the release build
+  command without `flutter clean` and without the look inside
+  `libapp.so` that its own §4 and §6.5 ask for. That is how a wrong
+  build got onto the phone on 2026-11-16. Add the two steps there?
+- The measuring script finds the end of a run by reading the screen,
+  which costs a phone a second or two per look. Leave it (a person
+  with two Enter presses gives the better time), or find a cheaper
+  look?
 - CI shows that the Android unit tests ran, not how many: Gradle's
   output names no count. Print one in the job?
 - In the private tracker 93 findings have an open box and 4 a ticked
@@ -989,7 +1074,7 @@ empties `/tmp`. Nothing in the repository depends on any of them.
 | 2026-11-12 | BR5b step 4. BR6, with a run in the emulator. D20 to D28. The branch pushed; draft pull request #30 |
 | 2026-11-13 | The first CI runs: `rustix` (`5e8dfea`), and a restore test that failed now and then, fixed in two commits (`ede5a3e`, then `0d3dcca` after the first form failed on Linux). D29. BR7 designed. This file cut down (D30). BR7 built, committed (`122545f` to `9511905`) and pushed; its CI run green |
 | 2026-11-14 | Baseline for the stage of D24: unchanged. The stage designed (private file); T10 found. D31 to D35. The CI run of `b49901e` seen green. The go-ahead; all six steps of the stage built; its run in the emulator; the review stop (D35, two small fixes, T11); an accident with this checkout's git settings, repaired; seven commits and this file's (`4b4fe36`), not pushed. A handoff for the device runs of the next session |
-| 2026-11-16 | The stage of D24 pushed. Its CI run red in the F-Droid job: the runner's image had changed, and no workflow named a JDK. `3ea1812` names it (Temurin 21). A second failure of the same job, a refused download, went away when the job was run again; then every job green. T1 and T10 closed; the stage's design file into the archive; this file brought up to date. Then the device runs: the phone and its two installs read with `adb`; the questions of step 1 answered; D36. The tool for synthetic backups designed and built, not committed; while it was built, found that the reader of a restore counts entries where the writer counts covers; D37. The tool committed (`549b93c`, not pushed); the files of runs A and B made. The measuring script built and committed (`dde1e80`, not pushed); the first look and run A in the emulator; a release build for the phone made and installed, then found to hold OLD compiled Dart code (the stale-artefact trap of `docs/RELEASING.md` §4): run B stopped before any restore. A clean rebuild, checked from inside, installed; the phone's install emptied by the maintainer; most of run B done (every restore and the backup at today's limits ended well, no freeze seen), then the device runs stopped by the maintainer |
+| 2026-11-16 | The stage of D24 pushed. Its CI run red in the F-Droid job: the runner's image had changed, and no workflow named a JDK. `3ea1812` names it (Temurin 21). A second failure of the same job, a refused download, went away when the job was run again; then every job green. T1 and T10 closed; the stage's design file into the archive; this file brought up to date. Then the device runs: the phone and its two installs read with `adb`; the questions of step 1 answered; D36. The tool for synthetic backups designed and built, not committed; while it was built, found that the reader of a restore counts entries where the writer counts covers; D37. The tool committed (`549b93c`, not pushed); the files of runs A and B made. The measuring script built and committed (`dde1e80`, not pushed); the first look and run A in the emulator; a release build for the phone made and installed, then found to hold OLD compiled Dart code (the stale-artefact trap of `docs/RELEASING.md` §4): run B stopped before any restore. A clean rebuild, checked from inside, installed; the phone's install emptied by the maintainer; most of run B done (every restore and the backup at today's limits ended well, no freeze seen), then the device runs stopped by the maintainer. Four commits pushed; CI green at `3797288`. D38: run B has passed. A handoff for the planning of BR8 |
 
 ## Device runs: handoff for the next session
 
@@ -1143,6 +1228,9 @@ restore. The judgement is the maintainer's. The rows are in
 
 **The maintainer stopped the device runs here** (2026-11-16). Runs C
 and D were not begun.
+
+**Run B has passed: D38** (the maintainer's judgement the same day).
+BR8 goes ahead as planned. What run B did not run is done in run E.
 
 **Found while building it, and it changes runs A and B:** the app's
 writer refuses more than 4,086 COVERS, but the reader of a restore
@@ -1330,7 +1418,13 @@ Readable? The maintainer's eye decides.
 the reader refuses a made-up backup of 10,008 (D37: it counts
 entries, which will then be 10,010 at most); about 1 GiB of content
 restores and backs up. Emulator first, then the phone,
-with the same notes as run B.
+with the same notes as run B. Also here, because run B left them out
+(D38): a backup WITH a borrowers vault made and restored; a look into
+the app's cache on the phone after the runs (a debug build, or the
+cache figure in the phone's Settings); the phone locked in the middle
+of a restore. On the phone the timed runs want a person who presses
+Enter at the start and at the end: read from the screen, a time is
+good to two seconds only.
 
 ### What to write down
 
