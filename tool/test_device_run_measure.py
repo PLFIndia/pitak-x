@@ -12,6 +12,7 @@ from device_run_measure import (
     DeviceRun,
     count_trouble,
     find_label,
+    first_label_on_screen,
     megabytes,
     parse_df_available,
     parse_meminfo_totals,
@@ -131,6 +132,25 @@ class FindLabelTest(unittest.TestCase):
         self.assertIsNone(find_label("ERROR: could not get idle state.", "x"))
 
 
+class WatchingTheScreenTest(unittest.TestCase):
+    def test_the_first_text_that_is_on_the_screen_is_named(self) -> None:
+        commands = []
+
+        def shell(command: str) -> str:
+            commands.append(command)
+            return UI if command.startswith("cat ") else ""
+
+        # A refusal and the success are both watched for; this screen
+        # shows the success.
+        self.assertEqual(
+            first_label_on_screen(shell, ["Cannot safely", "Restore complete"]),
+            "Restore complete",
+        )
+        self.assertIsNone(first_label_on_screen(shell, ["Cannot safely"]))
+        # The screen is read once for each look, however many texts.
+        self.assertEqual(sum(c.startswith("cat ") for c in commands), 2)
+
+
 class FakeDevice:
     """Stands in for `adb shell`: answers from values a test may change
     between two steps of a run."""
@@ -222,6 +242,20 @@ class DeviceRunTest(unittest.TestCase):
         self.assertIn("most used 1150.1 MB", row)
         self.assertIn("no crash, no error line", row)
         self.assertEqual(row.count("|"), 10)
+
+    def test_the_row_names_the_text_that_ended_the_run(self) -> None:
+        self.run_.begin()
+        result = self.run_.end()
+        result.ended_by = "Cannot safely match"
+        self.assertIn('the screen showed "Cannot safely match"', result.row())
+        self.assertNotIn("what the page said", result.row())
+
+    def test_a_run_whose_end_was_not_seen_has_no_time(self) -> None:
+        self.run_.begin()
+        result = self.run_.end()
+        result.timed_out = True
+        self.assertIn("NO END SEEN within", result.row())
+        self.assertIn("(to fill in: what the page said)", result.row())
 
     def test_storage_from_before_the_pick_is_the_baseline(self) -> None:
         device = self.device

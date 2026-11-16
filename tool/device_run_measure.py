@@ -180,6 +180,11 @@ class Measurement:
     process_replaced: bool = False
     trouble: dict[str, int] = field(default_factory=dict)
     left_behind: str = "unknown"
+    # The text on the screen that ended the run, when the script watched
+    # for one (--until-label). None: a person marked the end, or the time
+    # limit ran out.
+    ended_by: Optional[str] = None
+    timed_out: bool = False
 
     def memory_text(self) -> str:
         """The memory cell of the row, with where the figure comes from."""
@@ -228,6 +233,12 @@ class Measurement:
         """One row of the table of PLAN.md, "What to write down". The two
         cells only a person can fill are left open."""
         time_text = "unknown" if self.seconds is None else f"{self.seconds:.1f} s"
+        if self.timed_out:
+            # Not a measured time: nothing that was watched for came up.
+            time_text = f"NO END SEEN within {time_text}"
+        page = "(to fill in: what the page said)"
+        if self.ended_by is not None:
+            page = f'the screen showed "{self.ended_by}"'
         cells = [
             self.label,
             f"{self.device}; {self.build}",
@@ -235,7 +246,7 @@ class Measurement:
             self.memory_text(),
             self.storage_text(),
             "(to fill in: did the screen stand still?)",
-            "(to fill in: what the page said)",
+            page,
             self.left_behind,
             self.log_text(),
         ]
@@ -383,6 +394,17 @@ def watch_screen(shell: Shell, text: str) -> Optional[tuple[int, int]]:
     return find_label(shell("cat /sdcard/window_dump.xml"), text)
 
 
+def first_label_on_screen(shell: Shell, texts: list[str]) -> Optional[str]:
+    """The first of [texts] that is on the screen right now, or None. The
+    screen is read once for all of them."""
+    shell("uiautomator dump /sdcard/window_dump.xml")
+    ui_xml = shell("cat /sdcard/window_dump.xml")
+    for text in texts:
+        if find_label(ui_xml, text) is not None:
+            return text
+    return None
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Measure one backup or restore of Pitak on a device."
@@ -398,7 +420,11 @@ def main() -> None:
     )
     parser.add_argument(
         "--until-label",
-        help="end when this text is on the screen, instead of on Enter",
+        action="append",
+        help="end when this text is on the screen, instead of on Enter. "
+        "May be given several times: name the sentence of success AND the "
+        "sentences of a refusal, or a run that is refused is only noticed "
+        "when the time limit runs out. The row says which one came up.",
     )
     parser.add_argument("--timeout", type=float, default=3600.0)
     parser.add_argument(
@@ -453,14 +479,19 @@ def main() -> None:
             daemon=True,
         ).start()
     deadline = time.monotonic() + arguments.timeout
-    while not finished.is_set() and time.monotonic() < deadline:
+    ended_by = None
+    while not finished.is_set() and ended_by is None:
+        if time.monotonic() >= deadline:
+            run.result.timed_out = True
+            break
         run.sample()
         if arguments.until_label is not None:
-            if watch_screen(shell, arguments.until_label) is not None:
-                break
-        finished.wait(arguments.interval)
+            ended_by = first_label_on_screen(shell, arguments.until_label)
+        if ended_by is None:
+            finished.wait(arguments.interval)
 
     result = run.end()
+    result.ended_by = ended_by
     arguments.out.parent.mkdir(parents=True, exist_ok=True)
     new_file = not arguments.out.exists()
     with arguments.out.open("a", encoding="utf-8") as table:
