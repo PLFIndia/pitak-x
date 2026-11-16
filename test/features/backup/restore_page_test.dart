@@ -454,6 +454,72 @@ void main() {
     expect(controller.restores, isEmpty);
   });
 
+  // BR8 (decision D41, review finding P4-m19): a file that holds more than
+  // a backup can is not called "not a valid Pitak backup". Each kind has
+  // its sentence, with the app's own number in it. The sentences are
+  // written out here ON PURPOSE: they are what the user reads.
+  for (final (failure, sentence) in <(BackupTooLargeFailure, String)>[
+    (
+      const BackupTooLargeFailure('tooManyCovers', null, 10000),
+      'This file holds more than a Pitak backup can. A backup can hold '
+          '10,000 cover pictures.',
+    ),
+    (
+      const BackupTooLargeFailure('contentTooLarge', null, 1024 * 1024 * 1024),
+      'This file holds more than a Pitak backup can. A backup can hold '
+          '1.0 GB.',
+    ),
+    (
+      const BackupTooLargeFailure('entryTooLarge'),
+      'One part of this file is larger than a Pitak backup allows.',
+    ),
+    (
+      const BackupTooLargeFailure('archiveTooLarge', null, 1028 * 1024 * 1024),
+      'This file is too large to be a Pitak backup. A backup file can be '
+          'at most 1.0 GB.',
+    ),
+  ]) {
+    testWidgets('a file beyond the limits (${failure.detail}) is told apart '
+        'from a damaged one when it is chosen, and its copy is given '
+        'back', (tester) async {
+      controller.inspection = left(failure);
+      await tester.pumpWidget(wrap());
+      await pick(tester);
+
+      expect(find.text(sentence), findsOneWidget);
+      expect(
+        find.textContaining('doesn’t look like a valid Pitak backup'),
+        findsNothing,
+      );
+      expect(restoreEnabled(tester), isFalse);
+      expect(find.text('Choose .pitabak file'), findsOneWidget);
+      expect(controller.released, [_document]);
+      expect(controller.restores, isEmpty);
+    });
+  }
+
+  testWidgets('a restore that ends because the file is beyond the limits '
+      'says so too', (tester) async {
+    // The restore opens the file again; the same failure can come from it.
+    controller.outcome = const AsyncError(
+      BackupTooLargeFailure('tooManyCovers', null, 10000),
+      StackTrace.empty,
+    );
+    await tester.pumpWidget(wrap());
+    await pick(tester);
+    await tapRestore(tester);
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text(
+        'This file holds more than a Pitak backup can. A backup can hold '
+        '10,000 cover pictures.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('Restore complete'), findsNothing);
+  });
+
   testWidgets('an inspection that throws is a safe sentence, and the copy '
       'is given back', (tester) async {
     controller.inspectionThrows = true;

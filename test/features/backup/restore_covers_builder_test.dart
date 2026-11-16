@@ -9,6 +9,7 @@ import 'package:pitaka/features/backup/infrastructure/backup_progress_port.dart'
 import 'package:pitaka/features/backup/infrastructure/restore_archive_reader.dart';
 import 'package:pitaka/features/backup/infrastructure/restore_covers_builder.dart';
 import 'package:pitaka/features/import_export/domain/cover_paths.dart';
+import 'package:pitaka/features/import_export/domain/zip_entry_rules.dart';
 
 import '../import_export/hostile_zip_builder.dart';
 
@@ -142,6 +143,7 @@ void main() {
 
     void expectDone(RestoreCoversAnswer answer) {
       expect(answer.refusal, isNull);
+      expect(answer.refusalKind, isNull);
       expect(answer.trouble, isNull);
     }
 
@@ -230,6 +232,8 @@ void main() {
         final answer = buildRestoredCovers(job(path, firstLook(path)));
 
         expect(answer.refusal, contains('checksum'));
+        // BR8: a damaged picture is not a limit; the kind says so.
+        expect(answer.refusalKind, ZipRefusal.other);
         expect(answer.trouble, isNull);
         // The restorer discards the whole generation; the step itself
         // only promises that the damaged picture is not there.
@@ -291,10 +295,45 @@ void main() {
             answer.refusal,
             'The backup file changed while it was being restored',
           );
+          expect(answer.refusalKind, ZipRefusal.other);
           expect(written(), isEmpty);
           expect(unpacked, isEmpty);
         });
       }
+
+      test('BR8: a file that is beyond the limits when this step opens it '
+          'is refused with the kind of that limit, and nothing is '
+          'written', () {
+        // The first look and this step run under the same limits, so this
+        // cannot happen unless the file was swapped in between. It is
+        // still told apart from a damaged file. Here the step is simply
+        // given limits the file does not fit: one cover and ten other
+        // entries are allowed, and the file has twelve entries.
+        final path = archiveOf([
+          for (var i = 0; i < 11; i++) HostileEntry('cover_$i.jpg', [i]),
+        ]);
+        const oneCover = BackupLimits(
+          maxCovers: 1,
+          maxContentBytes: 64 * 1024,
+          maxCoverBytes: 100,
+          maxDatabaseBytes: 2000,
+          maxTextEntryBytes: 1000,
+        );
+
+        final answer = buildRestoredCovers((
+          archivePath: path,
+          limits: oneCover,
+          coversToWrite: const ['0.jpg'],
+          activeCoversDir: active.path,
+          builderCoversDir: builder.path,
+          progressPort: null,
+        ));
+
+        expect(answer.refusal, contains('too many entries'));
+        expect(answer.refusalKind, ZipRefusal.tooManyEntries);
+        expect(answer.trouble, isNull);
+        expect(written(), isEmpty);
+      });
 
       test('a list that names something the file does not hold as a cover '
           'is never turned into a path', () {
@@ -564,6 +603,8 @@ void main() {
         );
 
         expect(refused.refusal, contains('checksum'));
+        expect(refused.refusalKind, ZipRefusal.other);
+        expect(gone.refusalKind, isNull);
         expect(gone.trouble, RestoreDiskTrouble.archiveUnreadable);
       });
     });

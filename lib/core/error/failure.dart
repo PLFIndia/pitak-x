@@ -179,6 +179,12 @@ final class SchemaTooNewFailure extends Failure {
 /// Since BR3 the same failure also covers sizes and counts: too many cover
 /// pictures, too much content, a single part that is too large. The reader
 /// refuses such a file outright, so the writer does not build it.
+///
+/// Since BR8 the RESTORE side makes it too, for a file that holds more than
+/// a backup can (a backup made by a version without limits, or by a later
+/// one with higher limits). Until then such a file was called damaged
+/// ([BackupCorruptFailure]), which it is not. From a restore, [actual] is
+/// always null: a number a file claims about itself is not shown to anyone.
 final class BackupTooLargeFailure extends Failure {
   /// Creates a too-large failure. [detail] is the name of the limit that was
   /// hit (a `BackupOverflow` code of the backup feature), never shown

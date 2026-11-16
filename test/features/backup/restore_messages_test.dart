@@ -1,6 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/core/platform/document_picker.dart';
 import 'package:pitaka/features/backup/domain/backup_limits.dart';
+import 'package:pitaka/features/backup/domain/backup_overflow.dart';
 import 'package:pitaka/features/backup/presentation/restore_messages.dart';
 
 /// BR6: the sentences of the restore page for choosing a file and for
@@ -121,6 +123,131 @@ void main() {
         'and were not restored. The items themselves were restored:',
       );
       expect(restoreCoversLeftOutMessage(1203), contains('of 1,203 items'));
+    });
+  });
+
+  // BR8 (decision D41, review finding P4-m19): a file that holds more than
+  // a backup can. The sentences are spelled out in full: they are what the
+  // user reads instead of "doesn’t look like a valid Pitak backup".
+  group('restoreBeyondLimitsMessage', () {
+    const gibibyte = 1024 * mebibyte;
+
+    String message(BackupOverflow code, [int? limit]) =>
+        restoreBeyondLimitsMessage(
+          BackupTooLargeFailure(code.name, null, limit),
+        );
+
+    test('too many entries: the cover pictures a backup can hold', () {
+      expect(
+        message(BackupOverflow.tooManyCovers, 10000),
+        'This file holds more than a Pitak backup can. A backup can hold '
+        '10,000 cover pictures.',
+      );
+    });
+
+    test('too much content: the size a backup can hold', () {
+      expect(
+        message(BackupOverflow.contentTooLarge, gibibyte),
+        'This file holds more than a Pitak backup can. A backup can hold '
+        '1.0 GB.',
+      );
+      // The number is the failure's, in the unit it reaches.
+      expect(
+        message(BackupOverflow.contentTooLarge, 500 * mebibyte),
+        contains('A backup can hold 500.0 MB.'),
+      );
+    });
+
+    test('one part above its cap: no number', () {
+      expect(
+        message(BackupOverflow.entryTooLarge),
+        'One part of this file is larger than a Pitak backup allows.',
+      );
+      expect(
+        message(BackupOverflow.entryTooLarge, 123),
+        restorePartTooLargeMessage,
+        reason: 'a number that came along is not shown',
+      );
+    });
+
+    test('a file above the file cap: the sentence the picker has', () {
+      expect(
+        message(BackupOverflow.archiveTooLarge, 1028 * mebibyte),
+        'This file is too large to be a Pitak backup. A backup file can be '
+        'at most 1.0 GB.',
+      );
+      expect(
+        message(BackupOverflow.archiveTooLarge, 1028 * mebibyte),
+        restorePickMessage(
+          const DocumentPickTooLarge(),
+          maxArchiveBytes: 1028 * mebibyte,
+        ),
+      );
+    });
+
+    test('with the limits the app has today', () {
+      const limits = BackupLimits.current;
+      expect(
+        message(BackupOverflow.tooManyCovers, limits.maxCovers),
+        contains('A backup can hold 10,000 cover pictures.'),
+      );
+      expect(
+        message(BackupOverflow.contentTooLarge, limits.maxContentBytes),
+        contains('A backup can hold 1.0 GB.'),
+      );
+    });
+
+    test('a limit without its number, a code only the writer uses, and a '
+        'code nobody knows: the sentence without a number, never a guess', () {
+      const fallback = 'This file holds more than a Pitak backup can.';
+      expect(restoreBeyondLimitsFallbackMessage, fallback);
+      expect(message(BackupOverflow.tooManyCovers), fallback);
+      expect(message(BackupOverflow.contentTooLarge), fallback);
+      expect(message(BackupOverflow.archiveTooLarge), fallback);
+      for (final code in const [
+        BackupOverflow.catalogueTooLarge,
+        BackupOverflow.wishlistTooLarge,
+        BackupOverflow.vaultTooLarge,
+        BackupOverflow.itemKindsTooLarge,
+        BackupOverflow.itemKindsTooManyRows,
+        BackupOverflow.periodicalsTooLarge,
+        BackupOverflow.periodicalsTooManyRows,
+      ]) {
+        expect(message(code, 5), fallback, reason: code.name);
+      }
+      expect(
+        restoreBeyondLimitsMessage(
+          const BackupTooLargeFailure('nonsense', 1, 2),
+        ),
+        fallback,
+      );
+      expect(
+        restoreBeyondLimitsMessage(const BackupTooLargeFailure()),
+        fallback,
+      );
+    });
+
+    test('every code has a sentence, and none of them calls the file '
+        'damaged', () {
+      for (final code in BackupOverflow.values) {
+        final sentence = message(code, 7);
+        expect(sentence, isNotEmpty, reason: code.name);
+        expect(sentence, isNot(contains('valid')), reason: code.name);
+      }
+    });
+
+    test('a number from the file is never shown', () {
+      // `actual` is what a file would claim about itself. A restore leaves
+      // it empty; should one ever come along, no sentence uses it.
+      for (final code in BackupOverflow.values) {
+        expect(
+          restoreBeyondLimitsMessage(
+            BackupTooLargeFailure(code.name, 987654321, 10000),
+          ),
+          isNot(contains('987')),
+          reason: code.name,
+        );
+      }
     });
   });
 }

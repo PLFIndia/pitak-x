@@ -139,6 +139,7 @@ final class BoundedZipFile {
       if (length > caps.maxArchiveBytes) {
         throw BoundedExtractionException(
           'Archive file is too large (>${caps.maxArchiveBytes} bytes)',
+          kind: ZipRefusal.fileTooLarge,
         );
       }
       final source = ZipFileSource(file, length);
@@ -186,6 +187,7 @@ final class BoundedZipFile {
         if (records.length == caps.maxEntries) {
           throw BoundedExtractionException(
             'Archive has too many entries (>${caps.maxEntries})',
+            kind: ZipRefusal.tooManyEntries,
           );
         }
         records.add(record);

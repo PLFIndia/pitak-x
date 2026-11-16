@@ -74,6 +74,7 @@ import 'package:pitaka/features/backup/infrastructure/restore_catalogue_builder.
 import 'package:pitaka/features/backup/infrastructure/restore_covers_builder.dart';
 import 'package:pitaka/features/backup/infrastructure/restore_item_details.dart';
 import 'package:pitaka/features/backup/infrastructure/restore_legacy_read.dart';
+import 'package:pitaka/features/backup/infrastructure/restore_refusal.dart';
 import 'package:pitaka/features/backup/infrastructure/restore_summary_builder.dart';
 import 'package:pitaka/features/library/domain/catalogue_replacement_guard.dart';
 import 'package:pitaka/features/vault/domain/entities/vault_data.dart';
@@ -81,14 +82,6 @@ import 'package:pitaka/features/vault/domain/repositories/vault_repository.dart'
 import 'package:pitaka/features/vault/infrastructure/vault_store.dart';
 import 'package:sqlite3/common.dart';
 import 'package:sqlite3/sqlite3.dart';
-
-/// What the user reads when the backup file itself can no longer be opened
-/// or read (the private copy is gone: the system may clear the app's
-/// temporary folder when storage is short). A sentence of its own, because
-/// "could not write the restored data" would be untrue, and because there
-/// is something the user can do.
-const String restoreArchiveUnreadableMessage =
-    'The backup file could not be read. Please choose it again.';
 
 /// Opens the app's Drift catalogue at an arbitrary file path (the builder
 /// generation's copy). Injectable so tests can inject faults into it.
@@ -173,7 +166,12 @@ final class RestoreBackup {
       limits: limits,
       workDir: null,
     ));
-    final stopped = _failureOf(parts.refusal, parts.trouble);
+    final stopped = restoreStopFailure(
+      refusal: parts.refusal,
+      kind: parts.refusalKind,
+      trouble: parts.trouble,
+      limits: limits,
+    );
     if (stopped != null) return left(stopped);
     return parseBackupManifest(parts.entries).map((manifest) {
       final extras = readBackupExtras(
@@ -226,7 +224,12 @@ final class RestoreBackup {
         limits: limits,
         workDir: workDir,
       ));
-      final stopped = _failureOf(parts.refusal, parts.trouble);
+      final stopped = restoreStopFailure(
+        refusal: parts.refusal,
+        kind: parts.refusalKind,
+        trouble: parts.trouble,
+        limits: limits,
+      );
       if (stopped != null) return left(stopped);
 
       // --- Phase 3: manifest, refuse schemaVersion > known ---
@@ -385,7 +388,12 @@ final class RestoreBackup {
         builderCoversDir: builder.coversDir,
         progressPort: progress?.sendPort,
       ));
-      final coversStopped = _failureOf(covers.refusal, covers.trouble);
+      final coversStopped = restoreStopFailure(
+        refusal: covers.refusal,
+        kind: covers.refusalKind,
+        trouble: covers.trouble,
+        limits: limits,
+      );
       if (coversStopped != null) return left(coversStopped);
 
       // 6c. vault: the archive's validated pair, or the retained device vault
@@ -445,22 +453,6 @@ final class RestoreBackup {
         }
       }
     }
-  }
-
-  /// The typed failure for what a worker answered, or null when it did not
-  /// stop. Made HERE, on the calling isolate: no [Failure] object crosses
-  /// the isolate border, only a refusal's text or a code for the disk.
-  static Failure? _failureOf(String? refusal, RestoreDiskTrouble? trouble) {
-    if (refusal != null) return BackupCorruptFailure(refusal);
-    return switch (trouble) {
-      null => null,
-      RestoreDiskTrouble.archiveUnreadable => const ValidationFailure(
-        restoreArchiveUnreadableMessage,
-      ),
-      RestoreDiskTrouble.targetUnwritable => const StorageFailure(
-        'Restore could not write files',
-      ),
-    };
   }
 
   static String _utf8(Uint8List bytes) =>

@@ -7,6 +7,7 @@ import 'package:path/path.dart' as p;
 import 'package:pitaka/features/backup/domain/backup_identity.dart';
 import 'package:pitaka/features/backup/domain/backup_limits.dart';
 import 'package:pitaka/features/backup/infrastructure/restore_archive_reader.dart';
+import 'package:pitaka/features/import_export/domain/zip_entry_rules.dart';
 
 import '../import_export/hostile_zip_builder.dart';
 
@@ -365,6 +366,9 @@ void main() {
         final parts = restore(archiveOf(entries));
 
         expect(parts.refusal, contains("'$name' exceeds per-entry cap"));
+        // BR8: the refusal says what kind it is, so the page need not
+        // call this file damaged.
+        expect(parts.refusalKind, ZipRefusal.entryTooLarge);
         expectStopped(parts);
       });
     }
@@ -464,6 +468,32 @@ void main() {
       );
 
       expect(parts.refusal, contains('too many entries'));
+      expect(parts.refusalKind, ZipRefusal.tooManyEntries);
+      expectStopped(parts);
+    });
+
+    test('more content than a backup may hold refuses the file', () {
+      // Every entry is within its own cap; together they declare 3,100
+      // bytes where 3,000 are allowed.
+      const tight = BackupLimits(
+        maxCovers: 20,
+        maxContentBytes: 3000,
+        maxCoverBytes: 100,
+        maxDatabaseBytes: 2000,
+        maxTextEntryBytes: 1000,
+      );
+      final parts = readRestoreArchive((
+        archivePath: archiveOf([
+          HostileEntry('books.db', booksDb),
+          HostileEntry('wishlist.db', wishlistDb),
+          HostileEntry('borrowers.db', borrowersDb),
+        ]),
+        limits: tight,
+        workDir: work.path,
+      ));
+
+      expect(parts.refusal, contains('total exceeds cap'));
+      expect(parts.refusalKind, ZipRefusal.contentTooLarge);
       expectStopped(parts);
     });
   });
@@ -534,6 +564,8 @@ void main() {
       final parts = restore(path);
 
       expect(parts.refusal, isNotNull);
+      // Not a limit: a file that is not to be trusted (BR8).
+      expect(parts.refusalKind, ZipRefusal.other);
       expect(parts.trouble, isNull);
       expectStopped(parts);
     });
@@ -546,6 +578,7 @@ void main() {
       final parts = restore(path);
 
       expect(parts.refusal, isNotNull);
+      expect(parts.refusalKind, ZipRefusal.other);
       expectStopped(parts);
     });
 
@@ -553,6 +586,7 @@ void main() {
       final parts = restore(p.join(tmp.path, 'never-there'));
 
       expect(parts.refusal, isNull);
+      expect(parts.refusalKind, isNull);
       expect(parts.trouble, RestoreDiskTrouble.archiveUnreadable);
       expectStopped(parts);
     });
@@ -572,6 +606,7 @@ void main() {
       final parts = restore(path);
 
       expect(parts.refusal, contains('too large'));
+      expect(parts.refusalKind, ZipRefusal.fileTooLarge);
       expectStopped(parts);
     });
   });
@@ -627,6 +662,7 @@ void main() {
       ));
 
       expect(parts.refusal, isNull);
+      expect(parts.refusalKind, isNull);
       expect(parts.entries['backup_blob'], blob);
       expect(File(parts.booksDbPath!).readAsBytesSync(), booksDb);
       expect(parts.coversToWrite, ['a.jpg', 'b.jpg']);
@@ -648,7 +684,21 @@ void main() {
       ));
 
       expect(refused.refusal, isNotNull);
+      expect(refused.refusalKind, ZipRefusal.other);
       expect(gone.trouble, RestoreDiskTrouble.archiveUnreadable);
+    });
+
+    test('the kind of a refusal for a limit crosses too (BR8)', () async {
+      final huge = p.join(tmp.path, 'huge');
+      File(huge).writeAsBytesSync(Uint8List(limits.maxArchiveBytes + 1));
+
+      final refused = await readRestoreArchiveInWorker((
+        archivePath: huge,
+        limits: limits,
+        workDir: null,
+      ));
+
+      expect(refused.refusalKind, ZipRefusal.fileTooLarge);
     });
   });
 }

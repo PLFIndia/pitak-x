@@ -25,7 +25,7 @@
 ///
 /// As with the other worker of a restore (`restore_archive_reader.dart`),
 /// only plain data crosses the isolate border: a refusal travels as its
-/// text, trouble with the disk as a code.
+/// text and its kind, trouble with the disk as a code.
 library;
 
 import 'dart:io';
@@ -87,7 +87,16 @@ typedef RestoreCoversJob = ({
 /// What the worker hands back: nothing when every cover is in place, or
 /// why it stopped (`refusal`: the archive is not what the first look saw,
 /// or an entry is damaged; `trouble`: the disk).
-typedef RestoreCoversAnswer = ({String? refusal, RestoreDiskTrouble? trouble});
+///
+/// `refusalKind` says which kind of refusal it was and is set exactly when
+/// `refusal` is (backup rework BR8). This step opens the file again under
+/// the same limits, so in theory it can also find a file that is beyond
+/// them.
+typedef RestoreCoversAnswer = ({
+  String? refusal,
+  ZipRefusal? refusalKind,
+  RestoreDiskTrouble? trouble,
+});
 
 /// Why the step refuses when the covers of the archive are no longer the
 /// ones the first look listed. Names no file: the text ends up in a
@@ -135,12 +144,13 @@ RestoreCoversAnswer buildRestoredCovers(
     } else {
       _writeListed(job, listed, target, report, unpackedBytesProbe);
     }
-    return (refusal: null, trouble: null);
+    return (refusal: null, refusalKind: null, trouble: null);
   } on BoundedExtractionException catch (e) {
-    return (refusal: e.message, trouble: null);
+    return (refusal: e.message, refusalKind: e.kind, trouble: null);
   } on FileSystemException catch (e) {
     return (
       refusal: null,
+      refusalKind: null,
       trouble: restoreDiskTroubleOf(e, archivePath: job.archivePath),
     );
   }

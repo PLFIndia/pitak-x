@@ -1,7 +1,8 @@
 /// The sentences the restore page shows while a backup file is chosen and
-/// copied, when choosing it did not work, and when a restore had to leave
-/// cover pictures out (presentation layer, AGENTS.md §5: typed answers in,
-/// safe text out, never raw exception text).
+/// copied, when choosing it did not work, when the file holds more than a
+/// backup can, and when a restore had to leave cover pictures out
+/// (presentation layer, AGENTS.md §5: typed answers in, safe text out,
+/// never raw exception text).
 ///
 /// WHY THIS FILE EXISTS (beginner note): since the streamed restore (backup
 /// rework BR6) the page no longer reads the chosen file itself. The app's
@@ -16,9 +17,11 @@
 /// page.
 library;
 
+import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/core/platform/document_pick_messages.dart';
 import 'package:pitaka/core/platform/document_picker.dart';
 import 'package:pitaka/core/text/display_number.dart';
+import 'package:pitaka/features/backup/domain/backup_overflow.dart';
 
 /// The line under the "Choose" button while the system's picker is open
 /// and the chosen file is being copied into the app (decision D26).
@@ -43,9 +46,7 @@ String? restorePickMessage(
   required int maxArchiveBytes,
 }) => switch (result) {
   DocumentPicked() || DocumentPickCancelled() => null,
-  DocumentPickTooLarge() =>
-    'This file is too large to be a Pitak backup. A backup file can be at '
-        'most ${_size(maxArchiveBytes)}.',
+  DocumentPickTooLarge() => _fileTooLarge(maxArchiveBytes),
   DocumentPickUnreadable() => documentUnreadableMessage,
   DocumentPickNotSaved() => documentNotSavedMessage,
   DocumentPickUnavailable() => documentPickUnavailableMessage,
@@ -54,6 +55,75 @@ String? restorePickMessage(
 
 /// One size as the other pages write sizes ("1.0 GB").
 String _size(int bytes) => formatSizePair(bytes, bytes).first;
+
+/// The sentence for a file that is larger than a backup file can be. Said
+/// by the picker while it copies the file, and by the reader, which looks
+/// at the size once more when it opens the copy.
+String _fileTooLarge(int maxArchiveBytes) =>
+    'This file is too large to be a Pitak backup. A backup file can be at '
+    'most ${_size(maxArchiveBytes)}.';
+
+/// The first half of the two sentences below, and the whole sentence when a
+/// failure does not say which limit it was or gives no number. It is still
+/// true then.
+const String restoreBeyondLimitsFallbackMessage =
+    'This file holds more than a Pitak backup can.';
+
+/// The sentence for a file in which one part a restore cannot do without
+/// (the list of items, the wishlist, the borrowers vault, the table of
+/// contents) is larger than a backup allows. No number: the caps differ
+/// from part to part.
+const String restorePartTooLargeMessage =
+    'One part of this file is larger than a Pitak backup allows.';
+
+/// The sentence for a file that holds more than a backup can (backup
+/// rework BR8, decision D41; review finding P4-m19).
+///
+/// WHY (beginner note): until BR8 the page called such a file "not a valid
+/// Pitak backup". But it can be a real backup: one made by an older
+/// version, which had no limits when it wrote, or by a later version with
+/// higher limits. "Too much" and "damaged" are different news, so they get
+/// different sentences.
+///
+/// "This file", not "this backup": the app does not know that it is one.
+/// The number in a sentence is the app's own limit ([failure]'s `limit`).
+/// Nothing the file says about itself is shown, neither a name nor a count.
+///
+/// `failure.detail` carries the NAME of a [BackupOverflow] code, as it does
+/// on the create-backup page (`backupTooLargeMessage`): one vocabulary for
+/// "which limit", and each page has its own sentences for it.
+String restoreBeyondLimitsMessage(BackupTooLargeFailure failure) {
+  final code = BackupOverflow.values.asNameMap()[failure.detail];
+  final limit = failure.limit;
+  if (code == null) return restoreBeyondLimitsFallbackMessage;
+  // The switch has no default ON PURPOSE: a new code does not compile until
+  // someone decides here what the restore page says for it.
+  return switch (code) {
+    BackupOverflow.tooManyCovers =>
+      limit == null
+          ? restoreBeyondLimitsFallbackMessage
+          : '$restoreBeyondLimitsFallbackMessage A backup can hold '
+                '${formatCount(limit)} cover pictures.',
+    BackupOverflow.contentTooLarge =>
+      limit == null
+          ? restoreBeyondLimitsFallbackMessage
+          : '$restoreBeyondLimitsFallbackMessage A backup can hold '
+                '${_size(limit)}.',
+    BackupOverflow.archiveTooLarge =>
+      limit == null ? restoreBeyondLimitsFallbackMessage : _fileTooLarge(limit),
+    BackupOverflow.entryTooLarge => restorePartTooLargeMessage,
+    // The codes below are the WRITER's alone: it checks the parts of the
+    // catalogue and their rows before it packs. The reader of a restore
+    // never gives them. Named one by one so that the switch stays complete.
+    BackupOverflow.catalogueTooLarge ||
+    BackupOverflow.wishlistTooLarge ||
+    BackupOverflow.vaultTooLarge ||
+    BackupOverflow.itemKindsTooLarge ||
+    BackupOverflow.itemKindsTooManyRows ||
+    BackupOverflow.periodicalsTooLarge ||
+    BackupOverflow.periodicalsTooManyRows => restoreBeyondLimitsFallbackMessage,
+  };
+}
 
 /// The sentence above the list of items whose cover picture was too large
 /// and was not restored (decisions D18 and D23). [count] is the number of

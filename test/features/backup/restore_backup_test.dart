@@ -88,6 +88,16 @@ class _AfterRebuildDb extends AppDatabase {
   }
 }
 
+/// Matches the failure of a backup that holds more than a backup can (BR8):
+/// which limit it was ([code], the name of a `BackupOverflow` code) and the
+/// app's own number for it ([limit]). It never carries a number from the
+/// file, so `actual` is null.
+Matcher _beyondLimits(String code, {required int? limit}) =>
+    isA<BackupTooLargeFailure>()
+        .having((f) => f.detail, 'detail', code)
+        .having((f) => f.actual, 'actual', isNull)
+        .having((f) => f.limit, 'limit', limit);
+
 void main() {
   late Directory tmp;
   late GenerationFixture gen;
@@ -1685,14 +1695,87 @@ void main() {
       final tooMany = await r.restore(archivePath: backupWith(10));
       final inspected = await r.inspectArchive(backupWith(10));
 
-      expect(tooMany.getLeft().toNullable(), isA<BackupCorruptFailure>());
-      expect(inspected.getLeft().toNullable(), isA<BackupCorruptFailure>());
+      // BR8 (decision D41): "holds more than a backup can" is not "is
+      // damaged". The failure says which limit it was and names the
+      // number of the limits, here the two covers; it carries nothing
+      // from the file.
+      final tooManyCovers = _beyondLimits('tooManyCovers', limit: 2);
+      expect(tooMany.getLeft().toNullable(), tooManyCovers);
+      expect(inspected.getLeft().toNullable(), tooManyCovers);
       expect(gen.switched, isEmpty);
 
       final fits = await r.restore(archivePath: backupWith(9));
 
       expect(fits.isRight(), isTrue);
       expect(Directory(gen.current().coversDir).listSync(), hasLength(9));
+    });
+
+    test('BR8: a backup that states more content than a backup may hold, '
+        'or one part above its cap, is "too large", not "damaged"; a '
+        'backup exactly at the limits restores', () async {
+      final booksDb = buildBooksDb();
+      final wishlistDb = buildWishlistDb();
+      final manifestBytes = utf8.encode(manifest());
+      final zip = archive({
+        'manifest.json': manifestBytes,
+        'books.db': booksDb,
+        'wishlist.db': wishlistDb,
+      });
+      final content = manifestBytes.length + booksDb.length + wishlistDb.length;
+      final largestDb = booksDb.length > wishlistDb.length
+          ? booksDb.length
+          : wishlistDb.length;
+      RestoreBackup restorerWith({
+        required int maxContentBytes,
+        required int maxDatabaseBytes,
+      }) => gen.restorer(
+        vault: _FakeVault(right(VaultData.empty)),
+        guard: FakeReplacementGuard(),
+        limits: BackupLimits(
+          maxCovers: 2,
+          maxContentBytes: maxContentBytes,
+          maxCoverBytes: 1,
+          maxDatabaseBytes: maxDatabaseBytes,
+          maxTextEntryBytes: manifestBytes.length,
+        ),
+      );
+
+      // One byte less room for the content than the backup states.
+      final tight = restorerWith(
+        maxContentBytes: content - 1,
+        maxDatabaseBytes: largestDb,
+      );
+      final tooMuch = _beyondLimits('contentTooLarge', limit: content - 1);
+      expect(
+        (await tight.restore(archivePath: zip)).getLeft().toNullable(),
+        tooMuch,
+      );
+      expect((await tight.inspectArchive(zip)).getLeft().toNullable(), tooMuch);
+
+      // One byte less room for a database than the larger one needs. A
+      // restore cannot do without a database, so the file is refused; the
+      // failure names no number, because the caps differ from part to part.
+      final smallDb = restorerWith(
+        maxContentBytes: content,
+        maxDatabaseBytes: largestDb - 1,
+      );
+      final onePart = _beyondLimits('entryTooLarge', limit: null);
+      expect(
+        (await smallDb.restore(archivePath: zip)).getLeft().toNullable(),
+        onePart,
+      );
+      expect(
+        (await smallDb.inspectArchive(zip)).getLeft().toNullable(),
+        onePart,
+      );
+      expect(gen.switched, isEmpty, reason: 'nothing was replaced so far');
+
+      // Exactly at both limits: restored.
+      final exact = restorerWith(
+        maxContentBytes: content,
+        maxDatabaseBytes: largestDb,
+      );
+      expect((await exact.restore(archivePath: zip)).isRight(), isTrue);
     });
 
     test('a damaged cover is found when the restore unpacks it: the '

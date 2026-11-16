@@ -111,12 +111,13 @@ void main() {
       }
     }
 
-    Matcher refusedWith(String part) => throwsA(
-      isA<BoundedExtractionException>().having(
-        (e) => e.message,
-        'message',
-        contains(part),
-      ),
+    /// A refusal with [part] in its text and of the given [kind]. The kind
+    /// is what lets the Restore page say "holds more than a backup can"
+    /// instead of "damaged" (decision D41).
+    Matcher refusedWith(String part, ZipRefusal kind) => throwsA(
+      isA<BoundedExtractionException>()
+          .having((e) => e.message, 'message', contains(part))
+          .having((e) => e.kind, 'kind', kind),
     );
 
     /// [count] small entries: a manifest and cover pictures of one byte.
@@ -138,7 +139,7 @@ void main() {
 
       expect(
         () => entriesTaken(archiveOf(smallEntries(limits.maxEntries + 1))),
-        refusedWith('too many entries'),
+        refusedWith('too many entries', ZipRefusal.tooManyEntries),
       );
     });
 
@@ -176,7 +177,7 @@ void main() {
             HostileEntry('manifest.json', const [1]),
           ]),
         ),
-        refusedWith('total exceeds cap'),
+        refusedWith('total exceeds cap', ZipRefusal.contentTooLarge),
       );
     });
   });

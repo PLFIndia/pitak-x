@@ -11,8 +11,8 @@
 ///
 /// The app has one ZIP reader, `BoundedZipFile` (infrastructure), which
 /// works from a file. What is here for it:
-///  - the exception every refusal leaves as, and the name rule
-///    ([zipLeafName]);
+///  - the exception every refusal leaves as, with the kind of the refusal
+///    ([ZipRefusal]), and the name rule ([zipLeafName]);
 ///  - [ZipEntryRule] and [ZipEntryPolicy]: what the CALLER wants done with
 ///    an entry of a given name (unpack it up to a size, leave it out when
 ///    it is larger, or ignore it);
@@ -35,15 +35,57 @@ library;
 import 'package:pitaka/features/import_export/domain/zip_container.dart';
 import 'package:pitaka/features/import_export/domain/zip_limits.dart';
 
+/// Why a reader refused an archive, as far as a caller can do something
+/// with the answer (backup rework BR8).
+///
+/// WHY THIS EXISTS (beginner note): "this file holds more than is allowed"
+/// and "this file is damaged" are two different things to tell a person.
+/// The message of a refusal is text for a developer and may hold a name
+/// from the file, so nobody should decide anything by reading it. The kind
+/// is a plain value a caller can `switch` over, and it carries nothing
+/// from the file.
+///
+/// The words are about ZIP files in general. What a kind means for a
+/// backup (which sentence, which number) is decided by the backup feature.
+enum ZipRefusal {
+  /// The archive has more entries than the limits allow.
+  tooManyEntries,
+
+  /// The entries that would be unpacked declare, together, more content
+  /// than the limits allow.
+  contentTooLarge,
+
+  /// One entry declares more than its cap, and its rule refuses the whole
+  /// archive for that ([ZipTooLarge.refuseArchive]).
+  entryTooLarge,
+
+  /// The archive file itself is larger than the limits allow.
+  fileTooLarge,
+
+  /// Everything else: not a ZIP, damaged, a name or a header that breaks a
+  /// rule, content that is not what the archive declares.
+  other,
+}
+
 /// Thrown on any limit violation or structural anomaly (zip-slip, empty name,
 /// nested name, duplicate, directory entry). Distinct from IO errors so callers
 /// can show "archive looks corrupt or hostile" without conflating causes.
 class BoundedExtractionException implements Exception {
-  /// Creates the exception with a human-readable [message].
-  const BoundedExtractionException(this.message);
+  /// Creates the exception with a human-readable [message] and the [kind]
+  /// of the refusal. Only a refusal for size or count names a kind; every
+  /// other one is [ZipRefusal.other], the safe reading ("do not trust this
+  /// file").
+  const BoundedExtractionException(
+    this.message, {
+    this.kind = ZipRefusal.other,
+  });
 
-  /// Why extraction was rejected.
+  /// Why extraction was rejected. For a developer: never shown to a user,
+  /// and never parsed.
   final String message;
+
+  /// Which kind of refusal this is.
+  final ZipRefusal kind;
 
   @override
   String toString() => 'BoundedExtractionException: $message';
@@ -220,6 +262,7 @@ void checkZipEndRecord(ZipEndRecord end, ZipLimits limits) {
   if (end.entryCount > limits.maxEntries) {
     throw BoundedExtractionException(
       'Archive has too many entries (>${limits.maxEntries})',
+      kind: ZipRefusal.tooManyEntries,
     );
   }
   if (end.centralDirectorySize > limits.maxCentralDirectoryBytes) {
@@ -269,6 +312,7 @@ List<CheckedZipEntry> checkZipEntries(
   if (records.length > limits.maxEntries) {
     throw BoundedExtractionException(
       'Archive has too many entries (>${limits.maxEntries})',
+      kind: ZipRefusal.tooManyEntries,
     );
   }
   final checked = <CheckedZipEntry>[];
@@ -326,6 +370,7 @@ List<CheckedZipEntry> checkZipEntries(
       }
       throw BoundedExtractionException(
         "Archive entry '$leaf' exceeds per-entry cap ($cap bytes)",
+        kind: ZipRefusal.entryTooLarge,
       );
     }
     // Added only after the cap check, so the sum stays far from overflow:
@@ -334,6 +379,7 @@ List<CheckedZipEntry> checkZipEntries(
     if (declaredTotal > limits.maxTotalBytes) {
       throw BoundedExtractionException(
         'Archive total exceeds cap (${limits.maxTotalBytes} bytes)',
+        kind: ZipRefusal.contentTooLarge,
       );
     }
     checked.add(

@@ -19,8 +19,9 @@
 /// painting. Two isolates share no memory: the worker gets a small record
 /// of plain data (a path, the limits, a folder) and hands back a record of
 /// plain data. No `Failure` object crosses that border, the same rule the
-/// backup writer keeps: a refusal travels as its text, trouble with the
-/// disk as a code, and the restorer turns both into typed failures.
+/// backup writer keeps: a refusal travels as its text and its kind, trouble
+/// with the disk as a code, and the restorer turns both into typed failures
+/// (`restore_refusal.dart`).
 ///
 /// WHAT IS NEVER UNPACKED: an entry the manifest does not announce, an
 /// entry above its cap, and every name this app does not write. That
@@ -157,8 +158,11 @@ BoundedZipFile openBackupArchive(
 ///    will write, in archive order. Nothing of them is unpacked yet;
 ///  - `coversLeftOut`: the file names of the cover pictures that are above
 ///    their cap and will NOT be restored (decision D18);
-///  - `refusal`: why the archive was refused as damaged or hostile, or
+///  - `refusal`: why the archive was refused, as text for a developer, or
 ///    null;
+///  - `refusalKind`: which kind of refusal that was (backup rework BR8):
+///    beyond a limit of a backup, or damaged or hostile. Set exactly when
+///    `refusal` is. An enum is plain data, so it may cross the border;
 ///  - `trouble`: what went wrong with the disk, or null.
 ///
 /// When `refusal` or `trouble` is set, everything else is empty and no
@@ -171,6 +175,7 @@ typedef RestoreArchiveParts = ({
   List<String> coversToWrite,
   List<String> coversLeftOut,
   String? refusal,
+  ZipRefusal? refusalKind,
   RestoreDiskTrouble? trouble,
 });
 
@@ -230,7 +235,7 @@ RestoreArchiveParts readRestoreArchive(
     return _take(zip, job, staged);
   } on BoundedExtractionException catch (e) {
     _removeStaged(staged);
-    return _stopped(refusal: e.message);
+    return _stopped(refusal: e.message, refusalKind: e.kind);
   } on FileSystemException catch (e) {
     _removeStaged(staged);
     return _stopped(
@@ -309,6 +314,7 @@ RestoreArchiveParts _parts({
   List<String> coversToWrite = const [],
   List<String> coversLeftOut = const [],
   String? refusal,
+  ZipRefusal? refusalKind,
   RestoreDiskTrouble? trouble,
 }) => (
   entries: entries,
@@ -318,12 +324,16 @@ RestoreArchiveParts _parts({
   coversToWrite: coversToWrite,
   coversLeftOut: coversLeftOut,
   refusal: refusal,
+  refusalKind: refusalKind,
   trouble: trouble,
 );
 
 /// The answer of a worker that stopped: nothing but the reason.
-RestoreArchiveParts _stopped({String? refusal, RestoreDiskTrouble? trouble}) =>
-    _parts(refusal: refusal, trouble: trouble);
+RestoreArchiveParts _stopped({
+  String? refusal,
+  ZipRefusal? refusalKind,
+  RestoreDiskTrouble? trouble,
+}) => _parts(refusal: refusal, refusalKind: refusalKind, trouble: trouble);
 
 /// Removes the databases staged so far. Best-effort: the caller discards
 /// its whole work folder after a failure anyway.

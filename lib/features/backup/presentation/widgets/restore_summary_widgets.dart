@@ -306,6 +306,11 @@ class RestoreOutcome extends StatelessWidget {
       return 'This backup was made by a newer version of the app and can’t be '
           'restored here. Please update first.';
     }
+    if (error is BackupTooLargeFailure) {
+      // BR8: a file that holds more than a backup can is not a damaged
+      // one. It gets a sentence with the limit it did not fit.
+      return restoreBeyondLimitsMessage(error);
+    }
     if (error is BackupCorruptFailure) {
       return 'This file doesn’t look like a valid Pitak backup.';
     }
