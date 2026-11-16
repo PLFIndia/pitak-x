@@ -538,8 +538,12 @@ void main() {
       }
     });
 
-    test('4,086 covers plus the ten other entries: 4,096 entries, which the '
-        'reader accepts; one more cover is refused', () async {
+    // The numbers come from the limits, not from this file: when the
+    // limits change, this test builds and reads the new largest backup.
+    // (The numbers themselves are pinned in `backup_limits_test.dart`.)
+    test('as many covers as a backup holds plus the ten other entries: as '
+        'many entries as the reader accepts; one more cover is '
+        'refused', () async {
       for (var i = 0; i < limits.maxCovers; i++) {
         cover('c${i.toString().padLeft(4, '0')}.jpg', 1);
       }
@@ -548,16 +552,19 @@ void main() {
       // does.
       final run = await buildEverything();
       final files = accepted(run, limits);
-      expect(files, hasLength(4096));
+      expect(files, hasLength(limits.maxEntries));
       expect(files, hasLength(ZipLimits.pitakaBackup.maxEntries));
-      expect(readZipFile(run.result.toNullable()!.path), hasLength(4096));
+      expect(
+        readZipFile(run.result.toNullable()!.path),
+        hasLength(limits.maxEntries),
+      );
 
       cover('one_more.jpg', 1);
       refused(
         await buildEverything(),
         BackupOverflow.tooManyCovers,
-        actual: 4087,
-        limit: 4086,
+        actual: limits.maxCovers + 1,
+        limit: limits.maxCovers,
       );
     });
   });
