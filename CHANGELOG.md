@@ -15,11 +15,41 @@ heading as part of the `chore(release):` commit.
 ## [Unreleased]
 
 The backup and restore rework so far (review of November 2026; stages BR1
-to BR7 in `PLAN.md`, and the stage after them: Import and Merge on the
-app's own picker). The limits of a backup are the ones 1.9.7 had; they
-are raised in a later stage.
+to BR8 in `PLAN.md`, with Import and Merge on the app's own picker
+between BR7 and BR8). Stage BR8 raises the limits of a backup; the run
+on a phone at the new limits is still to come (`PLAN.md`, run E).
 
 ### Changed
+- **A backup holds up to 10,000 cover pictures and 1 GiB of content**
+  (before: 4,086 and 500 MiB; `BackupLimits.current`). With the ten other
+  entries that is 10,010 entries, and a backup file of at most 1,028 MiB.
+  The caps per part did not change: 4 MiB per cover, 200 MiB per
+  database. Backup and restore work from files (below), so the memory
+  they need does not grow with the size: on a computer a backup of
+  10,000 covers and about 1 GiB is written with about 70 MB and read
+  back with about 58 MB. On a phone, at the old limits, a restore needed
+  the size of the backup once more in free storage and a backup twice
+  its size while it is shared.
+- **A backup above the old limits does not open in 1.9.7 or older.**
+  Such a version says "This file doesn’t look like a valid Pitak
+  backup." Update Pitak on the other phone before restoring there; the
+  create-backup page says so.
+- **An older backup that no version could restore may now restore.**
+  Up to 1.9.7 the writer had no limits, so a library with more than
+  about 4,086 covers got a backup the reader refused. Such a backup is
+  now read back when it has at most 10,010 entries and 1 GiB of content.
+- **The Restore page tells "holds more than a backup can" from
+  "damaged" (P4-m19).** A file beyond the limits used to get "This file
+  doesn’t look like a valid Pitak backup." Now: "This file holds more
+  than a Pitak backup can. A backup can hold 10,000 cover pictures.", the
+  same with "A backup can hold 1.0 GB.", or "One part of this file is
+  larger than a Pitak backup allows." A file above the file cap keeps
+  "This file is too large to be a Pitak backup. A backup file can be at
+  most 1.0 GB."; a damaged file keeps its sentence. The ZIP reader's
+  refusals carry a kind (`ZipRefusal`), which `restoreRefusalFailure`
+  turns into `BackupTooLargeFailure` with the limit from `BackupLimits`.
+  The number in a sentence is the app's own; nothing from the file is
+  shown.
 - **Import and Merge choose their file through the app's own picker:**
   the one the Restore page uses (`DocumentPicker`,
   `PickedDocumentChannel.kt`). It copies the chosen document into the
@@ -203,6 +233,14 @@ are raised in a later stage.
 - Three tests make a file unreadable or a folder read-only with `chmod`.
   Each skips itself, with a message, where the account may read and
   write everything.
+- The edges of a backup's limits are tested at the app's own numbers
+  (`backup_limits_edges_test.dart`): as many covers, entries and bytes
+  as a backup holds pass, and one more is refused, for the writer and
+  for the reader. The entries only state their size, so no test writes
+  1 GiB. A test builds and reads back a backup of 10,000 one-byte covers
+  with every other entry. By hand, with `tool/make_synthetic_backup.dart`:
+  backups of 10,000 covers (192 MB and 1,022 MB) made and read back, and
+  the writer's and the reader's refusals one step beyond.
 - `tool/zip_reader_memory_check.dart`: a check by hand that reading and
   restoring a 1 GiB backup stays within a capped heap.
 - `tool/make_synthetic_backup.dart`: makes a backup of a chosen size out

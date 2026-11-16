@@ -559,12 +559,27 @@ to false** (the `hasX` forward-compat pattern):
      own covers copied there instead, by the same worker.
   A name the app does not write is never unpacked, which includes
   `books.db-wal` and its kind. A worker hands back plain data only: a
-  refusal as its text (`BackupCorruptFailure` is made on the calling
-  isolate), trouble with the disk as a code (`RestoreDiskTrouble`); a
-  backup file that can no longer be read gives "The backup file could not
-  be read. Please choose it again." A damaged entry is found when it is
-  unpacked: an inspection can therefore succeed on a file whose restore
-  then fails, with nothing changed.
+  refusal as its text and its kind (`ZipRefusal`), trouble with the disk
+  as a code (`RestoreDiskTrouble`); the failure is made on the calling
+  isolate (`restore_refusal.dart`). A backup file that can no longer be
+  read gives "The backup file could not be read. Please choose it again."
+  A damaged entry is found when it is unpacked: an inspection can
+  therefore succeed on a file whose restore then fails, with nothing
+  changed.
+- A file that holds more than a backup can is told apart from a damaged
+  one (review finding P4-m19). The ZIP reader's refusals for size or count
+  name their kind: too many entries, too much content in total, one
+  entry above a cap that refuses the archive, a file above the file cap.
+  Every other refusal is `other`. `restoreRefusalFailure` turns the four
+  into `BackupTooLargeFailure` with a `BackupOverflow` code (the
+  vocabulary the writer refuses with) and the limit from `BackupLimits`;
+  `other` stays `BackupCorruptFailure`. The Restore page has a sentence
+  per code (`restoreBeyondLimitsMessage`). The number in a sentence is
+  the app's own limit; nothing a file says about itself (a name, a
+  count) is shown. The reader counts entries, the sentence names the
+  10,000 cover pictures a backup promises: a made-up backup with fewer
+  than ten other files is taken with a few covers more than the writer
+  would pack.
 - A cover above its cap inside a backup does not fail the restore: it is
   left out, everything else is restored, and `RestoreSummary`
   (`coverPicturesLeftOut`) names the restored items that refer to it, by
