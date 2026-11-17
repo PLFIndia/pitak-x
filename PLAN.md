@@ -19,9 +19,9 @@ went").
   | What | Where |
   |---|---|
   | Decisions, the open part of the plan, ONE handoff, short results | this file |
-  | The findings of the four review passes with their boxes, and the items T1 to T11, open and closed | private: `review-tracker.md` |
+  | The findings of the four review passes with their boxes, and the items T1 to T12, open and closed | private: `review-tracker.md` |
   | Every design ("in detail"), result, safety check and older handoff, word for word | private: `plan-archive-2026-11-13.md` |
-  | The design of the stage that is being built | private: a file of its own (`<stage>-in-detail.md`), until its fix is pushed; then it goes into the archive. Today: `br10-in-detail.md`, for the device runs (the designs of the stage of D24 and of BR8 are in the archive, since 2026-11-16 and 2026-11-17) |
+  | The design of the stage that is being built | private: a file of its own (`<stage>-in-detail.md`), until its fix is pushed; then it goes into the archive. Today: `br9-in-detail.md`, the design of BR9 (written 2026-11-17), and `br10-in-detail.md`, for the device runs (the designs of the stage of D24 and of BR8 are in the archive, since 2026-11-16 and 2026-11-17) |
   | The four review reports, their prompts and the summary | private: `codeReviewReport1.md` to `4.md`, `codeReviewPrompt1.md` to `4.md`, `codeReviewSummary.md` |
 
   "Private" means: files the maintainer keeps outside git (the
@@ -124,8 +124,16 @@ under "D<number>". All are of November 2026.
 | D45 | 17 | The screen standing still for about a second at the start of a restore into a large library is accepted as a known limit and is not traced. Its cause is not known | in force |
 | D46 | 17 | On the Restore page the sentence of a file that was refused goes as soon as another file is chosen (today it stays under "Copying the file…" until the new copy is read). Fixed now: a small change with a test, its own commit and CI run; the design is shown before code is written. A pick that is cancelled brings the sentence back: the page is then as it was | built (`ee80a76`) |
 | D47 | 17 | The sentence of `CHANGELOG.md` that says the run on a phone is still to come is corrected in the push of D46's fix. It says the run was made and has passed, and names the two accepted limits (D44, D45) | done (`1a0ece7`) |
+| D48 | 17 | Decision point 5: the resource notice calls storage "enough" when free storage is at least the need plus 20%, and at least 100 MB more than the need; "not enough" when it is below the need; "tight" in between. The notice still never blocks (D5) | built (BR9: `3021561`) |
+| D49 | 17 | Decision point 6: on the Restore page the notice is also the confirmation. One dialog shows what the restore needs, what the phone has and the verdict, and says that the restore replaces the library; "Cancel" leaves the page as it was. The long red box stays as it is. This closes the "one tap" half of P4-M5; a shorter red box stays a question of its own. The create-backup page gets the same dialog without that sentence | built (BR9: `6e7b47f`) |
+| D50 | 17 | Decision point 21: for memory the notice counts one fixed need, 100 MB, for a backup and for a restore. Its verdict uses Android's own low-memory mark: "not enough" when less than the need is available, "tight" when the phone says it is low on memory or would be after the need, "enough" otherwise | built (BR9: `3021561`) |
+| D51 | 17 | Decision point 22: the sentences of the notice are as proposed (the private design file has the table). The dialog's button that starts the run says "Go on" on the create-backup page and "Restore" on the Restore page; this changes D49's wording for that one button. "Cancel" on both | built (BR9: `6e7b47f`) |
+| D52 | 17 | Decision point 23: a full disk during a backup gets no sentence of its own in BR9. The notice says it before the run. The sentence afterwards stays an open question, for a small stage of its own | in force |
+| D53 | 17 | Decision point 24, the go-ahead for BR9: its five steps are built through to the review stop, with a pause only when something is not as designed. Every commit, the push, a Gradle run with the network and an emulator run keep their own yes | in force |
+| D54 | 17 | Decision point 25, found while BR9 was built: in the notice the two sizes of a line are written in ONE unit when both reach the same unit, and each in its own unit otherwise ("needs about 18.0 MB. This phone has 12.0 GB free."). The app's rule of one unit for both made the smaller size read "0.0 GB" there. Everywhere else the rule stays | built (BR9: `6e7b47f`) |
+| D55 | 17 | The two steps of the in-app guide that BR9 made incomplete ("Make a backup", "Restore on a new phone": a tap now opens the notice first) are brought up to date with the documents of BR10, not in BR9: the guide, its approved copy in `docs/mockups/how-pitak-works.md` and the counts in `guide_catalog_test.dart`. The new steps are shown to the maintainer first | open (BR10) |
 
-Decision points of the plan that are still open: 5, 6 and 7 (see
+Decision points of the plan that are still open: 7 (see
 "The plan").
 
 ## The plan
@@ -167,7 +175,7 @@ small ones, on the branch `reviewFixes`.
 | (CI) | The one CI job that runs Gradle names its JDK (Temurin 21) instead of taking the one the runner happens to have | done: `3ea1812` |
 | BR8 | Raise the limits: a backup holds 10,000 covers and 1 GiB of content (D3, D4). The edges are tested at the app's own numbers (D40). On the Restore page a file beyond the limits gets a sentence of its own (D41, P4-m19) | done: `b01a950`, `a9ae39e`, `421fa8e`, `b15c42f`. On a device at the new limits: run E |
 | (run E) | The Restore page does not show the sentence of a file that could not be used while the next file is chosen and copied (D46); the changelog says that run E was made and has passed, and names the two accepted limits (D47) | done: `ee80a76`, `1a0ece7` |
-| BR9 | The resource notice (D5) | needs decision points 5 and 6 |
+| BR9 | The resource notice (D5): before a backup and before a restore one dialog says what the run needs and what the phone has; on the Restore page it is also the confirmation (D48 to D54) | built and committed 2026-11-17: `3021561`, `c883fae`, `3222077`, `6e7b47f`, `28630c2`. Checks green on this Mac (7,377 tests; Kotlin 64 in each flavour). NOT pushed: no CI run yet. Not yet seen on a device |
 | BR10 | Proof on devices, records, clean-up | last |
 
 ```
@@ -185,7 +193,12 @@ After each of BR1, BR2, BR3, BR4, BR6 and BR7 the app is releasable.
 
 ### The open stages
 
-**BR9. The resource notice (D5).**
+**BR9. The resource notice (D5).** Built and committed on 2026-11-17
+(D48 to D54; five commits, `3021561` to `28630c2`), NOT pushed. The
+boxes are ticked when its CI run is green. For the first box: the
+calls are read and quoted (in the comment of
+`DeviceResourcesChannel.kt` and in the private design file); the ADR
+itself is ADR 0026, in BR10.
 
 - [ ] Read the Android documentation for free storage and available
   memory; write the exact calls and their meaning into the ADR.
@@ -222,18 +235,19 @@ After each of BR1, BR2, BR3, BR4, BR6 and BR7 the app is releasable.
   limits, streamed archive, resource notice; D2, D8, D19, D20, D22 to
   D28). Update `README.md`, `SECURITY.md`, `PRIVACY.md` and
   `docs/ARCHITECTURE.md` where they describe backup, limits or covers.
+  Also the two steps of the in-app guide that BR9 made incomplete
+  (D55): `data_and_network_guides.dart`, the mockup
+  `docs/mockups/how-pitak-works.md` (§3.7) and the counts in
+  `guide_catalog_test.dart`; the new steps are shown first.
 - [ ] Tick the findings this closed in the private tracker, with
   commit ids. Publish the archive when T1 to T9 are closed (D30).
 
 ### Decision points that are still open
 
-5. **When is storage "tight" [BR9].** Proposed: "enough" when free
-   storage is at least the need plus 20% (at least 100 MB more), "not
-   enough" when it is below the need, "tight" in between.
-6. **The restore confirmation (P4-M5) [BR9].** The notice sits before
-   the button that P4-M5 wants a confirmation for. Proposed: the
-   notice is that confirmation (it also says "This replaces your
-   library"), and the long red box stays until P4-M5 is decided.
+5. **When is storage "tight" [BR9].** Answered on 2026-11-17, as
+   proposed: D48.
+6. **The restore confirmation (P4-M5) [BR9].** Answered on
+   2026-11-17, as proposed: D49.
 7. **How to run the plan.** Never answered in words. In practice every
    stage has ended with a stop for review, and every commit and push
    has had its own yes.
@@ -248,6 +262,16 @@ the tool for the runs was built is answered too: D37.
 
 The five questions run E left (2026-11-17; "Run E: where it stands"
 at the end of this file) are answered: D43 to D47.
+
+Decision points of BR9, put on 2026-11-17 (the private design file
+`br9-in-detail.md` has each in full). Point 21, the memory figure
+of the notice and the rule for its verdict, is answered: D50.
+Point 22, the sentences of the notice, is answered: D51. Point 23,
+whether a full disk during a backup gets a sentence of its own in
+BR9, is answered: D52 (no). Point 24, the go-ahead and how BR9 is
+run, is answered: D53. Point 25, put during the build (how the two
+sizes of a line are written when they are far apart), is answered:
+D54.
 
 Decision points of BR8, put on 2026-11-16 (the private design file
 has each in full). Point 17, sharing a backup at the new limit, is
@@ -320,12 +344,14 @@ when it was written; check the repository before relying on it.
 
 1. "How to use this file", then this section.
 2. "Decisions" and "The plan".
-3. In the private tracker the open items (T2 to T9 and T11; T1 and
+3. In the private tracker the open items (T2 to T9, T11 and T12; T1 and
    T10 are under "Closed"). Then "Next" below: BR8 is done, run E
-   has passed, and what was not begun (run C, run D, BR9, BR10) is
-   next. The private working file of the device runs is
-   `br10-in-detail.md`; it also holds the design and the build log of
-   the small fix of D46.
+   has passed, **BR9 is built and committed, NOT pushed**, and run
+   C, run D and BR10 are not begun. The private
+   file of BR9 is `br9-in-detail.md` (the design, the build log, and
+   the questions of the review stop at its end). The private working
+   file of the device runs is `br10-in-detail.md`; it also holds the
+   design and the build log of the small fix of D46.
 4. From the private archive only what the task needs: the design and
    the result of the stage it builds on. Its titles are listed at its
    top.
@@ -432,7 +458,32 @@ when it was written; check the repository before relying on it.
   `item-reminder.md`, `reminder-fixes.md`, `reminder-issues1.md`,
   `remoteImport-issues.md`).
 - This file: `d456fdf` is the last commit of it that was pushed with
-  a CI run that was looked at.
+  a CI run that was looked at. `48edab6` (the handoff of the morning
+  of 2026-11-17) is committed and NOT pushed.
+- **BR9 is committed and NOT pushed** (2026-11-17): on top of
+  `48edab6` the five commits `3021561` (the rules), `c883fae` (the
+  device figures), `3222077` (the sizes), `6e7b47f` (the notice) and
+  `28630c2` (the changelog), and one commit of this file after them.
+  `git status -sb` says how far the branch is ahead of
+  `origin/reviewFixes`. They were made in a temporary plain clone
+  (`/tmp/pitak_br9/clone`), each with the hook running ("generated
+  code is current" four times; the changelog commit has no Dart),
+  and brought over with `git fetch <that folder>` and `git reset
+  <commit>`, which changed no file. Before that every one of the
+  1,931 tracked files of the fifth commit was compared with this
+  folder: only this file differed. `.git/config` of this checkout was
+  compared with a copy after every step: unchanged. One more private
+  file, `br9-in-detail.md`, with its line in `.git/info/exclude`.
+- The tree of `28630c2` is the tree the last checks ran on
+  (2026-11-17, 12:43):
+  `build_runner` no diff beyond the generated files of the three new
+  providers; format 0 changed of 1,467 files; analyze 47, none in
+  `lib/`, `test/`, `integration_test/`, `tool/`; **7,377 tests
+  passed**; Kotlin 64 in each flavour (offline; no run with the
+  network was needed); Rust not run (nothing of it changed). One
+  comment in `restore_page.dart` was reworded after that run; format,
+  analyze, the tests of that page and the architecture tests were run
+  again, the whole suite was not.
 - **BR8 is done** (built and pushed 2026-11-16; green in CI, seen
   2026-11-17). Its four commits are `b01a950`, `a9ae39e`, `421fa8e`,
   `b15c42f`. P1-M1 and P4-m19 are ticked in the tracker; its design
@@ -491,8 +542,27 @@ when it was written; check the repository before relying on it.
 
 ### Next
 
-**Where the work stands at the end of the session of 2026-11-17.**
-Nothing is half-done, and nothing waits for a review:
+**Where the work stands (2026-11-17, the second session of the day).**
+The maintainer chose the order BR9, then run C and run D, then BR10.
+**BR9 is built, reviewed at its stop and committed (D53); it is NOT
+pushed.** The questions of the review stop that are answered: the
+in-app guide's two steps change with BR10's documents (D55); an
+observation of the design file is T12 in the tracker; the test that
+timed out once was looked for and not found again (the open
+questions); the commits had their yes. Next:
+
+1. The yes to the push (`git push origin reviewFixes`), then its CI
+   run on pull request #30, every job to the end, and "Update
+   goldens" (the page before a tap did not change by reading).
+2. The question that is still to put: the look at the real channel
+   in the emulator, before the push or with runs C and D.
+3. When CI is green: the ticks (the six boxes of BR9; in the private
+   tracker P4-M5 stays open for its other half), the design file
+   into the archive, word for word.
+4. Then run C and run D, with ONE fresh release build that also
+   shows the fix of D46 and the notice on the phone; then BR10.
+
+What was done before this, and still holds:
 
 - **BR8 is done** (`b01a950`, `a9ae39e`, `421fa8e`, `b15c42f`; green
   in CI). The ticks are made (P1-M1 and P4-m19 in the private
@@ -518,8 +588,9 @@ Nothing is half-done, and nothing waits for a review:
   phone is older, see point 3).
 - The clean-up after run E is done, on the phone and on the Mac.
 
-**The next session** (the maintainer, 2026-11-17: "we will do it in
-next session") takes up what was not begun. In this order:
+**After BR9** what was not begun is taken up (the maintainer,
+2026-11-17: run C and run D, then BR10). For the device runs, in
+this order:
 
 1. Confirm the state (`git status -sb`, `git log`, `git remote -v`).
    If a commit was pushed after `d456fdf`, look at its CI run, every
@@ -589,7 +660,7 @@ at the end of this file ("Left on the phone").
 | BR8 raise the limits | nothing: done, and run E has passed (D43). Measured in run E on a fast phone: a 1 GiB backup reached the share sheet 10.0 to 10.7 seconds after the tap, and the screen stood still for the last 1.5 to 1.9 seconds of that (accepted, D44) |
 | The fix of D46 (the Restore page) | nothing: done (`ee80a76`). Not yet seen on a phone |
 | Run C and run D | the phone and the maintainer; not begun |
-| BR9 resource notice | decision points 5 and 6 |
+| BR9 resource notice | the yes to the push, then its CI run seen green to the end, then the ticks. Not yet seen on a device (the emulator look, or runs C and D) |
 | BR10 proof and records | its first two boxes are ticked (run E has passed, D43); run D for the covers; ADR 0025 and ADR 0026, which also take the two known limits of D44 and D45 |
 
 ### What the built stages left in place
@@ -699,12 +770,36 @@ For BR8 (the limits):
   "BEYOND-LIMITS" in its name) is TAKEN under the new limits. The
   file that must be refused now has 10,008 covers.
 
-For BR9 (the notice):
+For BR9 (the notice; built 2026-11-17, `3021561` to `28630c2`):
 
-- The notice goes in front of the Restore button; `_runRestore` in
-  `restore_page.dart` is the one place a restore starts.
-- The channel needs no path argument: Kotlin can use the app's own
-  files folder. No argument, nothing to validate.
+- `ResourceNoticeDialog.ask(context, notice:, run:)` is the one
+  dialog; both pages call it first thing in the function that starts
+  their run (`_runRestore`, `_createAndSave`) and go on only for
+  `true` and while they are `mounted`. Its two buttons have keys
+  (`ResourceNoticeDialog.confirmKey`, `.cancelKey`): on the Restore
+  page the word "Restore" is on the screen twice while it is open.
+- The rules are pure, in `domain/resource_notice.dart`
+  (`storageVerdict`, `memoryVerdict`, the two needs,
+  `ResourceNotice.judge`); the sentences in
+  `presentation/resource_notice_messages.dart`.
+- The two providers (`backupResourceNoticeProvider`,
+  `restoreResourceNoticeProvider(sizes)`) never fail: a source that
+  throws is "unknown". `ArchiveInspection.sizes` is what the second
+  takes.
+- Fakes: `test/support/fake_device_resources.dart` and
+  `fake_library_footprint_source.dart`. A test that drives either
+  page overrides `deviceResourcesProvider` and
+  `libraryFootprintSourceProvider` with them and goes through the
+  dialog (`tapRestore`, `tapCreateBackup` in the two page tests).
+- `formatSizesFarApart` (`display_number.dart`) is for two sizes
+  that can be far apart (D54); `formatSizePair` stays the rule
+  everywhere else.
+- The channel `dev.khoj.pitaka/device_resources` takes no argument
+  and never answers with an error: a figure that could not be read
+  is left out of the map.
+- A file that names the covers folder and only reads it
+  (`file_library_footprint.dart`) is listed in
+  `cover_files_immutable_test.dart`.
 
 Shared pieces, by name:
 
@@ -1048,7 +1143,9 @@ Each cost time once.
 
 **Other**
 
-- Both numbers of a sentence for the user use the same unit.
+- Both numbers of a sentence for the user use the same unit. The one
+  exception is the resource notice, where the two can be far apart
+  (D54).
 - A vault file is not the same bytes after a rollback, although its
   content is. Compare rows, size and `PRAGMA integrity_check`.
 - After a failed backup build the work folder is empty, not absent.
@@ -1070,8 +1167,10 @@ Each cost time once.
 
 ### Open items kept in the private tracker
 
-Nine things that are not fixed and are therefore not described
+Ten things that are not fixed and are therefore not described
 here (D30). The private tracker has each with its place in the code.
+T12 was found on 2026-11-17, while BR9 was designed, and is outside
+that stage.
 T11 was found on 2026-11-14, while the stage of D24 was designed, and
 is outside that stage.
 
@@ -1098,6 +1197,7 @@ Closed on 2026-11-16 by the stage of D24, and so described:
 | T8 | The texts inside failures | not in a stage; needs tracing first |
 | T9 | Restore, writing covers | not in a stage |
 | T11 | Cover photos, temporary files (not traced yet) | not in a stage |
+| T12 | The app's working files of a backup and of a restore (found 2026-11-17 while BR9 was designed; not tried yet) | not in a stage; needs trying first |
 
 ### Questions the maintainer has not answered yet
 
@@ -1126,7 +1226,25 @@ None of them blocks the next stage.
   to T11? (T10 is closed since 2026-11-16; T11 is not.)
 - For T11: trace it first (read the two plugins, look at a device),
   then decide as for T2.
-- Decision points 5 and 6 (before BR9) and 7.
+- Decision point 7. (5 and 6 are answered: D48, D49.)
+- `backup_writer_limits_test.dart`, "as many covers as a backup
+  holds plus the ten other entries" (it writes 10,000 real files),
+  timed out ONCE after 30 seconds, in a run of the whole suite on
+  2026-11-17 (one of six whole runs that day). A bounded look the
+  same day did not bring it back: alone 3.3 s (3 runs); alone with 14
+  busy loops next to it 5.8 to 6.3 s (10 runs); in a run of the whole
+  folder `test/features/backup` with the busy loops 9.6 to 11.1 s (8
+  runs), without them 5.9 to 7.4 s (3 runs). In CI (run 44020820271)
+  it ended 2.3 s after the test before it. So the one time-out was a
+  far longer stall than load alone gives. The maintainer,
+  2026-11-17: left as it is until it shows again.
+- Found in that look: `backup_archive_writer_test.dart:549`, "a timer
+  fires while a large build is still running", holds an assertion on
+  wall-clock time and failed in ONE of the 8 folder runs under the
+  busy loops ("fired at 77 ms, build took 153 ms", the bound being
+  half the build). Like `zip_reader_cases_test.dart:729` it can fail
+  under load without a change in the code. The maintainer,
+  2026-11-17: left as it is until it shows again.
 - For each of T2, T3 and T5 to T9: is it built, in which stage, or
   accepted as a known limit and written into `SECURITY.md`?
 - `CHANGELOG.md`: lines for `ede5a3e` and `0d3dcca` (a restore no
@@ -1144,8 +1262,8 @@ None of them blocks the next stage.
   when a cover or the vault is missing as well.
 - "Repair first" (D17 left it for later): let the backup repair a
   cut-off vault write itself. Needs a Rust function over the FFI.
-- A sentence of its own for a full disk during a backup, now or with
-  BR9.
+- A sentence of its own for a full disk during a backup: not in BR9
+  (D52). When, and for a restore too?
 - An ADR for D2, or fold it into ADR 0026.
   `docs/adr/0014-catalogue-interchange-and-backup.md:191` still says
   `BackupEntryOverflow` (now `BackupOverflow`).
@@ -1245,7 +1363,9 @@ on 2026-11-17 with the maintainer's yes, as `/tmp/pitak_br10/` was
 the day before. `/tmp/pitak_fix/` holds the logs of the checks of
 2026-11-17, the saved copies and patches of the fix of D46 and its
 trial script; nothing of the maintainer's is in it, and it was left
-to the system.
+to the system. `/tmp/pitak_br9/` holds the same for BR9: the logs of
+its checks, the five patches, the trial scripts, and copies of the
+Android reference pages that were read.
 `/tmp/pitak_br8/` (the logs, patches and compiled tools of BR8, and
 its three made-up backups), `/tmp/pitak_bookkeeping/` and the CI logs
 `/tmp/pitak_ci_*.log` of 2026-11-16 were gone on 2026-11-17, like
@@ -1263,7 +1383,7 @@ repository depends on any of them.
 | 2026-11-13 | The first CI runs: `rustix` (`5e8dfea`), and a restore test that failed now and then, fixed in two commits (`ede5a3e`, then `0d3dcca` after the first form failed on Linux). D29. BR7 designed. This file cut down (D30). BR7 built, committed (`122545f` to `9511905`) and pushed; its CI run green |
 | 2026-11-14 | Baseline for the stage of D24: unchanged. The stage designed (private file); T10 found. D31 to D35. The CI run of `b49901e` seen green. The go-ahead; all six steps of the stage built; its run in the emulator; the review stop (D35, two small fixes, T11); an accident with this checkout's git settings, repaired; seven commits and this file's (`4b4fe36`), not pushed. A handoff for the device runs of the next session |
 | 2026-11-16 | The stage of D24 pushed. Its CI run red in the F-Droid job: the runner's image had changed, and no workflow named a JDK. `3ea1812` names it (Temurin 21). A second failure of the same job, a refused download, went away when the job was run again; then every job green. T1 and T10 closed; the stage's design file into the archive; this file brought up to date. Then the device runs: the phone and its two installs read with `adb`; the questions of step 1 answered; D36. The tool for synthetic backups designed and built, not committed; while it was built, found that the reader of a restore counts entries where the writer counts covers; D37. The tool committed (`549b93c`, not pushed); the files of runs A and B made. The measuring script built and committed (`dde1e80`, not pushed); the first look and run A in the emulator; a release build for the phone made and installed, then found to hold OLD compiled Dart code (the stale-artefact trap of `docs/RELEASING.md` §4): run B stopped before any restore. A clean rebuild, checked from inside, installed; the phone's install emptied by the maintainer; most of run B done (every restore and the backup at today's limits ended well, no freeze seen), then the device runs stopped by the maintainer. Four commits pushed; CI green at `3797288`. D38: run B has passed. A handoff for the planning of BR8. Then the planning session of BR8: the baseline unchanged (7,148 tests); the design written (private file); measurements on the Mac; the decision points 17 to 20 named; all four answered (D39 to D42). BR8 built through to its review stop: the edge tests, the numbers, the sentences of D41, the runs by hand on the Mac, the changelog; 7,194 tests; the Android unit tests green after one Gradle run with the network; four commits (`b01a950`, `a9ae39e`, `421fa8e`, `b15c42f`) and this file's (`f508475`); all pushed with the two earlier commits of this file; the session closed while CI run 43914687234 was running |
-| 2026-11-17 | The CI run of BR8 (43914687234 at `f508475`) seen green, every job at its first attempt, and "Update goldens" with it. BR8 done: its row and the decisions here; P1-M1 and P4-m19 ticked in the private tracker; its design file into the private archive, word for word. The go-ahead for run E. The three made-up backups made again; a release build (after `flutter clean`, looked into) and a debug build at `f508475`. Run E in the emulator, all of it: 10,000 covers and 1 GiB restore and back up, 10,008 covers are refused with the sentence of D41, the writer refuses 10,001, a backup with a vault is made and restored. Run E on the phone, most of it: the same restores and the backup at 1 GiB end well, memory 233.5 MB; by screenshots the screen stood still for about 1.5 to 1.9 s before the share sheet and for at least 1.2 s at the start of a restore; the phone locked in the middle of a restore, and after the unlock its page says "Restore complete"; the cache on the phone read in its Settings (nothing of a pick or of a run's work left; one thing for T2, in the private record); a backup with a vault restored, made, saved by the maintainer and restored again on the phone. Run E is run; five questions for the maintainer. This file committed (`12d4ebc`). The clean-up after run E: the made-up files on the phone, the scratch folders on the Mac, the duplicate of BR8's design file (`91ed643`); both commits pushed, CI run 44015306730 green in every job at its first attempt. The five questions answered, one at a time: D43 to D47. The fix of D46 designed, built after the go-ahead (three tests first, red on the old code; three trials by hand; 7,197 tests) and committed (`ee80a76`); the changelog's sentence of D47 (`1a0ece7`); this file (`d456fdf`); all three pushed, CI run 44020820271 green in every job at its first attempt. A handoff for the next session, which takes up run C, run D, BR9 and BR10 |
+| 2026-11-17 | The CI run of BR8 (43914687234 at `f508475`) seen green, every job at its first attempt, and "Update goldens" with it. BR8 done: its row and the decisions here; P1-M1 and P4-m19 ticked in the private tracker; its design file into the private archive, word for word. The go-ahead for run E. The three made-up backups made again; a release build (after `flutter clean`, looked into) and a debug build at `f508475`. Run E in the emulator, all of it: 10,000 covers and 1 GiB restore and back up, 10,008 covers are refused with the sentence of D41, the writer refuses 10,001, a backup with a vault is made and restored. Run E on the phone, most of it: the same restores and the backup at 1 GiB end well, memory 233.5 MB; by screenshots the screen stood still for about 1.5 to 1.9 s before the share sheet and for at least 1.2 s at the start of a restore; the phone locked in the middle of a restore, and after the unlock its page says "Restore complete"; the cache on the phone read in its Settings (nothing of a pick or of a run's work left; one thing for T2, in the private record); a backup with a vault restored, made, saved by the maintainer and restored again on the phone. Run E is run; five questions for the maintainer. This file committed (`12d4ebc`). The clean-up after run E: the made-up files on the phone, the scratch folders on the Mac, the duplicate of BR8's design file (`91ed643`); both commits pushed, CI run 44015306730 green in every job at its first attempt. The five questions answered, one at a time: D43 to D47. The fix of D46 designed, built after the go-ahead (three tests first, red on the old code; three trials by hand; 7,197 tests) and committed (`ee80a76`); the changelog's sentence of D47 (`1a0ece7`); this file (`d456fdf`); all three pushed, CI run 44020820271 green in every job at its first attempt. A handoff for the next session, which takes up run C, run D, BR9 and BR10 (`48edab6`, not pushed). A second session the same day: the state confirmed; the order chosen (BR9, then run C and run D, then BR10); the baseline unchanged (7,197 tests); the Android reference read; decision points 5 and 6 answered (D48, D49); BR9 designed (private file) and its decision points 21 to 24 answered (D50 to D53); BR9 built through to its review stop in five steps, tests and trials by hand at each: the rules, the Kotlin channel and its Dart side, the two size readers, the dialog on both pages, the changelog. A wrong prediction about how two sizes far apart are written was found in the build and put at once (D54). One test of the whole suite timed out once and not again. 7,377 tests; the Android unit tests green offline, 64 in each flavour. At the review stop: D55 (the guide with BR10), T12, a bounded look for the time-out (24 runs, not found again; a second timing test failed once under load). The five commits made in a plain clone (`3021561`, `c883fae`, `3222077`, `6e7b47f`, `28630c2`) and brought over; this file committed. Not pushed |
 
 ## Device runs: handoff for the next session
 
