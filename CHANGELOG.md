@@ -17,7 +17,17 @@ heading as part of the `chore(release):` commit.
 The backup and restore rework so far (review of November 2026; stages BR1
 to BR8 in `PLAN.md`, with Import and Merge on the app's own picker
 between BR7 and BR8). Stage BR8 raises the limits of a backup; the run
-on a phone at the new limits is still to come (`PLAN.md`, run E).
+on a phone at the new limits was made on 2026-11-17 and has passed
+(`PLAN.md`, run E).
+
+Two known limits, measured in that run on a fast phone and accepted
+(`PLAN.md`, D44 and D45; a slow phone has not been tried):
+
+- With a backup of 1 GiB the screen can stand still for about 2 seconds
+  just before the share sheet opens: the share plugin copies the whole
+  file first. The time grows with the size of the backup.
+- At the start of a restore into a large library (10,000 books) the
+  screen can stand still for about a second.
 
 ### Changed
 - **A backup holds up to 10,000 cover pictures and 1 GiB of content**
