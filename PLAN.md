@@ -119,6 +119,11 @@ under "D<number>". All are of November 2026.
 | D40 | 16 | The new edges are proven in three layers: the exact edges on declared sizes, at the app's own numbers, in the normal test run (1 GiB passes, one byte more is refused, for the writer and the reader); real files at the cover count in the normal test run (10,000 covers pass, 10,001 are refused); real backups near 1 GiB by hand with the tools that exist, then run E. No test writes 1 GiB in CI, no tagged test, no new option of the tool | built (BR8: `b01a950`, `a9ae39e`); run E is still to come |
 | D41 | 16 | On the Restore page a file beyond the limits gets a sentence of its own, with the app's own number: "This file holds more than a Pitak backup can. A backup can hold 10,000 cover pictures."; the same with "A backup can hold 1.0 GB."; and "One part of this file is larger than a Pitak backup allows." A file above the file cap keeps the picker's sentence, a damaged file keeps "This file doesn’t look like a valid Pitak backup." Nothing from the file is shown | built (BR8: `421fa8e`) |
 | D42 | 16 | The go-ahead for BR8: its steps are built through to the review stop, with a pause only when something is not as designed. Every commit, the push, the Gradle run with the network and the files of run E keep their own yes | in force |
+| D43 | 17 | Run E has passed, by the same rule as run B (D36): every backup and restore at the new limits ended with its normal result, in the emulator and on the phone. Said with it: a slow phone has still not been tried | in force |
+| D44 | 17 | The screen standing still for about 1.5 to 1.9 seconds before the share sheet, with a backup of 1 GiB on a fast phone, is acceptable. The release goes ahead as it is; it is written down as a known limit. This answers the "if" of D39: no stage for the app's own sharing before a release. T2 stays a question of its own. Not measured on a weak phone | in force; the sentence for the documents with BR10 |
+| D45 | 17 | The screen standing still for about a second at the start of a restore into a large library is accepted as a known limit and is not traced. Its cause is not known | in force |
+| D46 | 17 | On the Restore page the sentence of a file that was refused goes as soon as another file is chosen (today it stays under "Copying the file…" until the new copy is read). Fixed now: a small change with a test, its own commit and CI run; the design is shown before code is written. A pick that is cancelled brings the sentence back: the page is then as it was | built (`ee80a76`) |
+| D47 | 17 | The sentence of `CHANGELOG.md` that says the run on a phone is still to come is corrected in the push of D46's fix. It says the run was made and has passed, and names the two accepted limits (D44, D45) | done (`1a0ece7`) |
 
 Decision points of the plan that are still open: 5, 6 and 7 (see
 "The plan").
@@ -161,6 +166,7 @@ small ones, on the branch `reviewFixes`.
 | (D24) | Import and Merge on the app's own picker (T1, T10): both pages choose their file through the app's own picker; the `file_selector` package leaves the app (D31 to D35) | done: `43fb8d4`, `fb21ace`, `5088e02`, `4e5d782`, `1651c11`, `69d5e66`, `a4b456d` |
 | (CI) | The one CI job that runs Gradle names its JDK (Temurin 21) instead of taking the one the runner happens to have | done: `3ea1812` |
 | BR8 | Raise the limits: a backup holds 10,000 covers and 1 GiB of content (D3, D4). The edges are tested at the app's own numbers (D40). On the Restore page a file beyond the limits gets a sentence of its own (D41, P4-m19) | done: `b01a950`, `a9ae39e`, `421fa8e`, `b15c42f`. On a device at the new limits: run E |
+| (run E) | The Restore page does not show the sentence of a file that could not be used while the next file is chosen and copied (D46); the changelog says that run E was made and has passed, and names the two accepted limits (D47) | done: `ee80a76`, `1a0ece7` |
 | BR9 | The resource notice (D5) | needs decision points 5 and 6 |
 | BR10 | Proof on devices, records, clean-up | last |
 
@@ -199,19 +205,18 @@ After each of BR1, BR2, BR3, BR4, BR6 and BR7 the app is releasable.
 
 **BR10. Proof on devices, records, clean-up.**
 
-- [ ] A `tool/` script that builds a synthetic `.pitabak` (N covers of
+- [x] (2026-11-17: run A, and run E with D43) A `tool/` script that builds a synthetic `.pitabak` (N covers of
   a chosen size). Restore it in the emulator (`pitak_s11_api36`), then
   make a backup there and restore that. Sizes: 4,000 and 10,000
   covers, and one more than the reader of a restore takes (D37: it
   counts entries, so for a made-up backup that is 8 covers more than
   the writer's limit); about 300 MB and 1 GiB. The tool is built
   (2026-11-16, see "Device runs"). Run for 4,000 covers in run A and
-  for 10,000 covers and 1 GiB in run E (2026-11-17); the box waits
-  for the maintainer's judgement of run E.
-- [ ] The same on a real phone, the slowest at hand. Time, peak
+  for 10,000 covers and 1 GiB in run E.
+- [x] (2026-11-17: run B with D38, run E with D43) The same on a real phone, the slowest at hand. Time, peak
   memory, free storage before and after. The memory figure of the
-  notice comes from here. Run on the one phone at hand, a fast one
-  (run B, run E); the box waits for the same judgement.
+  notice comes from here. Run on the one phone at hand, which is a
+  fast one: a weak phone has not been tried (D43, D44).
 - [ ] Look at real covers at 240×360, quality 70, on the phone.
 - [ ] ADR 0025 (no Kotlin compatibility, D1, D29). ADR 0026 (backup
   limits, streamed archive, resource notice; D2, D8, D19, D20, D22 to
@@ -240,6 +245,9 @@ D32 and D33.
 Decision point 16 (when the phone run of today's limits has
 "passed", for BR8) is answered: D36. A question that came up while
 the tool for the runs was built is answered too: D37.
+
+The five questions run E left (2026-11-17; "Run E: where it stands"
+at the end of this file) are answered: D43 to D47.
 
 Decision points of BR8, put on 2026-11-16 (the private design file
 has each in full). Point 17, sharing a backup at the new limit, is
@@ -354,10 +362,14 @@ when it was written; check the repository before relying on it.
   four commits of BR8 (`b01a950`, `a9ae39e`, `421fa8e`, `b15c42f`)
   and a commit of this file (`f508475`). All seven were PUSHED on
   2026-11-16 (`3797288..f508475`, with the maintainer's yes). On top
-  of them, since 2026-11-17: `12d4ebc`, a commit of this file (BR8
-  done; run E), NOT pushed when this was written: `git status -sb`
-  says how far the branch is ahead. What was written into this file
-  after it (the clean-up after run E) is not committed as long as
+  of them, since 2026-11-17: `12d4ebc` (BR8 done; run E) and
+  `91ed643` (the clean-up after run E), two commits of this file,
+  PUSHED that day (`f508475..91ed643`); CI run 44015306730 at
+  `91ed643` is green in all four jobs at its first attempt, and so is
+  "Update goldens" (44015306235). On top of them, the same day:
+  `ee80a76` (the fix of D46), `1a0ece7` (the changelog, D47) and a
+  commit of this file. What is written into this file after that is
+  not committed as long as
   `git status` names this file.
 - Draft pull request #30 ("Backup and restore rework, stages BR1 to
   BR6"; its title does not name BR7 yet). CI runs on a pull request
@@ -482,12 +494,17 @@ the writer refuses 10,001, a backup with a vault is made and
 restored, the phone was locked in the middle of a restore, and the
 cache on the phone was looked at. **Its result is at the very end of
 this file, "Run E: where it stands"**, with five questions for the
-maintainer; the first is whether run E has passed, the second is
-D39's (the screen stood still for about 1.5 to 1.9 s before the share
-sheet at 1 GiB).
+maintainer. **All five are answered (D43 to D47): run E has passed;
+the two times the screen stood still are accepted as known limits.**
 
-**Next:** the maintainer's answers to those questions (the clean-up
-after run E is done, 2026-11-17). Then what was not begun: run C and run D; BR9 (decision points 5 and 6); BR10.
+**The small fix of D46 is BUILT and COMMITTED** (2026-11-17,
+`ee80a76`: one condition in `restore_page.dart` and three tests),
+and so is the changelog's sentence of D47 (`1a0ece7`). Its design and
+build log are in the private `br10-in-detail.md`. If `git status -sb`
+shows the branch ahead of `origin/reviewFixes`, they are not pushed
+yet; after the push, look at the CI run, every job, to the end.
+
+**Next**, what was not begun: run C and run D; BR9 (decision points 5 and 6); BR10.
 
 1. Confirm the state (`git status`, `git log`, `git remote -v`). If a
    commit of this file was pushed after `f508475`, look at its CI
@@ -499,10 +516,11 @@ after run E is done, 2026-11-17). Then what was not begun: run C and run D; BR9 
    E were driven; `~/pitak-device-runs/helpers/run-E/README.txt` says
    how to use the newest helpers again.
 3. The numbers a next stage compares its baseline with are those of
-   the tree of `b15c42f`: `build_runner` no diff; format 0 changed of
-   1,450 files (`tool/` counted in); analyze 47, none in `lib/`,
-   `test/`, `integration_test/`, `tool/`; 7,194 tests passed; Kotlin
-   55 in each flavour. The offline Gradle run of the Android unit
+   the tree of `ee80a76` (2026-11-17): `build_runner` no diff; format
+   0 changed of 1,450 files (`tool/` counted in); analyze 47, none in
+   `lib/`, `test/`, `integration_test/`, `tool/`; 7,197 tests passed
+   (7,194 at `b15c42f`); Kotlin 55 in each flavour (not run again:
+   no Kotlin changed). The offline Gradle run of the Android unit
    tests works only as long as no `flutter clean` came after the last
    run with the network (2026-11-16). **One came on 2026-11-17**, for
    the release build of run E: the next run of those tests may need
@@ -528,7 +546,7 @@ end of this file.
 | Import and Merge on the picker (D24, T1, T10) | nothing: done. Run C of "Device runs" is for what no test reached |
 | BR8 raise the limits | nothing: done. Run E of "Device runs" is for what no test reached. Measured in run B on 2026-11-16, on a fast phone and at the old limits: a 500 MB backup reached the share sheet 2.7 seconds after the tap, build and the share plugin's copy together, and no freeze was seen |
 | BR9 resource notice | decision points 5 and 6 |
-| BR10 proof and records | its first two boxes are run E, which is run (2026-11-17; the maintainer's judgement is open); run D for the covers; ADR 0025 and ADR 0026 |
+| BR10 proof and records | its first two boxes are ticked (run E has passed, D43); run D for the covers; ADR 0025 and ADR 0026, which also take the two known limits of D44 and D45 |
 
 ### What the built stages left in place
 
@@ -1150,7 +1168,7 @@ repository depends on any of them.
 | 2026-11-13 | The first CI runs: `rustix` (`5e8dfea`), and a restore test that failed now and then, fixed in two commits (`ede5a3e`, then `0d3dcca` after the first form failed on Linux). D29. BR7 designed. This file cut down (D30). BR7 built, committed (`122545f` to `9511905`) and pushed; its CI run green |
 | 2026-11-14 | Baseline for the stage of D24: unchanged. The stage designed (private file); T10 found. D31 to D35. The CI run of `b49901e` seen green. The go-ahead; all six steps of the stage built; its run in the emulator; the review stop (D35, two small fixes, T11); an accident with this checkout's git settings, repaired; seven commits and this file's (`4b4fe36`), not pushed. A handoff for the device runs of the next session |
 | 2026-11-16 | The stage of D24 pushed. Its CI run red in the F-Droid job: the runner's image had changed, and no workflow named a JDK. `3ea1812` names it (Temurin 21). A second failure of the same job, a refused download, went away when the job was run again; then every job green. T1 and T10 closed; the stage's design file into the archive; this file brought up to date. Then the device runs: the phone and its two installs read with `adb`; the questions of step 1 answered; D36. The tool for synthetic backups designed and built, not committed; while it was built, found that the reader of a restore counts entries where the writer counts covers; D37. The tool committed (`549b93c`, not pushed); the files of runs A and B made. The measuring script built and committed (`dde1e80`, not pushed); the first look and run A in the emulator; a release build for the phone made and installed, then found to hold OLD compiled Dart code (the stale-artefact trap of `docs/RELEASING.md` §4): run B stopped before any restore. A clean rebuild, checked from inside, installed; the phone's install emptied by the maintainer; most of run B done (every restore and the backup at today's limits ended well, no freeze seen), then the device runs stopped by the maintainer. Four commits pushed; CI green at `3797288`. D38: run B has passed. A handoff for the planning of BR8. Then the planning session of BR8: the baseline unchanged (7,148 tests); the design written (private file); measurements on the Mac; the decision points 17 to 20 named; all four answered (D39 to D42). BR8 built through to its review stop: the edge tests, the numbers, the sentences of D41, the runs by hand on the Mac, the changelog; 7,194 tests; the Android unit tests green after one Gradle run with the network; four commits (`b01a950`, `a9ae39e`, `421fa8e`, `b15c42f`) and this file's (`f508475`); all pushed with the two earlier commits of this file; the session closed while CI run 43914687234 was running |
-| 2026-11-17 | The CI run of BR8 (43914687234 at `f508475`) seen green, every job at its first attempt, and "Update goldens" with it. BR8 done: its row and the decisions here; P1-M1 and P4-m19 ticked in the private tracker; its design file into the private archive, word for word. The go-ahead for run E. The three made-up backups made again; a release build (after `flutter clean`, looked into) and a debug build at `f508475`. Run E in the emulator, all of it: 10,000 covers and 1 GiB restore and back up, 10,008 covers are refused with the sentence of D41, the writer refuses 10,001, a backup with a vault is made and restored. Run E on the phone, most of it: the same restores and the backup at 1 GiB end well, memory 233.5 MB; by screenshots the screen stood still for about 1.5 to 1.9 s before the share sheet and for at least 1.2 s at the start of a restore; the phone locked in the middle of a restore, and after the unlock its page says "Restore complete"; the cache on the phone read in its Settings (nothing of a pick or of a run's work left; one thing for T2, in the private record); a backup with a vault restored, made, saved by the maintainer and restored again on the phone. Run E is run; five questions for the maintainer. This file committed (`12d4ebc`, not pushed). The clean-up after run E: the made-up files on the phone, the scratch folders on the Mac, the duplicate of BR8's design file |
+| 2026-11-17 | The CI run of BR8 (43914687234 at `f508475`) seen green, every job at its first attempt, and "Update goldens" with it. BR8 done: its row and the decisions here; P1-M1 and P4-m19 ticked in the private tracker; its design file into the private archive, word for word. The go-ahead for run E. The three made-up backups made again; a release build (after `flutter clean`, looked into) and a debug build at `f508475`. Run E in the emulator, all of it: 10,000 covers and 1 GiB restore and back up, 10,008 covers are refused with the sentence of D41, the writer refuses 10,001, a backup with a vault is made and restored. Run E on the phone, most of it: the same restores and the backup at 1 GiB end well, memory 233.5 MB; by screenshots the screen stood still for about 1.5 to 1.9 s before the share sheet and for at least 1.2 s at the start of a restore; the phone locked in the middle of a restore, and after the unlock its page says "Restore complete"; the cache on the phone read in its Settings (nothing of a pick or of a run's work left; one thing for T2, in the private record); a backup with a vault restored, made, saved by the maintainer and restored again on the phone. Run E is run; five questions for the maintainer. This file committed (`12d4ebc`). The clean-up after run E: the made-up files on the phone, the scratch folders on the Mac, the duplicate of BR8's design file (`91ed643`); both commits pushed, CI run 44015306730 green in every job at its first attempt. The five questions answered, one at a time: D43 to D47. The fix of D46 designed, built after the go-ahead (three tests first, red on the old code; three trials by hand; 7,197 tests) and committed (`ee80a76`); the changelog's sentence of D47 (`1a0ece7`) |
 
 ## Device runs: handoff for the next session
 
@@ -1546,8 +1564,9 @@ not say what passes. Decided on 2026-11-16, as it had been proposed
 Run on 2026-11-17 with the maintainer's go-ahead, after BR8 was
 done. **Everything this file asks of run E was run, in the emulator
 and on the phone, and every backup and restore ended with its normal
-result.** Whether run E has "passed" is the maintainer's judgement
-(the questions at the end of this section). The rows are in
+result.** **Run E has PASSED (D43, the maintainer's judgement the
+same day);** the questions it left are answered at the end of this
+section. The rows are in
 `~/pitak-device-runs/results-run-E-emulator.md` and
 `results-run-E-phone.md`, the full record in the private
 `br10-in-detail.md`.
@@ -1634,19 +1653,18 @@ its Download folder, each by its full name; on the Mac
 `/tmp/pitak_runE/` (builds, logs, screenshots; two of them showed the
 phone's share sheet). `~/pitak-device-runs/` is kept.
 
-**New questions for the maintainer from run E:**
+**The questions run E left, all answered on 2026-11-17** (put one at
+a time, in plain words):
 
-- Has run E passed? Every backup and restore at the new limits ended
-  with its normal result; the two times the screen stood still and
-  the figures above are for the judgement.
-- D39: at 1 GiB the screen stood still for about 1.5 to 1.9 s before
-  the share sheet, on a fast phone. Does the app's own way of sharing
-  a backup become a stage before a release, as D39 says, or is that
-  short enough?
-- The 1.2 s at the start of a restore into a large library: trace
-  it, and in which stage?
-- The stale sentence under "Copying the file…": clear it when a new
-  file is chosen (a small change with a widget test), now or later?
-- `CHANGELOG.md`, `[Unreleased]`, still says "the run on a phone at
-  the new limits is still to come (`PLAN.md`, run E)". Change that
-  sentence now, or with the judgement of run E?
+- Has run E passed? **Yes (D43)**, by the rule of run B.
+- D39: does the standstill of about 1.5 to 1.9 s before the share
+  sheet at 1 GiB make the app's own sharing a stage before a
+  release? **No (D44)**: acceptable; a known limit.
+- The standstill of at least 1.2 s at the start of a restore into a
+  large library: **accepted as a known limit, not traced (D45)**.
+- The stale sentence under "Copying the file…": **fixed (D46,
+  `ee80a76`)**, after its design was shown: the sentence is not shown
+  while a file is being chosen and copied, and a pick that is
+  cancelled brings it back. Three tests; not yet seen on a phone.
+- The changelog's sentence that the phone run is still to come:
+  **corrected (D47, `1a0ece7`)**, naming the two limits.
