@@ -85,6 +85,33 @@ final createBackupUseCaseProvider =
 // ignore: unused_element
 typedef CreateBackupUseCaseRef =
     AutoDisposeFutureProviderRef<CreateBackupUseCase>;
+String _$libraryFootprintSourceHash() =>
+    r'3b47af9582b0246cf442dd8145cd184fd83be7ea';
+
+/// How much room the library takes on disk (backup rework BR9), for the
+/// notice before a backup and before a restore. It only adds up file sizes
+/// of the data generation in use, in a worker isolate. The generation is
+/// resolved lazily (`ref.read` at call time), as the restorer below does: a
+/// restore switches generations, and the next read must see the new one.
+/// Overridden in tests with a fake.
+///
+/// Copied from [libraryFootprintSource].
+@ProviderFor(libraryFootprintSource)
+final libraryFootprintSourceProvider =
+    AutoDisposeProvider<LibraryFootprintSource>.internal(
+      libraryFootprintSource,
+      name: r'libraryFootprintSourceProvider',
+      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+          ? null
+          : _$libraryFootprintSourceHash,
+      dependencies: null,
+      allTransitiveDependencies: null,
+    );
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef LibraryFootprintSourceRef =
+    AutoDisposeProviderRef<LibraryFootprintSource>;
 String _$restoreWorkFoldersHash() =>
     r'74c71166702c97a7637f41f3be90622565a48d91';
 

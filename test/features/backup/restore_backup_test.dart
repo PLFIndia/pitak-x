@@ -692,6 +692,34 @@ void main() {
       expect(await db.select(db.books).get(), isEmpty);
     });
 
+    test('inspectArchive says how much a restore of the archive writes '
+        '(BR9: the notice before a restore)', () async {
+      // Each builder writes to one fixed file: call it once, reuse the bytes.
+      final booksDb = buildBooksDb();
+      final wishlistDb = buildWishlistDb();
+      final zip = archive({
+        'manifest.json': utf8.encode(manifest(hasCovers: true)),
+        'books.db': booksDb,
+        'wishlist.db': wishlistDb,
+        'cover_a.jpg': [1, 2, 3],
+        'cover_b.jpg': [4, 5],
+      });
+      final r = restorer(_FakeVault(right(VaultData.empty)));
+
+      final inspection = (await r.inspectArchive(
+        zip,
+      )).getOrElse((f) => fail('unexpected: $f'));
+
+      expect(inspection.coverBytes, 5);
+      expect(inspection.databaseBytes, booksDb.length + wishlistDb.length);
+      expect(inspection.sizes, (
+        takenBytes: 5 + booksDb.length + wishlistDb.length,
+        databaseBytes: booksDb.length + wishlistDb.length,
+        hasCovers: true,
+        hasVault: false,
+      ));
+    });
+
     test('inspectArchive flags a vault-bearing archive', () async {
       final zip = archive({
         'manifest.json': utf8.encode(manifest(hasBackupBlob: true)),

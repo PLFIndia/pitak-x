@@ -20,8 +20,10 @@ import 'package:pitaka/core/storage/prefs_write.dart';
 import 'package:pitaka/core/storage/run_folders.dart';
 import 'package:pitaka/features/backup/application/create_backup_use_case.dart';
 import 'package:pitaka/features/backup/domain/backup_work_area.dart';
+import 'package:pitaka/features/backup/domain/library_footprint.dart';
 import 'package:pitaka/features/backup/infrastructure/backup_archive_writer.dart';
 import 'package:pitaka/features/backup/infrastructure/file_backup_work_area.dart';
+import 'package:pitaka/features/backup/infrastructure/file_library_footprint.dart';
 import 'package:pitaka/features/backup/infrastructure/restore_backup.dart';
 import 'package:pitaka/features/settings/application/settings_controller.dart';
 import 'package:pitaka/features/vault/application/vault_session_controller.dart';
@@ -99,6 +101,18 @@ Future<CreateBackupUseCase> createBackupUseCase(
     publishState: await ref.watch(publishStateBackupSourceProvider.future),
   );
 }
+
+/// How much room the library takes on disk (backup rework BR9), for the
+/// notice before a backup and before a restore. It only adds up file sizes
+/// of the data generation in use, in a worker isolate. The generation is
+/// resolved lazily (`ref.read` at call time), as the restorer below does: a
+/// restore switches generations, and the next read must see the new one.
+/// Overridden in tests with a fake.
+@riverpod
+LibraryFootprintSource libraryFootprintSource(LibraryFootprintSourceRef ref) =>
+    FileLibraryFootprintSource(
+      activeGeneration: () => ref.read(activeDataGenerationProvider.future),
+    );
 
 /// The private scratch folders of restores (backup rework BR6): one new
 /// folder per restore under the app's temporary directory, for the

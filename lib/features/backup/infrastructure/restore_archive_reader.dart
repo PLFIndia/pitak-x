@@ -158,6 +158,11 @@ BoundedZipFile openBackupArchive(
 ///    will write, in archive order. Nothing of them is unpacked yet;
 ///  - `coversLeftOut`: the file names of the cover pictures that are above
 ///    their cap and will NOT be restored (decision D18);
+///  - `coverBytes`, `databaseBytes`: how many bytes a restore of this
+///    archive writes for its cover pictures and for its databases, as the
+///    archive's directory declares them (backup rework BR9: the notice
+///    before a restore works out the free storage it needs from them).
+///    Nothing is unpacked for these two numbers;
 ///  - `refusal`: why the archive was refused, as text for a developer, or
 ///    null;
 ///  - `refusalKind`: which kind of refusal that was (backup rework BR8):
@@ -174,6 +179,8 @@ typedef RestoreArchiveParts = ({
   String? borrowersDbPath,
   List<String> coversToWrite,
   List<String> coversLeftOut,
+  int coverBytes,
+  int databaseBytes,
   String? refusal,
   ZipRefusal? refusalKind,
   RestoreDiskTrouble? trouble,
@@ -278,11 +285,19 @@ RestoreArchiveParts _take(
     if (isInspection && !_inspectedExtras.contains(name)) continue;
     takeIntoMemory(name);
   }
-  if (!isInspection) {
-    if (manifest.hasBackupBlob) takeIntoMemory(backupBlobEntryName);
-    for (final (name, isAnnounced) in _stagedDatabases) {
-      final entry = zip.entry(name);
-      if (entry == null || !isAnnounced(manifest)) continue;
+  // BR9: what the databases a restore stages take on disk, by what the
+  // directory declares. Counted for an inspection too, which stages none.
+  var databaseBytes = 0;
+  if (!isInspection && manifest.hasBackupBlob) {
+    takeIntoMemory(backupBlobEntryName);
+  }
+  for (final (name, isAnnounced) in _stagedDatabases) {
+    final entry = zip.entry(name);
+    if (entry == null || !isAnnounced(manifest)) continue;
+    // A database always has the verdict "take" here: one above its cap
+    // refuses the whole archive when it is opened (`backupEntryRule`).
+    databaseBytes += entry.size;
+    if (!isInspection) {
       // The file name is OURS (one of three constants), never the
       // archive's. `writeTo` refuses an existing file and removes its own
       // half-written one.
@@ -292,7 +307,7 @@ RestoreArchiveParts _take(
     }
   }
 
-  // The cover pictures: names only, from the entry list.
+  // The cover pictures: names and declared sizes, from the entry list.
   final covers = manifest.hasCovers
       ? listBackupCovers(zip)
       : (toWrite: const <String>[], leftOut: const <String>[]);
@@ -303,7 +318,21 @@ RestoreArchiveParts _take(
     borrowersDbPath: staged[borrowersDbEntryName],
     coversToWrite: covers.toWrite,
     coversLeftOut: covers.leftOut,
+    coverBytes: manifest.hasCovers ? backupCoverBytes(zip) : 0,
+    databaseBytes: databaseBytes,
   );
+}
+
+/// The bytes a restore writes for the cover pictures of the open backup
+/// [zip]: the declared sizes of the covers [listBackupCovers] lists under
+/// `toWrite`, added up (backup rework BR9). Looks at the entry list only.
+int backupCoverBytes(BoundedZipFile zip) {
+  var bytes = 0;
+  for (final entry in zip.entries) {
+    if (restorableCoverLeaf(entry.name) == null) continue;
+    if (entry.verdict == ZipEntryVerdict.take) bytes += entry.size;
+  }
+  return bytes;
 }
 
 RestoreArchiveParts _parts({
@@ -313,6 +342,8 @@ RestoreArchiveParts _parts({
   String? borrowersDbPath,
   List<String> coversToWrite = const [],
   List<String> coversLeftOut = const [],
+  int coverBytes = 0,
+  int databaseBytes = 0,
   String? refusal,
   ZipRefusal? refusalKind,
   RestoreDiskTrouble? trouble,
@@ -323,6 +354,8 @@ RestoreArchiveParts _parts({
   borrowersDbPath: borrowersDbPath,
   coversToWrite: coversToWrite,
   coversLeftOut: coversLeftOut,
+  coverBytes: coverBytes,
+  databaseBytes: databaseBytes,
   refusal: refusal,
   refusalKind: refusalKind,
   trouble: trouble,

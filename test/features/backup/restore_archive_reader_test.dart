@@ -498,6 +498,105 @@ void main() {
     });
   });
 
+  group('the sizes for the notice before a restore (BR9)', () {
+    test('an inspection adds up what the directory declares for the '
+        'databases and the covers, and unpacks nothing for it', () {
+      final unpacked = <int>[];
+      final parts = inspect(archiveOf(fullBackup()), probe: unpacked.add);
+
+      expect(parts.refusal, isNull);
+      expect(
+        parts.databaseBytes,
+        booksDb.length + wishlistDb.length + borrowersDb.length,
+      );
+      // cover_a.jpg has three bytes, cover_b.jpg two.
+      expect(parts.coverBytes, 5);
+      // Still the manifest, the identity and the publishing record only.
+      expect(unpacked, hasLength(3));
+      expect(workFiles(), isEmpty);
+    });
+
+    test('a restore gives the same two numbers as the inspection', () {
+      final path = archiveOf(fullBackup());
+      final inspected = inspect(path);
+      final restored = restore(path);
+
+      expect(restored.databaseBytes, inspected.databaseBytes);
+      expect(restored.coverBytes, inspected.coverBytes);
+    });
+
+    test('a database the manifest does not announce is not counted', () {
+      final parts = inspect(
+        archiveOf([
+          HostileEntry('manifest.json', manifest()),
+          HostileEntry('books.db', booksDb),
+          HostileEntry('wishlist.db', wishlistDb),
+          // In the file, but no vault is announced: a restore leaves it.
+          HostileEntry('borrowers.db', borrowersDb),
+        ]),
+      );
+
+      expect(parts.databaseBytes, booksDb.length + wishlistDb.length);
+      expect(parts.coverBytes, 0);
+    });
+
+    test('only the covers a restore writes are counted: not one above its '
+        'cap, not one with a refused name, not another file', () {
+      final parts = inspect(
+        archiveOf([
+          HostileEntry('manifest.json', manifest(covers: true)),
+          HostileEntry('books.db', booksDb),
+          HostileEntry('wishlist.db', wishlistDb),
+          HostileEntry('cover_first.jpg', const [1]),
+          HostileEntry('cover_at.jpg', List<int>.filled(100, 7)),
+          HostileEntry('cover_big.jpg', const [
+            1,
+            2,
+            3,
+          ], declaredUncompressedSize: 101),
+          HostileEntry('cover_a..b.jpg', const [1, 2, 3, 4]),
+          HostileEntry('notes.txt', const [1, 2, 3, 4, 5, 6]),
+        ]),
+      );
+
+      expect(parts.refusal, isNull);
+      expect(parts.coversToWrite, ['first.jpg', 'at.jpg']);
+      expect(parts.coverBytes, 101);
+    });
+
+    test('covers the manifest does not announce are not counted', () {
+      final parts = inspect(
+        archiveOf([
+          HostileEntry('manifest.json', manifest()),
+          HostileEntry('books.db', booksDb),
+          HostileEntry('wishlist.db', wishlistDb),
+          HostileEntry('cover_a.jpg', const [1, 2, 3]),
+        ]),
+      );
+
+      expect(parts.coverBytes, 0);
+    });
+
+    test('a file that is refused, and one without a manifest, give 0', () {
+      final notAZip = p.join(tmp.path, 'not-a-zip');
+      File(notAZip).writeAsBytesSync(List<int>.filled(300, 9));
+      final refused = inspect(notAZip);
+      expect(refused.refusal, isNotNull);
+      expect(refused.databaseBytes, 0);
+      expect(refused.coverBytes, 0);
+
+      final noManifest = inspect(
+        archiveOf([
+          HostileEntry('books.db', booksDb),
+          HostileEntry('cover_a.jpg', const [1, 2, 3]),
+        ], name: 'no-manifest'),
+      );
+      expect(noManifest.refusal, isNull);
+      expect(noManifest.databaseBytes, 0);
+      expect(noManifest.coverBytes, 0);
+    });
+  });
+
   group('a manifest that cannot be used', () {
     test('no manifest: nothing is taken and nothing is staged', () {
       final unpacked = <int>[];

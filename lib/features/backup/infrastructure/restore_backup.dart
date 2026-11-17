@@ -183,6 +183,8 @@ final class RestoreBackup {
         manifest: manifest,
         identity: extras.identity,
         publishState: extras.publishState,
+        coverBytes: parts.coverBytes,
+        databaseBytes: parts.databaseBytes,
       );
     });
   }

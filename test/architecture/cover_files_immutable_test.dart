@@ -93,6 +93,8 @@ void main() {
     'lib/core/widgets/library_logo.dart',
     // Reads covers INTO the backup archive; writes only the archive.
     'lib/features/backup/infrastructure/backup_archive_writer.dart',
+    // Adds up file sizes for the notice before a backup or a restore.
+    'lib/features/backup/infrastructure/file_library_footprint.dart',
     'lib/features/backup/infrastructure/restore_backup.dart',
     'lib/features/import_export/domain/cover_paths.dart',
     'lib/features/import_export/infrastructure/logo_file_reader.dart',
