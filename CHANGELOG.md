@@ -15,10 +15,11 @@ heading as part of the `chore(release):` commit.
 ## [Unreleased]
 
 The backup and restore rework so far (review of November 2026; stages BR1
-to BR8 in `PLAN.md`, with Import and Merge on the app's own picker
+to BR9 in `PLAN.md`, with Import and Merge on the app's own picker
 between BR7 and BR8). Stage BR8 raises the limits of a backup; the run
 on a phone at the new limits was made on 2026-11-17 and has passed
-(`PLAN.md`, run E).
+(`PLAN.md`, run E). Stage BR9 adds the notice before a backup and before
+a restore; it has not been seen on a phone yet.
 
 Two known limits, measured in that run on a fast phone and accepted
 (`PLAN.md`, D44 and D45; a slow phone has not been tried):
@@ -30,6 +31,38 @@ Two known limits, measured in that run on a fast phone and accepted
   screen can stand still for about a second.
 
 ### Changed
+- **Before a backup and before a restore Pitak says what the run needs
+  and what the phone has (BR9; `PLAN.md`, D5 and D48 to D54).** A tap on
+  "Create backup" or "Restore" first opens one dialog: how much free
+  storage and memory the run needs, how much this phone has, and whether
+  that is enough, tight or not enough. It only informs: the button that
+  starts the run is there whatever it found, also while the figures are
+  still being read and when they could not be read (on a device without
+  the Android code it says so).
+  - Storage is "enough" with the need plus 20% free, and at least 100 MB
+    more than the need; "not enough" below the need; "tight" in between.
+    A backup is counted with twice the size of the library on disk (its
+    file, and the copy the share sheet's plugin makes); a restore with
+    what it writes after the chosen file has been copied. Both are
+    estimates and say "about".
+  - Memory is counted with 100 MB for either run and judged by Android's
+    own low-memory mark.
+  - The figures come from a new channel without arguments
+    (`DeviceResourcesChannel.kt`, in both flavours:
+    `StatFs.getAvailableBytes()` and `ActivityManager.getMemoryInfo()`).
+    No permission is needed. They are shown once and never stored,
+    logged or sent.
+  - The two sizes of a line share one unit when both reach the same
+    unit, and each has its own otherwise ("needs about 18.0 MB. This
+    phone has 12.0 GB free.").
+- **A restore asks before it replaces the library (the "one tap" half of
+  P4-M5).** On the Restore page that dialog is also the confirmation: it
+  says that the books, wishlist and cover pictures on the phone are
+  replaced, and the restore starts only from its own "Restore" button.
+  The keyboard's Done key in the passphrase field opens the dialog too
+  and no longer restores by itself. Cancel, Back and a tap outside leave
+  the page as it was, the typed passphrase included. The red box on the
+  page is unchanged.
 - **A backup holds up to 10,000 cover pictures and 1 GiB of content**
   (before: 4,086 and 500 MiB; `BackupLimits.current`). With the ten other
   entries that is 10,010 entries, and a backup file of at most 1,028 MiB.
@@ -240,8 +273,18 @@ Two known limits, measured in that run on a fast phone and accepted
   file is always dropped.
 
 ### Tests
-- CI runs the Android unit tests (55 JUnit tests in both flavours) at the
-  end of the F-Droid purity job.
+- CI runs the Android unit tests (64 JUnit tests in both flavours since
+  BR9, 55 before) at the end of the F-Droid purity job.
+- The notice of BR9: its rules at every edge
+  (`resource_notice_test.dart`), every sentence word for word
+  (`resource_notice_messages_test.dart`), the dialog on the real
+  providers with a fake device and a fake library size
+  (`resource_notice_dialog_test.dart`: the button that starts the run
+  works in every state and for every verdict), and both pages (Cancel
+  starts nothing; a page that is gone while the dialog is open starts
+  nothing). The channel has nine JUnit tests
+  (`DeviceResourcesChannelTest.kt`). The tests of both pages go through
+  the dialog with one helper each.
 - The tests of the Import and Merge pages no longer replace the
   `file_selector` plugin's platform object. They use the fake picker of
   the restore tests (`test/support/fake_document_picker.dart`) and a
