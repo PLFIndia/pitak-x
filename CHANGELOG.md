@@ -50,6 +50,13 @@ on a phone at the new limits is still to come (`PLAN.md`, run E).
   turns into `BackupTooLargeFailure` with the limit from `BackupLimits`.
   The number in a sentence is the app's own; nothing from the file is
   shown.
+- **The Restore page no longer shows an earlier file's sentence while
+  the next file is copied (D46).** After a file that could not be used
+  (one that was refused, or a pick that failed), its sentence stood
+  under "Copying the file…" until the next file had been copied, as if
+  it were about that one: about five seconds with a backup of 1 GiB on a
+  phone. It is not shown while a file is being chosen and copied. A
+  pick that is cancelled brings it back: the page is then as it was.
 - **Import and Merge choose their file through the app's own picker:**
   the one the Restore page uses (`DocumentPicker`,
   `PickedDocumentChannel.kt`). It copies the chosen document into the
@@ -241,6 +248,9 @@ on a phone at the new limits is still to come (`PLAN.md`, run E).
   with every other entry. By hand, with `tool/make_synthetic_backup.dart`:
   backups of 10,000 covers (192 MB and 1,022 MB) made and read back, and
   the writer's and the reader's refusals one step beyond.
+- `restore_page_test.dart`: three tests hold the next pick half-way and
+  look at the page then (the sentence of the file before is not there),
+  and after the pick was cancelled (it is there again).
 - `tool/zip_reader_memory_check.dart`: a check by hand that reading and
   restoring a 1 GiB backup stays within a capped heap.
 - `tool/make_synthetic_backup.dart`: makes a backup of a chosen size out

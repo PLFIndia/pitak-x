@@ -303,7 +303,11 @@ class _RestorePageState extends ConsumerState<RestorePage> {
             const SizedBox(height: 12),
             const Text('Reading the backup…'),
           ],
-          if (_inspectError != null) ...[
+          // Not while another file is being chosen and copied (decision
+          // D46): under "Copying the file…" this sentence would read as if
+          // it were about the NEW file. The state is kept, not cleared: a
+          // pick that is cancelled must leave the page as it was.
+          if (_inspectError != null && !_picking) ...[
             const SizedBox(height: 12),
             Text(
               RestoreOutcome.messageFor(_inspectError!),

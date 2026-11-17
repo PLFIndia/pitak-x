@@ -701,6 +701,99 @@ void main() {
       expect(find.textContaining('No borrowers vault'), findsOneWidget);
     });
 
+    // Decision D46 (seen on a phone in run E, 2026-11-17): the sentence
+    // about a file that could not be used stood under "Copying the file…"
+    // for as long as the NEXT file was copied, as if it were about that
+    // one. The page cannot tell "the picker is open" from "the file is
+    // being copied", so the sentence is not shown for the whole pick, and a
+    // pick that is cancelled brings it back (the page is then as it was).
+    // The sentence is written out ON PURPOSE: it is what the user reads.
+    const refusedSentence =
+        'This file holds more than a Pitak backup can. A backup can hold '
+        '10,000 cover pictures.';
+
+    testWidgets('while the next file is chosen and copied, the sentence of '
+        'a file that was refused is not shown', (tester) async {
+      controller.inspection = left(
+        const BackupTooLargeFailure('tooManyCovers', null, 10000),
+      );
+      await tester.pumpWidget(wrap());
+      await pick(tester);
+      expect(find.text(refusedSentence), findsOneWidget);
+
+      // The next pick, held half-way. This time the file is a good one.
+      controller
+        ..inspection = right(_inspection())
+        ..holdPick = Completer<void>()
+        ..picks.add(const DocumentPicked(_secondDocument));
+      await tester.tap(chooseButton());
+      await tester.pump();
+
+      expect(find.text(restoreCopyingMessage), findsOneWidget);
+      expect(find.text(refusedSentence), findsNothing);
+
+      controller.holdPick!.complete();
+      await tester.pumpAndSettle();
+
+      // The pick has answered: the new file is shown, the old sentence
+      // stays away.
+      expect(find.text(refusedSentence), findsNothing);
+      expect(find.text(restoreCopyingMessage), findsNothing);
+      expect(find.text('second.pitabak'), findsOneWidget);
+      expect(find.textContaining('This backup contains'), findsOneWidget);
+    });
+
+    testWidgets('while the next file is chosen and copied, the sentence of '
+        'a pick that failed is not shown', (tester) async {
+      await tester.pumpWidget(wrap());
+      await pick(tester, const DocumentPickTooLarge());
+      expect(find.textContaining('too large'), findsOneWidget);
+
+      controller
+        ..holdPick = Completer<void>()
+        ..picks.add(const DocumentPicked(_document));
+      await tester.tap(chooseButton());
+      await tester.pump();
+
+      expect(find.text(restoreCopyingMessage), findsOneWidget);
+      expect(find.textContaining('too large'), findsNothing);
+
+      controller.holdPick!.complete();
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('too large'), findsNothing);
+      expect(find.text('test.pitabak'), findsOneWidget);
+    });
+
+    testWidgets('cancelled after a file that was refused: its sentence is '
+        'there again, the page is as it was', (tester) async {
+      controller.inspection = left(
+        const BackupTooLargeFailure('tooManyCovers', null, 10000),
+      );
+      await tester.pumpWidget(wrap());
+      await pick(tester);
+      expect(find.text(refusedSentence), findsOneWidget);
+
+      // The next pick is held half-way, then ends as "cancelled" (a pick
+      // nobody scripted).
+      controller.holdPick = Completer<void>();
+      await tester.tap(chooseButton());
+      await tester.pump();
+      expect(find.text(refusedSentence), findsNothing);
+
+      controller.holdPick!.complete();
+      await tester.pumpAndSettle();
+
+      expect(find.text(refusedSentence), findsOneWidget);
+      expect(find.text(restoreCopyingMessage), findsNothing);
+      expect(find.text('Choose .pitabak file'), findsOneWidget);
+      expect(restoreEnabled(tester), isFalse);
+      expect(chooseEnabled(tester), isTrue);
+      // Nothing new was looked into, and only the refused copy went back.
+      expect(controller.inspected, [_document]);
+      expect(controller.released, [_document]);
+    });
+
     testWidgets('a new choice gives the earlier copy back and shows the new '
         'one', (tester) async {
       await tester.pumpWidget(wrap());
