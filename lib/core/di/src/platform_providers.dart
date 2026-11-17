@@ -15,6 +15,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:pitaka/core/network/lookup_http_client.dart';
 import 'package:pitaka/core/network/timeout_http_client.dart';
 import 'package:pitaka/core/platform/channel_document_picker.dart';
+import 'package:pitaka/core/platform/device_resources.dart';
 import 'package:pitaka/core/platform/document_picker.dart';
 import 'package:pitaka/core/platform/file_picked_document_reader.dart';
 import 'package:pitaka/core/platform/file_share.dart';
@@ -113,6 +114,14 @@ http.Client lookupHttpClient(LookupHttpClientRef ref) {
 @riverpod
 ScreenSecurity screenSecurity(ScreenSecurityRef ref) =>
     const MethodChannelScreenSecurity();
+
+/// How much free storage and available memory the device has (backup
+/// rework BR9), for the notice before a backup and before a restore. A
+/// narrow platform channel without arguments; off Android every figure is
+/// "unknown". Overridden in tests with a fake.
+@riverpod
+DeviceResources deviceResources(DeviceResourcesRef ref) =>
+    const MethodChannelDeviceResources();
 
 /// The app's own document picker (backup rework BR5b): lets the user choose
 /// one document and keeps a private copy of it that is never larger than a

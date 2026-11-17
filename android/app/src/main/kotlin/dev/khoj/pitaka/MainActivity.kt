@@ -30,6 +30,10 @@ import io.flutter.plugin.common.MethodChannel
  *    document picker and copies the chosen document, under a size cap, into
  *    the app's private cache folder. Dart sends the cap and nothing else;
  *    no permission is involved. See that class for the trust boundary.
+ *  - [DeviceResourcesChannel] — BR9: ONE read-only method without an
+ *    argument that answers how much free storage and available memory the
+ *    device has, for the notice before a backup and before a restore. No
+ *    permission is involved, and nothing is stored or sent.
  *
  * No other native surface is exposed.
  */
@@ -46,10 +50,15 @@ class MainActivity : FlutterFragmentActivity() {
     // A field for the same reason: it registers the document picker.
     private val pickedDocumentChannel = PickedDocumentChannel(this)
 
+    // A field like the two above, for one shape. It registers nothing: it
+    // touches the activity only when a call comes in.
+    private val deviceResourcesChannel = DeviceResourcesChannel(this)
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         appUpdateChannel.attach(flutterEngine)
         pickedDocumentChannel.attach(flutterEngine)
+        deviceResourcesChannel.attach(flutterEngine)
         MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
             BiometricSecretVault.CHANNEL,
@@ -88,6 +97,7 @@ class MainActivity : FlutterFragmentActivity() {
     override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
         appUpdateChannel.detach()
         pickedDocumentChannel.detach()
+        deviceResourcesChannel.detach()
         super.cleanUpFlutterEngine(flutterEngine)
     }
 

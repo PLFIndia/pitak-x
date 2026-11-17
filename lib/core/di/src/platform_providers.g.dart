@@ -192,6 +192,28 @@ final screenSecurityProvider = AutoDisposeProvider<ScreenSecurity>.internal(
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef ScreenSecurityRef = AutoDisposeProviderRef<ScreenSecurity>;
+String _$deviceResourcesHash() => r'120a521c0366068ef6c9c5bb395d84957be6bed3';
+
+/// How much free storage and available memory the device has (backup
+/// rework BR9), for the notice before a backup and before a restore. A
+/// narrow platform channel without arguments; off Android every figure is
+/// "unknown". Overridden in tests with a fake.
+///
+/// Copied from [deviceResources].
+@ProviderFor(deviceResources)
+final deviceResourcesProvider = AutoDisposeProvider<DeviceResources>.internal(
+  deviceResources,
+  name: r'deviceResourcesProvider',
+  debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+      ? null
+      : _$deviceResourcesHash,
+  dependencies: null,
+  allTransitiveDependencies: null,
+);
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef DeviceResourcesRef = AutoDisposeProviderRef<DeviceResources>;
 String _$documentPickerHash() => r'9b3b7b966893793152339777d4fa3513c0080695';
 
 /// The app's own document picker (backup rework BR5b): lets the user choose
