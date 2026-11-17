@@ -353,9 +353,11 @@ when it was written; check the repository before relying on it.
   clean-up after the device runs). On top of them, since 2026-11-16, the
   four commits of BR8 (`b01a950`, `a9ae39e`, `421fa8e`, `b15c42f`)
   and a commit of this file (`f508475`). All seven were PUSHED on
-  2026-11-16 (`3797288..f508475`, with the maintainer's yes). What
-  was written into this file after that push (the bookkeeping of BR8
-  on 2026-11-17, and what follows it) is not committed as long as
+  2026-11-16 (`3797288..f508475`, with the maintainer's yes). On top
+  of them, since 2026-11-17: `12d4ebc`, a commit of this file (BR8
+  done; run E), NOT pushed when this was written: `git status -sb`
+  says how far the branch is ahead. What was written into this file
+  after it (the clean-up after run E) is not committed as long as
   `git status` names this file.
 - Draft pull request #30 ("Backup and restore rework, stages BR1 to
   BR6"; its title does not name BR7 yet). CI runs on a pull request
@@ -397,8 +399,8 @@ when it was written; check the repository before relying on it.
   `br8-in-detail.md`, written 2026-11-16, is the design and the
   build record of BR8. Since 2026-11-17 the archive holds it byte for
   byte (the section "BR8: its design file, word for word"); the file
-  itself still lies there, a duplicate, until the maintainer says it
-  may go. It has its line in `.git/info/exclude` as well.
+  itself was removed that day with the maintainer's yes, after one
+  more comparison. Its line in `.git/info/exclude` is still there.
 - Untracked files that `git status` shows. Do not add, move or
   delete them: the nine review files (`codeReviewPrompt1.md` to `4.md`,
   `codeReviewReport1.md` to `4.md`, `codeReviewSummary.md`), and five
@@ -484,10 +486,8 @@ maintainer; the first is whether run E has passed, the second is
 D39's (the screen stood still for about 1.5 to 1.9 s before the share
 sheet at 1 GiB).
 
-**Next:** the maintainer's answers to those questions; the clean-up
-after run E (the phone's Download folder, `/tmp/pitak_runE/`, the
-duplicate `br8-in-detail.md`), each with its yes. Then what was not
-begun: run C and run D; BR9 (decision points 5 and 6); BR10.
+**Next:** the maintainer's answers to those questions (the clean-up
+after run E is done, 2026-11-17). Then what was not begun: run C and run D; BR9 (decision points 5 and 6); BR10.
 
 1. Confirm the state (`git status`, `git log`, `git remote -v`). If a
    commit of this file was pushed after `f508475`, look at its CI
@@ -1128,14 +1128,11 @@ checksums, the result tables of runs A, B and E, and the backups
 pulled back from the emulator and the phone. Its folder `helpers/`
 holds the scratch scripts that drove the emulator and the phone
 through `adb`; those of run E are in `helpers/run-E/`, with a
-`README.txt`. `/tmp/pitak_runE/` holds the builds, logs and
-screenshots of run E until it is removed (a yes). `/tmp/pitak_br10/`, where the logs and
-screenshots of the device runs of 2026-11-16 lay, was removed that
-day with the maintainer's yes.
-`/tmp/pitak_bookkeeping_2026-11-17/` holds the copies of the private
-files and of this file that were made before the bookkeeping of
-2026-11-17, with their checksums, and the scripts that changed this
-file and the archive.
+`README.txt`. `/tmp/pitak_runE/` (the builds, logs and screenshots
+of run E) and `/tmp/pitak_bookkeeping_2026-11-17/` (the copies of the
+private files from before the bookkeeping of that day) were removed
+on 2026-11-17 with the maintainer's yes, as `/tmp/pitak_br10/` was
+the day before.
 `/tmp/pitak_br8/` (the logs, patches and compiled tools of BR8, and
 its three made-up backups), `/tmp/pitak_bookkeeping/` and the CI logs
 `/tmp/pitak_ci_*.log` of 2026-11-16 were gone on 2026-11-17, like
@@ -1153,7 +1150,7 @@ repository depends on any of them.
 | 2026-11-13 | The first CI runs: `rustix` (`5e8dfea`), and a restore test that failed now and then, fixed in two commits (`ede5a3e`, then `0d3dcca` after the first form failed on Linux). D29. BR7 designed. This file cut down (D30). BR7 built, committed (`122545f` to `9511905`) and pushed; its CI run green |
 | 2026-11-14 | Baseline for the stage of D24: unchanged. The stage designed (private file); T10 found. D31 to D35. The CI run of `b49901e` seen green. The go-ahead; all six steps of the stage built; its run in the emulator; the review stop (D35, two small fixes, T11); an accident with this checkout's git settings, repaired; seven commits and this file's (`4b4fe36`), not pushed. A handoff for the device runs of the next session |
 | 2026-11-16 | The stage of D24 pushed. Its CI run red in the F-Droid job: the runner's image had changed, and no workflow named a JDK. `3ea1812` names it (Temurin 21). A second failure of the same job, a refused download, went away when the job was run again; then every job green. T1 and T10 closed; the stage's design file into the archive; this file brought up to date. Then the device runs: the phone and its two installs read with `adb`; the questions of step 1 answered; D36. The tool for synthetic backups designed and built, not committed; while it was built, found that the reader of a restore counts entries where the writer counts covers; D37. The tool committed (`549b93c`, not pushed); the files of runs A and B made. The measuring script built and committed (`dde1e80`, not pushed); the first look and run A in the emulator; a release build for the phone made and installed, then found to hold OLD compiled Dart code (the stale-artefact trap of `docs/RELEASING.md` §4): run B stopped before any restore. A clean rebuild, checked from inside, installed; the phone's install emptied by the maintainer; most of run B done (every restore and the backup at today's limits ended well, no freeze seen), then the device runs stopped by the maintainer. Four commits pushed; CI green at `3797288`. D38: run B has passed. A handoff for the planning of BR8. Then the planning session of BR8: the baseline unchanged (7,148 tests); the design written (private file); measurements on the Mac; the decision points 17 to 20 named; all four answered (D39 to D42). BR8 built through to its review stop: the edge tests, the numbers, the sentences of D41, the runs by hand on the Mac, the changelog; 7,194 tests; the Android unit tests green after one Gradle run with the network; four commits (`b01a950`, `a9ae39e`, `421fa8e`, `b15c42f`) and this file's (`f508475`); all pushed with the two earlier commits of this file; the session closed while CI run 43914687234 was running |
-| 2026-11-17 | The CI run of BR8 (43914687234 at `f508475`) seen green, every job at its first attempt, and "Update goldens" with it. BR8 done: its row and the decisions here; P1-M1 and P4-m19 ticked in the private tracker; its design file into the private archive, word for word. The go-ahead for run E. The three made-up backups made again; a release build (after `flutter clean`, looked into) and a debug build at `f508475`. Run E in the emulator, all of it: 10,000 covers and 1 GiB restore and back up, 10,008 covers are refused with the sentence of D41, the writer refuses 10,001, a backup with a vault is made and restored. Run E on the phone, most of it: the same restores and the backup at 1 GiB end well, memory 233.5 MB; by screenshots the screen stood still for about 1.5 to 1.9 s before the share sheet and for at least 1.2 s at the start of a restore; the phone locked in the middle of a restore, and after the unlock its page says "Restore complete"; the cache on the phone read in its Settings (nothing of a pick or of a run's work left; one thing for T2, in the private record); a backup with a vault restored, made, saved by the maintainer and restored again on the phone. Run E is run; five questions for the maintainer |
+| 2026-11-17 | The CI run of BR8 (43914687234 at `f508475`) seen green, every job at its first attempt, and "Update goldens" with it. BR8 done: its row and the decisions here; P1-M1 and P4-m19 ticked in the private tracker; its design file into the private archive, word for word. The go-ahead for run E. The three made-up backups made again; a release build (after `flutter clean`, looked into) and a debug build at `f508475`. Run E in the emulator, all of it: 10,000 covers and 1 GiB restore and back up, 10,008 covers are refused with the sentence of D41, the writer refuses 10,001, a backup with a vault is made and restored. Run E on the phone, most of it: the same restores and the backup at 1 GiB end well, memory 233.5 MB; by screenshots the screen stood still for about 1.5 to 1.9 s before the share sheet and for at least 1.2 s at the start of a restore; the phone locked in the middle of a restore, and after the unlock its page says "Restore complete"; the cache on the phone read in its Settings (nothing of a pick or of a run's work left; one thing for T2, in the private record); a backup with a vault restored, made, saved by the maintainer and restored again on the phone. Run E is run; five questions for the maintainer. This file committed (`12d4ebc`, not pushed). The clean-up after run E: the made-up files on the phone, the scratch folders on the Mac, the duplicate of BR8's design file |
 
 ## Device runs: handoff for the next session
 
@@ -1628,11 +1625,14 @@ two Enter presses (screenshots about every 0.4 s were used instead);
 **Left on the phone:** the F-Droid install is the release build of
 `f508475` from this Mac, with 12 made-up books and a made-up
 borrowers vault (its passphrase was told to the maintainer and is in
-no file); in its Download folder the three made-up files of run E
-(1.4 GB) and a small one with a vault; in the maintainer's backups
-folder the two backups of 2026-11-17 (1 GB and 261 kB). **Left on the
-Mac:** `/tmp/pitak_runE/` (builds, logs, screenshots; two of them
-show the phone's share sheet). Each removal needs its yes.
+no file); in the maintainer's backups folder the two backups of
+2026-11-17 (1 GB and 261 kB).
+
+**Cleaned up the same day, with the maintainer's yes:** on the phone
+the three made-up files of run E and the small one with a vault, from
+its Download folder, each by its full name; on the Mac
+`/tmp/pitak_runE/` (builds, logs, screenshots; two of them showed the
+phone's share sheet). `~/pitak-device-runs/` is kept.
 
 **New questions for the maintainer from run E:**
 
