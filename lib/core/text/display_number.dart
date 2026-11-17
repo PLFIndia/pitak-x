@@ -54,6 +54,37 @@ String formatCount(int value) {
   return (first: _wholeBytes(first), second: _wholeBytes(second));
 }
 
+/// Writes two sizes, given in bytes, that may be FAR APART, for a sentence
+/// that sets a small need next to a large supply: `(first: '18.0 MB',
+/// second: '12.0 GB')` (decision D54, the resource notice).
+///
+/// Why [formatSizePair] is not enough there (beginner note): it writes both
+/// sizes in the unit of the larger one, which is right when the two are
+/// compared closely ("537.0 MB; a backup can hold 500.0 MB"). But 18 MB
+/// next to 12 GB would read "0.0 GB", which says nothing. So:
+///  - when both sizes reach the SAME unit, they are written as
+///    [formatSizePair] writes them, with both of its rules;
+///  - otherwise each is written in the unit it reaches itself. Sizes that
+///    far apart need no common unit to be told apart.
+({String first, String second}) formatSizesFarApart(int first, int second) {
+  if (_unitReachedBy(first) == _unitReachedBy(second)) {
+    return formatSizePair(first, second);
+  }
+  return (
+    first: formatSizePair(first, first).first,
+    second: formatSizePair(second, second).first,
+  );
+}
+
+/// Which entry of [_units] is the largest one [bytes] reaches, as its
+/// index; one past the end for a size below 1 KB (written in bytes).
+int _unitReachedBy(int bytes) {
+  for (var index = 0; index < _units.length; index++) {
+    if (bytes >= _units[index].bytes) return index;
+  }
+  return _units.length;
+}
+
 /// [bytes] divided by [unit], rounded to one decimal (half up) with whole
 /// numbers only, so no floating-point error can change the last digit.
 String _oneDecimal(int bytes, int unit) {

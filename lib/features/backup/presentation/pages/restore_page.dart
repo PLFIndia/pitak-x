@@ -21,6 +21,14 @@
 ///
 /// Restore is an AUTHORITATIVE OVERWRITE of local data — the warning copy makes
 /// that explicit before the user proceeds (parity with Kotlin RestoreScreen).
+///
+/// THE NOTICE BEFORE A RESTORE (backup rework BR9, decisions D5, D49, D51):
+/// a tap on "Restore", or the keyboard's Done key in the passphrase field,
+/// first opens one dialog. It says what the restore needs and what this
+/// phone has, and that the library is replaced; the restore starts only
+/// from the dialog's own "Restore" button. The dialog never blocks: its
+/// button is there whatever it found. Cancel leaves this page exactly as it
+/// was, the typed passphrase included.
 library;
 
 import 'dart:async';
@@ -30,11 +38,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pitaka/core/crypto/secure_passphrase_field.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/core/platform/document_picker.dart';
+import 'package:pitaka/features/backup/application/resource_notice_providers.dart';
 import 'package:pitaka/features/backup/application/restore_controller.dart';
 import 'package:pitaka/features/backup/domain/archive_inspection.dart';
 import 'package:pitaka/features/backup/domain/backup_limits.dart';
 import 'package:pitaka/features/backup/presentation/create_backup_messages.dart';
+import 'package:pitaka/features/backup/presentation/resource_notice_messages.dart';
 import 'package:pitaka/features/backup/presentation/restore_messages.dart';
+import 'package:pitaka/features/backup/presentation/widgets/resource_notice_dialog.dart';
 import 'package:pitaka/features/backup/presentation/widgets/restore_summary_widgets.dart';
 
 /// Screen that restores a backup archive over the current device state.
@@ -197,6 +208,26 @@ class _RestorePageState extends ConsumerState<RestorePage> {
     final archive = _archive;
     final inspection = _inspection;
     if (archive == null || inspection == null) return;
+    // BR9 (decisions D5, D49): first the notice, which is also the
+    // confirmation. It comes BEFORE the passphrase is taken out of its
+    // field below, so that Cancel loses nothing the user typed.
+    //
+    // No flag "a notice is open already" is kept: a second tap or a second
+    // Done key cannot arrive before the dialog covers the page. Flutter's
+    // navigator lets no touch through between the push of a route and the
+    // next frame, and the Done key takes the focus off the field (read in
+    // Flutter's `navigator.dart` and `editable_text.dart`). Two tests of
+    // the page hold both.
+    final goOn = await ResourceNoticeDialog.ask(
+      context,
+      notice: restoreResourceNoticeProvider(inspection.sizes),
+      run: ResourceNoticeRun.restore,
+    );
+    // Only an explicit yes starts a restore, and only while this page is
+    // still here: the dialog lies above it and can outlive it. (The chosen
+    // file cannot have changed meanwhile: nothing under an open dialog can
+    // be tapped, and no pick or inspection was running when it opened.)
+    if (!goOn || !mounted) return;
     // Vault-free archives restore with no passphrase (N13); the restorer
     // fails closed if a vault is present but no secret was supplied.
     final hasVault = inspection.manifest.hasBackupBlob;

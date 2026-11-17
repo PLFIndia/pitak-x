@@ -13,13 +13,18 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/core/platform/device_resources.dart';
 import 'package:pitaka/core/platform/file_share.dart';
 import 'package:pitaka/features/backup/application/create_backup_use_case.dart';
 import 'package:pitaka/features/backup/domain/backup_progress.dart';
 import 'package:pitaka/features/backup/domain/create_backup_result.dart';
 import 'package:pitaka/features/backup/presentation/pages/create_backup_page.dart';
+import 'package:pitaka/features/backup/presentation/resource_notice_messages.dart';
+import 'package:pitaka/features/backup/presentation/widgets/resource_notice_dialog.dart';
 
 import '../../support/a11y.dart';
+import '../../support/fake_device_resources.dart';
+import '../../support/fake_library_footprint_source.dart';
 
 /// Where the fake use case says the finished backup is. No file is written:
 /// the share sheet is a fake too.
@@ -69,6 +74,9 @@ class _FakeCreateBackup implements CreateBackupUseCase {
   /// can let a first backup run through and stop the second one.
   final int gateFromCall;
   int _calls = 0;
+
+  /// How many builds were started.
+  int get calls => _calls;
 
   final _Events? events;
 
@@ -161,21 +169,60 @@ class _FakeShare implements FileShareService {
 }
 
 void main() {
+  // BR9: what the notice before a backup reads. A phone with plenty of room
+  // and a small library, unless a test says otherwise.
+  late FakeDeviceResources device;
+  late FakeLibraryFootprintSource library;
+
+  setUp(() {
+    device = FakeDeviceResources();
+    library = FakeLibraryFootprintSource();
+  });
+
+  /// The two sources of the notice, faked.
+  List<Override> noticeSources() => [
+    deviceResourcesProvider.overrideWithValue(device),
+    libraryFootprintSourceProvider.overrideWithValue(library),
+  ];
+
   Widget page({CreateBackupUseCase? useCase, _FakeShare? share}) =>
       ProviderScope(
         overrides: [
           if (useCase != null)
             createBackupUseCaseProvider.overrideWith((ref) async => useCase),
           fileShareServiceProvider.overrideWithValue(share ?? _FakeShare()),
+          ...noticeSources(),
         ],
         child: const MaterialApp(home: CreateBackupPage()),
       );
+
+  Finder createButton() => find.widgetWithText(FilledButton, 'Create backup');
+  Finder noticeConfirm() => find.byKey(ResourceNoticeDialog.confirmKey);
+  Finder noticeCancel() => find.byKey(ResourceNoticeDialog.cancelKey);
+
+  /// Taps "Create backup" and lets the notice open (BR9).
+  Future<void> openNotice(WidgetTester tester) async {
+    await tester.tap(createButton());
+    await tester.pumpAndSettle();
+  }
+
+  /// Taps "Create backup" and says "Go on" to the notice: the build starts.
+  ///
+  /// The two pumps at the end let the dialog go (half a second on the
+  /// test's clock) without waiting for the page to come to rest: a build
+  /// that a test holds half-way keeps a spinner turning.
+  Future<void> tapCreateBackup(WidgetTester tester) async {
+    await openNotice(tester);
+    await tester.tap(noticeConfirm());
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+  }
 
   testWidgets('success shows the hand-off confirmation', (tester) async {
     await tester.pumpWidget(
       page(useCase: _FakeCreateBackup(right(Uint8List.fromList([1, 2, 3])))),
     );
-    await tester.tap(find.widgetWithText(FilledButton, 'Create backup'));
+    await tapCreateBackup(tester);
     await tester.pumpAndSettle();
     expect(
       find.text(
@@ -233,7 +280,7 @@ void main() {
         ),
       ),
     );
-    await tester.tap(find.widgetWithText(FilledButton, 'Create backup'));
+    await tapCreateBackup(tester);
     await tester.pumpAndSettle();
     expect(
       find.text(
@@ -255,7 +302,7 @@ void main() {
         ),
       ),
     );
-    await tester.tap(find.widgetWithText(FilledButton, 'Create backup'));
+    await tapCreateBackup(tester);
     await tester.pumpAndSettle();
     expect(
       find.textContaining(
@@ -273,7 +320,7 @@ void main() {
         share: _FakeShare(outcome: ShareOutcome.unavailable),
       ),
     );
-    await tester.tap(find.widgetWithText(FilledButton, 'Create backup'));
+    await tapCreateBackup(tester);
     await tester.pumpAndSettle();
     expect(find.text('Sharing is unavailable on this device.'), findsOneWidget);
   });
@@ -285,7 +332,7 @@ void main() {
         share: _FakeShare(outcome: ShareOutcome.dismissed),
       ),
     );
-    await tester.tap(find.widgetWithText(FilledButton, 'Create backup'));
+    await tapCreateBackup(tester);
     await tester.pumpAndSettle();
     expect(
       find.text(
@@ -312,7 +359,7 @@ void main() {
         ),
       ),
     );
-    await tester.tap(find.widgetWithText(FilledButton, 'Create backup'));
+    await tapCreateBackup(tester);
     await tester.pumpAndSettle();
     expect(
       find.text(
@@ -342,7 +389,7 @@ void main() {
         ),
       ),
     );
-    await tester.tap(find.widgetWithText(FilledButton, 'Create backup'));
+    await tapCreateBackup(tester);
     await tester.pumpAndSettle();
     expect(
       find.text(
@@ -378,7 +425,7 @@ void main() {
           ),
         ),
       );
-      await tester.tap(find.widgetWithText(FilledButton, 'Create backup'));
+      await tapCreateBackup(tester);
       await tester.pumpAndSettle();
 
       // The backup itself completed.
@@ -409,7 +456,7 @@ void main() {
           ),
         ),
       );
-      await tester.tap(find.widgetWithText(FilledButton, 'Create backup'));
+      await tapCreateBackup(tester);
       await tester.pumpAndSettle();
       expect(
         find.text(
@@ -431,7 +478,7 @@ void main() {
           ),
         ),
       );
-      await tester.tap(find.widgetWithText(FilledButton, 'Create backup'));
+      await tapCreateBackup(tester);
       await tester.pumpAndSettle();
       final title = tester.widget<Text>(
         find.textContaining('A very long title'),
@@ -445,7 +492,7 @@ void main() {
       await tester.pumpWidget(
         page(useCase: _FakeCreateBackup(right(Uint8List.fromList([1])))),
       );
-      await tester.tap(find.widgetWithText(FilledButton, 'Create backup'));
+      await tapCreateBackup(tester);
       await tester.pumpAndSettle();
       expect(find.textContaining('cover picture'), findsNothing);
     });
@@ -463,12 +510,12 @@ void main() {
           share: share,
         ),
       );
-      await tester.tap(find.widgetWithText(FilledButton, 'Create backup'));
+      await tapCreateBackup(tester);
       await tester.pumpAndSettle();
       expect(find.text('• Alpha'), findsOneWidget);
 
       share.outcome = ShareOutcome.dismissed;
-      await tester.tap(find.widgetWithText(FilledButton, 'Create backup'));
+      await tapCreateBackup(tester);
       await tester.pumpAndSettle();
       expect(find.text('• Alpha'), findsNothing);
     });
@@ -484,7 +531,7 @@ void main() {
         'Backup handed to the selected app; confirm it was saved or sent.';
 
     Future<void> createBackup(WidgetTester tester) async {
-      await tester.tap(find.widgetWithText(FilledButton, 'Create backup'));
+      await tapCreateBackup(tester);
       await tester.pumpAndSettle();
     }
 
@@ -597,7 +644,7 @@ void main() {
       await createBackup(tester);
       expect(note, findsOneWidget);
 
-      await tester.tap(find.widgetWithText(FilledButton, 'Create backup'));
+      await tapCreateBackup(tester);
       await tester.pump();
       expect(note, findsNothing, reason: 'the second build is running');
 
@@ -615,7 +662,7 @@ void main() {
         share: _FakeShare(error: StateError('plugin exploded')),
       ),
     );
-    await tester.tap(find.widgetWithText(FilledButton, 'Create backup'));
+    await tapCreateBackup(tester);
     await tester.pumpAndSettle();
 
     expect(
@@ -639,11 +686,12 @@ void main() {
             (ref) async => throw StateError('storage exploded'),
           ),
           fileShareServiceProvider.overrideWithValue(_FakeShare()),
+          ...noticeSources(),
         ],
         child: const MaterialApp(home: CreateBackupPage()),
       ),
     );
-    await tester.tap(find.widgetWithText(FilledButton, 'Create backup'));
+    await tapCreateBackup(tester);
     await tester.pumpAndSettle();
 
     expect(
@@ -655,6 +703,182 @@ void main() {
       isTrue,
     );
     expect(tester.takeException(), isNull);
+  });
+
+  // BR9 (decision D5): before a backup the page says what it needs and
+  // what the phone has. The dialog itself is proven in
+  // `resource_notice_dialog_test.dart`; here: what the PAGE does with it.
+  group('the notice before a backup', () {
+    testWidgets('"Create backup" opens the notice, and nothing is built '
+        'until "Go on" is tapped', (tester) async {
+      final useCase = _FakeCreateBackup(right(Uint8List.fromList([1, 2, 3])));
+      await tester.pumpWidget(page(useCase: useCase));
+
+      await openNotice(tester);
+
+      expect(find.byType(ResourceNoticeDialog), findsOneWidget);
+      expect(find.text('Before you create the backup'), findsOneWidget);
+      // The fake library takes 9 MB: a backup needs twice that.
+      expect(
+        find.text(
+          'Storage: this needs about 18.0 MB. This phone has 64.0 GB free.',
+        ),
+        findsOneWidget,
+      );
+      // A backup replaces nothing, and its notice does not say so.
+      expect(find.text(resourceNoticeReplacesLibraryMessage), findsNothing);
+      expect(useCase.calls, 0);
+
+      await tester.tap(noticeConfirm());
+      await tester.pumpAndSettle();
+
+      expect(find.byType(ResourceNoticeDialog), findsNothing);
+      expect(useCase.calls, 1);
+      expect(
+        find.text(
+          'Backup handed to the selected app; confirm it was saved or sent.',
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('Cancel builds nothing, shares nothing, and leaves the '
+        'button ready', (tester) async {
+      final useCase = _FakeCreateBackup(right(Uint8List.fromList([1, 2, 3])));
+      final share = _FakeShare();
+      await tester.pumpWidget(page(useCase: useCase, share: share));
+
+      await openNotice(tester);
+      await tester.tap(noticeCancel());
+      await tester.pumpAndSettle();
+
+      expect(useCase.calls, 0);
+      expect(share.files, isEmpty);
+      expect(tester.widget<FilledButton>(createButton()).enabled, isTrue);
+      expect(find.text('Creating…'), findsNothing);
+      expect(find.textContaining('Backup handed'), findsNothing);
+    });
+
+    testWidgets('Cancel keeps what the page says about the backup before', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        page(useCase: _FakeCreateBackup(right(Uint8List.fromList([1])))),
+      );
+      await tapCreateBackup(tester);
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Backup handed'), findsOneWidget);
+
+      // A second backup is asked for and then not wanted: the first one's
+      // sentence is still true and stays.
+      await openNotice(tester);
+      await tester.tap(noticeCancel());
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('Backup handed'), findsOneWidget);
+    });
+
+    testWidgets('a phone that is short of storage is told so, and can make '
+        'the backup all the same (D5: the notice never blocks)', (
+      tester,
+    ) async {
+      device.facts = const DeviceResourceFacts(
+        freeStorageBytes: 1024,
+        availableMemoryBytes: 4 * 1024 * 1024 * 1024,
+        lowMemoryThresholdBytes: 256 * 1024 * 1024,
+        lowMemory: false,
+      );
+      final useCase = _FakeCreateBackup(right(Uint8List.fromList([1])));
+      await tester.pumpWidget(page(useCase: useCase));
+
+      await openNotice(tester);
+
+      expect(
+        find.textContaining('does not have enough free storage'),
+        findsOneWidget,
+      );
+      expect(
+        find.text('If it fails, nothing is changed and no backup is made.'),
+        findsOneWidget,
+      );
+
+      await tester.tap(noticeConfirm());
+      await tester.pumpAndSettle();
+      expect(useCase.calls, 1);
+    });
+
+    testWidgets('a device that cannot be asked: the notice says so, and '
+        'the backup can be made', (tester) async {
+      device.failure = StateError('no channel');
+      library.footprint = null;
+      final useCase = _FakeCreateBackup(right(Uint8List.fromList([1])));
+      await tester.pumpWidget(page(useCase: useCase));
+
+      await openNotice(tester);
+
+      expect(find.text(resourceNoticeUnknownMessage), findsOneWidget);
+
+      await tester.tap(noticeConfirm());
+      await tester.pumpAndSettle();
+      expect(useCase.calls, 1);
+    });
+
+    testWidgets('a page that is gone while the notice is open builds '
+        'nothing, even on a yes', (tester) async {
+      final useCase = _FakeCreateBackup(right(Uint8List.fromList([1])));
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            createBackupUseCaseProvider.overrideWith((ref) async => useCase),
+            fileShareServiceProvider.overrideWithValue(_FakeShare()),
+            ...noticeSources(),
+          ],
+          child: MaterialApp(
+            home: Builder(
+              builder: (context) => Scaffold(
+                body: TextButton(
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const CreateBackupPage(),
+                    ),
+                  ),
+                  child: const Text('open backup'),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('open backup'));
+      await tester.pumpAndSettle();
+      await openNotice(tester);
+
+      // The page under the dialog is taken away; the dialog itself stays.
+      final dialog = ModalRoute.of(
+        tester.element(find.byType(ResourceNoticeDialog)),
+      )!;
+      tester
+          .state<NavigatorState>(find.byType(Navigator))
+          .removeRouteBelow(dialog);
+      await tester.pump();
+      expect(find.byType(CreateBackupPage), findsNothing);
+
+      await tester.tap(noticeConfirm());
+      await tester.pumpAndSettle();
+
+      expect(useCase.calls, 0);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('meets accessibility guidelines with the notice open', (
+      tester,
+    ) async {
+      await tester.pumpWidget(page());
+      await openNotice(tester);
+
+      expect(find.byType(ResourceNoticeDialog), findsOneWidget);
+      await expectMeetsA11yGuidelines(tester);
+    });
   });
 
   testWidgets('meets accessibility guidelines', (tester) async {
@@ -670,7 +894,7 @@ void main() {
   // on every way out, so that it never stays behind.
   group('BR4 — the finished file is shared by path and always given back', () {
     Future<void> createBackup(WidgetTester tester) async {
-      await tester.tap(find.widgetWithText(FilledButton, 'Create backup'));
+      await tapCreateBackup(tester);
       await tester.pumpAndSettle();
     }
 
@@ -763,7 +987,7 @@ void main() {
       );
       final share = _FakeShare();
       await tester.pumpWidget(page(useCase: useCase, share: share));
-      await tester.tap(find.widgetWithText(FilledButton, 'Create backup'));
+      await tapCreateBackup(tester);
       await tester.pump();
 
       // The user leaves: the page is removed while the build still runs.
@@ -784,7 +1008,7 @@ void main() {
         gate: gate,
       );
       await tester.pumpWidget(page(useCase: useCase));
-      await tester.tap(find.widgetWithText(FilledButton, 'Create backup'));
+      await tapCreateBackup(tester);
       await tester.pump();
 
       await tester.pumpWidget(const SizedBox());
@@ -817,7 +1041,7 @@ void main() {
       _FakeShare? share,
     }) async {
       await tester.pumpWidget(page(useCase: useCase, share: share));
-      await tester.tap(find.widgetWithText(FilledButton, 'Create backup'));
+      await tapCreateBackup(tester);
       await tester.pump();
     }
 

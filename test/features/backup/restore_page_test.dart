@@ -23,7 +23,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/crypto/secret_bytes.dart';
+import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/core/platform/device_resources.dart';
 import 'package:pitaka/core/platform/document_picker.dart';
 import 'package:pitaka/features/backup/application/restore_controller.dart';
 import 'package:pitaka/features/backup/domain/archive_inspection.dart';
@@ -32,9 +34,13 @@ import 'package:pitaka/features/backup/domain/backup_manifest.dart';
 import 'package:pitaka/features/backup/domain/backup_progress.dart';
 import 'package:pitaka/features/backup/domain/restore_summary.dart';
 import 'package:pitaka/features/backup/presentation/pages/restore_page.dart';
+import 'package:pitaka/features/backup/presentation/resource_notice_messages.dart';
 import 'package:pitaka/features/backup/presentation/restore_messages.dart';
+import 'package:pitaka/features/backup/presentation/widgets/resource_notice_dialog.dart';
 
 import '../../support/a11y.dart';
+import '../../support/fake_device_resources.dart';
+import '../../support/fake_library_footprint_source.dart';
 
 class _RetainedRestoreController extends RestoreController {
   @override
@@ -193,15 +199,21 @@ ArchiveInspection _inspection({
   bool hasIdentity = false,
   bool hasNetwork = false,
   BackupIdentity? identity,
+  bool hasCovers = false,
+  int coverBytes = 0,
+  int databaseBytes = 0,
 }) => ArchiveInspection(
   manifest: BackupManifest(
     exportedAt: exportedAt,
     hasBorrowers: withVault,
     hasBackupBlob: withVault,
+    hasCovers: hasCovers,
     hasIdentity: hasIdentity || identity != null,
     hasNetwork: hasNetwork,
   ),
   identity: identity,
+  coverBytes: coverBytes,
+  databaseBytes: databaseBytes,
 );
 
 /// A restore controller that does what the test scripted and records what
@@ -277,17 +289,32 @@ void main() {
 
   late _ScriptedRestoreController controller;
 
-  setUp(() => controller = _ScriptedRestoreController());
+  // BR9: what the notice before a restore reads. A phone with plenty of
+  // room and a small library, unless a test says otherwise.
+  late FakeDeviceResources device;
+  late FakeLibraryFootprintSource library;
+
+  setUp(() {
+    controller = _ScriptedRestoreController();
+    device = FakeDeviceResources();
+    library = FakeLibraryFootprintSource();
+  });
+
+  List<Override> overrides() => [
+    restoreControllerProvider.overrideWith(() => controller),
+    deviceResourcesProvider.overrideWithValue(device),
+    libraryFootprintSourceProvider.overrideWithValue(library),
+  ];
 
   /// The page on its own, driven by [controller].
   Widget wrap() => ProviderScope(
-    overrides: [restoreControllerProvider.overrideWith(() => controller)],
+    overrides: overrides(),
     child: const MaterialApp(home: RestorePage()),
   );
 
   /// The page behind a button, so a test can leave it and open it again.
   Widget wrapBehindButton() => ProviderScope(
-    overrides: [restoreControllerProvider.overrideWith(() => controller)],
+    overrides: overrides(),
     child: MaterialApp(
       home: Builder(
         builder: (context) => Scaffold(
@@ -312,11 +339,31 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  Future<void> tapRestore(WidgetTester tester) async {
-    await tester.ensureVisible(find.text('Restore'));
+  /// The page's own "Restore" button. (While the notice is open, its
+  /// button says "Restore" too; that one is found by its key.)
+  Finder restoreButton() => find.widgetWithText(FilledButton, 'Restore').first;
+
+  Finder noticeConfirm() => find.byKey(ResourceNoticeDialog.confirmKey);
+  Finder noticeCancel() => find.byKey(ResourceNoticeDialog.cancelKey);
+
+  /// Taps the page's "Restore" and lets the notice open (BR9, D49).
+  Future<void> openNotice(WidgetTester tester) async {
+    await tester.ensureVisible(restoreButton());
     await tester.pumpAndSettle(); // let the scroll settle before the tap
-    await tester.tap(find.text('Restore'));
+    await tester.tap(restoreButton());
+    await tester.pumpAndSettle();
+  }
+
+  /// Taps "Restore" and says yes to the notice: the restore starts.
+  ///
+  /// The two pumps at the end let the dialog go (half a second on the
+  /// test's clock) without waiting for the page to come to rest: a restore
+  /// that a test holds half-way keeps a spinner turning.
+  Future<void> tapRestore(WidgetTester tester) async {
+    await openNotice(tester);
+    await tester.tap(noticeConfirm());
     await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
   }
 
   bool restoreEnabled(WidgetTester tester) =>
@@ -1367,6 +1414,239 @@ void main() {
         ),
         findsOneWidget,
       );
+    });
+  });
+
+  // BR9 (decisions D5, D49, D51): the notice before a restore is also its
+  // confirmation. The dialog itself is proven in
+  // `resource_notice_dialog_test.dart`; here: what the PAGE does with it.
+  group('the notice before a restore', () {
+    testWidgets('"Restore" opens the notice, and nothing is restored until '
+        'its own "Restore" is tapped', (tester) async {
+      await tester.pumpWidget(wrap());
+      await pick(tester);
+
+      await openNotice(tester);
+
+      expect(find.byType(ResourceNoticeDialog), findsOneWidget);
+      expect(find.text('Restore this backup?'), findsOneWidget);
+      expect(find.text(resourceNoticeReplacesLibraryMessage), findsOneWidget);
+      expect(controller.restores, isEmpty);
+
+      await tester.tap(noticeConfirm());
+      await tester.pumpAndSettle();
+
+      expect(find.byType(ResourceNoticeDialog), findsNothing);
+      expect(controller.restores.single.archive, _document);
+    });
+
+    testWidgets('the notice counts with the sizes of the CHOSEN backup', (
+      tester,
+    ) async {
+      // 40 MB of covers and 2 MB of databases in the backup; the fake
+      // library has a catalogue of 1 MB and no vault. 42 + 2 + 1 = 45 MB.
+      controller.inspection = right(
+        _inspection(
+          hasCovers: true,
+          coverBytes: 40 * 1024 * 1024,
+          databaseBytes: 2 * 1024 * 1024,
+        ),
+      );
+      await tester.pumpWidget(wrap());
+      await pick(tester);
+
+      await openNotice(tester);
+
+      expect(
+        find.text(
+          'Storage: this needs about 45.0 MB. This phone has 64.0 GB free.',
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('That is enough.'), findsOneWidget);
+    });
+
+    testWidgets('Cancel starts no restore, gives no copy back, and leaves '
+        'the typed passphrase where it was', (tester) async {
+      controller.inspection = right(_inspection(withVault: true));
+      await tester.pumpWidget(wrap());
+      await pick(tester);
+      await tester.enterText(find.byType(TextField), 'abc');
+      await tester.pump();
+
+      await openNotice(tester);
+      await tester.tap(noticeCancel());
+      await tester.pumpAndSettle();
+
+      expect(controller.restores, isEmpty);
+      expect(controller.released, isEmpty);
+      expect(find.text('test.pitabak'), findsOneWidget);
+      // The passphrase was not taken out of the field: Restore is still
+      // enabled, and a second try carries it.
+      expect(restoreEnabled(tester), isTrue);
+
+      await tapRestore(tester);
+      await tester.pumpAndSettle();
+      expect(controller.restores.single.withPassphrase, isTrue);
+    });
+
+    testWidgets('a tap outside the notice is a Cancel', (tester) async {
+      await tester.pumpWidget(wrap());
+      await pick(tester);
+
+      await openNotice(tester);
+      await tester.tapAt(const Offset(5, 5));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(ResourceNoticeDialog), findsNothing);
+      expect(controller.restores, isEmpty);
+    });
+
+    testWidgets('the Done key of the keyboard opens the notice too, and does '
+        'not restore by itself', (tester) async {
+      controller.inspection = right(_inspection(withVault: true));
+      await tester.pumpWidget(wrap());
+      await pick(tester);
+      await tester.enterText(find.byType(TextField), 'abc');
+      await tester.pump();
+
+      await tester.testTextInput.receiveAction(TextInputAction.done);
+      await tester.pumpAndSettle();
+
+      expect(find.byType(ResourceNoticeDialog), findsOneWidget);
+      expect(controller.restores, isEmpty);
+
+      await tester.tap(noticeConfirm());
+      await tester.pumpAndSettle();
+      expect(controller.restores.single.withPassphrase, isTrue);
+    });
+
+    // The page keeps no flag "a notice is open already". These two tests
+    // hold what it relies on instead: a second trigger cannot arrive before
+    // the dialog covers the page. (Tried by hand: with such a flag in the
+    // page and with it taken out, both pass. If one ever fails, Flutter
+    // has changed, and the page needs the flag.)
+    testWidgets('two taps on "Restore" before the notice is drawn open ONE '
+        'notice and start ONE restore', (tester) async {
+      await tester.pumpWidget(wrap());
+      await pick(tester);
+      await tester.ensureVisible(restoreButton());
+      await tester.pumpAndSettle();
+
+      // No frame between the two.
+      await tester.tap(restoreButton());
+      await tester.tap(restoreButton(), warnIfMissed: false);
+      await tester.pumpAndSettle();
+
+      expect(find.byType(ResourceNoticeDialog), findsOneWidget);
+
+      await tester.tap(noticeConfirm());
+      await tester.pumpAndSettle();
+      expect(find.byType(ResourceNoticeDialog), findsNothing);
+      expect(controller.restores, hasLength(1));
+    });
+
+    testWidgets('the Done key twice before the notice is drawn opens ONE '
+        'notice and starts ONE restore', (tester) async {
+      controller.inspection = right(_inspection(withVault: true));
+      await tester.pumpWidget(wrap());
+      await pick(tester);
+      await tester.enterText(find.byType(TextField), 'abc');
+      await tester.pump();
+
+      // No frame between the two.
+      await tester.testTextInput.receiveAction(TextInputAction.done);
+      await tester.testTextInput.receiveAction(TextInputAction.done);
+      await tester.pumpAndSettle();
+
+      expect(find.byType(ResourceNoticeDialog), findsOneWidget);
+
+      await tester.tap(noticeConfirm());
+      await tester.pumpAndSettle();
+      expect(find.byType(ResourceNoticeDialog), findsNothing);
+      expect(controller.restores, hasLength(1));
+    });
+
+    testWidgets('a page that is gone while the notice is open restores '
+        'nothing, even on a yes', (tester) async {
+      // A backup without a vault: nothing but this page's own check stands
+      // between the yes and a restore.
+      await tester.pumpWidget(wrapBehindButton());
+      await tester.tap(find.text('open restore'));
+      await tester.pumpAndSettle();
+      await pick(tester);
+      await openNotice(tester);
+
+      // The page under the dialog is taken away (as a lock screen or a
+      // deep link could do); the dialog itself stays.
+      final dialog = ModalRoute.of(
+        tester.element(find.byType(ResourceNoticeDialog)),
+      )!;
+      tester
+          .state<NavigatorState>(find.byType(Navigator))
+          .removeRouteBelow(dialog);
+      await tester.pump();
+      expect(find.byType(RestorePage), findsNothing);
+
+      await tester.tap(noticeConfirm());
+      await tester.pumpAndSettle();
+
+      expect(controller.restores, isEmpty);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('a phone that is short of storage is told so, and can '
+        'restore all the same (D5: the notice never blocks)', (tester) async {
+      device.facts = const DeviceResourceFacts(
+        freeStorageBytes: 1024,
+        availableMemoryBytes: 4 * 1024 * 1024 * 1024,
+        lowMemoryThresholdBytes: 256 * 1024 * 1024,
+        lowMemory: false,
+      );
+      await tester.pumpWidget(wrap());
+      await pick(tester);
+
+      await openNotice(tester);
+
+      expect(
+        find.textContaining('does not have enough free storage'),
+        findsOneWidget,
+      );
+      expect(
+        find.text('If it fails, your library stays exactly as it is.'),
+        findsOneWidget,
+      );
+
+      await tester.tap(noticeConfirm());
+      await tester.pumpAndSettle();
+      expect(controller.restores, hasLength(1));
+    });
+
+    testWidgets('a device that cannot be asked: the notice says so, and '
+        'the restore can start', (tester) async {
+      device.failure = StateError('no channel');
+      library.footprint = null;
+      await tester.pumpWidget(wrap());
+      await pick(tester);
+
+      await openNotice(tester);
+
+      expect(find.text(resourceNoticeUnknownMessage), findsOneWidget);
+
+      await tester.tap(noticeConfirm());
+      await tester.pumpAndSettle();
+      expect(controller.restores, hasLength(1));
+    });
+
+    testWidgets('meets accessibility guidelines with the notice open', (
+      tester,
+    ) async {
+      await tester.pumpWidget(wrap());
+      await pick(tester);
+      await openNotice(tester);
+
+      expect(find.byType(ResourceNoticeDialog), findsOneWidget);
+      await expectMeetsA11yGuidelines(tester);
     });
   });
 

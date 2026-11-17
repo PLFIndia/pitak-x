@@ -15,6 +15,11 @@
 /// the button says how far the build is ("Cover 1,234 of 9,000"). Before
 /// the first report, and for a library without cover pictures, the spinner
 /// in the button is all there is, as before. There is no Cancel.
+///
+/// BR9 (decision D5): a tap on the button first opens one dialog that says
+/// what the backup needs and what this phone has. The backup is built only
+/// after "Go on". The dialog never blocks: "Go on" is there whatever it
+/// found. Cancel leaves this screen exactly as it was.
 library;
 
 import 'package:flutter/material.dart';
@@ -22,9 +27,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/core/platform/file_share.dart';
+import 'package:pitaka/features/backup/application/resource_notice_providers.dart';
 import 'package:pitaka/features/backup/domain/backup_progress.dart';
 import 'package:pitaka/features/backup/presentation/create_backup_messages.dart';
+import 'package:pitaka/features/backup/presentation/resource_notice_messages.dart';
 import 'package:pitaka/features/backup/presentation/widgets/left_out_covers_note.dart';
+import 'package:pitaka/features/backup/presentation/widgets/resource_notice_dialog.dart';
 
 /// Screen that creates and saves a backup archive.
 class CreateBackupPage extends ConsumerStatefulWidget {
@@ -85,6 +93,19 @@ class _CreateBackupPageState extends ConsumerState<CreateBackupPage> {
   }
 
   Future<void> _createAndSave() async {
+    // BR9 (decision D5): first the notice. Nothing on this screen changes
+    // before the user says "Go on", so Cancel leaves it as it was (also
+    // what it says about an earlier backup). No flag "a notice is open
+    // already" is kept: a second tap cannot arrive before the dialog covers
+    // the screen (see the same note in `restore_page.dart`).
+    final goOn = await ResourceNoticeDialog.ask(
+      context,
+      notice: backupResourceNoticeProvider,
+      run: ResourceNoticeRun.backup,
+    );
+    // Only an explicit yes builds a backup, and only while this screen is
+    // still here: the dialog lies above it and can outlive it.
+    if (!goOn || !mounted) return;
     setState(() {
       _busy = true;
       _error = null;

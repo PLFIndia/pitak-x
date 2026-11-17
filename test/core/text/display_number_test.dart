@@ -93,4 +93,66 @@ void main() {
       expect(formatSizePair(2, 1), (first: '2 bytes', second: '1 byte'));
     });
   });
+
+  // Decision D54: the resource notice sets a small need next to a large
+  // supply. In ONE unit the need would read "0.0 GB".
+  group('formatSizesFarApart', () {
+    test('sizes that reach different units get each its own unit', () {
+      expect(formatSizesFarApart(18 * mb, 12 * gb), (
+        first: '18.0 MB',
+        second: '12.0 GB',
+      ));
+      expect(formatSizesFarApart(100 * mb, 2355 * mb), (
+        first: '100.0 MB',
+        second: '2.3 GB',
+      ));
+      expect(formatSizesFarApart(3 * gb, 700 * kb), (
+        first: '3.0 GB',
+        second: '700.0 KB',
+      ));
+      expect(formatSizesFarApart(20, 64 * gb), (
+        first: '20 bytes',
+        second: '64.0 GB',
+      ));
+      expect(formatSizesFarApart(0, 5 * mb), (
+        first: '0 bytes',
+        second: '5.0 MB',
+      ));
+    });
+
+    test('sizes that reach the same unit keep ONE unit, as '
+        'formatSizePair writes them', () {
+      for (final (first, second) in [
+        (40 * mb, 140 * mb),
+        (2150 * mb, 12 * gb),
+        (5 * kb, 4 * kb),
+        (900, 20),
+        // Equal at one decimal in GB: the pair drops to MB, both of them.
+        (gb + mb, gb),
+        (500 * mb + 1, 500 * mb),
+      ]) {
+        expect(
+          formatSizesFarApart(first, second),
+          formatSizePair(first, second),
+          reason: '$first and $second',
+        );
+      }
+    });
+
+    test('the edge between two units: 1 GB is "GB", one byte less is '
+        '"MB"', () {
+      expect(formatSizesFarApart(gb - 1, gb), (
+        first: '1,024.0 MB',
+        second: '1.0 GB',
+      ));
+      expect(formatSizesFarApart(gb, gb - 1), (
+        first: '1.0 GB',
+        second: '1,024.0 MB',
+      ));
+      expect(formatSizesFarApart(kb - 1, kb), (
+        first: '1,023 bytes',
+        second: '1.0 KB',
+      ));
+    });
+  });
 }
