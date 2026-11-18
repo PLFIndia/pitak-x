@@ -58,6 +58,11 @@ notes (honest limits)"). Please do not report them as vulnerabilities:
   rotate certificates; pinning would be an availability/privacy trade-off
   worse than the MitM risk (ADR 0010). TLS with the system trust store, a
   fixed API origin, refused redirects and bounded responses are the mitigations.
+- **Choosing a file has no time limit** — Restore, Import and Merge read a
+  private, size-capped copy of the file you choose. If the app that serves
+  the file stays connected and stops sending, Pitak goes on waiting, and no
+  other file can be chosen until the app is restarted. Nothing is restored
+  or imported by it (ADR 0026).
 
 ## Response
 

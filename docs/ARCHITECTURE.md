@@ -184,6 +184,10 @@ lib/
                           channel_document_picker.dart (Android side:
                           PickedDocumentChannel.kt; elsewhere "not available";
                           Restore, Import and Merge choose their file with it),
+                          device_resources.dart (port: this device's free storage
+                          and available memory, for the notice before a backup
+                          and a restore; Android side: DeviceResourcesChannel.kt;
+                          elsewhere "unknown"),
                           picked_document_reader.dart (port: the bytes of such a
                           copy, under a cap) with file_picked_document_reader.dart,
                           bounded_file_read.dart (the ONE "read this file, but
@@ -626,6 +630,32 @@ to false** (the `hasX` forward-compat pattern):
   worked on (`MergeController._mayStart`). The page gets the reason when
   no file was taken (`PickedFileProblem`) and turns it into a sentence
   (`picked_file_messages.dart`).
+- Before a backup and before a restore one dialog says what the run
+  needs and what the phone has (ADR 0026). The rules are pure Dart
+  (`backup/domain/resource_notice.dart`): storage is "enough" with the
+  need plus 20% free and at least 100 MB more than the need, "not
+  enough" below the need and "tight" in between; memory is counted with
+  100 MB for either run and judged by Android's own low-memory mark. A
+  backup needs twice the library's size on disk (`LibraryFootprint`); a
+  restore needs what it writes after the chosen file was copied, worked
+  out from the sizes the backup declares. What the phone has comes
+  through the port `DeviceResources` (`DeviceResourcesChannel.kt`: no
+  argument, no error answer, a figure that could not be read is left
+  out). The dialog (`ResourceNoticeDialog`) informs and never blocks:
+  its button that starts the run is there for every verdict, while the
+  figures are read and when they could not be read, and both pages start
+  their run from that button only. On the Restore page it is also the
+  confirmation that the library is replaced. The figures are shown once
+  and never stored, logged or sent.
+- Known limits of backup and restore, accepted (ADR 0026): with a backup
+  of 1 GiB the screen can stand still for about 2 seconds before the
+  share sheet (the share plugin copies the whole file first); at the
+  start of a restore into a large library it can stand still for about
+  a second; the copy of a chosen file has no time limit, so a document
+  source that stays connected and stops sending keeps the page waiting
+  until the app is restarted; a full disk in the middle of a run gets no
+  sentence of its own. Measured on one fast phone; a weak phone has not
+  been tried.
 - The copies the `file_selector` plugin left. Until 2026-11 a chosen
   file came through that plugin, which on Android also wrote a plain
   copy of it to `<cache>/<uuid>/<file name>` and never removed it. The
@@ -1207,7 +1237,8 @@ loan never rebuilds the catalogue or reads a cover.
   source names one picture for good, which is what lets a publish skip a
   cover it already put online (§5.8). Enforced by
   `cover_files_immutable_test.dart`.
-- **A photographed cover is small on purpose** (decision of 2026-11-10). A
+- **A photographed cover is small on purpose** (decision of 2026-11-10;
+  ADR 0026). A
   cover taken with the camera is stored at most 240 × 360 at JPEG quality 70
   (`PhotoCoverRecipe`, used by both capture controllers): it only has to show
   what the item looks like, and thousands of them must fit into one backup.

@@ -56,6 +56,11 @@ a **library network** (pins on a map, hub/member cards).
   copy is removed as soon as the file has been read.
 - **Backup / Restore** — `.pitabak` archives. Pitak restores the archives it
   makes, and a backup made by an older Pitak restores in a newer one.
+  A backup holds up to 10,000 cover pictures and 1 GiB of content; one
+  that is above the limits of 1.9.7 (4,086 covers, 500 MiB) does not open
+  in 1.9.7 or older. Before a backup and before a restore Pitak says how
+  much free storage and memory the run needs and how much the phone has;
+  it informs and never blocks (ADR 0026).
   **Honest limit:**
   the archive is *not* fully encrypted — the catalogue (every kind, including
   full magazine-series and issue records), wishlist, covers and item-kind

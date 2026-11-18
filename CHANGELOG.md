@@ -19,7 +19,8 @@ to BR9 in `PLAN.md`, with Import and Merge on the app's own picker
 between BR7 and BR8). Stage BR8 raises the limits of a backup; the run
 on a phone at the new limits was made on 2026-11-17 and has passed
 (`PLAN.md`, run E). Stage BR9 adds the notice before a backup and before
-a restore; it has not been seen on a phone yet.
+a restore; it was seen on a phone on 2026-11-17 (a verdict other than
+"enough" has not been seen on a device).
 
 Two known limits, measured in that run on a fast phone and accepted
 (`PLAN.md`, D44 and D45; a slow phone has not been tried):
@@ -31,6 +32,12 @@ Two known limits, measured in that run on a fast phone and accepted
   screen can stand still for about a second.
 
 ### Changed
+- The in-app guide "Backup, restore, export, import" names the notice:
+  "Make a backup" has three steps, "Restore on a new phone" four (D55).
+- ADR 0026 records the limits of a backup, backup and restore from
+  files, the app's own picker, the size of a photographed cover, the
+  notice, and the known limits that were accepted. `README.md`,
+  `SECURITY.md`, `PRIVACY.md` and `docs/ARCHITECTURE.md` follow it.
 - **Before a backup and before a restore Pitak says what the run needs
   and what the phone has (BR9; `PLAN.md`, D5 and D48 to D54).** A tap on
   "Create backup" or "Restore" first opens one dialog: how much free
