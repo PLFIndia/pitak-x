@@ -700,8 +700,26 @@ How that session goes, in short:
 - It is a PLANNING session (D21): no code before a go-ahead.
 - The first question is where the new plan lives (proposed: a new
   section at the end of this file with stages by id, a private
-  design file per stage, decisions from D61 on), then the order of
-  the nine. One question at a time.
+  design file per stage, decisions from D61 on). One question at a
+  time.
+- **The order: the quick ones first** (the maintainer, 2026-11-18,
+  after being told which are quick). As the agent sorted them that
+  day, from the review reports and a search of the code, with no
+  design behind it:
+
+  | When | Findings | Size, as guessed |
+  |---|---|---|
+  | first | P1-M2 with P2-n5; the first of the three steps the report gives for P2-M3 (a line of CI configuration, no app code); P4-M4 | hours each |
+  | next | P4-M1; P4-M3; P4-M8 | about a day each |
+  | later, each with a plan of its own | P4-M2 with P3-M4; P4-M6; P2-M2; the rest of P2-M3 | a planned piece of work |
+
+  A grouping was proposed and NOT decided: the first two of the
+  quick ones as one stage (build and configuration, no Dart
+  behaviour); P4-M4 by itself, or together with P4-M3 (both are
+  about lending), which would move it to "next"; P4-M1 alone; P4-M8
+  alone, in a session with the phone. The session confirms
+  the sorting with the maintainer before the first design: a guess
+  of size in this work has been a third to a half low before.
 - Every "where" of the review reports is of 2026-11-10. Each place
   is read again in today's code before a design, and the finding is
   confirmed or struck.
