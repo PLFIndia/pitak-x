@@ -390,12 +390,15 @@ when it was written; check the repository before relying on it.
 - Draft pull request #30 ("Backup and restore rework, stages BR1 to
   BR6"; its title does not name BR7 yet). CI runs on a pull request
   and on a push to `main` only (`ci.yml:7-10`); a push to
-  `reviewFixes` runs it because of #30. **Run 44041555210 at
-  `2a76f43`, the run of BR9, is green in all four jobs at its first
-  attempt** (2026-11-17), and so is "Update goldens" (44041554954),
-  which pushed no new picture: 7,377 tests, the golden tests, both
-  purity checks and the Android unit tests. It is the last run that
-  was looked at. Before it, run 44020820271 at `d456fdf`, the run of
+  `reviewFixes` runs it because of #30. **Run 44262107031 at
+  `901d4f4`, the run of ADR 0025 and the clean-up of the comments, is
+  green in all four jobs at its first attempt** (2026-11-18), and so
+  is "Update goldens" (44262106572), which pushed no new picture:
+  7,377 tests, the 10 golden tests, both purity checks and the
+  Android unit tests. It is the last run that was looked at. Before
+  it, run 44041555210 at `2a76f43`, the run of BR9, was green in all
+  four jobs at its first attempt (2026-11-17), and so was "Update
+  goldens" (44041554954): 7,377 tests. Before it, run 44020820271 at `d456fdf`, the run of
   the fix of D46, was green in all four jobs at its first attempt
   (2026-11-17), and so was "Update goldens" (44020819879): 7,197
   tests. Before it, run 43914687234 at
@@ -448,7 +451,7 @@ when it was written; check the repository before relying on it.
   that are not part of this work (`docs/plans/handoff-2026-11-09.md`,
   `item-reminder.md`, `reminder-fixes.md`, `reminder-issues1.md`,
   `remoteImport-issues.md`).
-- This file: `2a76f43` is the last commit of it that was pushed with
+- This file: `901d4f4` is the last commit of it that was pushed with
   a CI run that was looked at.
 - **The third session of 2026-11-17 changed no file of the app.** It
   made a release build of the tree of `b9847b7` (the code of
@@ -467,8 +470,8 @@ when it was written; check the repository before relying on it.
   that every changed line of `lib/` and `test/` is a comment line,
   but for three names of tests. Checks on that tree: `build_runner`
   no diff; format 0 changed of 1,467 files; analyze 47, the same
-  issues as before; 7,377 tests passed. Not pushed, and no CI run has
-  seen it. Kotlin and Rust were not touched.
+  issues as before; 7,377 tests passed. Pushed the same day, and green
+  in CI (run 44262107031). Kotlin and Rust were not touched.
 - Before that, the same session
   ran parts 2 to 4 of run C on the phone (the results are at the very
   end of this file) and wrote this file and the private records. For
@@ -491,11 +494,11 @@ when it was written; check the repository before relying on it.
   device runs of the third session of 2026-11-17), `c55a53d` (the
   handoff for parts 2 to 4 of run C), and the commits of 2026-11-18:
   `ab7e4bf` (run C, parts 2 to 4), `a4d028d` (D57), `1a59621` and
-  `e5f3145` (ADR 0025 and the clean-up), and the commit of this file
-  after them, which is one more commit or is not committed as long as
-  `git status` names this file. `1a59621` and `e5f3145` are the first
-  of these that change more than this file: the push needs its yes,
-  and its CI run has to be looked at, every job, to the end.
+  `e5f3145` (ADR 0025 and the clean-up) and `901d4f4` (this file).
+  All nine were PUSHED on 2026-11-18 (`2a76f43..901d4f4`, with the
+  maintainer's yes). What was written into this file after that push
+  is one more commit of it, or is not committed as long as
+  `git status` names this file; it goes out with the next work.
   `git status -sb`
   says how far the branch is ahead of `origin/reviewFixes`.
 - The five commits were made in a temporary plain clone
@@ -602,7 +605,7 @@ What is left of the plan: the rest of BR10's records (ADR 0026, the
 in-app guide, the documents where they describe backup, limits or
 covers, the ticks in the private tracker). ADR 0025 is written and
 the retired Kotlin app is out of the documents and the comments
-(2026-11-18, D58 to D60; not pushed).
+(2026-11-18, D58 to D60; pushed, and green in CI).
 "The next session" below says where to start.
 
 What was done before this, and still holds:
@@ -640,10 +643,10 @@ example T13 tried with a unit test, that comes first.)
 In this order:
 
 1. Confirm the state (`git status -sb`, `git log`, `git remote -v`).
-   Commits of this file made after `2a76f43` are NOT pushed (the
-   maintainer, 2026-11-17: with the next work); they go out with the
+   A commit of this file made after `901d4f4` is NOT pushed (the
+   maintainer, 2026-11-17: with the next work); it goes out with the
    first push of the session, which needs its yes. If a commit was
-   pushed after `2a76f43`, look at its CI run, every job, to the end.
+   pushed after `901d4f4`, look at its CI run, every job, to the end.
 2. D26 is answered (D57, 2026-11-18): it stays as it is, no time
    limit. What part 4 of run C found, and what it does not say, is
    in the private record ("Run C, part 4"). ADR 0026 records the
@@ -685,8 +688,8 @@ In this order:
    The private `br10-in-detail.md` has how every run was driven; the
    helpers are in `~/pitak-device-runs/run-CD/helpers/`.
 5. The numbers a next stage compares its baseline with are those of
-   the tree of `28630c2` (2026-11-17, here and in CI run
-   44041555210): `build_runner` no diff; format 0 changed of 1,467
+   the tree of `e5f3145` (2026-11-18, here and in CI run
+   44262107031): `build_runner` no diff; format 0 changed of 1,467
    files (`tool/` counted in); analyze 47, none in `lib/`, `test/`,
    `integration_test/`, `tool/`; 7,377 tests passed; Kotlin 64 in
    each flavour; Rust green in CI (37 passed, 2 ignored when it was
@@ -1573,7 +1576,7 @@ them, and the script that proves "comments only"
 | 2026-11-14 | Baseline for the stage of D24: unchanged. The stage designed (private file); T10 found. D31 to D35. The CI run of `b49901e` seen green. The go-ahead; all six steps of the stage built; its run in the emulator; the review stop (D35, two small fixes, T11); an accident with this checkout's git settings, repaired; seven commits and this file's (`4b4fe36`), not pushed. A handoff for the device runs of the next session |
 | 2026-11-16 | The stage of D24 pushed. Its CI run red in the F-Droid job: the runner's image had changed, and no workflow named a JDK. `3ea1812` names it (Temurin 21). A second failure of the same job, a refused download, went away when the job was run again; then every job green. T1 and T10 closed; the stage's design file into the archive; this file brought up to date. Then the device runs: the phone and its two installs read with `adb`; the questions of step 1 answered; D36. The tool for synthetic backups designed and built, not committed; while it was built, found that the reader of a restore counts entries where the writer counts covers; D37. The tool committed (`549b93c`, not pushed); the files of runs A and B made. The measuring script built and committed (`dde1e80`, not pushed); the first look and run A in the emulator; a release build for the phone made and installed, then found to hold OLD compiled Dart code (the stale-artefact trap of `docs/RELEASING.md` §4): run B stopped before any restore. A clean rebuild, checked from inside, installed; the phone's install emptied by the maintainer; most of run B done (every restore and the backup at today's limits ended well, no freeze seen), then the device runs stopped by the maintainer. Four commits pushed; CI green at `3797288`. D38: run B has passed. A handoff for the planning of BR8. Then the planning session of BR8: the baseline unchanged (7,148 tests); the design written (private file); measurements on the Mac; the decision points 17 to 20 named; all four answered (D39 to D42). BR8 built through to its review stop: the edge tests, the numbers, the sentences of D41, the runs by hand on the Mac, the changelog; 7,194 tests; the Android unit tests green after one Gradle run with the network; four commits (`b01a950`, `a9ae39e`, `421fa8e`, `b15c42f`) and this file's (`f508475`); all pushed with the two earlier commits of this file; the session closed while CI run 43914687234 was running |
 | 2026-11-17 | The CI run of BR8 (43914687234 at `f508475`) seen green, every job at its first attempt, and "Update goldens" with it. BR8 done: its row and the decisions here; P1-M1 and P4-m19 ticked in the private tracker; its design file into the private archive, word for word. The go-ahead for run E. The three made-up backups made again; a release build (after `flutter clean`, looked into) and a debug build at `f508475`. Run E in the emulator, all of it: 10,000 covers and 1 GiB restore and back up, 10,008 covers are refused with the sentence of D41, the writer refuses 10,001, a backup with a vault is made and restored. Run E on the phone, most of it: the same restores and the backup at 1 GiB end well, memory 233.5 MB; by screenshots the screen stood still for about 1.5 to 1.9 s before the share sheet and for at least 1.2 s at the start of a restore; the phone locked in the middle of a restore, and after the unlock its page says "Restore complete"; the cache on the phone read in its Settings (nothing of a pick or of a run's work left; one thing for T2, in the private record); a backup with a vault restored, made, saved by the maintainer and restored again on the phone. Run E is run; five questions for the maintainer. This file committed (`12d4ebc`). The clean-up after run E: the made-up files on the phone, the scratch folders on the Mac, the duplicate of BR8's design file (`91ed643`); both commits pushed, CI run 44015306730 green in every job at its first attempt. The five questions answered, one at a time: D43 to D47. The fix of D46 designed, built after the go-ahead (three tests first, red on the old code; three trials by hand; 7,197 tests) and committed (`ee80a76`); the changelog's sentence of D47 (`1a0ece7`); this file (`d456fdf`); all three pushed, CI run 44020820271 green in every job at its first attempt. A handoff for the next session, which takes up run C, run D, BR9 and BR10 (`48edab6`, not pushed). A second session the same day: the state confirmed; the order chosen (BR9, then run C and run D, then BR10); the baseline unchanged (7,197 tests); the Android reference read; decision points 5 and 6 answered (D48, D49); BR9 designed (private file) and its decision points 21 to 24 answered (D50 to D53); BR9 built through to its review stop in five steps, tests and trials by hand at each: the rules, the Kotlin channel and its Dart side, the two size readers, the dialog on both pages, the changelog. A wrong prediction about how two sizes far apart are written was found in the build and put at once (D54). One test of the whole suite timed out once and not again. 7,377 tests; the Android unit tests green offline, 64 in each flavour. At the review stop: D55 (the guide with BR10), T12, a bounded look for the time-out (24 runs, not found again; a second timing test failed once under load). The five commits made in a plain clone (`3021561`, `c883fae`, `3222077`, `6e7b47f`, `28630c2`) and brought over; this file committed (`28bcdcb`, after a block that stood twice in its first commit was taken out before any push). The look at the real channel in the emulator: both dialogs with real figures, a backup to the share sheet, a restore of 4,000 covers. Eight commits pushed (`d456fdf..2a76f43`); CI run 44041555210 green in every job at its first attempt, 7,377 tests, and "Update goldens" with no new picture. BR9 done: its row here, its design file into the private archive, word for word, and the file removed after a comparison; `84a0d2f` committed and, at the maintainer's wish, not pushed. A handoff for the next session: the device runs first when the phone is at hand, otherwise the parts of BR10 that wait for no device (`b9847b7`). A third session the same day, with the phone: the state confirmed; a release build of `b9847b7` (after `flutter clean`), looked into (a wrong prediction: the string the handoff proposed is kept as UTF-16 and counted 0; five others counted 1 each) and installed. The first look on it: the notice before a backup and before a restore with real figures; the fix of D46 in both halves; then, after the maintainer had cleared the install (the passphrase of the made-up vault was forgotten), a restore and a backup of 10,000 covers through the notice, and both dialogs with the phone's largest font. Run D: two covers photographed in the app, "all fine" (D56). Run C, part 1: Import and Merge on the phone's picker with files from Download, every sentence as the code has it; one thing seen on Import that the changelog words differently (the open questions). The made-up files removed from the phone. This file brought up to date (`aedc3f6`, not pushed). The maintainer: the next session does parts 2 to 4 of run C. A handoff for it: what was checked for part 3 (the tag `1.9.7`, its Flutter version, the signature of the play install on the phone), and the files for the cloud drive made ready |
-| 2026-11-18 | The state confirmed (four commits of this file not pushed). The maintainer put the six made-up files into Google Drive from the Mac. Run C, part 2: Import and Merge with files kept online, the picks made by the agent through `adb` at the maintainer's wish (a helper that reads exact names only); every sentence as the code has it; two predictions of the handoff corrected before the run. Something seen on Merge went into the private tracker as T13. Part 3: a debug build of the tag `1.9.7` in a plain clone, installed over the play install; three picks with the old picker left three copies in the cache; a debug build of today's code installed over it removed exactly those three at its first start (D33 on a phone). Part 4: what the tracker lists for T4, the network cut through `adb`; in the private record. Run C is run. This file brought up to date (`ab7e4bf`, not pushed). D57: D26 stays as it is (`a4d028d`). Then BR10's records begun: asked how far the clean-up of D1 goes, the maintainer said that the Kotlin app has no users and chose the ADR, the documents and the comments (D58), and that the comments which only name where code came from are reworded too (D59); the go-ahead (D60). The baseline unchanged (7,377 tests). ADR 0025 drafted, shown and written; nine sentences of `README.md`, `SECURITY.md` and `docs/ARCHITECTURE.md` shown and written (`1a59621`). 143 rewordings in 82 files under `lib/` and 8 in 6 test files, every changed line a comment but for three names of tests, by a script; format, analyze, 7,377 tests and `build_runner` as before (`e5f3145`). Neither is pushed |
+| 2026-11-18 | The state confirmed (four commits of this file not pushed). The maintainer put the six made-up files into Google Drive from the Mac. Run C, part 2: Import and Merge with files kept online, the picks made by the agent through `adb` at the maintainer's wish (a helper that reads exact names only); every sentence as the code has it; two predictions of the handoff corrected before the run. Something seen on Merge went into the private tracker as T13. Part 3: a debug build of the tag `1.9.7` in a plain clone, installed over the play install; three picks with the old picker left three copies in the cache; a debug build of today's code installed over it removed exactly those three at its first start (D33 on a phone). Part 4: what the tracker lists for T4, the network cut through `adb`; in the private record. Run C is run. This file brought up to date (`ab7e4bf`, not pushed). D57: D26 stays as it is (`a4d028d`). Then BR10's records begun: asked how far the clean-up of D1 goes, the maintainer said that the Kotlin app has no users and chose the ADR, the documents and the comments (D58), and that the comments which only name where code came from are reworded too (D59); the go-ahead (D60). The baseline unchanged (7,377 tests). ADR 0025 drafted, shown and written; nine sentences of `README.md`, `SECURITY.md` and `docs/ARCHITECTURE.md` shown and written (`1a59621`). 143 rewordings in 82 files under `lib/` and 8 in 6 test files, every changed line a comment but for three names of tests, by a script; format, analyze, 7,377 tests and `build_runner` as before (`e5f3145`). This file (`901d4f4`). Nine commits pushed (`2a76f43..901d4f4`); CI run 44262107031 green in every job at its first attempt, 7,377 tests, and "Update goldens" with no new picture |
 
 ## Device runs: handoff for the next session
 
