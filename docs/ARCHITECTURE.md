@@ -16,8 +16,8 @@
 
 ## 1. What Pitak is
 
-A **privacy-first, offline personal library catalogue** for Android, ported
-from a retired Kotlin app with **zero data loss** as the hard guarantee.
+A **privacy-first, offline personal library catalogue** for Android, with
+**zero data loss** as the hard guarantee.
 
 - Books, wishlist and the library network live in **Drift/SQLite**.
 - Borrowers and loans live in a **SQLCipher-encrypted vault database**.
@@ -25,7 +25,8 @@ from a retired Kotlin app with **zero data loss** as the hard guarantee.
   the key exists only inside a **Rust core** (`rust/`, crate `pitak_crypto`)
   and never crosses the FFI boundary.
 - Import/export: JSON, CSV (incl. Goodreads), PDF (Indic scripts via shaped
-  images). `.pitabak` backups restore both Pitak and Kotlin-era archives.
+  images). `.pitabak` backups restore in the Pitak that made them and in
+  newer ones.
 - Opt-in publish of a read-only site to **one active host**: GitHub Pages or
   Cloudflare Workers static assets (ADR 0017); opt-in **library network**
   (saved libraries, hub/member cards, consent-gated OSM map).
@@ -70,7 +71,7 @@ probably over-engineering.
 
 | # | Promise | What it forbids |
 |---|---------|-----------------|
-| P1 | **Zero data loss** across updates, backups and Kotlin→Pitak restore | untested schema migrations; parsers that throw on hostile files |
+| P1 | **Zero data loss** across updates, backups and restores | untested schema migrations; parsers that throw on hostile files |
 | P2 | **Secrets never leak** (vault key stays in Rust; no `String` secrets; no logs/PII) | release-mode logging; unvetted dependencies; unsigned supply chain |
 | P3 | **F-Droid stays clean** (no Google libraries in the `fdroid` flavor) | any plugin bump without the purity check (`docs/RELEASING.md` §2) |
 | P4 | **Honest, reproducible releases** (pinned toolchain, verified artefact, one signed tag → both stores) | lightweight tags; hand-typed build commands; stale artefacts |
@@ -265,8 +266,10 @@ opener as a parameter so tests record the destination instead of pushing
 provider-backed pages. Copy record: `docs/mockups/how-pitak-works.md`.
 
 **Naming contract:** the Dart package stays `pitaka`; only user-visible text
-says "Pitak". Class names, schema constants and the publish commit message are
-a contract with the retired Kotlin app.
+says "Pitak". Class names, schema constants and the publish commit message
+keep the name `pitaka` too. Files, QR codes and sites made by released
+versions of Pitak carry the schema constants, so those must not change
+(ADR 0025).
 
 ---
 
@@ -414,8 +417,8 @@ artifacts read in a different timezone.
 
 ### 5.5 `.pitabak` backup archive (manifest schema 1)
 
-A ZIP with Room-shaped SQLite databases (the Kotlin-era format — the writer
-still emits that shape so Kotlin archives and Pitak archives are one format),
+A ZIP with Room-shaped SQLite databases (the shape every released Pitak
+writes and reads; ADR 0025),
 cover images, and optional entries announced by manifest flags that **default
 to false** (the `hasX` forward-compat pattern):
 
@@ -440,8 +443,8 @@ to false** (the `hasX` forward-compat pattern):
   superseded folder afterwards is **best effort** — the next launch retries
   it, so a refused delete cannot turn a successful switch into a failed
   restore or leave in-memory paths pointing at the old generation.
-- Compatibility is **one-way**: Pitak restores Kotlin-era archives; the Kotlin
-  app is not a restore target. `books.db` holds the base rows of **every**
+- Compatibility is promised for Pitak's own archives only (ADR 0025): an
+  older archive restores in a newer Pitak. `books.db` holds the base rows of **every**
   item kind in the Room shape, so a build older than ADR 0013 restores
   magazine issues and other items as plain books (it ignores the two
   kind entries above); a flag-less archive restores exactly as before.

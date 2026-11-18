@@ -19,8 +19,7 @@ Please do **not** open a public issue for a suspected vulnerability.
 
 - Vault cryptography and the biometric key path
   (`rust/`, `lib/features/vault/`, `lib/core/crypto/`)
-- The `.pitabak` backup format and restore path (including Kotlin-app
-  archive compatibility)
+- The `.pitabak` backup format and restore path
 - Import parsers (CSV / JSON / ZIP handling)
 - The published-catalogue reader (`PublishedCatalogueCodec`, its bounded
   fetch/query adapters and the cover resolver) — remote JSON/image parsing

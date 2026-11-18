@@ -1,7 +1,7 @@
 # Pitak
 
-A privacy-first, offline personal **library catalogue** for Android. Pitak is a
-Kotlin→Flutter port of the original Android app: catalogue your books,
+A privacy-first, offline personal **library catalogue** for Android. With
+Pitak you catalogue your books,
 magazines and other items, lend them to borrowers from an **encrypted vault**,
 keep a wishlist, import/export (JSON · CSV · PDF), make portable backups,
 publish a read-only library site to **GitHub Pages or Cloudflare Workers**
@@ -54,9 +54,9 @@ a **library network** (pins on a map, hub/member cards).
   A file you choose to import or to merge is read from a **private temporary
   copy** inside the app's own storage (where no other app can read it); the
   copy is removed as soon as the file has been read.
-- **Backup / Restore** — `.pitabak` archives. Pitak restores its own archives
-  **and** archives made by the original Kotlin app (one-way: Kotlin → Pitak;
-  the Kotlin app is retired and is not a restore target). **Honest limit:**
+- **Backup / Restore** — `.pitabak` archives. Pitak restores the archives it
+  makes, and a backup made by an older Pitak restores in a newer one.
+  **Honest limit:**
   the archive is *not* fully encrypted — the catalogue (every kind, including
   full magazine-series and issue records), wishlist, covers and item-kind
   mappings are stored plainly inside it; only the borrowers vault and its
