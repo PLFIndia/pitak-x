@@ -364,7 +364,7 @@ bool _coversEqual(String? a, String? b) {
 }
 
 /// Normalises an ISBN for comparison: strip spaces/hyphens, uppercase (X check
-/// digit). Null/blank → empty string. (Kotlin `String?.normIsbn`.)
+/// digit). Null/blank → empty string.
 String normIsbn(String? isbn) {
   if (isbn == null) return '';
   return isbn.replaceAll(RegExp(r'[\s-]'), '').toUpperCase();

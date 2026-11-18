@@ -5,10 +5,10 @@
 /// core, any transient key material on the Dart side) are held here as a
 /// mutable `Uint8List` and zeroed on `dispose`.
 ///
-/// Design adapted from:
-///  - Kotlin `VaultPassphrase` (this repo's source app): exact-size byte
-///    holder, zero-on-close, throw-after-close.
-///  - SynapseNote `SecureMemory` (`core/crypto/SecureMemory.kt`): two-pass wipe
+/// Design:
+///  - an exact-size byte holder: zero-on-close, throw-after-close;
+///  - adapted from SynapseNote `SecureMemory` (`core/crypto/SecureMemory.kt`):
+///    a two-pass wipe
 ///    (random fill, then zero) to avoid leaving an all-zero region that betrays
 ///    where a key used to live.
 ///

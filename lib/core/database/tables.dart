@@ -1,7 +1,7 @@
 /// Drift table definitions for the NON-secret stores (books, wishlist,
 /// network, periodicals).
 ///
-/// Every column the Kotlin Room schema had is carried here (verified against
+/// Every column of a backup's Room schema is carried here (verified against
 /// `app/schemas/.../BooksDatabase/10.json` and `WishlistDatabase/1.json`), with
 /// idiomatic Drift naming via `.named()` to keep the on-disk column names
 /// identical to Room — so the migration reader maps 1:1. The encrypted vault
@@ -173,7 +173,7 @@ class WishlistBooks extends Table {
 /// published identity is the `fingerprint` (never the raw library ID, D3).
 ///
 /// Unlike books/wishlist this table is NOT Room-mirrored: nothing here needs
-/// byte-compatibility with the Kotlin schema, so the uniqueness constraints
+/// byte-compatibility with the Room schema, so the uniqueness constraints
 /// are declared drift-side (`uniqueKeys`, `.unique()`) and appear in the
 /// schema snapshots — no raw-SQL indexes to babysit in `beforeOpen`.
 @DataClassName('NetworkLibraryRow')

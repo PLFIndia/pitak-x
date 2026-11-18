@@ -1,9 +1,9 @@
 /// Library list + search screen (presentation layer, AGENTS.md §3.1).
 ///
 /// Pure presentation: reads [LibraryController] state and forwards user input
-/// to it. No business logic, no direct repository/DB access. Mirrors the Kotlin
-/// `LibraryScreen` (search field, sort/filter controls, row list with covers,
-/// empty state).
+/// to it. No business logic, no direct repository/DB access. It has a
+/// search field, sort/filter controls, a row list with covers and an
+/// empty state.
 ///
 /// N10-d part 2: the list renders the controller's [LibraryWindow] — the rows
 /// loaded so far — and asks for the next window as the user nears the end

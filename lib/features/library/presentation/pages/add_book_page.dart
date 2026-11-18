@@ -268,8 +268,8 @@ class _AddBookPageState extends ConsumerState<AddBookPage> {
       needsMetadata: _needsMetadata,
       removed: base?.removed ?? false,
       removedAt: base?.removedAt,
-      // Stamp the maintainer name onto a NEW book that has none yet (mirrors
-      // Kotlin AddBookUseCase's attribution); edits keep the existing value.
+      // Stamp the maintainer name onto a NEW book that has none yet;
+      // edits keep the existing value.
       addedBy: base?.addedBy ?? maintainerStamp,
     );
   }

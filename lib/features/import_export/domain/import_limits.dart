@@ -9,7 +9,7 @@
 ///
 /// Philosophy mirrors the ZIP reader's (`zip_entry_rules.dart`): cheap
 /// early rejects, then fail-closed — but, matching the importers' "collect
-/// errors, never throw" contract (Kotlin D26), enforcement TRUNCATES and
+/// errors, never throw" contract, enforcement TRUNCATES and
 /// reports rather than throwing, so a partially-valid file still imports
 /// what it safely can.
 library;

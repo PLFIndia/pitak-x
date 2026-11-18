@@ -224,8 +224,7 @@ class VaultSessionController extends _$VaultSessionController
     return _holdAndLoad(passphrase, store, blob: blob, generation: generation);
   }, incoming: passphrase);
 
-  /// Minimum new-passphrase length in UTF-8 bytes (mirrors Kotlin
-  /// `SetBackupPassphraseUseCase.MIN_PASSPHRASE_LEN`).
+  /// Minimum new-passphrase length in UTF-8 bytes.
   static const int minPassphraseLength = 8;
 
   /// Changes the vault passphrase (#28A). Requires the vault to be UNLOCKED so

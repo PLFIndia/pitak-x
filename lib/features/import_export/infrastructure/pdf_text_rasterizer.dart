@@ -5,8 +5,8 @@
 /// 1:1 with NO complex-script shaping (it ships shaping for Arabic only). For
 /// Indic scripts that breaks conjuncts / half-letters and matra reordering — e.g.
 /// "बच्चे" renders as full letters with a visible halant instead of the ्च
-/// half-form. The Kotlin app avoids this by drawing on an Android `Canvas`,
-/// which shapes via the OS. The cross-platform equivalent is to let Flutter's
+/// half-form. Drawing on an Android `Canvas` would avoid this, because the
+/// OS shapes the text there. The cross-platform equivalent is to let Flutter's
 /// own text engine shape + lay out each run, capture it as an image, and embed
 /// that image in the PDF. The tradeoff (chosen with the user): PDF text becomes
 /// raster, not selectable — acceptable for a printable catalogue.

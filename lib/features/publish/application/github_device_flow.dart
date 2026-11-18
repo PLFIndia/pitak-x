@@ -1,6 +1,6 @@
 /// GitHub Device Flow orchestrator (application layer, AGENTS.md §4, #32).
 ///
-/// Port of Kotlin `GitHubDeviceFlow`. Emits a [DeviceFlowState] stream: request
+/// Emits a [DeviceFlowState] stream: request
 /// a device+user code, surface it for the user to enter in their browser, then
 /// poll until the user authorizes (Success), denies, lets it expire, or it
 /// fails. Uses Pitak's baked-in public OAuth client id by default

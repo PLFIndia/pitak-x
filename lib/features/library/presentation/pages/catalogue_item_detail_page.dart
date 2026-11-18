@@ -1,7 +1,7 @@
 /// Read-only book detail screen (presentation layer).
 ///
-/// Parity with Kotlin `BookDetailScreen`: title + transliteration + author
-/// header, a "Removed" badge, then the labeled detail rows in the same order
+/// Shows: title + transliteration + author
+/// header, a "Removed" badge, then the labeled detail rows in this order
 /// (ISBN, publisher, published, genre, language, pages, shelf, quantity,
 /// source, source detail, age group, added date, added by) and a notes block.
 /// Edit + Remove/Restore actions.
@@ -211,7 +211,7 @@ class _ItemDetailBody extends ConsumerWidget {
             LendSection(book: book, session: session!),
           ],
           const SizedBox(height: 24),
-          // Labeled rows in the exact order of the Kotlin detail screen.
+          // Labeled rows, in a fixed order.
           DetailRow(label: 'ISBN', value: book.isbn),
           DetailRow(label: 'Publisher', value: book.publisher),
           DetailRow(label: 'Published', value: book.publishedYear?.toString()),

@@ -35,7 +35,7 @@ void main() {
     });
 
     test('hasIdentity/hasNetwork default false on older archives', () {
-      // §3.4: Kotlin-era and pre-network archives lack both flags, and a
+      // §3.4: archives made before the network lack both flags, and a
       // missing flag must read as "not there", never "corrupt".
       final m = BackupManifest.tryParse(jsonEncode({'exportedAt': 1}));
       expect(m!.hasIdentity, isFalse);
@@ -43,7 +43,7 @@ void main() {
     });
 
     test('hasItemKinds/hasPeriodicals default false on older archives', () {
-      // ADR 0014 W2: a flag-less (Kotlin-era or pre-v5) archive restores
+      // ADR 0014 W2: a flag-less (pre-v5) archive restores
       // exactly as before — every catalogue row as a book.
       final m = BackupManifest.tryParse(jsonEncode({'exportedAt': 1}));
       expect(m!.hasItemKinds, isFalse);

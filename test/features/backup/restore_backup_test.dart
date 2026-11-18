@@ -917,7 +917,7 @@ void main() {
         utf8.encode('{"schemaVersion": 1, "libraries": [${rows.join(',')}]}');
 
     test('an archive WITHOUT the entries changes neither identity nor '
-        'network (Kotlin-era)', () async {
+        'network (an archive from before them)', () async {
       final zip = archive({
         'manifest.json': utf8.encode(manifest()),
         'books.db': buildBooksDb(),

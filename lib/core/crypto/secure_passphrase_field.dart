@@ -16,8 +16,8 @@
 /// This is best-effort on a GC VM, the same caveat that applies to
 /// [SecretBytes] itself. The vault key never lives here regardless.
 ///
-/// Design adapted from the Kotlin `VaultPassphrase` (exact-size byte holder,
-/// zero-on-close) and the SecureMemory two-pass-wipe pattern referenced by
+/// Design: an exact-size byte holder that is zeroed on close, and the
+/// SecureMemory two-pass-wipe pattern referenced by
 /// [SecretBytes].
 library;
 

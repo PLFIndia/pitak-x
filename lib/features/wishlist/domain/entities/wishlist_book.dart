@@ -1,4 +1,4 @@
-/// A book the user wants to buy. Mirror of Kotlin `WishlistBook` (source app).
+/// A book the user wants to buy.
 ///
 /// Fully separate from Library (own DB, own UI, own export bucket). No vault
 /// data. Pure Dart (AGENTS.md §3.1).
@@ -18,10 +18,10 @@ enum WishlistSource {
 
 /// Tolerant parsing for [WishlistSource].
 extension WishlistSourceX on WishlistSource {
-  /// Stable storage token (Kotlin enum `name`, upper-case).
+  /// Stable storage token (the enum name, upper-case).
   String get token => name.toUpperCase();
 
-  /// Parses tolerantly; unknown/blank → [WishlistSource.manual] (Kotlin default).
+  /// Parses tolerantly; unknown/blank → [WishlistSource.manual].
   static WishlistSource fromToken(String? raw) {
     final key = raw?.trim().toUpperCase();
     if (key == null || key.isEmpty) return WishlistSource.manual;

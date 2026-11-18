@@ -1,7 +1,6 @@
 /// HTTP implementation of [GitHubApi] (infrastructure, AGENTS.md §3.3, #32).
 ///
-/// Ports the Kotlin GitHub stack (`GitHubAuthApi`, `GitHubContentsApi`,
-/// `GitHubGitDataApi`, `GitTreePublisher`) into one cohesive client over
+/// One cohesive client for GitHub's auth, contents and Git Data APIs, over
 /// `http`. The Git Data flow is the atomic-incremental commit, written by
 /// `GitHubCommitWriter` (`http_github_commit.dart`):
 ///   ref → blobs(only those GitHub does not hold, paced) → tree(base_tree +

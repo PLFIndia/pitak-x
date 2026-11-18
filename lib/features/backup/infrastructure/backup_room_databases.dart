@@ -6,8 +6,8 @@
 /// 500-line ceiling. The split follows the writer's two jobs: this file
 /// turns rows into SQLite files, the writer packs files into a ZIP.
 ///
-/// Why the files are Room-shaped (beginner note): the archive format comes
-/// from the retired Kotlin app, whose database library was Room. This app
+/// Why the files are Room-shaped (beginner note): the archive format was
+/// laid down in the shape of Android's Room library (ADR 0025). This app
 /// keeps its catalogue in Drift, so it cannot copy a file; it writes fresh
 /// SQLite files in the old shape from the current rows. The
 /// `room_master_table` row and `user_version` keep that shape; they are NOT
@@ -27,7 +27,7 @@ import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
 import 'package:sqlite3/common.dart';
 import 'package:sqlite3/sqlite3.dart';
 
-/// Room identity contract (from app/schemas) so the Kotlin app accepts our DBs.
+/// Room's identity values. Kept for the archive's shape; no reader uses them.
 const int _booksDbVersion = 9;
 const String _booksIdentityHash = 'f4f033ebb290bd84fc04bd3d303d0e5f';
 const int _wishlistDbVersion = 1;
@@ -105,7 +105,7 @@ void _writeBooks(CommonDatabase db, List<CatalogueItem> books) {
   // throw `no such module: fts4` and abort the backup. Our restore reader
   // never
   // reads this table — it rebuilds Drift's FTS independently — so omitting
-  // it is correct for Pitak↔Pitak and Kotlin→Flutter restore.
+  // it is correct for a Pitak↔Pitak restore.
 
   final stmt = db.prepare(
     'INSERT INTO `books`( '

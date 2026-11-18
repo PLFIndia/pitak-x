@@ -1,6 +1,5 @@
 /// Pure, side-effect-free engine for the multi-maintainer library merge
-/// (PLAN-merge.md). Faithful Dart port of Kotlin
-/// `dev.khoj.pitaka.domain.merge.LibraryMergeEngine`, extended in plan S19
+/// (PLAN-merge.md), extended in plan S19
 /// for item kinds and periodicals (ADR 0013 D6).
 ///
 /// Given the LOCAL library and an INCOMING library (parsed from another

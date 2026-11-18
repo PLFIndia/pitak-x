@@ -4,7 +4,7 @@
 /// [LibraryWindow]: the rows loaded so far for the current intent (search
 /// text + persisted sort + language chip + kind chip), whether more exist
 /// and whether the next page is in flight. Queries are debounced (120ms) to
-/// mirror the Kotlin query flow and avoid hammering SQLite on every
+/// avoid hammering SQLite on every
 /// keystroke. The repository returns `Either<Failure, _>`; a left on the
 /// FIRST page becomes `AsyncError(Failure)` so the UI can render a safe
 /// message (raw exception text is never surfaced).
@@ -49,7 +49,7 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 part 'library_controller.g.dart';
 
-/// Debounce window before a typed query hits SQLite (matches Kotlin's 120ms).
+/// Debounce window before a typed query hits SQLite.
 const _searchDebounce = Duration(milliseconds: 120);
 
 /// Loads and pages the library book list for the presentation layer.

@@ -1,4 +1,4 @@
-/// How a book cover is referenced. Pure Dart port of Kotlin `CoverPaths`.
+/// How a book cover is referenced. Pure Dart.
 ///
 /// A user-supplied cover lives on disk as `<filesDir>/covers/<uuid>.jpg` and
 /// the row's `coverUrl` holds the relative reference `covers/<uuid>.jpg`. Three
@@ -22,7 +22,7 @@ abstract final class CoverPaths {
 
   /// True when [coverUrl] points at a cover in our own app storage — the new
   /// relative form or a legacy `file://` form. Remote `http(s)://` is NOT
-  /// local. Blank/null → false. (Kotlin `CoverPaths.isLocal`.)
+  /// local. Blank/null → false.
   static bool isLocal(String? coverUrl) {
     final s = coverUrl?.trim() ?? '';
     if (s.isEmpty) return false;
@@ -49,7 +49,7 @@ abstract final class CoverPaths {
 
   /// Extracts the validated leaf filename from a local cover reference, or null
   /// when [coverUrl] is not a safe local reference. Rejects path traversal,
-  /// nested directories, and protocol smuggling (Kotlin `CoverPaths.leafOf`).
+  /// nested directories, and protocol smuggling.
   static String? leafOf(String? coverUrl) {
     final s = coverUrl?.trim() ?? '';
     if (s.isEmpty) return null;

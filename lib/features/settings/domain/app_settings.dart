@@ -1,6 +1,6 @@
 /// App-wide non-secret settings (domain, pure Dart, AGENTS.md §3.1).
 ///
-/// Mirrors the subset of Kotlin `AppPreferences` this build uses: appearance
+/// What this build keeps here: appearance
 /// (theme), library identity (name + maintainer), and the persisted library
 /// sort. Logo image, publish contacts, and localization flags are deferred to
 /// their own features. Secrets are NEVER stored here.
@@ -35,7 +35,7 @@ extension AppThemeModeX on AppThemeMode {
   }
 }
 
-/// Library list sort order (Kotlin `BookSort`). Stored as the enum name.
+/// Library list sort order. Stored as the enum name.
 enum LibrarySort {
   /// Newest-added first (default).
   recentlyAdded,

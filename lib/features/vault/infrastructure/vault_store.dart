@@ -7,7 +7,7 @@
 ///    `base64(salt).base64(iv).base64(ciphertext)`. This is ALREADY ciphertext
 ///    (Argon2id-AES-GCM over the user passphrase), so it is stored as a plain
 ///    file rather than in `flutter_secure_storage` — wrapping ciphertext a
-///    second time buys no confidentiality (mirrors the Kotlin app's deliberate
+///    second time buys no confidentiality (a deliberate
 ///    choice to keep this blob in plain storage). The user passphrase, which is
 ///    the only thing that unlocks it, never touches disk.
 ///

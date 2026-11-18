@@ -1,8 +1,8 @@
 /// Wishlist use cases (application layer, AGENTS.md §3/§4).
 ///
-/// Mirrors Kotlin `AddWishlistBookUseCase`, `UpdateWishlistBookUseCase`,
+/// `AddWishlistBookUseCase`, `UpdateWishlistBookUseCase`,
 /// `DeleteWishlistBookUseCase`, and `MarkWishlistPurchasedUseCase` (incl. the
-/// move-to-library path with the D2 duplicate-ISBN check).
+/// move-to-library path with the duplicate-ISBN check).
 ///
 /// Wishlist has no vault/loan entanglement, so delete is a plain row removal
 /// (unlike library delete, which needs the vault unlocked to purge loans).
@@ -40,7 +40,7 @@ class AddWishlistBookUseCase {
 /// Validates and updates an existing wishlist entry.
 ///
 /// Title-required; the id must be set and exist; `addedDate` is immutable
-/// (Kotlin D30 mirror) — an attempt to change it is rejected so the
+/// — an attempt to change it is rejected so the
 /// recently-added ordering can't be silently rewritten.
 class UpdateWishlistBookUseCase {
   /// Creates the use case over [_repository].
@@ -101,7 +101,7 @@ final class MarkPurchasedSuccess extends MarkPurchasedOutcome {
 }
 
 /// The move-to-library step was skipped because the ISBN already exists in the
-/// library (Kotlin D2). The entry is still marked purchased.
+/// library. The entry is still marked purchased.
 final class MarkPurchasedAlreadyInLibrary extends MarkPurchasedOutcome {
   /// Creates the already-in-library outcome with the existing library book id.
   const MarkPurchasedAlreadyInLibrary(this.existingBookId);
@@ -120,7 +120,7 @@ final class MarkPurchasedAlreadyPurchased extends MarkPurchasedOutcome {
 
 /// Marks a wishlist entry purchased, optionally promoting it into the Library.
 ///
-/// Mirrors Kotlin `MarkWishlistPurchasedUseCase`: flips `purchased` + stamps
+/// Flips `purchased` + stamps
 /// `purchasedDate`; when `moveToLibrary` is true and the ISBN is not already
 /// in the library, inserts a fresh library book (new `addedDate`,
 /// `copyCount = 1`). If the ISBN already exists, returns
@@ -250,8 +250,8 @@ class MarkWishlistPurchasedUseCase {
     int stamp,
   ) => _repository.update(book.copyWith(purchased: true, purchasedDate: stamp));
 
-  /// Maps a purchased wishlist entry to a fresh library book (Kotlin
-  /// `toLibraryBook`): new acquisition date, single copy.
+  /// Maps a purchased wishlist entry to a fresh library book:
+  /// new acquisition date, single copy.
   static CatalogueItem _toLibraryBook(WishlistBook w, int now) => CatalogueItem(
     title: w.title,
     titleTransliteration: w.titleTransliteration,

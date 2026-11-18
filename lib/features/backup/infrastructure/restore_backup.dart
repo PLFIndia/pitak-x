@@ -1,8 +1,8 @@
 /// Applies a Pitaka backup archive to this device — the crux of the port's
 /// "zero data loss" guarantee.
 ///
-/// Restore is an AUTHORITATIVE OVERWRITE of local state, not an additive merge
-/// (mirrors Kotlin `BackupRestore`). Ordering is fail-closed: everything that
+/// Restore is an AUTHORITATIVE OVERWRITE of local state, not an additive
+/// merge. Ordering is fail-closed: everything that
 /// can fail without side effects (reading the archive, manifest, blob unwrap)
 /// happens BEFORE any device write.
 ///

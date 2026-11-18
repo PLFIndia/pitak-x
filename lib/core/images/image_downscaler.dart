@@ -1,6 +1,6 @@
 /// Cover image downscaling (core util, AGENTS.md §3.1).
 ///
-/// Port of Kotlin `ImagePipeline.downscaleForPublish`: fit within a max
+/// What it does: fit within a max
 /// width×height (book aspect, default 400×600) preserving aspect ratio, then
 /// re-encode as JPEG at a fixed quality (default 80), so a picture never
 /// lands at multi-megapixel size on disk or on a published site.

@@ -1,6 +1,6 @@
 /// Optional "library contact" line for the published page (pure domain, #32).
 ///
-/// Port of Kotlin `PublishContactLinks`. Builds the inner HTML for an optional
+/// Builds the inner HTML for an optional
 /// contact line (location / email / phone). All fields optional; when all blank
 /// `render` returns '' and the viewer shows no line.
 ///

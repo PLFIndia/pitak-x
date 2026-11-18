@@ -20,7 +20,7 @@
 /// forgets the file.
 ///
 /// Restore is an AUTHORITATIVE OVERWRITE of local data — the warning copy makes
-/// that explicit before the user proceeds (parity with Kotlin RestoreScreen).
+/// that explicit before the user proceeds.
 ///
 /// THE NOTICE BEFORE A RESTORE (backup rework BR9, decisions D5, D49, D51):
 /// a tap on "Restore", or the keyboard's Done key in the passphrase field,

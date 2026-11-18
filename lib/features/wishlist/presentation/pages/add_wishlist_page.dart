@@ -12,7 +12,7 @@
 /// ISBN entry supports a barcode scan (#29) and a metadata lookup (#30),
 /// reusing the same Open Library -> Google Books chain as the library form; a
 /// successful lookup prefills EMPTY fields only (never overwrites the user's).
-/// `addedDate` is immutable on edit (Kotlin D30 mirror), so the form does not
+/// `addedDate` is immutable on edit, so the form does not
 /// expose it for edits.
 library;
 

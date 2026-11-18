@@ -1,6 +1,6 @@
 /// Pure structural ISBN validation + normalisation (domain, AGENTS.md §3.1).
 ///
-/// Port of Kotlin `IsbnFormat` + `LookupIsbnUseCase.normalize`. Validates the
+/// Validates the
 /// *normalised* form (dashes/spaces stripped, uppercased) by length, character
 /// class, and check digit — catching transposition typos cheaply. It does NOT
 /// assert the ISBN actually exists; a structurally valid ISBN no provider knows
@@ -10,7 +10,7 @@ library;
 /// ISBN normalisation + structural validation helpers.
 abstract final class IsbnFormat {
   /// Normalises [raw]: trims, strips dashes/spaces, uppercases (ISBN-10's
-  /// check digit can be `X`). Mirrors Kotlin `LookupIsbnUseCase.normalize`.
+  /// check digit can be `X`).
   static String normalize(String raw) =>
       raw.trim().replaceAll('-', '').replaceAll(' ', '').toUpperCase();
 

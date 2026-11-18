@@ -1,6 +1,6 @@
 /// Result types for ISBN lookup + title search (pure domain, AGENTS.md §3.1).
 ///
-/// Mirrors Kotlin `LookupResult` / `SearchResult`. These are EXPECTED outcomes
+/// These are EXPECTED outcomes
 /// (found / not-found / empty / transient network error), not `Failure`s — the
 /// chained-fallback logic branches on them, and the UI maps them to states
 /// (offer title search on NotFound/NetworkError, etc.). Using a dedicated

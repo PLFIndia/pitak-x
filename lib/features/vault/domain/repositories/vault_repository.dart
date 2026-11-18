@@ -19,7 +19,7 @@ import 'package:pitaka/features/vault/domain/entities/vault_data.dart';
 /// boundary as the read path). The caller owns the passphrase and disposes it;
 /// the bytes are copied across FFI and the Rust side wipes its own copy.
 ///
-/// Write-failure mapping (mirrors Kotlin vault use-case results):
+/// Write-failure mapping:
 ///  - wrong passphrase / GCM tag fail → [WrongPassphraseFailure]
 ///  - malformed blob → [BackupCorruptFailure]
 ///  - SQLCipher open/key error → [CryptoFailure]
@@ -31,7 +31,7 @@ abstract interface class VaultRepository {
   /// `borrowers.db` at [dbPath] in the Rust core, and returns every borrower +
   /// loan row.
   ///
-  /// Failure mapping (mirrors Kotlin `BackupRestore.Result`):
+  /// Failure mapping:
   ///  - wrong passphrase / GCM tag fail → [WrongPassphraseFailure]
   ///  - malformed blob / corrupt archive → [BackupCorruptFailure]
   ///  - SQLCipher open/read error → [CryptoFailure]

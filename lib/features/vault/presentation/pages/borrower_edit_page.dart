@@ -2,7 +2,7 @@
 ///
 /// Adds a new borrower or edits an existing one through
 /// [VaultSessionController]. Name is required (mirrors the vault's NOT NULL
-/// `name` column and the Kotlin `AddBorrowerUseCase` validation); contact and
+/// `name` column); contact and
 /// notes are optional. The controller re-reads the vault after a successful
 /// write, so the list updates when this page pops.
 library;

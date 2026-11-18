@@ -3,7 +3,7 @@
 ///
 /// Single source of truth for "let the user keep this file". On Android the
 /// share sheet includes "Save to Files" alongside WhatsApp/Drive/email, which
-/// matches the Kotlin app's `ACTION_SEND` export and the merge "pass a file"
+/// suits an export (`ACTION_SEND`) and the merge "pass a file"
 /// workflow (PLAN-merge.md §C). `file_selector` is NOT usable for this on
 /// Android — it implements open dialogs only, no save — which is why the prior
 /// `getSaveLocation` path silently did nothing on the phone.

@@ -136,17 +136,14 @@ final class UnsupportedItemKindFailure extends Failure {
 
 /// The supplied backup passphrase did not unwrap the vault blob.
 ///
-/// Mirrors Kotlin `BackupRestore.Result.WrongPassphrase` — kept distinct from
-/// [BackupCorruptFailure] so the UI can let the user retry rather than declare
-/// the archive broken.
+/// Kept distinct from [BackupCorruptFailure] so the UI can let the user retry
+/// rather than declare the archive broken.
 final class WrongPassphraseFailure extends Failure {
   /// Creates a wrong-passphrase failure.
   const WrongPassphraseFailure();
 }
 
 /// The backup archive is structurally invalid or its crypto blob is corrupt.
-///
-/// Mirrors Kotlin `BackupRestore.Result.Failed` / `SetBlobResult.InvalidFormat`.
 final class BackupCorruptFailure extends Failure {
   /// Creates a corrupt-archive failure with a short diagnostic [reason].
   const BackupCorruptFailure(this.reason);
@@ -156,8 +153,6 @@ final class BackupCorruptFailure extends Failure {
 }
 
 /// The archive's schema version is newer than this build can read.
-///
-/// Mirrors Kotlin `BackupRestore.Result.SchemaTooNew`.
 final class SchemaTooNewFailure extends Failure {
   /// Creates a schema-too-new failure for the given [schemaVersion].
   const SchemaTooNewFailure(this.schemaVersion);

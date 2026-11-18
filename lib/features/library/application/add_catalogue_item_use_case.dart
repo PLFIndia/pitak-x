@@ -1,10 +1,10 @@
 /// Add a book to the library (application layer, AGENTS.md §3/§4).
 ///
-/// Mirrors Kotlin `AddBookUseCase`: enforces the non-blank-title invariant (the
+/// Enforces the non-blank-title invariant (the
 /// UI also validates, but the use case is the single source of truth) and
 /// persists via the repository, which mints the `book_uid` at first insert.
 ///
-/// S34: the duplicate-ISBN routing the Kotlin app deferred is now here — a
+/// S34: the duplicate-ISBN routing is here — a
 /// non-blank ISBN is checked against the library BEFORE the insert, so a
 /// re-scan of a catalogued book returns a typed [DuplicateIsbnFailure] the
 /// form renders as "already in your library" instead of a generic save error.

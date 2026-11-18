@@ -1,10 +1,9 @@
-/// Reads the Pitaka JSON export (`PitakaExport`, up to schema v4). Pure Dart
-/// port of Kotlin `PitakaJsonImporter` + the Moshi-reflective `PitakaExport`
-/// shape, extended by ADR 0014 W1 for item kinds.
+/// Reads the Pitaka JSON export (`PitakaExport`, up to schema v4). Pure Dart;
+/// the shape was extended by ADR 0014 W1 for item kinds.
 ///
-/// Key contract (verified against Kotlin source §3):
-///  - Moshi reflective serialization uses **Kotlin property names** → camelCase
-///    JSON keys (`titleTransliteration`, `publishedYear`, `coverUrl`, …).
+/// Key contract:
+///  - The JSON keys are camelCase (`titleTransliteration`, `publishedYear`,
+///    `coverUrl`, …).
 ///  - `schemaVersion` is read FIRST; a file newer than [kPitakaSchemaVersion]
 ///    is refused cleanly (update-channel rule).
 ///  - `ageGroup` is the stable token string, parsed tolerantly via
@@ -43,7 +42,7 @@ import 'package:pitaka/features/periodicals/domain/value_objects/periodical_freq
 import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
 
 /// Highest `schemaVersion` this build can read (v4 = item kinds, ADR 0014 W1;
-/// the Kotlin-era ceiling was 3).
+/// before it the ceiling was 3).
 const int kPitakaSchemaVersion = 4;
 
 /// Parses Pitaka JSON export files into an [ImportPayload].

@@ -1,5 +1,4 @@
-/// Pure validation for a Pitak **library ID** (PLAN-merge.md D40). A faithful
-/// port of Kotlin `dev.khoj.pitaka.domain.model.LibraryId`.
+/// Pure validation for a Pitak **library ID** (PLAN-merge.md D40).
 ///
 /// The library ID is the random namespace token that says WHICH library an
 /// export file belongs to, so a recipient's merge gate can decide

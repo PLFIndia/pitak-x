@@ -1,6 +1,6 @@
 /// Borrower profile screen (presentation layer, AGENTS.md §3.1).
 ///
-/// Port of Kotlin `BorrowerProfileScreen` (D31): name + contact + notes, live
+/// Shows: name + contact + notes, live
 /// stats (total loans, average return days, overdue rate), the currently-out
 /// loans, and the returned history. Reads the computed [BorrowerProfile] from
 /// the unlocked session; offers Edit and (when no active loans) Delete. Returns

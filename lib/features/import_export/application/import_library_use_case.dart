@@ -1,5 +1,5 @@
-/// One-shot import use case (application layer, AGENTS.md §3.1). Port of
-/// Kotlin `ImportLibraryUseCase`, with two additions from the 2026-09-03
+/// One-shot import use case (application layer, AGENTS.md §3.1), with two
+/// rules from the 2026-09-03
 /// review (decision Q9):
 ///
 /// Sniffs the format, parses, and writes through both repositories. Dedup is

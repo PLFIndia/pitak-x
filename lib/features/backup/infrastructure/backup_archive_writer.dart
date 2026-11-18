@@ -1,22 +1,22 @@
-/// Writes a Pitaka `.pitabak` backup archive (#28B). Pure-Dart port of the
-/// Kotlin `BackupArchive` writer, adapted to our split storage:
+/// Writes a Pitaka `.pitabak` backup archive (#28B). Pure Dart, shaped by
+/// our split storage:
 ///  - books / wishlist live in DRIFT here, but the archive format is Room's, so
 ///    we WRITE fresh Room-compatible `books.db` / `wishlist.db` SQLite files
 ///    from the current Drift rows (we cannot copy the Drift file);
 ///  - the encrypted `borrowers.db` + its `backup_blob` already exist on disk
-///    (the persistent vault); we copy them VERBATIM (no re-wrap on backup,
-///    exactly like Kotlin) when a vault exists;
+///    (the persistent vault); we copy them VERBATIM (no re-wrap on backup)
+///    when a vault exists;
 ///  - user cover images are bundled as flat `cover_<leaf>` entries;
 ///  - a `manifest.json` describes what is present.
 ///
 /// Restore targets (Q-28c, reconfirmed 2026-09-03 — "only this app"): the
-/// archives this writer produces are read by PITAK ONLY (Pitak↔Pitak), and
-/// Pitak's reader additionally accepts archives the retired Kotlin app made
-/// (Kotlin→Pitak). The reverse — the Kotlin app restoring OUR archive — is
-/// NOT a goal and is not tested. Consequences you should know before touching
+/// archives this writer produces are read by PITAK ONLY (Pitak↔Pitak).
+/// Nothing else is promised (ADR 0025): the Room shape is the format that
+/// released versions of Pitak write and read, and no other app is a restore
+/// target. Consequences you should know before touching
 /// this file:
 ///  - the Room `room_master_table` row + `user_version` below are kept only
-///    so the file stays in the same *shape* Kotlin archives have (one reader,
+///    so the file stays in the *shape* released archives have (one reader,
 ///    one format); they are NOT a promise that Room would accept the file
 ///    (the version sticker is v9 while the columns are v10-shaped — harmless
 ///    for our reader, which never looks at either);

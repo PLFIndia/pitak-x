@@ -5,8 +5,8 @@
 /// UI typed phone / email / other parts by ENCODING them into, and DECODING
 /// them out of, that one string at the presentation boundary.
 ///
-/// Encoding (human-readable, so a borrower viewed in the legacy Kotlin app
-/// still reads sensibly; no JSON per AGENTS.md §3.1):
+/// Encoding (human-readable; it is what the vaults in use hold, so it does
+/// not change, ADR 0025; no JSON per AGENTS.md §3.1):
 ///
 ///     Phone: <phone>
 ///     Email: <email>

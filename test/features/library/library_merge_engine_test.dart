@@ -7,7 +7,7 @@ import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/merge/library_merge_engine.dart';
 import 'package:pitaka/features/library/domain/value_objects/item_details.dart';
 
-/// Faithful port of Kotlin `LibraryMergeEngineTest` (PLAN-merge.md S3).
+/// The tests of the merge engine (PLAN-merge.md S3).
 void main() {
   CatalogueItem book({
     int id = 0,

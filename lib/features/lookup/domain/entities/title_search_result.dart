@@ -1,6 +1,6 @@
 /// One row of a title-based search (pure domain, AGENTS.md §3.1).
 ///
-/// Mirror of Kotlin `TitleSearchResult`: the fallback path when the user can't
+/// The fallback path when the user can't
 /// find a book by ISBN scan and searches by title instead. `sourceKey` is the
 /// upstream provider's stable id (Open Library `key` / Google Books `id`),
 /// retained only for a potential future "details" fetch.

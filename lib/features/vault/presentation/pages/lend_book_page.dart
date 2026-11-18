@@ -1,6 +1,6 @@
 /// Lend-a-book screen (presentation layer, AGENTS.md §3.1).
 ///
-/// Mirrors Kotlin `LendBookUseCase` (D25): lend a specific book to either an
+/// Lends a specific book to either an
 /// existing borrower or a newly-created one, with an optional due date and
 /// notes. Requires the vault to be UNLOCKED (it reads borrowers from the
 /// session). The decision + writes live in the application-layer

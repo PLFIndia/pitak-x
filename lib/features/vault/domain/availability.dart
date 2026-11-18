@@ -1,6 +1,6 @@
 /// Book availability from vault loans (domain, pure Dart, AGENTS.md §3.1).
 ///
-/// Mirrors the Kotlin `LibraryViewModel` rule: a book is "not available" when
+/// The rule: a book is "not available" when
 /// the number of its ACTIVE loans (loans not yet returned) is at least its
 /// `copyCount` — i.e. every copy is currently out. This is only meaningful when
 /// the vault is unlocked (loans are encrypted); when locked, availability is

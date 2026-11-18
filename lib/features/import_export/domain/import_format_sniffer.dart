@@ -1,5 +1,4 @@
-/// Picks the right importer for a payload. Pure Dart port of Kotlin
-/// `ImportFormatSniffer`.
+/// Picks the right importer for a payload. Pure Dart.
 ///
 /// Heuristic (deliberately conservative — refuse rather than misinterpret):
 ///  - text starting with `{` and containing `"schemaVersion"` → Pitaka JSON;

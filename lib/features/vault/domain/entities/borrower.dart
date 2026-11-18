@@ -1,5 +1,5 @@
-/// Vault domain models. Mirror of Kotlin `Borrower` / `Loan` / `BorrowerStats`
-/// (source app). Pure Dart (AGENTS.md §3.1). These live in the encrypted vault;
+/// Vault domain models: `Borrower`, `Loan`, `BorrowerStats`.
+/// Pure Dart (AGENTS.md §3.1). These live in the encrypted vault;
 /// the data crosses the FFI boundary as rows out of the Rust core, never with
 /// the key.
 library;
@@ -113,7 +113,7 @@ class Loan {
   }
 }
 
-/// Live-computed borrower statistics (Kotlin `BorrowerStats`).
+/// Live-computed borrower statistics.
 class BorrowerStats {
   /// Creates a stats snapshot.
   const BorrowerStats({
