@@ -1,0 +1,44 @@
+# The permissions the app's merged Android manifest may ask for.
+#
+# The app writes one manifest (app/src/main/AndroidManifest.xml), but every
+# plugin and library brings its own, and the build merges them into the one
+# that ships. So a plugin update can add a permission without a line of the
+# app changing. This list is what the merged manifest is held to:
+# tool/check_merged_manifest.py fails in CI when the manifest of either
+# flavor asks for a permission that is not here, or no longer asks for one
+# that is.
+#
+# One name per line; a note after '#'. Both flavors, debug and release, ask
+# for the same.
+#
+# When CI is red because a NEW permission was merged in:
+#   - the app needs it: add the line here, with where it comes from, and say
+#     what it is for in PRIVACY.md ("Permissions and why");
+#   - the app does not need it: remove it in app/src/main/AndroidManifest.xml
+#     with tools:node="remove", as was done there for the microphone.
+# Never add a line only to make the check green (docs/RELEASING.md §2).
+
+# Declared by the app itself (app/src/main/AndroidManifest.xml says why).
+android.permission.CAMERA               # the two scanners; a cover photo
+android.permission.INTERNET             # ISBN lookup, publishing, saved libraries
+android.permission.POST_NOTIFICATIONS   # event alerts (Android 13 and newer ask)
+android.permission.USE_BIOMETRIC        # unlocking with a fingerprint or a face
+android.permission.VIBRATE              # the notifications plugin asks for it too; an event alert may vibrate
+
+# Merged in by androidx.biometric: what Android 8 and older ask for in the
+# place of USE_BIOMETRIC, which came with Android 9.
+android.permission.USE_FINGERPRINT
+
+# Merged in by androidx.work (the workmanager plugin), for the scheduled
+# check of saved libraries.
+android.permission.ACCESS_NETWORK_STATE     # "run only when connected"
+android.permission.RECEIVE_BOOT_COMPLETED   # schedule the check again after a restart
+android.permission.WAKE_LOCK                # stay awake for the seconds a check takes
+android.permission.FOREGROUND_SERVICE       # declared by the library; Pitak runs none
+
+# Merged in by androidx.core. A permission the app defines for ITSELF, at
+# signature level: it keeps other apps from sending to receivers the app
+# registers while it runs. Its name starts with the application id, which
+# differs between the flavors, so it is written with the placeholder that
+# androidx.core's own manifest uses; the check fills in the id.
+${applicationId}.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION
