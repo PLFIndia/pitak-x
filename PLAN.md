@@ -77,7 +77,7 @@ under "D<number>". All are of November 2026.
 
 | D | Date | Decision | State |
 |---|---|---|---|
-| D1 | 10 | Nothing from the retired Kotlin app has to be honoured: no backups made by it exist. Removing that support from code and docs is its own work, with an ADR | open (ADR 0025, BR10) |
+| D1 | 10 | Nothing from the retired Kotlin app has to be honoured: no backups made by it exist. Removing that support from code and docs is its own work, with an ADR | built: ADR 0025 and the documents (`1a59621`), the comments (`e5f3145`); how far it goes is D58 and D59 |
 | D2 | 10 | A cover made from a photo is stored at most 240×360 pixels, JPEG quality 70. Existing covers, ISBN covers, the logo and the publish step do not change | built (BR1) |
 | D3 | 10 | A backup holds up to 10,000 covers; the entry limit is derived from that number in one place | built (BR8: `a9ae39e`) |
 | D4 | 10 | The content limit of a backup may rise to 1 GiB, only once backup and restore work from files | built (BR8: `a9ae39e`) |
@@ -134,6 +134,9 @@ under "D<number>". All are of November 2026.
 | D55 | 17 | The two steps of the in-app guide that BR9 made incomplete ("Make a backup", "Restore on a new phone": a tap now opens the notice first) are brought up to date with the documents of BR10, not in BR9: the guide, its approved copy in `docs/mockups/how-pitak-works.md` and the counts in `guide_catalog_test.dart`. The new steps are shown to the maintainer first | open (BR10) |
 | D56 | 17 | Run D: covers photographed in the app at 240×360, quality 70, are fine on the phone, in the list and on the item's page (two covers; the maintainer's eye). The look after "Publish" is left out: nothing was changed there (D2) | in force |
 | D57 | 18 | D26 stays as it is: the copy of a picked document gets no time limit. The phone runs it waited for are made (run C, part 4). ADR 0026 records it as a known limit, with what was tried and what was not; its wording is shown first | in force; the sentence for the documents with BR10 |
+| D58 | 18 | How far the clean-up of D1 goes: ADR 0025, the documents, and the comments in the code that rest on the retired Kotlin app. Comments only: the app behaves as before. Code that is there only for input of that app is listed in the ADR and not touched. Said with it: that app has no users | built (`1a59621`, `e5f3145`) |
+| D59 | 18 | The comments that only say where a piece of code came from ("Port of Kotlin `X`") are reworded too. Under `lib/` and `test/` the word "Kotlin" then stands only where it means the app's own Android code. The older ADRs and `CHANGELOG.md` are history and are not rewritten; ADR 0025 names what it overrides | built (`e5f3145`) |
+| D60 | 18 | The go-ahead for ADR 0025 and the clean-up of D58 and D59: built through to the review stop, with a pause to show the ADR's draft and the documents' new sentences, and whenever something is not as designed. Every commit and the push keep their own yes | in force |
 
 Decision points of the plan that are still open: 7 (see
 "The plan").
@@ -210,7 +213,10 @@ After each of BR1, BR2, BR3, BR4, BR6 and BR7 the app is releasable.
   notice comes from here. Run on the one phone at hand, which is a
   fast one: a weak phone has not been tried (D43, D44).
 - [x] (2026-11-17: run D, D56) Look at real covers at 240×360, quality 70, on the phone.
-- [ ] ADR 0025 (no Kotlin compatibility, D1, D29). ADR 0026 (backup
+- [x] (2026-11-18: `1a59621`, `e5f3145`; D58 to D60) ADR 0025 (no
+  Kotlin compatibility, D1, D29), with the documents and the comments
+  in the code that named the retired Kotlin app.
+- [ ] ADR 0026 (backup
   limits, streamed archive, resource notice; D2, D8, D19, D20, D22 to
   D28 with D57, and for the notice D48 to D54; the Android calls it
   rests on are quoted in the comment of `DeviceResourcesChannel.kt`).
@@ -451,7 +457,19 @@ when it was written; check the repository before relying on it.
   the private record. Its `flutter clean` removed `build/`: the
   offline Gradle run of the Android unit tests may need the network
   once.
-- **The session of 2026-11-18 changed no file of the app either.** It
+- **The session of 2026-11-18 changed COMMENTS in the app's code, and
+  nothing else of it.** After run C it wrote ADR 0025 and took the
+  retired Kotlin app out of the documents and out of the comments
+  (D58 to D60): `1a59621` (the ADR, its row, a "Read first" line in
+  ADR 0013 and 0014, `README.md`, `SECURITY.md`,
+  `docs/ARCHITECTURE.md`) and `e5f3145` (143 rewordings in 82 files
+  under `lib/`, 8 in 6 test files). A script over the diff showed
+  that every changed line of `lib/` and `test/` is a comment line,
+  but for three names of tests. Checks on that tree: `build_runner`
+  no diff; format 0 changed of 1,467 files; analyze 47, the same
+  issues as before; 7,377 tests passed. Not pushed, and no CI run has
+  seen it. Kotlin and Rust were not touched.
+- Before that, the same session
   ran parts 2 to 4 of run C on the phone (the results are at the very
   end of this file) and wrote this file and the private records. For
   part 3 it made two DEBUG builds of the play flavour: one of the tag
@@ -471,10 +489,13 @@ when it was written; check the repository before relying on it.
   into this file after that push is NOT pushed: `84a0d2f` (BR9
   done), `b9847b7` (the handoff of that evening), `aedc3f6` (the
   device runs of the third session of 2026-11-17), `c55a53d` (the
-  handoff for parts 2 to 4 of run C), and what the session of
-  2026-11-18 wrote (run C, parts 2 to 4), which is one more commit of
-  this file or is not committed as long as `git status` names this
-  file. The maintainer wants them pushed with the next work.
+  handoff for parts 2 to 4 of run C), and the commits of 2026-11-18:
+  `ab7e4bf` (run C, parts 2 to 4), `a4d028d` (D57), `1a59621` and
+  `e5f3145` (ADR 0025 and the clean-up), and the commit of this file
+  after them, which is one more commit or is not committed as long as
+  `git status` names this file. `1a59621` and `e5f3145` are the first
+  of these that change more than this file: the push needs its yes,
+  and its CI run has to be looked at, every job, to the end.
   `git status -sb`
   says how far the branch is ahead of `origin/reviewFixes`.
 - The five commits were made in a temporary plain clone
@@ -577,8 +598,11 @@ of its design is T12 in the tracker; a test that timed out once was
 looked for and not found again (the open questions). What it built
 is under "For BR9" below.
 
-What is left of the plan: BR10's records (ADR 0025, ADR 0026, the
-in-app guide, the documents, the ticks in the private tracker).
+What is left of the plan: the rest of BR10's records (ADR 0026, the
+in-app guide, the documents where they describe backup, limits or
+covers, the ticks in the private tracker). ADR 0025 is written and
+the retired Kotlin app is out of the documents and the comments
+(2026-11-18, D58 to D60; not pushed).
 "The next session" below says where to start.
 
 What was done before this, and still holds:
@@ -608,9 +632,9 @@ What was done before this, and still holds:
   pick that is cancelled brings it back).
 - The clean-up after run E is done, on the phone and on the Mac.
 
-**The next session begins BR10's records.** No device is needed for
-them. (The maintainer has not said so in words: it is what is left
-of the plan. If the maintainer wants something else first, for
+**The next session goes on with BR10's records.** No device is needed
+for them. (The maintainer has not said so in words: it is what is
+left of the plan. If the maintainer wants something else first, for
 example T13 tried with a unit test, that comes first.)
 
 In this order:
@@ -626,8 +650,7 @@ In this order:
    known limit; its wording is shown to the maintainer first, and so
    is whether `SECURITY.md` names it.
 3. **BR10's records**, each part shown before it is written into a
-   public file: ADR 0025 (nothing of the Kotlin app is honoured, D1,
-   D29); the two steps of the in-app guide (D55: the new steps shown
+   public file (ADR 0025 is done): the two steps of the in-app guide (D55: the new steps shown
    first, then the guide, the mockup and the counts of
    `guide_catalog_test.dart`); ADR 0026 (the limits, the streamed
    archive, the notice with D48 to D54, the two known limits of D44
@@ -966,6 +989,14 @@ Each cost time once.
 
 **Tools**
 
+- `rg` prints its hits in a different order at each call (it reads
+  files in parallel). A list that is read in slices has to be sorted
+  into a file first, or lines are read twice and others never.
+- A change that must touch comments only can be proven:
+  `git diff -U0`, and every removed and added line has to begin with
+  `//` (the script is named under "Scratch folders"). A sorting by
+  words finds most lines and not all: read every hit with its
+  paragraph.
 - `dart format` rewrites files unless told `-o none`. `cargo fmt`
   rewrites too.
 - `flutter pub get --dry-run` is not a look without side effects: it
@@ -1415,6 +1446,13 @@ None of them blocks the next stage.
   `CHANGELOG.md` says the page "shows again what it showed before",
   and D46 chose the other way for the Restore page. Change Import to
   match D46, change the changelog's sentence, or leave it?
+- `CHANGELOG.md`: a line for ADR 0025 (the promise to restore
+  backups of the retired Kotlin app is taken back; nothing in the app
+  changed)?
+- Two comments still point into the old app's repository, without
+  naming it: "verified against `app/schemas/.../BooksDatabase/10.json`"
+  in `tables.dart:5` and `legacy_db_reader.dart:9`. They record what
+  the columns were checked against. Leave them, or take them out?
 - For T13: try it first (a unit test on the Mac), then decide as for
   the others?
 - Left from run C, for the maintainer to keep or remove: the folder
@@ -1518,7 +1556,11 @@ listings of the cache of part 3. `helpers/` has five more scripts
 holds the plain clone of the tag `1.9.7` with its debug build, the
 build logs, copies of the private files from before they were
 written to, and a device log of part 4 with other apps' lines; it is
-left to the system.
+left to the system. `/tmp/pitak_adr25/` holds the same for ADR 0025
+and the clean-up: the logs of the checks before and after, the
+patches, the four batches of rewordings with the script that applies
+them, and the script that proves "comments only"
+(`comment_only_check.py`).
 
 ## Log
 
@@ -1531,7 +1573,7 @@ left to the system.
 | 2026-11-14 | Baseline for the stage of D24: unchanged. The stage designed (private file); T10 found. D31 to D35. The CI run of `b49901e` seen green. The go-ahead; all six steps of the stage built; its run in the emulator; the review stop (D35, two small fixes, T11); an accident with this checkout's git settings, repaired; seven commits and this file's (`4b4fe36`), not pushed. A handoff for the device runs of the next session |
 | 2026-11-16 | The stage of D24 pushed. Its CI run red in the F-Droid job: the runner's image had changed, and no workflow named a JDK. `3ea1812` names it (Temurin 21). A second failure of the same job, a refused download, went away when the job was run again; then every job green. T1 and T10 closed; the stage's design file into the archive; this file brought up to date. Then the device runs: the phone and its two installs read with `adb`; the questions of step 1 answered; D36. The tool for synthetic backups designed and built, not committed; while it was built, found that the reader of a restore counts entries where the writer counts covers; D37. The tool committed (`549b93c`, not pushed); the files of runs A and B made. The measuring script built and committed (`dde1e80`, not pushed); the first look and run A in the emulator; a release build for the phone made and installed, then found to hold OLD compiled Dart code (the stale-artefact trap of `docs/RELEASING.md` §4): run B stopped before any restore. A clean rebuild, checked from inside, installed; the phone's install emptied by the maintainer; most of run B done (every restore and the backup at today's limits ended well, no freeze seen), then the device runs stopped by the maintainer. Four commits pushed; CI green at `3797288`. D38: run B has passed. A handoff for the planning of BR8. Then the planning session of BR8: the baseline unchanged (7,148 tests); the design written (private file); measurements on the Mac; the decision points 17 to 20 named; all four answered (D39 to D42). BR8 built through to its review stop: the edge tests, the numbers, the sentences of D41, the runs by hand on the Mac, the changelog; 7,194 tests; the Android unit tests green after one Gradle run with the network; four commits (`b01a950`, `a9ae39e`, `421fa8e`, `b15c42f`) and this file's (`f508475`); all pushed with the two earlier commits of this file; the session closed while CI run 43914687234 was running |
 | 2026-11-17 | The CI run of BR8 (43914687234 at `f508475`) seen green, every job at its first attempt, and "Update goldens" with it. BR8 done: its row and the decisions here; P1-M1 and P4-m19 ticked in the private tracker; its design file into the private archive, word for word. The go-ahead for run E. The three made-up backups made again; a release build (after `flutter clean`, looked into) and a debug build at `f508475`. Run E in the emulator, all of it: 10,000 covers and 1 GiB restore and back up, 10,008 covers are refused with the sentence of D41, the writer refuses 10,001, a backup with a vault is made and restored. Run E on the phone, most of it: the same restores and the backup at 1 GiB end well, memory 233.5 MB; by screenshots the screen stood still for about 1.5 to 1.9 s before the share sheet and for at least 1.2 s at the start of a restore; the phone locked in the middle of a restore, and after the unlock its page says "Restore complete"; the cache on the phone read in its Settings (nothing of a pick or of a run's work left; one thing for T2, in the private record); a backup with a vault restored, made, saved by the maintainer and restored again on the phone. Run E is run; five questions for the maintainer. This file committed (`12d4ebc`). The clean-up after run E: the made-up files on the phone, the scratch folders on the Mac, the duplicate of BR8's design file (`91ed643`); both commits pushed, CI run 44015306730 green in every job at its first attempt. The five questions answered, one at a time: D43 to D47. The fix of D46 designed, built after the go-ahead (three tests first, red on the old code; three trials by hand; 7,197 tests) and committed (`ee80a76`); the changelog's sentence of D47 (`1a0ece7`); this file (`d456fdf`); all three pushed, CI run 44020820271 green in every job at its first attempt. A handoff for the next session, which takes up run C, run D, BR9 and BR10 (`48edab6`, not pushed). A second session the same day: the state confirmed; the order chosen (BR9, then run C and run D, then BR10); the baseline unchanged (7,197 tests); the Android reference read; decision points 5 and 6 answered (D48, D49); BR9 designed (private file) and its decision points 21 to 24 answered (D50 to D53); BR9 built through to its review stop in five steps, tests and trials by hand at each: the rules, the Kotlin channel and its Dart side, the two size readers, the dialog on both pages, the changelog. A wrong prediction about how two sizes far apart are written was found in the build and put at once (D54). One test of the whole suite timed out once and not again. 7,377 tests; the Android unit tests green offline, 64 in each flavour. At the review stop: D55 (the guide with BR10), T12, a bounded look for the time-out (24 runs, not found again; a second timing test failed once under load). The five commits made in a plain clone (`3021561`, `c883fae`, `3222077`, `6e7b47f`, `28630c2`) and brought over; this file committed (`28bcdcb`, after a block that stood twice in its first commit was taken out before any push). The look at the real channel in the emulator: both dialogs with real figures, a backup to the share sheet, a restore of 4,000 covers. Eight commits pushed (`d456fdf..2a76f43`); CI run 44041555210 green in every job at its first attempt, 7,377 tests, and "Update goldens" with no new picture. BR9 done: its row here, its design file into the private archive, word for word, and the file removed after a comparison; `84a0d2f` committed and, at the maintainer's wish, not pushed. A handoff for the next session: the device runs first when the phone is at hand, otherwise the parts of BR10 that wait for no device (`b9847b7`). A third session the same day, with the phone: the state confirmed; a release build of `b9847b7` (after `flutter clean`), looked into (a wrong prediction: the string the handoff proposed is kept as UTF-16 and counted 0; five others counted 1 each) and installed. The first look on it: the notice before a backup and before a restore with real figures; the fix of D46 in both halves; then, after the maintainer had cleared the install (the passphrase of the made-up vault was forgotten), a restore and a backup of 10,000 covers through the notice, and both dialogs with the phone's largest font. Run D: two covers photographed in the app, "all fine" (D56). Run C, part 1: Import and Merge on the phone's picker with files from Download, every sentence as the code has it; one thing seen on Import that the changelog words differently (the open questions). The made-up files removed from the phone. This file brought up to date (`aedc3f6`, not pushed). The maintainer: the next session does parts 2 to 4 of run C. A handoff for it: what was checked for part 3 (the tag `1.9.7`, its Flutter version, the signature of the play install on the phone), and the files for the cloud drive made ready |
-| 2026-11-18 | The state confirmed (four commits of this file not pushed). The maintainer put the six made-up files into Google Drive from the Mac. Run C, part 2: Import and Merge with files kept online, the picks made by the agent through `adb` at the maintainer's wish (a helper that reads exact names only); every sentence as the code has it; two predictions of the handoff corrected before the run. Something seen on Merge went into the private tracker as T13. Part 3: a debug build of the tag `1.9.7` in a plain clone, installed over the play install; three picks with the old picker left three copies in the cache; a debug build of today's code installed over it removed exactly those three at its first start (D33 on a phone). Part 4: what the tracker lists for T4, the network cut through `adb`; in the private record. Run C is run. This file brought up to date (`ab7e4bf`, not pushed). D57: D26 stays as it is |
+| 2026-11-18 | The state confirmed (four commits of this file not pushed). The maintainer put the six made-up files into Google Drive from the Mac. Run C, part 2: Import and Merge with files kept online, the picks made by the agent through `adb` at the maintainer's wish (a helper that reads exact names only); every sentence as the code has it; two predictions of the handoff corrected before the run. Something seen on Merge went into the private tracker as T13. Part 3: a debug build of the tag `1.9.7` in a plain clone, installed over the play install; three picks with the old picker left three copies in the cache; a debug build of today's code installed over it removed exactly those three at its first start (D33 on a phone). Part 4: what the tracker lists for T4, the network cut through `adb`; in the private record. Run C is run. This file brought up to date (`ab7e4bf`, not pushed). D57: D26 stays as it is (`a4d028d`). Then BR10's records begun: asked how far the clean-up of D1 goes, the maintainer said that the Kotlin app has no users and chose the ADR, the documents and the comments (D58), and that the comments which only name where code came from are reworded too (D59); the go-ahead (D60). The baseline unchanged (7,377 tests). ADR 0025 drafted, shown and written; nine sentences of `README.md`, `SECURITY.md` and `docs/ARCHITECTURE.md` shown and written (`1a59621`). 143 rewordings in 82 files under `lib/` and 8 in 6 test files, every changed line a comment but for three names of tests, by a script; format, analyze, 7,377 tests and `build_runner` as before (`e5f3145`). Neither is pushed |
 
 ## Device runs: handoff for the next session
 
