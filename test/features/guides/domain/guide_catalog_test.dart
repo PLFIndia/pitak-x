@@ -3,6 +3,7 @@
 library;
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:pitaka/features/backup/presentation/resource_notice_messages.dart';
 import 'package:pitaka/features/guides/domain/guide.dart';
 import 'package:pitaka/features/guides/domain/guide_catalog.dart';
 import 'package:pitaka/features/guides/domain/guide_markup.dart';
@@ -95,7 +96,10 @@ void main() {
       GuideId.events: [0, 5, 3, 3],
       GuideId.map: [0, 6, 3, 3],
       // S11 (plan CV6): "what is inside" gained the publishing-record line.
-      GuideId.backup: [0, 6, 4, 2, 3, 1, 1, 1, 2],
+      // Backup rework BR9 (decision D55): both step lists gained the step
+      // for the notice that opens before a backup and before a restore
+      // ("Make a backup" 2 → 3, "Restore on a new phone" 3 → 4).
+      GuideId.backup: [0, 6, 4, 3, 4, 1, 1, 1, 2],
       // 2026-11-09 (PR #26 retired the Pending page): "Returns and
       // reminders" has 4 bullets (Return, Borrowed Items, Reminder message
       // card, contact buttons) and a "Lending rules" paragraph follows.
@@ -236,6 +240,26 @@ void main() {
         reason: '${guide.id}',
       );
     }
+  });
+
+  test('the backup guide names the buttons of the notice by their on-screen '
+      'labels', () {
+    // Backup rework BR9 (decision D55): a tap on "Create backup" or on
+    // "Restore" opens the resource notice first, and the last step of each
+    // list tells the reader which button to tap in it. Those words must be
+    // the dialog's own, or the reader looks for a button that is not there.
+    final sections = guideById(GuideId.backup).sections;
+    GuideSteps stepsOf(String title) => sections
+        .whereType<GuideSteps>()
+        .singleWhere((section) => section.title == title);
+
+    final backupLabel = resourceNoticeConfirmLabel(ResourceNoticeRun.backup);
+    final restoreLabel = resourceNoticeConfirmLabel(ResourceNoticeRun.restore);
+    expect(stepsOf('Make a backup').steps.last, contains('**$backupLabel**'));
+    expect(
+      stepsOf('Restore on a new phone').steps.last,
+      contains('**$restoreLabel**'),
+    );
   });
 
   group('Cloudflare guide matches the real setup', () {

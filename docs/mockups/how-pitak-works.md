@@ -518,7 +518,9 @@ plain form, except the vault.
 **Make a backup**
 
 1. **☰ → Settings → Data → Create backup**.
-2. Tap **Create backup** and choose where to save the file.
+2. Tap **Create backup**. Pitak says how much storage and memory the backup
+   needs, and how much this phone has.
+3. Tap **Go on** and choose where to save the file.
 
 **Restore on a new phone**
 
@@ -526,6 +528,8 @@ plain form, except the vault.
 2. Tap **Choose .pitabak file** and pick it. Pitak shows what the file
    contains.
 3. If it contains a vault, enter that vault's passphrase. Tap **Restore**.
+4. Pitak says how much storage and memory the restore needs, and how much
+   this phone has. Tap **Restore** again to start.
 
 Restoring **replaces** this phone's books, wishlist, covers, identity and
 saved libraries with the backup's. It is all-or-nothing: if anything goes
