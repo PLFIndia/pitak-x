@@ -197,6 +197,47 @@ Two known limits, measured in that run on a fast phone and accepted
   `flutter_local_notifications` 22.3.3.
 
 ### Security
+- **The app no longer declares the microphone or the shared-storage
+  permissions (P1-M2).** The camera plugin (`camera_android_camerax`)
+  brought `RECORD_AUDIO` and `WRITE_EXTERNAL_STORAGE` into the app's merged
+  manifest, the build tools added `READ_EXTERNAL_STORAGE` because of the
+  second, and the plugin marked a camera as required hardware (the
+  microphone permission made a microphone required too). Pitak used none
+  of it: the scanners read the camera's picture without sound, a cover
+  photo is taken by the phone's own camera app, and nothing in the app
+  ever asked for the three permissions, so no install held them. But
+  `PRIVACY.md` says "no access to your … microphone" and "no broad or
+  shared-storage access", and the app's list of permissions said
+  otherwise. The app manifest now removes the three, marks the camera as
+  optional (`camera.any`, and `camera.autofocus` as Android's reference
+  asks), and removes an entry of the image picker that asked Google Play
+  services for a photo picker module the app does not use (P2-n5; both
+  flavors). Read back from a built APK with `aapt2`. Not tried on Android
+  9 or older, where the storage permission was still in force: accepted
+  by reading, because a permission nobody was ever asked for was never
+  held. Seen on a phone on 2026-11-18 (OnePlus 9R, Android 14, a debug
+  build): the ISBN scanner reads, the QR scanner opens, a cover photo and
+  a picture from the gallery work as before, and the phone lists Camera
+  and Notifications for the app and no microphone. Before the change the
+  phone held the microphone and the storage permission as requested and
+  not granted.
+- **A plugin can no longer add a permission unseen.**
+  `android/merged-permissions.txt` lists every permission of the merged
+  manifest with where it comes from, and CI holds the release manifest of
+  both flavors to it (`tool/check_merged_manifest.py`, in the F-Droid
+  purity job): a permission that is not listed, a listed one that is gone,
+  a hardware feature that is required, or a `com.google.` name in the
+  F-Droid manifest fails the run. Until now a comment in the manifest
+  asked a person to compare the merged manifest after a plugin update.
+  `PRIVACY.md`, "Permissions and why", gained the entries it lacked
+  (biometrics, vibration).
+- **`flutter_secure_storage` is held on version 9 (P2-M3, the first
+  step).** On Android, version 11 of the package cannot read what version
+  9 stored; a release on version 10 has to reach users first. Dependabot
+  no longer proposes a major update of it, and
+  `test/architecture/secure_storage_major_pin_test.dart` fails when
+  `pubspec.lock` holds another major version, however it got there.
+  Nothing in the app changed.
 - **A file chosen for Import or Merge is under its size cap before any
   of it is in memory.** Both pages took their file from the
   `file_selector` plugin, which on Android read the whole document into
@@ -280,6 +321,10 @@ Two known limits, measured in that run on a fast phone and accepted
   file is always dropped.
 
 ### Tests
+- `tool/check_merged_manifest.py` has 26 tests on small manifests the
+  tests write themselves: each refusal, the pass, and every case in which
+  the check cannot be made and therefore fails. CI runs them in the
+  Flutter job.
 - CI runs the Android unit tests (64 JUnit tests in both flavours since
   BR9, 55 before) at the end of the F-Droid purity job.
 - The notice of BR9: its rules at every edge

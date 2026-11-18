@@ -121,12 +121,30 @@ produces a file you control.
   them on.
 - **Notifications** (Android 13+ asks you; older Android does not) — used
   only for event alerts (item 10). Pitak shows no other notifications.
+- **Biometrics** (`USE_BIOMETRIC`; on Android 8 and older, `USE_FINGERPRINT`)
+  — used only if you switch on one of two options in Settings → Security,
+  both off by default: **Require biometric to open Pitak** (the app lock)
+  and **Biometric unlock** for your borrowers vault. Android shows the
+  prompt and checks your fingerprint or face itself; Pitak learns only
+  whether the check passed, and never sees or stores a fingerprint or a
+  face.
+- **Vibration** (`VIBRATE`) — declared by the notifications library. An
+  event alert (item 10) may vibrate your phone, as your phone's
+  notification settings say. Pitak vibrates for nothing else.
 - **Android system permissions merged by the scheduling library**
   (`ACCESS_NETWORK_STATE`, `RECEIVE_BOOT_COMPLETED`, `WAKE_LOCK`,
   `FOREGROUND_SERVICE`): they let the scheduled check wait for a network
   connection, survive a reboot and keep the device awake for the few seconds
   a check takes. Pitak runs no foreground service and reads no network
   details beyond "connected or not".
+- **A permission Pitak defines for itself**
+  (`DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION`, added by an Android support
+  library) — it gives Pitak access to nothing. It keeps other apps from
+  sending messages to Pitak's own internal receivers.
+
+That is every permission the app asks for. The list is kept in
+`android/merged-permissions.txt`, and an automated check fails any build
+that asks for more.
 
 ## When anything leaves your device
 

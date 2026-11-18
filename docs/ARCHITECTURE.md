@@ -35,7 +35,13 @@ A **privacy-first, offline personal library catalogue** for Android, with
 - No telemetry, no crash reporting — by design. The lead developer is a
   beginner (AGENTS §0): one blessed way, no magic, explained decisions.
 
-Permissions: `CAMERA`, `INTERNET`, `USE_BIOMETRIC`. `allowBackup=false` +
+Permissions the app declares: `CAMERA`, `INTERNET`, `USE_BIOMETRIC`,
+`POST_NOTIFICATIONS`, `VIBRATE`; libraries merge in six more. All eleven
+are in `android/merged-permissions.txt`, each with where it comes from, and
+CI holds the merged manifest of both flavors to that list
+(`tool/check_merged_manifest.py`). The camera plugin's microphone and
+shared-storage permissions are removed in the app manifest, and no hardware
+feature is required. `allowBackup=false` +
 `data_extraction_rules.xml` keep everything out of Android Auto Backup / D2D.
 minSdk 24 (`maxOf(flutter.minSdkVersion, 23)`; Flutter 3.44.2 supplies 24,
 above the `flutter_zxing` floor of 23).

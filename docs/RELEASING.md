@@ -73,6 +73,16 @@ The Dart code is identical; only what the Android build links differs.
    `in_app_update` → our own channel.
 2. The `fdroid-purity` CI job is the automated check and self-tests by
    requiring the same grep to *match* on the `play` classpath.
+3. The same job holds the **merged manifest** of both flavors to the list
+   `android/merged-permissions.txt` (`tool/check_merged_manifest.py`): every
+   permission must be on the list, no hardware feature may be required, and
+   the `fdroid` manifest may hold no `com.google.` name. A plugin update is
+   how a new permission arrives. When the step is red: if the app needs the
+   permission, add it to the list with where it comes from, and say what it
+   is for in `PRIVACY.md` ("Permissions and why") in the same change; if it
+   does not, remove it in `android/app/src/main/AndroidManifest.xml` with
+   `tools:node="remove"`, as was done for the microphone. Never add a line
+   only to make the check green.
 
 Verify by hand before tagging (both must print **nothing**):
 
@@ -87,6 +97,16 @@ unzip -p build/app/outputs/apk/fdroid/release/app-fdroid-arm64-v8a-release.apk '
 (To prove the check works, run the second one on a `play` APK and watch it
 light up. The only "Play Services" hits F-Droid tolerates are inert string
 constants inside AndroidX CameraX.)
+
+The merged-manifest check by hand (both must end with `OK`):
+
+```bash
+( cd android && ./gradlew :app:processFdroidReleaseManifest :app:processPlayReleaseManifest )
+python3 tool/check_merged_manifest.py --flavor fdroid \
+  build/app/intermediates/merged_manifests/fdroidRelease/processFdroidReleaseManifest/AndroidManifest.xml
+python3 tool/check_merged_manifest.py --flavor play \
+  build/app/intermediates/merged_manifests/playRelease/processPlayReleaseManifest/AndroidManifest.xml
+```
 
 ---
 
