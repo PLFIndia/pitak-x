@@ -1,13 +1,61 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    <!-- The build joins this file with the manifest of every plugin and
+         library into ONE "merged" manifest, and that one ships. A `tools:`
+         attribute below is an instruction to that merger; it is not part
+         of the app. -->
     <!-- Biometric vault unlock (#34 B2, opt-in / default OFF). Gates release of
          a hardware-stored key only; no other use. -->
     <uses-permission android:name="android.permission.USE_BIOMETRIC"/>
     <!-- Barcode/ISBN scanning (#29). Requested just-in-time on the scan screen;
          not required to use the app (manual entry always works). -->
     <uses-permission android:name="android.permission.CAMERA"/>
+    <!-- A camera is OPTIONAL. A store hides an app from every device that
+         lacks a feature the app requires, and it reads a feature as
+         required unless a line says otherwise. Three lines:
+         - `camera` and `camera.autofocus`: Android's reference of
+           <uses-feature> says Google Play takes both as required from the
+           CAMERA permission alone. (For autofocus the build tools show no
+           such reading; the line follows the reference.)
+         - `camera.any`: the camera plugin (camera_android_camerax) declares
+           it as required. When two manifests disagree about `required`,
+           the merger takes "true", so a plain line here changes nothing
+           (tried 2026-11-18: the merged file said "true"). `tools:replace`
+           tells it to take THIS file's value. -->
     <uses-feature
         android:name="android.hardware.camera"
         android:required="false"/>
+    <uses-feature
+        android:name="android.hardware.camera.any"
+        android:required="false"
+        tools:replace="android:required"/>
+    <uses-feature
+        android:name="android.hardware.camera.autofocus"
+        android:required="false"/>
+    <!-- REMOVED from the merged manifest (`tools:node="remove"`): three
+         permissions the camera plugin declares for things Pitak never does.
+         The two scanners only show the camera's picture and read it, without
+         sound; a cover photo is taken by the phone's own camera app. Nothing
+         in the app ever asked the user for one of the three, so no install
+         ever held them: they only made the list of permissions say more
+         than PRIVACY.md does.
+         - RECORD_AUDIO: for video with sound. It also made a microphone a
+           required feature.
+         - WRITE_EXTERNAL_STORAGE: for saving a capture to shared storage on
+           Android 9 and older.
+         - READ_EXTERNAL_STORAGE: no manifest names it. The build tools add
+           it because the plugin asks for the one before, and they go on
+           adding it after that one is removed (tried 2026-11-18), so it
+           needs a rule of its own. The plugin's README gives this rule. -->
+    <uses-permission
+        android:name="android.permission.RECORD_AUDIO"
+        tools:node="remove"/>
+    <uses-permission
+        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        tools:node="remove"/>
+    <uses-permission
+        android:name="android.permission.READ_EXTERNAL_STORAGE"
+        tools:node="remove"/>
     <!-- Internet for ISBN metadata lookup (#30) and reading other libraries'
          published sites. Used on explicit user action AND, when the user
          leaves "Event alerts" on (default ON, Settings), by a scheduled
@@ -25,8 +73,13 @@
          RECEIVE_BOOT_COMPLETED (re-arm the periodic job after reboot),
          WAKE_LOCK (keep the CPU on for the few seconds a check runs) and
          FOREGROUND_SERVICE (unused by Pitak; the library declares it for
-         expedited work). Verify with the merged manifest after any plugin
-         bump: build/app/intermediates/merged_manifests/<flavor>/. -->
+         expedited work).
+         EVERY permission of the merged manifest is listed, with where it
+         comes from, in android/merged-permissions.txt. CI holds the merged
+         manifest of both flavors to that list on every pull request
+         (tool/check_merged_manifest.py), so a plugin update cannot add a
+         permission unseen. The merged files themselves are under
+         build/app/intermediates/merged_manifests/<variant>/. -->
     <!-- Privacy: Android Auto Backup defaults ON and would silently copy the
          catalogue DB (private notes, shelf locations), preferences (contact
          details) and covers to the user's Google account — contradicting the
@@ -70,6 +123,15 @@
             android:name="com.yalantis.ucrop.UCropActivity"
             android:screenOrientation="portrait"
             android:theme="@style/Theme.AppCompat.Light.NoActionBar"/>
+        <!-- REMOVED from the merged manifest: an entry of image_picker_android
+             (a service, switched off) whose only purpose is to make Google
+             Play services install a photo picker module on Android 12 and
+             older. Pitak does not use that picker (the plugin's
+             `useAndroidPhotoPicker` stays off), so the entry asked for
+             something the app never needs. For both flavors. -->
+        <service
+            android:name="com.google.android.gms.metadata.ModuleDependencies"
+            tools:node="remove"/>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data
