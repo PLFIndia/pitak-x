@@ -4,6 +4,9 @@
 //! rusqlite-4.5.7 opens a zetetic-4.5.4 DB this way).
 //!
 //! NOT `PRAGMA key='x'..'` (raw-key hex mode) and NOT a UTF-8 string passphrase.
+//!
+//! Linked since 2026-11: SQLCipher 4.20.0 on SQLite 3.54.1 (the test
+//! `linked_library_is_sqlcipher_4_on_sqlite_3_54_or_newer` asks the library).
 
 use rusqlite::Connection;
 use std::ffi::{c_int, c_void};
@@ -1050,5 +1053,113 @@ mod tests {
 
         cleanup(&path);
         cleanup(&crashed);
+    }
+
+    // The leading "a.b.c" of a version text as three numbers ("4.20.0
+    // community" gives 4, 20, 0), or None when the text does not begin with
+    // three numbers. The test below treats None as a failure: a version
+    // that cannot be read is not a pass.
+    fn leading_version(text: &str) -> Option<(u32, u32, u32)> {
+        let first = text.split_whitespace().next()?;
+        let mut numbers = first.split('.').map(|part| part.parse::<u32>().ok());
+        Some((numbers.next()??, numbers.next()??, numbers.next()??))
+    }
+
+    // Review finding P2-M4 (decisions D63 and D73 of PLAN.md).
+    //
+    // WHY THIS TEST EXISTS: the vault's SQLCipher is C code that is compiled
+    // into the app. Which version that is cannot be seen in this file: it
+    // follows from `rust/Cargo.lock`. This test asks the library that is
+    // really linked.
+    //
+    // - SQLite older than 3.54.0 has a known fault (RUSTSEC-2026-0459: a
+    //   crafted database with a `-wal` file of another page size makes it
+    //   hand back memory it should not). The update to SQLCipher 4.20.0, on
+    //   SQLite 3.54.1, closed it for the vault. A step back fails here.
+    // - SQLCipher stays on major version 4. A new major version may store a
+    //   vault in another way, so whether the vaults that exist still open
+    //   has to be planned and tried first. The change that plans that move
+    //   changes the number here on purpose (the same idea as
+    //   `test/architecture/secure_storage_major_pin_test.dart`).
+    // - A build without SQLCipher answers `PRAGMA cipher_version` with no
+    //   row at all, so it fails here as well.
+    #[test]
+    fn linked_library_is_sqlcipher_4_on_sqlite_3_54_or_newer() {
+        let key = test_key();
+        let db = fresh_vault(&key);
+        let conn = open_and_key(&db, &key, false).expect("open");
+        let sqlite: String = conn
+            .query_row("SELECT sqlite_version()", [], |r| r.get(0))
+            .expect("sqlite_version()");
+        let cipher: String = conn
+            .query_row("PRAGMA cipher_version", [], |r| r.get(0))
+            .expect("PRAGMA cipher_version gave no row: is this SQLCipher?");
+        drop(conn);
+        cleanup(&db);
+
+        let sqlite_numbers = leading_version(&sqlite)
+            .unwrap_or_else(|| panic!("cannot read a version from {sqlite:?}"));
+        assert!(
+            sqlite_numbers >= (3, 54, 0),
+            "the linked SQLite is {sqlite}; it must be 3.54.0 or newer \
+             (RUSTSEC-2026-0459)"
+        );
+        let cipher_numbers = leading_version(&cipher)
+            .unwrap_or_else(|| panic!("cannot read a version from {cipher:?}"));
+        assert_eq!(
+            cipher_numbers.0, 4,
+            "the linked SQLCipher is {cipher}; a new major version has to be \
+             planned first (see the comment above this test)"
+        );
+    }
+
+    // WHY THIS TEST EXISTS: no other test says directly that the vault is
+    // encrypted where it lies on disk. The others read the vault back
+    // through the library; this one reads the FILE, as someone who holds a
+    // copy of it would. It must not begin with the header every plain SQLite
+    // file begins with, and neither the borrower's details nor the text of
+    // the schema may be anywhere in its bytes. It is a pin for every change
+    // of the C library underneath (review finding P2-M4).
+    #[test]
+    fn a_vault_file_is_not_readable_as_it_lies_on_disk() {
+        const NAME: &str = "Plaintext Needle Borrower";
+        const CONTACT: &str = "needle-contact-555-0199";
+        const NOTES: &str = "needle-notes-on-disk";
+        let key = test_key();
+        let path = fresh_path();
+        create_vault(&path, &key).expect("create");
+        insert_borrower(
+            &path,
+            &key,
+            &BorrowerInput {
+                name: NAME.into(),
+                contact: Some(CONTACT.into()),
+                notes: Some(NOTES.into()),
+            },
+        )
+        .expect("insert");
+
+        // The row IS in the vault. Without this, "not in the bytes" below
+        // could simply mean that nothing was written.
+        let data = open_and_read(&path, &key).expect("read back");
+        assert_eq!(data.borrowers.len(), 1);
+        assert_eq!(data.borrowers[0].name.as_deref(), Some(NAME));
+        assert_eq!(data.borrowers[0].contact.as_deref(), Some(CONTACT));
+        assert_eq!(data.borrowers[0].notes.as_deref(), Some(NOTES));
+
+        let bytes = std::fs::read(&path).expect("read the file's bytes");
+        cleanup(&path);
+        assert!(
+            !bytes.starts_with(b"SQLite format 3\0"),
+            "the vault file begins with the header of a plain SQLite file"
+        );
+        for needle in [NAME, CONTACT, NOTES, "CREATE TABLE"] {
+            assert!(
+                !bytes
+                    .windows(needle.len())
+                    .any(|window| window == needle.as_bytes()),
+                "{needle:?} can be read in the bytes of the vault file"
+            );
+        }
     }
 }

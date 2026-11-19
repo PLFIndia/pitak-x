@@ -24,12 +24,37 @@ zeroize = { version = "1", features = ["zeroize_derive"] }
 subtle = "2"
 base64 = "0.22"
 
+# The SQLCipher of the borrowers vault (review finding P2-M4; decisions D73
+# and D76 of PLAN.md). The C code that is compiled into the app follows from
+# the two entries below: `libsqlite3-sys` 0.40 builds SQLCipher 4.20.0 on
+# SQLite 3.54.1 from the crate `sqlcipher-src`, with OpenSSL (also built from
+# source) for the cryptography. Three tests hold that in place: the linked
+# versions and "a vault file is not readable as it lies on disk" in
+# `src/vault.rs`, and the pin of `sqlcipher-src` in
+# `tests/sqlcipher_source_pin.rs`.
+#
+# - BOTH entries name the feature `bundled-sqlcipher-vendored-openssl`, on
+#   purpose. Each of them switches SQLCipher on by itself (`cargo tree -e
+#   features -i libsqlite3-sys` shows both). If only one did, the vault's
+#   encryption would hang on a single line of this file.
+# - `default-features = false`: rusqlite's defaults are a statement cache
+#   and a backend for web browsers. The vault uses neither.
+# - `Cargo.lock` still names four crates that only a browser build would
+#   use (`sqlite-wasm-rs`, `rsqlite-vfs`, `thiserror`, `thiserror-impl`). No
+#   build of this app compiles them: `cargo tree --target all -i
+#   sqlite-wasm-rs` prints nothing. One word of rusqlite's own SQLCipher
+#   feature (`sqlite-wasm-rs?/sqlcipher`) makes cargo write them down. The
+#   OSV scan reads the lock file, so an advisory against one of them turns
+#   that job red although the app does not hold the code: look first.
 [dependencies.rusqlite]
-version = "0.32"
+version = "0.43"
+default-features = false
 features = ["bundled-sqlcipher-vendored-openssl"]
 
+# A direct dependency because `src/vault.rs` declares SQLCipher's
+# `sqlite3_key` itself and needs the type `sqlite3` for it.
 [dependencies.libsqlite3-sys]
-version = "0.30"
+version = "0.40"
 features = ["bundled-sqlcipher-vendored-openssl"]
 
 [dev-dependencies]
