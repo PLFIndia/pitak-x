@@ -15,11 +15,13 @@ import 'package:pitaka/features/publish/presentation/widgets/library_share_card.
 import 'package:pitaka/features/publish/presentation/widgets/share_library_sheet.dart';
 import 'package:pitaka/features/share_apps/presentation/widgets/share_apps_sheet.dart';
 import 'package:pitaka/features/vault/application/vault_session_controller.dart';
+import 'package:pitaka/features/vault/domain/entities/vault_data.dart';
 import 'package:pitaka/features/vault/domain/entities/vault_session_state.dart';
 import 'package:pitaka/features/vault/presentation/pages/borrowed_items_page.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../features/periodicals/application/periodical_fakes.dart';
+import '../../support/fake_vault_session.dart';
 
 class _FakeShare implements FileShareService {
   // This screen never shares a file by path (only the backup does, BR4).
@@ -399,5 +401,90 @@ void main() {
     expect(find.byType(GuidesPage), findsOneWidget);
     expect(find.text('Put your catalogue online'), findsOneWidget);
     expect(find.text('Borrowers vault'), findsNothing);
+  });
+
+  // Review finding P4-M4 (decision D87): the lock of the vault's tile
+  // follows the vault. Open only while it is unlocked; the word "Unlocked"
+  // is for screen readers, to which a change of icon says nothing.
+  group('P4-M4: the lock of the Borrowers vault tile', () {
+    Future<void> openDrawerWith(
+      WidgetTester tester,
+      VaultSessionController Function() session,
+    ) async {
+      SharedPreferences.setMockInitialValues({});
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            publishedSiteUrlProvider.overrideWith((ref) async => null),
+            vaultSessionControllerProvider.overrideWith(session),
+          ],
+          child: const MaterialApp(
+            home: Scaffold(drawer: AppDrawer(), body: SizedBox()),
+          ),
+        ),
+      );
+      tester.firstState<ScaffoldState>(find.byType(Scaffold)).openDrawer();
+      await tester.pumpAndSettle();
+    }
+
+    Finder inVaultTile(IconData icon) => find.descendant(
+      of: find.ancestor(
+        of: find.text('Borrowers vault'),
+        matching: find.byType(ListTile),
+      ),
+      matching: find.byIcon(icon),
+    );
+
+    // What a screen reader says for the tile. A ListTile merges its icon's
+    // label and its title into ONE label, so the word is looked for inside
+    // that label: a finder for a node that says exactly "Unlocked" finds
+    // nothing in every state and would prove nothing.
+    String vaultTileLabel(WidgetTester tester) =>
+        tester.getSemantics(find.text('Borrowers vault')).label;
+
+    testWidgets('an unlocked vault: the open lock, labelled "Unlocked"', (
+      tester,
+    ) async {
+      final semantics = tester.ensureSemantics();
+      await openDrawerWith(
+        tester,
+        () => FixedVaultSession(const VaultUnlocked(VaultData.empty)),
+      );
+
+      expect(inVaultTile(Icons.lock_open_outlined), findsOneWidget);
+      expect(inVaultTile(Icons.lock_outline), findsNothing);
+      expect(vaultTileLabel(tester), 'Unlocked\nBorrowers vault');
+      semantics.dispose();
+    });
+
+    testWidgets('a locked vault: the closed lock, and no such label', (
+      tester,
+    ) async {
+      final semantics = tester.ensureSemantics();
+      await openDrawerWith(
+        tester,
+        () => FixedVaultSession(const VaultLocked()),
+      );
+
+      expect(inVaultTile(Icons.lock_outline), findsOneWidget);
+      expect(inVaultTile(Icons.lock_open_outlined), findsNothing);
+      expect(vaultTileLabel(tester), 'Borrowers vault');
+      semantics.dispose();
+    });
+
+    for (final (name, session) in <(String, VaultSessionController Function())>[
+      ('no vault', () => FixedVaultSession(const VaultUninitialized())),
+      ('the state not known yet', PendingVaultSession.new),
+    ]) {
+      testWidgets('$name: the closed lock, and no label', (tester) async {
+        final semantics = tester.ensureSemantics();
+        await openDrawerWith(tester, session);
+
+        expect(inVaultTile(Icons.lock_outline), findsOneWidget);
+        expect(inVaultTile(Icons.lock_open_outlined), findsNothing);
+        expect(vaultTileLabel(tester), 'Borrowers vault');
+        semantics.dispose();
+      });
+    }
   });
 }
