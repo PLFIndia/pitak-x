@@ -37,6 +37,7 @@ import 'package:pitaka/features/library/presentation/widgets/catalogue_item_row.
 import 'package:pitaka/features/library/presentation/widgets/empty_library_state.dart';
 import 'package:pitaka/features/library/presentation/widgets/library_controls_row.dart';
 import 'package:pitaka/features/library/presentation/widgets/library_menu_button.dart';
+import 'package:pitaka/features/library/presentation/widgets/loan_status_hidden_banner.dart';
 import 'package:pitaka/features/library/presentation/widgets/network_map_icon.dart';
 import 'package:pitaka/features/lookup/presentation/pages/scanner_page.dart';
 import 'package:pitaka/features/network/presentation/pages/network_page.dart';
@@ -196,6 +197,9 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
             ),
           ),
           const LibraryControlsRow(),
+          // P4-M4: one line while a vault exists and is locked, because the
+          // rows cannot mark what is lent out then. Zero-height otherwise.
+          const LoanStatusHiddenBanner(),
           Expanded(
             child: booksAsync.when(
               loading: () =>

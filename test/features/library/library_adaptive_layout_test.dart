@@ -11,7 +11,12 @@ import 'package:pitaka/features/library/domain/repositories/catalogue_item_repos
 import 'package:pitaka/features/library/presentation/pages/library_page.dart';
 import 'package:pitaka/features/library/presentation/widgets/catalogue_item_grid_card.dart';
 import 'package:pitaka/features/library/presentation/widgets/catalogue_item_row.dart';
+import 'package:pitaka/features/library/presentation/widgets/loan_status_hidden_banner.dart';
 import 'package:pitaka/features/periodicals/domain/repositories/periodical_repository.dart';
+import 'package:pitaka/features/vault/application/vault_session_controller.dart';
+import 'package:pitaka/features/vault/domain/entities/vault_session_state.dart';
+
+import '../../support/fake_vault_session.dart';
 
 /// Empty series store: the row/card cover-fallback map
 /// (`periodicalCoversProvider`, S14) reads `listAll`; no series seeded here.
@@ -95,8 +100,9 @@ class _FakeBookRepo implements CatalogueItemRepository {
       right(books.length);
 }
 
-Widget _app() => ProviderScope(
+Widget _app({List<Override> extraOverrides = const []}) => ProviderScope(
   overrides: [
+    ...extraOverrides,
     catalogueItemRepositoryProvider.overrideWith(
       (ref) async => _FakeBookRepo(const [
         CatalogueItem(title: 'The Hobbit', author: 'Tolkien'),
@@ -145,5 +151,36 @@ void main() {
 
     expect(find.byType(CatalogueItemGridCard), findsWidgets);
     expect(find.byType(CatalogueItemRow), findsNothing);
+  });
+
+  // Review finding P4-M4: the line for a locked vault sits above the list
+  // in the page itself, so the grid has it as the single column does.
+  testWidgets('wide window: a locked vault shows its line above the grid', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1000, 800);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      _app(
+        extraOverrides: [
+          vaultSessionControllerProvider.overrideWith(
+            () => FixedVaultSession(const VaultLocked()),
+          ),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byType(CatalogueItemGridCard), findsWidgets);
+    expect(find.text(LoanStatusHiddenBanner.message), findsOneWidget);
+    expect(
+      tester.getRect(find.byType(MaterialBanner)).bottom,
+      lessThanOrEqualTo(
+        tester.getRect(find.byType(CatalogueItemGridCard).first).top,
+      ),
+    );
   });
 }

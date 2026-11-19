@@ -136,6 +136,34 @@ final activeLoanCountsProvider = AutoDisposeProvider<Map<int, int>?>.internal(
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef ActiveLoanCountsRef = AutoDisposeProviderRef<Map<int, int>?>;
+String _$loanStatusHiddenHash() => r'9b34dc8fe1f8f706fb7daa9ea52989d75d5983e0';
+
+/// True while a vault EXISTS and is LOCKED: the one state in which loans
+/// may exist and the library list cannot show them ([activeLoanCounts] is
+/// null). The Library screen then says so (review finding P4-M4, decision
+/// D84).
+///
+/// A function of the session state alone, never of loans (which cannot be
+/// read while locked): the line it drives is the same for every locked
+/// vault and so never tells whether a loan exists. False while the state is
+/// not known (loading, error): the app does not claim a locked vault it has
+/// not seen.
+///
+/// Copied from [loanStatusHidden].
+@ProviderFor(loanStatusHidden)
+final loanStatusHiddenProvider = AutoDisposeProvider<bool>.internal(
+  loanStatusHidden,
+  name: r'loanStatusHiddenProvider',
+  debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+      ? null
+      : _$loanStatusHiddenHash,
+  dependencies: null,
+  allTransitiveDependencies: null,
+);
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef LoanStatusHiddenRef = AutoDisposeProviderRef<bool>;
 String _$bookTitleHash() => r'33d89cdb3238dad5a0e5d8d62d59238c8aa7e0a2';
 
 /// Copied from Dart SDK

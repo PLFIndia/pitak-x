@@ -30,6 +30,8 @@ import 'package:pitaka/features/vault/domain/entities/borrower.dart';
 import 'package:pitaka/features/vault/domain/entities/vault_data.dart';
 import 'package:pitaka/features/vault/domain/entities/vault_session_state.dart';
 
+import '../../support/fake_vault_session.dart';
+
 /// In-memory book repo over a MUTABLE list, so a test can change the
 /// catalogue behind the provider's back and then fire the mutation signal.
 class _FakeBookRepo implements CatalogueItemRepository {
@@ -294,6 +296,85 @@ void main() {
 
       final after = container.read(borrowerProfileProvider(1));
       expect(after!.stats.overdueRate, 1);
+    });
+  });
+
+  // Review finding P4-M4 (decision D84): the Library screen's line for a
+  // locked vault may say that a vault exists and is locked, and nothing
+  // else. So its rule is held to the session's state alone: true for
+  // "locked", false for every other state, also while the state is not
+  // known.
+  group('P4-M4: loanStatusHidden follows the session state alone', () {
+    Future<bool> hiddenFor(VaultSessionController Function() session) async {
+      final container = ProviderContainer(
+        overrides: [vaultSessionControllerProvider.overrideWith(session)],
+      );
+      addTearDown(container.dispose);
+      final sub = container.listen(loanStatusHiddenProvider, (_, __) {});
+      addTearDown(sub.close);
+      // Let the session's build end (or fail, or stay pending).
+      await Future<void>.delayed(Duration.zero);
+      return container.read(loanStatusHiddenProvider);
+    }
+
+    test('a locked vault: true', () async {
+      expect(
+        await hiddenFor(() => FixedVaultSession(const VaultLocked())),
+        isTrue,
+      );
+    });
+
+    test('no vault: false', () async {
+      expect(
+        await hiddenFor(() => FixedVaultSession(const VaultUninitialized())),
+        isFalse,
+      );
+    });
+
+    test('an unlocked vault: false', () async {
+      expect(
+        await hiddenFor(
+          () => FixedVaultSession(const VaultUnlocked(VaultData.empty)),
+        ),
+        isFalse,
+      );
+    });
+
+    test('the state not known yet: false', () async {
+      expect(await hiddenFor(PendingVaultSession.new), isFalse);
+    });
+
+    test('the session failed to build: false', () async {
+      expect(await hiddenFor(FailingVaultSession.new), isFalse);
+    });
+
+    test('it follows an unlock and a lock', () async {
+      late FixedVaultSession session;
+      final container = ProviderContainer(
+        overrides: [
+          vaultSessionControllerProvider.overrideWith(
+            () => session = FixedVaultSession(const VaultLocked()),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      final seen = <bool>[];
+      final sub = container.listen(
+        loanStatusHiddenProvider,
+        (_, next) => seen.add(next),
+        fireImmediately: true,
+      );
+      addTearDown(sub.close);
+      await container.read(vaultSessionControllerProvider.future);
+      await container.pump();
+
+      session.show(const VaultUnlocked(VaultData.empty));
+      await container.pump();
+      session.show(const VaultLocked());
+      await container.pump();
+
+      // False before the state is known, then locked, unlocked, locked.
+      expect(seen, [false, true, false, true]);
     });
   });
 }

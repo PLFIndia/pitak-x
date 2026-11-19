@@ -16,11 +16,20 @@ import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/library_query.dart';
 import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
 import 'package:pitaka/features/library/presentation/pages/library_page.dart';
+import 'package:pitaka/features/library/presentation/widgets/catalogue_item_row.dart';
+import 'package:pitaka/features/library/presentation/widgets/library_controls_row.dart';
+import 'package:pitaka/features/library/presentation/widgets/loan_status_hidden_banner.dart';
 import 'package:pitaka/features/periodicals/domain/repositories/periodical_repository.dart';
+import 'package:pitaka/features/vault/application/vault_session_controller.dart';
+import 'package:pitaka/features/vault/domain/entities/borrower.dart';
+import 'package:pitaka/features/vault/domain/entities/vault_data.dart';
+import 'package:pitaka/features/vault/domain/entities/vault_session_state.dart';
+import 'package:pitaka/features/vault/presentation/pages/vault_page.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../support/a11y.dart';
 import '../../support/fake_document_picker.dart';
+import '../../support/fake_vault_session.dart';
 import '../app_update/fake_app_update_service.dart';
 
 /// Counts the sweeps asked of it (backup rework BR4); touches no disk.
@@ -159,6 +168,8 @@ class _NoPeriodicals implements PeriodicalRepository {
 Widget _app(
   CatalogueItemRepository repo, {
   List<Override> extraOverrides = const [],
+  ThemeData? theme,
+  TransitionBuilder? builder,
 }) {
   return ProviderScope(
     overrides: [
@@ -172,9 +183,25 @@ Widget _app(
       // widget tests can settle (same override vault page tests use).
       nowTickProvider.overrideWith((ref) => 0),
     ],
-    child: const MaterialApp(home: LibraryPage()),
+    child: MaterialApp(
+      theme: theme,
+      builder: builder,
+      home: const LibraryPage(),
+    ),
   );
 }
+
+/// A phone's screen (the golden tests' size, 411 dp wide). Without it a
+/// widget test is 800 dp wide, where the Library screen draws its grid.
+void _usePhoneScreen(WidgetTester tester) {
+  tester.view.physicalSize = const Size(1080, 2400);
+  tester.view.devicePixelRatio = 2.625;
+  addTearDown(tester.view.reset);
+}
+
+/// Puts the vault session into [state] for one test (P4-M4).
+Override _vaultIn(VaultSessionState state) =>
+    vaultSessionControllerProvider.overrideWith(() => FixedVaultSession(state));
 
 Future<void> _enterQuery(WidgetTester tester, String query) async {
   await tester.enterText(find.byType(TextField), query);
@@ -336,6 +363,292 @@ void main() {
     expect(find.text('Copies: 3'), findsOneWidget);
     expect(find.textContaining(' out'), findsNothing);
     expect(find.byIcon(Icons.outbox), findsNothing);
+  });
+
+  // Review finding P4-M4 (decisions D84 to D87): after every app start the
+  // vault is locked and the rows cannot show what is lent out. The screen
+  // then says so in one line, which is a function of the vault's STATE alone
+  // and never of a loan.
+  group('P4-M4: the line for a locked vault', () {
+    const sentence = LoanStatusHiddenBanner.message;
+    // The banner the widget draws while it shows; the widget itself is
+    // always in the tree and takes no room otherwise.
+    Finder line() => find.byType(MaterialBanner);
+    // By key: the vault screen has an "Unlock" button of its own.
+    Finder unlockButton() => find.byKey(LoanStatusHiddenBanner.unlockKey);
+    // Book 1 has three copies and one is out; book 2 has one copy, and it
+    // is out.
+    const lentOut = VaultData(
+      borrowers: [Borrower(id: 1, name: 'Asha')],
+      loans: [
+        Loan(id: 1, itemId: 1, borrowerId: 1, lentDate: 0),
+        Loan(id: 2, itemId: 2, borrowerId: 1, lentDate: 0),
+      ],
+    );
+
+    testWidgets('a locked vault: the line is between the chips and the list', (
+      tester,
+    ) async {
+      _usePhoneScreen(tester);
+      await tester.pumpWidget(
+        _app(
+          _FakeBookRepo(books),
+          extraOverrides: [_vaultIn(const VaultLocked())],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // The words are written out HERE and nowhere else (D85): the other
+      // tests take them from the widget and would follow a change of them.
+      expect(
+        find.descendant(
+          of: line(),
+          matching: find.text(
+            'Unlock the borrowers vault to see which items are lent out.',
+          ),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: line(),
+          matching: find.widgetWithText(TextButton, 'Unlock'),
+        ),
+        findsOneWidget,
+      );
+      expect(unlockButton(), findsOneWidget);
+      final place = tester.getRect(line());
+      expect(
+        place.top,
+        greaterThanOrEqualTo(
+          tester.getRect(find.byType(LibraryControlsRow)).bottom,
+        ),
+      );
+      expect(
+        place.bottom,
+        lessThanOrEqualTo(
+          tester.getRect(find.byType(CatalogueItemRow).first).top,
+        ),
+      );
+    });
+
+    testWidgets('the line\u2019s button opens the vault screen', (
+      tester,
+    ) async {
+      SharedPreferences.setMockInitialValues(const {});
+      _usePhoneScreen(tester);
+      await tester.pumpWidget(
+        _app(
+          _FakeBookRepo(books),
+          extraOverrides: [_vaultIn(const VaultLocked())],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(unlockButton());
+      await tester.pumpAndSettle();
+
+      expect(find.byType(VaultPage), findsOneWidget);
+      expect(
+        find.textContaining('Enter your vault passphrase'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('the line stays when the list is scrolled to its end', (
+      tester,
+    ) async {
+      _usePhoneScreen(tester);
+      final many = [
+        for (var i = 1; i <= 40; i++) CatalogueItem(id: i, title: 'Book $i'),
+      ];
+      await tester.pumpWidget(
+        _app(
+          _FakeBookRepo(many),
+          extraOverrides: [_vaultIn(const VaultLocked())],
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(line(), findsOneWidget);
+      final before = tester.getRect(line());
+
+      await tester.scrollUntilVisible(
+        find.text('Book 40'),
+        400,
+        scrollable: _bookList(),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Book 1'), findsNothing, reason: 'the list scrolled');
+      expect(find.text(sentence), findsOneWidget);
+      expect(tester.getRect(line()), before);
+    });
+
+    testWidgets('no vault: no line', (tester) async {
+      _usePhoneScreen(tester);
+      await tester.pumpWidget(
+        _app(
+          _FakeBookRepo(books),
+          extraOverrides: [_vaultIn(const VaultUninitialized())],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('The Hobbit'), findsOneWidget);
+      expect(line(), findsNothing);
+      expect(find.text(sentence), findsNothing);
+    });
+
+    testWidgets('an unlocked vault: no line, and the rows show what is lent '
+        'out', (tester) async {
+      _usePhoneScreen(tester);
+      await tester.pumpWidget(
+        _app(
+          _FakeBookRepo(books),
+          // The session itself, not the counts: the rows get them through
+          // the real activeLoanCounts provider.
+          extraOverrides: [_vaultIn(const VaultUnlocked(lentOut))],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(line(), findsNothing);
+      expect(find.text(sentence), findsNothing);
+      expect(find.text('Copies: 3 · 1 out'), findsOneWidget);
+      expect(find.text('Not available'), findsOneWidget);
+    });
+
+    testWidgets('the vault\u2019s state not known yet: no line', (
+      tester,
+    ) async {
+      _usePhoneScreen(tester);
+      await tester.pumpWidget(
+        _app(
+          _FakeBookRepo(books),
+          extraOverrides: [
+            vaultSessionControllerProvider.overrideWith(
+              PendingVaultSession.new,
+            ),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // The app does not claim a locked vault it has not seen.
+      expect(find.text('The Hobbit'), findsOneWidget);
+      expect(line(), findsNothing);
+      expect(find.text(sentence), findsNothing);
+    });
+
+    // Decision D89: no new golden picture. The three pictures of this
+    // screen are made with a harness that, like this one, does not replace
+    // the vault; they stay as they are only if no line shows then.
+    testWidgets('the harness of the golden pictures (the vault not '
+        'replaced): no line', (tester) async {
+      _usePhoneScreen(tester);
+      await tester.pumpWidget(_app(_FakeBookRepo(books)));
+      await tester.pumpAndSettle();
+
+      expect(find.text('The Hobbit'), findsOneWidget);
+      expect(line(), findsNothing);
+      expect(find.text(sentence), findsNothing);
+    });
+
+    testWidgets('a locked vault and an empty library: the line is there', (
+      tester,
+    ) async {
+      _usePhoneScreen(tester);
+      await tester.pumpWidget(
+        _app(
+          _FakeBookRepo(const []),
+          extraOverrides: [_vaultIn(const VaultLocked())],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Your library is empty'), findsOneWidget);
+      expect(find.text(sentence), findsOneWidget);
+      expect(unlockButton(), findsOneWidget);
+    });
+
+    for (final (name, theme) in [
+      ('light', null),
+      // The shipped dark theme, so that contrast is checked on real colours.
+      ('dark', AppTheme.dark),
+    ]) {
+      testWidgets('meets accessibility guidelines with the line ($name)', (
+        tester,
+      ) async {
+        _usePhoneScreen(tester);
+        await tester.pumpWidget(
+          _app(
+            _FakeBookRepo(books),
+            extraOverrides: [_vaultIn(const VaultLocked())],
+            theme: theme,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // First that it is there: the guidelines pass for a missing line.
+        expect(find.text(sentence), findsOneWidget);
+        await expectMeetsA11yGuidelines(tester);
+      });
+    }
+
+    testWidgets('twice the text size with the line: nothing overflows', (
+      tester,
+    ) async {
+      _usePhoneScreen(tester);
+      await tester.pumpWidget(
+        _app(
+          _FakeBookRepo(books),
+          extraOverrides: [_vaultIn(const VaultLocked())],
+          builder: (context, child) => MediaQuery(
+            data: MediaQuery.of(
+              context,
+            ).copyWith(textScaler: const TextScaler.linear(2)),
+            child: child!,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text(sentence), findsOneWidget);
+      expect(unlockButton(), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    // Rule 4 of the design as a CHANGE of state: the tests above look at
+    // each state standing still.
+    testWidgets('unlocking takes the line away and shows what is lent out; '
+        'locking brings it back', (tester) async {
+      _usePhoneScreen(tester);
+      late FixedVaultSession session;
+      await tester.pumpWidget(
+        _app(
+          _FakeBookRepo(books),
+          extraOverrides: [
+            vaultSessionControllerProvider.overrideWith(
+              () => session = FixedVaultSession(const VaultLocked()),
+            ),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text(sentence), findsOneWidget);
+      expect(find.text('Not available'), findsNothing);
+
+      session.show(const VaultUnlocked(lentOut));
+      await tester.pumpAndSettle();
+      expect(find.text(sentence), findsNothing);
+      expect(line(), findsNothing);
+      expect(find.text('Not available'), findsOneWidget);
+
+      session.show(const VaultLocked());
+      await tester.pumpAndSettle();
+      expect(find.text(sentence), findsOneWidget);
+      expect(find.text('Not available'), findsNothing);
+    });
   });
 
   testWidgets('typing a query filters the list (debounced)', (tester) async {

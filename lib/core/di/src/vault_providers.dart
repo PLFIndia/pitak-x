@@ -94,6 +94,20 @@ Map<int, int>? activeLoanCounts(ActiveLoanCountsRef ref) {
   return null;
 }
 
+/// True while a vault EXISTS and is LOCKED: the one state in which loans
+/// may exist and the library list cannot show them ([activeLoanCounts] is
+/// null). The Library screen then says so (review finding P4-M4, decision
+/// D84).
+///
+/// A function of the session state alone, never of loans (which cannot be
+/// read while locked): the line it drives is the same for every locked
+/// vault and so never tells whether a loan exists. False while the state is
+/// not known (loading, error): the app does not claim a locked vault it has
+/// not seen.
+@riverpod
+bool loanStatusHidden(LoanStatusHiddenRef ref) =>
+    ref.watch(vaultSessionControllerProvider).valueOrNull is VaultLocked;
+
 /// Loan-row read model (N06): resolves the catalogue title of a loaned book
 /// so borrower screens show the book's name instead of the internal row id.
 /// Null when the book no longer exists (the UI falls back to "Book #id").
