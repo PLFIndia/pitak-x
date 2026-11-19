@@ -25,7 +25,7 @@ findings of the review".
   | Decisions, the open part of the plan, ONE handoff, short results | this file |
   | The findings of the four review passes with their boxes, and the items T1 to T13, open and closed | private: `review-tracker.md` |
   | Every design ("in detail"), result, safety check and older handoff, word for word | private: `plan-archive-2026-11-13.md` |
-  | The design of the stage that is being built | private: a file of its own (`<stage>-in-detail.md`), until its fix is pushed; then it goes into the archive. Today: `br10-in-detail.md`, for the device runs; no stage of the plan for the next findings is being built. The designs of stages 1, 2 and 3 of that plan (`p1-m2-in-detail.md`, `p2-m4-in-detail.md`, `p4-m4-in-detail.md`) are in the archive since 2026-11-18 and, the last two, 2026-11-19, each with its build log (the designs of the stage of D24, of BR8 and of BR9 are in the archive, since 2026-11-16 and 2026-11-17) |
+  | The design of the stage that is being built | private: a file of its own (`<stage>-in-detail.md`), until its fix is pushed; then it goes into the archive. Today: `br10-in-detail.md`, for the device runs, and `p4-m1-in-detail.md`, for stage 4 of the plan for the next findings. The designs of stages 1, 2 and 3 of that plan (`p1-m2-in-detail.md`, `p2-m4-in-detail.md`, `p4-m4-in-detail.md`) are in the archive since 2026-11-18 and, the last two, 2026-11-19, each with its build log (the designs of the stage of D24, of BR8 and of BR9 are in the archive, since 2026-11-16 and 2026-11-17) |
   | The four review reports, their prompts and the summary | private: `codeReviewReport1.md` to `4.md`, `codeReviewPrompt1.md` to `4.md`, `codeReviewSummary.md` |
 
   "Private" means: files the maintainer keeps outside git (the
@@ -174,6 +174,14 @@ under "D<number>". All are of November 2026.
 | D90 | 19 | Stage 3, its decision point 7: the look on a device is made on the phone's play install, which holds a made-up vault under the public passphrase of the test fixture (the handoff, "Next", point 4): a debug build of the stage's tree over it, and the maintainer looks, also with the phone's largest font and in the dark theme. Not in the emulator. The build and the install keep their own yes | made 2026-11-19: the agent saw the first screen (the sentence takes two lines there), the rest was the maintainer's look: fine as it is (D92) |
 | D91 | 19 | Stage 3, its decision point 8, the go-ahead: the stage is built as designed through to its review stop, the tests shown first and written first, every guard switched off once by hand, the documents' sentences shown first, with a pause whenever something is not as designed. Every commit, the push, and the debug build with its install on the phone keep their own yes. The build starts in a new session, as for stage 2 (D81) | done: built through to its review stop on 2026-11-19 (D92) |
 | D92 | 19 | Stage 3 (P4-M4) is accepted at its review stop as built, with the documents' sentences as shown (D88) and after the look on the phone's play install, which the maintainer found fine as it is (D90). With it, three answers of the build session, each as proposed: the tests are written as shown, with two things of the agent's beyond the design (two tests first ask for what they are about before they judge it, and one more test follows a change of the vault's state); the documents' sentences; the debug build and its install on the phone. Three commits: the Library screen with its rule and tests, the drawer, the documents. Said with it, what is not proven: CI on Linux, the golden pictures with it (D89's prediction); the look beyond the first screen, which was the maintainer's alone, and which of its seven points were looked at was not said; a list that scrolls, on a device (that install holds one book; a test holds it); a screen reader on a device; a narrow or a weak phone | in force; pushed on 2026-11-19, and CI run 44513494076 is green in every job at its first attempt: 7,405 tests, and the 10 golden tests with the pictures as they were |
+| D93 | 19 | Stage 4 of that plan (P4-M1), its decision point 1, which is the tracker's point 6 of pass 4: how far the stage goes, the first of four ways, as proposed. The private design file has them | in force |
+| D94 | 19 | Stage 4, its decision point 2: the rule the design rests on, the first of two, as proposed, with the table of everyday cases as it was shown. The private design file has them | in force |
+| D95 | 19 | Stage 4, its decision point 3: what the app does in one moment that the design had to settle, the first of three ways, as proposed, with the cost that was named. The private design file has them | in force |
+| D96 | 19 | Stage 4, its decision point 4: the words, the first of three sets, as proposed. The private design file has them | in force |
+| D97 | 19 | Stage 4, its decision point 5: how it is built, the first of two ways, as proposed: the pattern of the Flutter SDK's own example. Its cost is accepted with it; it shows on Android 16 only and can be seen in the emulator, not on the phone at hand. The private design file has both ways | in force |
+| D98 | 19 | Stage 4, its decision point 6: what keeps the change in place afterwards. A test under `test/architecture/` with its row in `docs/ARCHITECTURE.md` §2.1, and ADR 0028, its draft shown first; and the changelog. Not the test without the ADR, and not the changelog alone | in force |
+| D99 | 19 | Stage 4, its decision point 7: the look on a device is made in two places. On the phone's play install (Android 14; a debug build of the stage's tree over it, and the maintainer looks, also with the phone's largest font and in the dark theme), and in the emulator image of API 36, driven by the agent, for what Android 16 does differently. The debug build, the install and the emulator run keep their own yes | in force |
+| D100 | 19 | Stage 4, its decision point 8, the go-ahead: the stage is built as designed through to its review stop, the tests shown first and written first and seen red where they can be, every guard switched off once by hand, the ADR's draft and the changelog's entry shown first, with a pause whenever something is not as designed. Every commit, the push, the debug build, its install on the phone and the emulator run keep their own yes. The build starts in a new session, as for stages 2 and 3 (D81, D91); if it runs long, it stops after a whole step and hands over | in force |
 
 Decision points of the plan that are still open: 7 (see
 "The plan").
@@ -403,8 +411,10 @@ when it was written; check the repository before relying on it.
    (D84 to D91; the private `p4-m4-in-detail.md`). Since the fourth
    session of 2026-11-19 it is DONE as well: built, accepted (D92),
    pushed, green in CI (its design file with the build log is in
-   the private archive, its last section). The next session PLANS
-   stage 4 (P4-M1): "The next session", in that last section.
+   the private archive, its last section). Since the fifth session
+   of 2026-11-19 stage 4 (P4-M1) is DESIGNED and has its go-ahead
+   (D93 to D100; the private `p4-m1-in-detail.md`). The next
+   session BUILDS it: "The next session", in that last section.
 
 ### State of the repository
 
@@ -547,6 +557,23 @@ when it was written; check the repository before relying on it.
   `remoteImport-issues.md`).
 - This file: `1201ae4` is the last commit of it that was pushed with
   a CI run that was looked at.
+- **The fifth session of 2026-11-19 changed no file of the app.** It
+  planned stage 4 of the plan for the next findings (P4-M1; D93 to
+  D100; the last section of this file says where it stands). The
+  baseline was run on `0d016fd` (the code of `915001f`; only this
+  file differs): `build_runner` no diff; format 0 changed of 1,470
+  files; analyze 47, the same issues; **7,405 tests passed**; the
+  Python tools' tests 6, 25 and 26; Rust fmt and clippy clean, **45
+  passed, 2 ignored**. Kotlin was not run. It wrote: this file; the
+  new private design file `p4-m1-in-detail.md` (about 900 lines),
+  with its line in `.git/info/exclude`; and the private archive (D93
+  to D100 in full, after D92). The private tracker was not written
+  to. `.git/config` was compared with a copy at the end: unchanged.
+  Read-only from the network: two pages of Android's documentation.
+  Outside git: `/tmp/pitak_p4m1/` ("Scratch folders outside git").
+  What was committed to this file in that session is one commit on
+  top of `0d016fd`, or is not committed as long as `git status`
+  names this file; neither is pushed.
 - **The fourth session of 2026-11-19 BUILT stage 3 of the plan for
   the next findings** (P4-M4; D84 to D92; the last section of this
   file says what it was). Three commits on top of `9b24440`, made
@@ -864,8 +891,10 @@ that day it was BUILT, pushed and seen green in CI: it is DONE. In
 the third session of that day stage 3 (P4-M4) was PLANNED: it is
 DESIGNED and has its go-ahead (D84 to D91). In the fourth session
 of that day it was BUILT, accepted (D92), pushed and seen green in
-CI: it is DONE. The next session PLANS stage 4 (P4-M1); how it
-begins is in that last section, under "The next session".** What
+CI: it is DONE. In the fifth session of that day stage 4 (P4-M1)
+was PLANNED: it is DESIGNED and has its go-ahead (D93 to D100). The
+next session BUILDS it; how it begins is in that last section,
+under "The next session".** What
 follows in this section was written before it and
 holds for the backup rework.
 
@@ -1076,7 +1105,9 @@ In this order:
    numbers; Kotlin not run.) **Since stage 3 (the tree of
    `915001f`, run here on 2026-11-19, and CI run 44513494076):
    format 0 changed of 1,470 files, 7,405 tests passed; the rest
-   as before.** Before stage 1 they were those of
+   as before.** (Run again in the fifth session of 2026-11-19, on
+   `0d016fd`, which has the same code: the same numbers; Kotlin
+   not run.) Before stage 1 they were those of
    the tree of `c589b3b` (2026-11-18, here, and in CI run 44289959655
    at `0240bac`, which has the same code):
    `build_runner` no diff; format 0 changed of 1,467
@@ -1829,6 +1860,28 @@ stage 3)**
   phone has to tell an EMPTY reading from a different one, or a
   phone that was gone for a moment reads as a change.
 
+**Widget tests, learned on 2026-11-19 (the planning of stage 4)**
+
+- `fvm flutter test <path>`, run from the repository, takes a test
+  file that lies OUTSIDE it (under `/tmp`), and that file may import
+  the app's own packages. A trial needs no file in the working
+  tree.
+- `tester.binding.handlePopRoute()` is the system's Back in a widget
+  test. A page that is to be left by Back has to stand above
+  another page: most page tests make their page the first one.
+- A text field keeps its part of the tree alive while it has the
+  focus (`editable_text.dart`, `wantKeepAlive`), and `enterText`
+  gives it the focus. A test about what a change of tab throws away
+  gives the focus up first
+  (`FocusManager.instance.primaryFocus?.unfocus()`), or it sees the
+  state kept and proves nothing.
+- A `TextEditingController` tells its listeners about a mere tap
+  into its field (the selection is part of its value). A listener
+  is not "the text changed".
+- `Navigator.pop()` takes the TOP route. Called by a page while a
+  dialog of that page is open, it closes the dialog, and the page
+  stays.
+
 ### Open items kept in the private tracker
 
 Twelve things that are not fixed and are therefore not described
@@ -2184,6 +2237,18 @@ write (`before/`, with checksums). It is left to the system.
 `~/pitak-device-runs/stage3-p4m4/` (kept) holds one screenshot of
 the Library screen of the phone's play install (made-up data).
 
+Since the fifth session of 2026-11-19: `/tmp/pitak_p4m1/` holds the
+planning of stage 4 of the next findings: the logs of the baseline
+and the script that ran it (`logs/`, `baseline.sh`), three scratch
+tests with their logs (`trial/`; plain Flutter, and one that builds
+a widget of the app), two pages of Android's documentation as they
+were fetched (`docs/`), the parts the private design file and the
+archive's new entries were joined from (`design/`), and copies of
+the private files, of this file and of the two git settings files
+from before the session's first write (`before/`, with checksums).
+Nothing of the maintainer's own is in it but those copies; it is
+left to the system.
+
 ## Log
 
 | Date | What |
@@ -2196,7 +2261,7 @@ the Library screen of the phone's play install (made-up data).
 | 2026-11-16 | The stage of D24 pushed. Its CI run red in the F-Droid job: the runner's image had changed, and no workflow named a JDK. `3ea1812` names it (Temurin 21). A second failure of the same job, a refused download, went away when the job was run again; then every job green. T1 and T10 closed; the stage's design file into the archive; this file brought up to date. Then the device runs: the phone and its two installs read with `adb`; the questions of step 1 answered; D36. The tool for synthetic backups designed and built, not committed; while it was built, found that the reader of a restore counts entries where the writer counts covers; D37. The tool committed (`549b93c`, not pushed); the files of runs A and B made. The measuring script built and committed (`dde1e80`, not pushed); the first look and run A in the emulator; a release build for the phone made and installed, then found to hold OLD compiled Dart code (the stale-artefact trap of `docs/RELEASING.md` §4): run B stopped before any restore. A clean rebuild, checked from inside, installed; the phone's install emptied by the maintainer; most of run B done (every restore and the backup at today's limits ended well, no freeze seen), then the device runs stopped by the maintainer. Four commits pushed; CI green at `3797288`. D38: run B has passed. A handoff for the planning of BR8. Then the planning session of BR8: the baseline unchanged (7,148 tests); the design written (private file); measurements on the Mac; the decision points 17 to 20 named; all four answered (D39 to D42). BR8 built through to its review stop: the edge tests, the numbers, the sentences of D41, the runs by hand on the Mac, the changelog; 7,194 tests; the Android unit tests green after one Gradle run with the network; four commits (`b01a950`, `a9ae39e`, `421fa8e`, `b15c42f`) and this file's (`f508475`); all pushed with the two earlier commits of this file; the session closed while CI run 43914687234 was running |
 | 2026-11-17 | The CI run of BR8 (43914687234 at `f508475`) seen green, every job at its first attempt, and "Update goldens" with it. BR8 done: its row and the decisions here; P1-M1 and P4-m19 ticked in the private tracker; its design file into the private archive, word for word. The go-ahead for run E. The three made-up backups made again; a release build (after `flutter clean`, looked into) and a debug build at `f508475`. Run E in the emulator, all of it: 10,000 covers and 1 GiB restore and back up, 10,008 covers are refused with the sentence of D41, the writer refuses 10,001, a backup with a vault is made and restored. Run E on the phone, most of it: the same restores and the backup at 1 GiB end well, memory 233.5 MB; by screenshots the screen stood still for about 1.5 to 1.9 s before the share sheet and for at least 1.2 s at the start of a restore; the phone locked in the middle of a restore, and after the unlock its page says "Restore complete"; the cache on the phone read in its Settings (nothing of a pick or of a run's work left; one thing for T2, in the private record); a backup with a vault restored, made, saved by the maintainer and restored again on the phone. Run E is run; five questions for the maintainer. This file committed (`12d4ebc`). The clean-up after run E: the made-up files on the phone, the scratch folders on the Mac, the duplicate of BR8's design file (`91ed643`); both commits pushed, CI run 44015306730 green in every job at its first attempt. The five questions answered, one at a time: D43 to D47. The fix of D46 designed, built after the go-ahead (three tests first, red on the old code; three trials by hand; 7,197 tests) and committed (`ee80a76`); the changelog's sentence of D47 (`1a0ece7`); this file (`d456fdf`); all three pushed, CI run 44020820271 green in every job at its first attempt. A handoff for the next session, which takes up run C, run D, BR9 and BR10 (`48edab6`, not pushed). A second session the same day: the state confirmed; the order chosen (BR9, then run C and run D, then BR10); the baseline unchanged (7,197 tests); the Android reference read; decision points 5 and 6 answered (D48, D49); BR9 designed (private file) and its decision points 21 to 24 answered (D50 to D53); BR9 built through to its review stop in five steps, tests and trials by hand at each: the rules, the Kotlin channel and its Dart side, the two size readers, the dialog on both pages, the changelog. A wrong prediction about how two sizes far apart are written was found in the build and put at once (D54). One test of the whole suite timed out once and not again. 7,377 tests; the Android unit tests green offline, 64 in each flavour. At the review stop: D55 (the guide with BR10), T12, a bounded look for the time-out (24 runs, not found again; a second timing test failed once under load). The five commits made in a plain clone (`3021561`, `c883fae`, `3222077`, `6e7b47f`, `28630c2`) and brought over; this file committed (`28bcdcb`, after a block that stood twice in its first commit was taken out before any push). The look at the real channel in the emulator: both dialogs with real figures, a backup to the share sheet, a restore of 4,000 covers. Eight commits pushed (`d456fdf..2a76f43`); CI run 44041555210 green in every job at its first attempt, 7,377 tests, and "Update goldens" with no new picture. BR9 done: its row here, its design file into the private archive, word for word, and the file removed after a comparison; `84a0d2f` committed and, at the maintainer's wish, not pushed. A handoff for the next session: the device runs first when the phone is at hand, otherwise the parts of BR10 that wait for no device (`b9847b7`). A third session the same day, with the phone: the state confirmed; a release build of `b9847b7` (after `flutter clean`), looked into (a wrong prediction: the string the handoff proposed is kept as UTF-16 and counted 0; five others counted 1 each) and installed. The first look on it: the notice before a backup and before a restore with real figures; the fix of D46 in both halves; then, after the maintainer had cleared the install (the passphrase of the made-up vault was forgotten), a restore and a backup of 10,000 covers through the notice, and both dialogs with the phone's largest font. Run D: two covers photographed in the app, "all fine" (D56). Run C, part 1: Import and Merge on the phone's picker with files from Download, every sentence as the code has it; one thing seen on Import that the changelog words differently (the open questions). The made-up files removed from the phone. This file brought up to date (`aedc3f6`, not pushed). The maintainer: the next session does parts 2 to 4 of run C. A handoff for it: what was checked for part 3 (the tag `1.9.7`, its Flutter version, the signature of the play install on the phone), and the files for the cloud drive made ready |
 | 2026-11-18 | The state confirmed (four commits of this file not pushed). The maintainer put the six made-up files into Google Drive from the Mac. Run C, part 2: Import and Merge with files kept online, the picks made by the agent through `adb` at the maintainer's wish (a helper that reads exact names only); every sentence as the code has it; two predictions of the handoff corrected before the run. Something seen on Merge went into the private tracker as T13. Part 3: a debug build of the tag `1.9.7` in a plain clone, installed over the play install; three picks with the old picker left three copies in the cache; a debug build of today's code installed over it removed exactly those three at its first start (D33 on a phone). Part 4: what the tracker lists for T4, the network cut through `adb`; in the private record. Run C is run. This file brought up to date (`ab7e4bf`, not pushed). D57: D26 stays as it is (`a4d028d`). Then BR10's records begun: asked how far the clean-up of D1 goes, the maintainer said that the Kotlin app has no users and chose the ADR, the documents and the comments (D58), and that the comments which only name where code came from are reworded too (D59); the go-ahead (D60). The baseline unchanged (7,377 tests). ADR 0025 drafted, shown and written; nine sentences of `README.md`, `SECURITY.md` and `docs/ARCHITECTURE.md` shown and written (`1a59621`). 143 rewordings in 82 files under `lib/` and 8 in 6 test files, every changed line a comment but for three names of tests, by a script; format, analyze, 7,377 tests and `build_runner` as before (`e5f3145`). This file (`901d4f4`). Nine commits pushed (`2a76f43..901d4f4`); CI run 44262107031 green in every job at its first attempt, 7,377 tests, and "Update goldens" with no new picture. A second session the same day, for the rest of BR10's records: the state confirmed, the baseline unchanged (7,377 tests). The two step lists of the in-app guide shown and built, the counts of the test first and red on the old copy, one more test that holds the guide to the dialog's button labels (`f827a80`, D55). ADR 0026 drafted, shown and written; the sentences for `docs/ARCHITECTURE.md`, `README.md`, `PRIVACY.md`, `SECURITY.md` and `CHANGELOG.md` shown and written, the limit of T4 named in public in the words that were shown (`c589b3b`); 7,378 tests. The private tracker: nothing new to tick, what is met in part written down. Four commits pushed (`901d4f4..0240bac`); their CI run (44289959655) was not watched, at the maintainer's word. Asked what the review left open, the maintainer chose nine findings to be planned in the next session; a handoff for it, here by id and in full in the private record. A third session the same day, a planning session: the state confirmed; CI run 44289959655 and "Update goldens" 44289959359 seen green in every job at the first attempt (7,378 tests, no new picture). The plan for the next findings begun, as the last section of this file (D61); its order and stages (D62); P2-M4 joins it as stage 2, because upstream has published a release on the newer SQLCipher since the review (D63). The first three findings read again in today's code and confirmed. Stage 1 designed (private file), with Android's and GitHub's documentation read and quoted; its six decision points put, one at a time, and answered, each as proposed (D64 to D69), the last being the go-ahead. Nothing of the stage built; no file of the app changed. A fourth session the same day BUILT stage 1: the state confirmed (three commits of this file not pushed); the baseline unchanged (7,378 tests). The check of the merged manifest with its tests, first and red, then the list of eleven permissions; on the manifests of before the stage the check failed and named the three permissions, the required feature and the Play services entry. The app manifest: three trials for `camera.any` (a plain line leaves it required; either merge marker works; the narrower one taken), and a fourth that answered what the design had left open (`READ_EXTERNAL_STORAGE` comes back without a rule of its own). The CI step, its body run here with `bash -e`; the Dependabot entry; the pin test. Every guard of the script and of the pin test switched off once by hand: one test did not see its guard and was made to. 7,382 tests; Kotlin 64 in each flavour, offline. `aapt2` on a built APK. The documents' sentences shown and written as shown, one step beyond D66 (D70). The build put onto the phone's play install with a yes: `adb` read 13 requested permissions before and 11 after, and the two that left were never granted; the maintainer's five looks, all fine (the QR scanner opens; its reading was not seen). The review stop: accepted as built (D71). Five commits (`a2e693e`, `6c04076`, `52a4aa9`, `4fc900f`, `3cd1961`) and this file's, each with its yes. Then the commit of this file (`2e6acba`) and, at the maintainer's word, the push of nine commits (`0240bac..2e6acba`); CI run 44332072893 green in every job at its first attempt, the new step with "OK" for both flavours, 7,382 tests, and "Update goldens" with no new picture. P1-M2 and P2-n5 ticked in the private tracker; the stage's design file into the private archive, word for word. A handoff for the next session, which plans stage 2 (P2-M4) |
-| 2026-11-19 | A planning session for stage 2 of the plan for the next findings (P2-M4). The state confirmed (one commit of this file not pushed). Read: the finding in the tracker and in the review report, the exception and its analysis, the vault's storage code and its tests. The finding confirmed in today's code. Upstream read, read-only: the versions and what they rest on, the release notes of rusqlite 0.33 to 0.43, SQLCipher's changelog from 4.5.7 to 4.20.0 and its log calls, the new source crate with its scripts, the two advisories, the licences. The baseline unchanged, this time with Rust (7,382 tests; Rust 37 passed, 2 ignored). A first draft of the design (private file). Its decision points, one at a time: D72 (the fetch, and a trial outside git: the core compiles unchanged and every Rust test keeps its verdict; one prediction about the lock file was wrong and was said first), D73, D74 (the new source crate compared with SQLCipher's signed tag: the same bytes), D75, D76, D77, D78, D79 (answered against the agent's recommendation), D80; one decision point of the draft struck as a slip of the agent's (it went against ADR 0025); D81, the go-ahead, with the build in a new session. No file of the app changed; nothing of the stage is built. A handoff for that build. A second session the same day BUILT the stage through to its review stop: the state confirmed, upstream unchanged, the baseline unchanged (7,382 tests; Rust 37 passed). The three tests, shown first, red and green on the old library as designed (a check of the linked versions; a vault file is not readable as it lies on disk; the pin of the source crate in the lock file), each made to fail once by hand on a copy. The update: the two entries of `rust/Cargo.toml`, the lock file (the trial's, byte for byte), the end of the exception in both files, the licence exception; two comment lines in `rust/src/vault.rs`. All checks (7,382 tests; Rust 45 passed, 2 ignored; Kotlin 64 in each flavour, offline; `cargo deny --offline`; the block-buffer guard). The Android build, looked into: the new library for all three ABIs. In the emulator: the smoke test passed; no line of the library in the device log through it; a vault file damaged on purpose left the three lines the trial had seen and nothing else. The phone's F-Droid install could not make a backup (10,003 covers since run D), so look 2 was made in the emulator with the release build of 2026-11-17 (D82): a backup with a vault of the old library restores in the updated build, its rows are read and one is written; the same vault read on the Mac by the new library through the entry point Dart calls, and after that write by the old one. Look 1 on the phone: the updated build over the play install, the vault file untouched by the install, the vault unlocks and takes a loan (it had no rows before). A count of the design corrected: 144 log calls in the compiled file, seven with a string. The documents shown and written: the changelog, promise P2's row, ADR 0027, `docs/RELEASING.md` §9, the closing line of the advisory's plan. Slips of the session, each in the private record: two edits that left a line behind, an APK of the test installed for the app's, a folder pulled into the repository's root and moved out, a passphrase typed while another window was in front on the phone. The review stop: accepted as built (D83). Three commits (`17a21b2`, `0f1c143`, `e6b8ad7`), then the push of five (`2e6acba..e6b8ad7`) with the maintainer's yes; CI run 44472569628 green in every job at its first attempt: Rust 45 passed and 2 ignored on Linux, `cargo deny check` with the live advisory list, the OSV scan with no issue and no exception for the vault's SQLite, 7,382 tests, 10 golden tests, and "Update goldens" with no new picture. P2-M4 ticked in the private tracker; the stage's design file into the private archive, word for word; the stage described here. A handoff for the next session, which plans stage 3 (P4-M4). A third session the same day PLANNED stage 3: the state confirmed (one commit of this file not pushed); the baseline unchanged (7,382 tests; Rust 45 passed, 2 ignored); the finding read again in today's code and confirmed; the tracker's privacy note put first and answered with yes (D84); the design written (a private file), with the pinned SDK's source read for the one widget it rests on; its decision points put one at a time and answered, each as proposed (D85 to D90), the last being the go-ahead, with the build in a new session (D91). One thing seen while reading and outside the stage went into the private tracker (T14). One slip, put right at once: a line number in the archive's text of D86. No file of the app changed; nothing of the stage is built. A handoff for that build. A fourth session the same day BUILT stage 3 through to its review stop: the state confirmed (two commits of this file not pushed); the baseline unchanged (7,382 tests; Rust 45 passed, 2 ignored); the design file read in full. Two things found while reading, both about the tests: a widget test is wide enough for the grid unless it sets a size, and the design's note that the build would measure the sentence's lines in a test cannot be kept (the test font). The tests shown first, with two proposals beyond the design, and answered as proposed. The tests written with text and type finders only and run on the old code: 10 red and 7 green, as predicted. The rule with its generated file; the Library screen; the drawer. One slip in the drawer's tests, found because one of them stayed red and put right (a finder that could find nothing in any state); one test more for the rule than was shown, said at the next stop. Fourteen trials by hand, one change under `lib/` at a time, the file put back and compared each time: every one seen by a test. All checks (7,405 tests; Rust 45 passed, 2 ignored; Kotlin 64 in each flavour, offline). The documents' sentences shown and written as shown. What the phone's play install holds read first; a debug build, looked into (16 seconds: the APK holds the new code and the app's own entry point), and installed with a yes: `adb` reported a failure because the phone dropped off USB, and the state read afterwards showed the install had gone through, the vault file untouched. One screenshot of the first screen by the agent; the look was the maintainer's: fine as it is. The changelog's entry written after the look; all checks once more, unchanged. The review stop: accepted as built (D92). Three commits (`2858c6b`, `bd3954f`, `915001f`), each with its yes, what was staged compared with the saved patches. Then the commit of this file (`1201ae4`) and the push of six commits (`e6b8ad7..1201ae4`), with the maintainer's yes; CI run 44513494076 green in every job at its first attempt: 7,405 tests, the 10 golden tests with the pictures as they were, Rust 45 passed and 2 ignored, the merged manifest "OK" for both flavours, the Android unit tests. P4-M4 ticked in the private tracker; the stage's design file into the private archive, word for word; the stage described here. A handoff for the next session, which plans stage 4 (P4-M1) |
+| 2026-11-19 | A planning session for stage 2 of the plan for the next findings (P2-M4). The state confirmed (one commit of this file not pushed). Read: the finding in the tracker and in the review report, the exception and its analysis, the vault's storage code and its tests. The finding confirmed in today's code. Upstream read, read-only: the versions and what they rest on, the release notes of rusqlite 0.33 to 0.43, SQLCipher's changelog from 4.5.7 to 4.20.0 and its log calls, the new source crate with its scripts, the two advisories, the licences. The baseline unchanged, this time with Rust (7,382 tests; Rust 37 passed, 2 ignored). A first draft of the design (private file). Its decision points, one at a time: D72 (the fetch, and a trial outside git: the core compiles unchanged and every Rust test keeps its verdict; one prediction about the lock file was wrong and was said first), D73, D74 (the new source crate compared with SQLCipher's signed tag: the same bytes), D75, D76, D77, D78, D79 (answered against the agent's recommendation), D80; one decision point of the draft struck as a slip of the agent's (it went against ADR 0025); D81, the go-ahead, with the build in a new session. No file of the app changed; nothing of the stage is built. A handoff for that build. A second session the same day BUILT the stage through to its review stop: the state confirmed, upstream unchanged, the baseline unchanged (7,382 tests; Rust 37 passed). The three tests, shown first, red and green on the old library as designed (a check of the linked versions; a vault file is not readable as it lies on disk; the pin of the source crate in the lock file), each made to fail once by hand on a copy. The update: the two entries of `rust/Cargo.toml`, the lock file (the trial's, byte for byte), the end of the exception in both files, the licence exception; two comment lines in `rust/src/vault.rs`. All checks (7,382 tests; Rust 45 passed, 2 ignored; Kotlin 64 in each flavour, offline; `cargo deny --offline`; the block-buffer guard). The Android build, looked into: the new library for all three ABIs. In the emulator: the smoke test passed; no line of the library in the device log through it; a vault file damaged on purpose left the three lines the trial had seen and nothing else. The phone's F-Droid install could not make a backup (10,003 covers since run D), so look 2 was made in the emulator with the release build of 2026-11-17 (D82): a backup with a vault of the old library restores in the updated build, its rows are read and one is written; the same vault read on the Mac by the new library through the entry point Dart calls, and after that write by the old one. Look 1 on the phone: the updated build over the play install, the vault file untouched by the install, the vault unlocks and takes a loan (it had no rows before). A count of the design corrected: 144 log calls in the compiled file, seven with a string. The documents shown and written: the changelog, promise P2's row, ADR 0027, `docs/RELEASING.md` §9, the closing line of the advisory's plan. Slips of the session, each in the private record: two edits that left a line behind, an APK of the test installed for the app's, a folder pulled into the repository's root and moved out, a passphrase typed while another window was in front on the phone. The review stop: accepted as built (D83). Three commits (`17a21b2`, `0f1c143`, `e6b8ad7`), then the push of five (`2e6acba..e6b8ad7`) with the maintainer's yes; CI run 44472569628 green in every job at its first attempt: Rust 45 passed and 2 ignored on Linux, `cargo deny check` with the live advisory list, the OSV scan with no issue and no exception for the vault's SQLite, 7,382 tests, 10 golden tests, and "Update goldens" with no new picture. P2-M4 ticked in the private tracker; the stage's design file into the private archive, word for word; the stage described here. A handoff for the next session, which plans stage 3 (P4-M4). A third session the same day PLANNED stage 3: the state confirmed (one commit of this file not pushed); the baseline unchanged (7,382 tests; Rust 45 passed, 2 ignored); the finding read again in today's code and confirmed; the tracker's privacy note put first and answered with yes (D84); the design written (a private file), with the pinned SDK's source read for the one widget it rests on; its decision points put one at a time and answered, each as proposed (D85 to D90), the last being the go-ahead, with the build in a new session (D91). One thing seen while reading and outside the stage went into the private tracker (T14). One slip, put right at once: a line number in the archive's text of D86. No file of the app changed; nothing of the stage is built. A handoff for that build. A fourth session the same day BUILT stage 3 through to its review stop: the state confirmed (two commits of this file not pushed); the baseline unchanged (7,382 tests; Rust 45 passed, 2 ignored); the design file read in full. Two things found while reading, both about the tests: a widget test is wide enough for the grid unless it sets a size, and the design's note that the build would measure the sentence's lines in a test cannot be kept (the test font). The tests shown first, with two proposals beyond the design, and answered as proposed. The tests written with text and type finders only and run on the old code: 10 red and 7 green, as predicted. The rule with its generated file; the Library screen; the drawer. One slip in the drawer's tests, found because one of them stayed red and put right (a finder that could find nothing in any state); one test more for the rule than was shown, said at the next stop. Fourteen trials by hand, one change under `lib/` at a time, the file put back and compared each time: every one seen by a test. All checks (7,405 tests; Rust 45 passed, 2 ignored; Kotlin 64 in each flavour, offline). The documents' sentences shown and written as shown. What the phone's play install holds read first; a debug build, looked into (16 seconds: the APK holds the new code and the app's own entry point), and installed with a yes: `adb` reported a failure because the phone dropped off USB, and the state read afterwards showed the install had gone through, the vault file untouched. One screenshot of the first screen by the agent; the look was the maintainer's: fine as it is. The changelog's entry written after the look; all checks once more, unchanged. The review stop: accepted as built (D92). Three commits (`2858c6b`, `bd3954f`, `915001f`), each with its yes, what was staged compared with the saved patches. Then the commit of this file (`1201ae4`) and the push of six commits (`e6b8ad7..1201ae4`), with the maintainer's yes; CI run 44513494076 green in every job at its first attempt: 7,405 tests, the 10 golden tests with the pictures as they were, Rust 45 passed and 2 ignored, the merged manifest "OK" for both flavours, the Android unit tests. P4-M4 ticked in the private tracker; the stage's design file into the private archive, word for word; the stage described here. A handoff for the next session, which plans stage 4 (P4-M1). A fifth session the same day PLANNED stage 4: the state confirmed (one commit of this file not pushed); the baseline unchanged (7,405 tests; Rust 45 passed, 2 ignored); the finding read again in today's code, in every place the review names, and confirmed; the Flutter SDK the app is pinned to read for what the design rests on, and tried in three scratch tests outside git (one prediction from the reading was wrong and was said first); two pages of Android's documentation read; the design written (a private file); its decision points put one at a time and answered, each as proposed (D93 to D100), the last being the go-ahead, with the build in a new session. Said with it: the size guessed for the stage was low. No file of the app changed; nothing of the stage is built. A handoff for that build |
 
 ## Device runs: handoff for the next session
 
@@ -2913,7 +2978,7 @@ In this order (D62, D63). The sizes are guesses.
 | 1 | P1-M2 with P2-n5; the first of the three steps the review gives for P2-M3 | the Android manifest; the Dependabot configuration. No Dart behaviour | about a day | **done 2026-11-18**, in one session: `a2e693e`, `6c04076`, `52a4aa9`, `4fc900f`, `3cd1961`; pushed, CI run 44332072893 green; ticked in the private tracker (P2-M3 in part); its design file in the private archive |
 | 2 | P2-M4 | the SQLCipher of the Rust core. Its date was 2026-12-09, when the exception in `rust/osv-scanner.toml` would have ended | not guessed beforehand; it took a planning session and a build session | **done 2026-11-19**, designed in one session and built in the next (D72 to D83): `17a21b2`, `0f1c143`; pushed, CI run 44472569628 green; ticked in the private tracker; its design file in the private archive |
 | 3 | P4-M4 | the library list and the drawer | half a day to a day; it took a planning session and a build session of an afternoon | **done 2026-11-19**, designed in one session and built in the next (D84 to D92): `2858c6b`, `bd3954f`, `915001f`; pushed, CI run 44513494076 green; ticked in the private tracker; its design file in the private archive |
-| 4 | P4-M1 | forms | about a day | not read |
+| 4 | P4-M1 | forms | about a day; after the design: one long build session, perhaps two | **designed 2026-11-19, with its go-ahead** (D93 to D100; the private `p4-m1-in-detail.md`): confirmed in today's code, all eight decision points answered, each as proposed. Not built: the build is the next session's (D100) |
 | 5 | P4-M3 | lending | about a day | not read; has a decision point of the review |
 | 6 | P4-M8 | the scanner | about a day | not read; in a session with the phone |
 | later, each with a plan of its own | P4-M2 with P3-M4; P4-M6; P2-M2; the rest of P2-M3 | the library list; how a file leaves the app; two packages | a planned piece of work each | not read |
@@ -2922,7 +2987,7 @@ Every "where" of the review reports is of 2026-11-10. Each place is
 read again in today's code before its stage is designed, and the
 finding is confirmed or struck.
 
-### Where it stands (2026-11-19, the end of the build session of stage 3, after its push)
+### Where it stands (2026-11-19, the end of the planning session of stage 4)
 
 - **Stage 1 is DONE** (2026-11-18): built, seen on the phone,
   accepted (D71), pushed, green in CI (run 44332072893 at
@@ -2947,34 +3012,52 @@ finding is confirmed or struck.
   ticked in the private tracker, and the design file with its
   build log is in the private archive, word for word. It is
   described below ("Stage 3: what it was and what was built").
-- **Stage 4 (P4-M1, forms) is next, and nothing of it is read,
-  designed or built.** Nothing waits for a review.
+- **Stage 4 (P4-M1, forms) is DESIGNED and has its go-ahead** (the
+  fifth session of 2026-11-19, a planning session: D93 to D100).
+  The baseline is unchanged; the finding is confirmed in today's
+  code; the design is in the private `p4-m1-in-detail.md`, which
+  has its line in `.git/info/exclude`; all eight decision points
+  are answered, each as proposed. The build starts in a new session
+  (D100). The size that was guessed for it ("about a day") was low:
+  one long build session is expected, and two would not surprise.
+- Nothing of stage 4 is built, and nothing waits for a review. No
+  file of the app has changed since stage 3.
 - Found while stage 3 was designed, and outside it: T14 in the
   private tracker (from reading, not tried).
 
 ### The next session
 
-It PLANS stage 4 (P4-M1, forms). Nothing of it is read, designed
-or built. A planning session (D21): no code before its go-ahead.
-In this order:
+It BUILDS stage 4 (P4-M1, forms), which is designed and has its
+go-ahead (D93 to D100). In this order:
 
-1. The state: `git status -sb` (the branch is level with
-   `origin/reviewFixes` at `1201ae4`, or ahead by the one commit of
-   this file from the end of the session that built stage 3), `git
+1. The state: `git status -sb` (the branch is one or two commits of
+   this file ahead of `origin/reviewFixes`: `0d016fd`, and the
+   commit of the fifth session of 2026-11-19 if it was made), `git
    remote -v` (`github.com/PLFIndia/pitak-x`), and that the private
-   files are there. No CI run is left to look at: 44513494076 is
-   green.
+   files are there, `p4-m1-in-detail.md` among them. No CI run is
+   left to look at: 44513494076 is green.
 2. The baseline. The numbers are in the handoff ("Next", point 5):
-   7,405 tests, and Rust 45 passed, 2 ignored, since stage 3.
-3. The finding: its row in the private tracker and its section in
-   the review report of pass 4. Its place in the code is of
-   2026-11-10: it is read again in today's code and the finding is
-   confirmed or struck before anything is designed. An agent that
-   cannot see the private files stops and asks.
-4. The design, in a private file of its own
-   (`p4-m1-in-detail.md`, with a line in `.git/info/exclude`); its
-   decision points put one at a time, each with a recommendation;
-   the go-ahead last. The decisions go on from D93.
+   7,405 tests, and Rust 45 passed, 2 ignored, since stage 3 (run
+   again in the fifth session of 2026-11-19: unchanged).
+3. The private design file, all of it. It has what was read, the
+   facts with their places in the code and in the pinned Flutter
+   SDK, the trials outside git with their results, every decision
+   point with its answer, the design, the steps of the build, the
+   tests that are written first, what a test cannot reach, the
+   privacy notes, and what was seen and is out of scope. Its last
+   part says how the build session begins and what the design
+   leaves to the build. An agent that cannot see it stops and asks.
+4. The build, as D100 says: the tests shown before they are
+   written, written first and seen red where they can be; every
+   guard switched off once by hand; the ADR's draft, the row of
+   `docs/ARCHITECTURE.md` and the changelog's entry shown first
+   (D98); the look on the phone's play install and in the emulator
+   (D99: what the install holds is read before anything is
+   installed; the debug build, the install and the emulator run
+   keep their own yes); the review stop; then the commits, the push
+   and the CI run, each with its yes. If the session runs long, it
+   stops after a whole step of the design and hands over. No golden
+   picture is predicted to change. The decisions go on from D101.
 5. Left for whenever the maintainer wants it, none of it urgent:
    whether the design files `p2-m4-in-detail.md` and
    `p4-m4-in-detail.md` may be removed from the root (the archive
@@ -3302,6 +3385,7 @@ showed it had gone through, with the vault file untouched.
 - Stage 3: done. (The look on the phone was made on 2026-11-19,
   D90 and D92; one Gradle run through the `flutter` tool, not
   watched for the network.)
+- Stage 4: the phone and the emulator, for the look (D99).
 - Stage 6, and of the later ones P4-M6 and the rest of P2-M3: the
   phone.
 
