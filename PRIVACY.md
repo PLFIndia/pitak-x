@@ -73,12 +73,15 @@ analytics, no advertising, and no tracking of any kind.**
   biometric check (fingerprint or Class 3 face unlock — a PIN cannot stand
   in). Adding or removing a fingerprint or face destroys that key, so
   biometric unlock switches itself off and you re-enable it with your
-  passphrase. Two honest limits: (1) while the app is open, an unlocked vault
+  passphrase. Three honest limits: (1) while the app is open, an unlocked vault
   stays unlocked in memory until you lock it or the app exits — there is no
   automatic timeout; (2) the optional app-lock biometric gate is a screen
   cover, not a vault lock: it does not encrypt your data or lock an
-  already-unlocked vault. Changing your passphrase re-wraps the same vault
-  key; it does not rotate it, so old vault copies paired with an old
+  already-unlocked vault; (3) the app does not hide that a vault exists:
+  while it is locked, the Library screen says so in one line, to anyone who
+  sees that screen; what is in the vault, and whether anything is lent out,
+  is not shown while it is locked. Changing your passphrase re-wraps the same
+  vault key; it does not rotate it, so old vault copies paired with an old
   passphrase could still be opened.
 - **Settings** (theme, library name, sort preferences, and — if you fill them
   in — the contact details you choose to publish) in the app's private

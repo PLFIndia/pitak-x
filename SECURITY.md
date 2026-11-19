@@ -44,6 +44,11 @@ notes (honest limits)"). Please do not report them as vulnerabilities:
   plus the old passphrase still opens that copy.
 - **App-lock ≠ vault lock** — the optional app gate is a screen cover; it
   does not lock or encrypt the vault.
+- **The app does not hide that a borrowers vault exists** — while a vault
+  exists and is locked, the Library screen says so in one line, to anyone
+  who sees that screen (also in a screenshot or in the list of recent
+  apps). The line is the same for every locked vault: what is in the
+  vault, and whether anything is lent out, is not shown while it is locked.
 - **`String` tokens for GitHub / ISBN / Cloudflare APIs** — their
   HTTP/plugin APIs are `String`-typed, so those three tokens transit as
   immutable strings and cannot be wiped from memory like the vault passphrase

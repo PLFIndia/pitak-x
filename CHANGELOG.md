@@ -32,6 +32,24 @@ Two known limits, measured in that run on a fast phone and accepted
   screen can stand still for about a second.
 
 ### Changed
+- **The Library screen says when the borrowers vault is locked (review
+  finding P4-M4; `PLAN.md`, D84 to D91).** After every app start the vault
+  is locked, and the list then cannot mark what is lent out: a lent item
+  looked like one on the shelf, and nothing on the screen said why. While a
+  vault exists and is locked, one line between the filter chips and the
+  list now says "Unlock the borrowers vault to see which items are lent
+  out.", with a button "Unlock" that opens the vault screen. The line
+  stays when the list scrolls and cannot be hidden. In the drawer the lock
+  of "Borrowers vault" is open while the vault is unlocked (a screen reader
+  says "Unlocked").
+  - Privacy, accepted with D84: anyone who sees the Library screen now
+    learns, without a tap, that a vault exists and is locked. The line is
+    driven by the vault's state alone (the provider `loanStatusHidden`),
+    is the same sentence for every locked vault, and is not shown while
+    the state is not known. `SECURITY.md`, `README.md` and `PRIVACY.md`
+    name it as a known limit.
+  - No golden picture was added (D89); the look was judged on a phone on
+    2026-11-19, where the sentence takes two lines.
 - The in-app guide "Backup, restore, export, import" names the notice:
   "Make a backup" has three steps, "Restore on a new phone" four (D55).
 - ADR 0026 records the limits of a backup, backup and restore from

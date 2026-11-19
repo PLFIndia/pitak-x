@@ -189,6 +189,11 @@ cover, not a vault lock (see the security notes below).
   screen; it does not lock or encrypt the vault itself. It is a software
   check (a yes/no from the OS prompt), unlike the vault's biometric unlock
   below.
+- **A vault's existence is not hidden:** while a borrowers vault exists and
+  is locked, the Library screen shows one line that says so and leads to the
+  unlock screen. Anyone who sees that screen learns that a vault exists. What
+  is in it, and whether anything is lent out, is not shown while it is
+  locked.
 - **Vault biometric unlock is hardware-bound (Android):** the random secret
   that opens the vault's biometric key blob is stored only as ciphertext under
   an Android Keystore AES key created with `setUserAuthenticationRequired`
