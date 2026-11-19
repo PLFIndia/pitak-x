@@ -197,6 +197,57 @@ Two known limits, measured in that run on a fast phone and accepted
   `flutter_local_notifications` 22.3.3.
 
 ### Security
+- **The borrowers vault is built on SQLCipher 4.20.0 with SQLite 3.54.1,
+  and the exception for RUSTSEC-2026-0459 has ended (P2-M4).** The Rust
+  core moves from `rusqlite` 0.32 and `libsqlite3-sys` 0.30 (SQLCipher
+  4.5.7 on SQLite 3.45.3) to `rusqlite` 0.43 and `libsqlite3-sys` 0.40.
+  SQLite 3.54.0 closed the fault of that advisory (CVE-2026-119375: a
+  crafted database with a `-wal` file of another page size). The
+  time-boxed exception that release 1.9.7 carried in
+  `rust/osv-scanner.toml` and `rust/deny.toml`, with the end date
+  2026-12-09, is removed. No line of the vault's logic changed. ADR 0027
+  records the decisions (`PLAN.md`, D72 to D82).
+  - **A vault of the old library opens with the new one.** The committed
+    test vault, made in August with the old library, opens unchanged. In
+    an emulator a backup with a vault, made by a release build with the
+    old library, was restored by the new build: the borrower and the
+    loan are there, and a loan could be marked as returned. On a phone
+    the new build was installed over one with a vault of the old
+    library: the vault opens and takes a new borrower and a loan. And a
+    vault the new library has written is read by the old one (tried on
+    the Mac), so a step back would not lock anybody out.
+  - **New tests** (Rust: 37 become 45): the linked library is
+    asked for its versions and must be SQLite 3.54.0 or newer and
+    SQLCipher 4.x; a vault file must not be readable as it lies on disk
+    (no plain SQLite header, no borrower's name, contact or notes, no
+    schema text in its bytes); and `rust/Cargo.lock` must hold the crate
+    `sqlcipher-src` at the version and checksum that were checked.
+  - **Where the SQLCipher source comes from now.** Since `libsqlite3-sys`
+    0.39 it is a crate of its own, `sqlcipher-src`, young and with one
+    author. Its three compiled files were compared with what SQLCipher's
+    own signed tag `v4.20.0` builds: the same bytes, file for file.
+    `docs/RELEASING.md` §9 says how to repeat that when the crate moves.
+  - **New: the encryption library can write into the device's log.**
+    SQLCipher 4.5.7 wrote nothing. From 4.6.0 on it writes its own
+    errors and warnings to Android's log by default (tag `sqlcipher`),
+    and Pitak takes that default. In ordinary use it writes nothing:
+    seen in an emulator through the smoke test and a restore, and on a
+    phone. For a vault file damaged on purpose it wrote three lines
+    that name the failed check and the page number ("hmac check failed
+    for pgno=1"), and no path, no name, no statement and no key.
+    Promise P2 of `docs/ARCHITECTURE.md` names this as its one
+    exception.
+  - `rust/deny.toml` allows two more licenses for `sqlcipher-src` alone
+    (`blessing`, SQLite's own notice, and `WTFPL`, of a library that
+    lies in the crate and is not compiled into the app); `BSD-2-Clause`
+    leaves the list with the crates that used it. `rust/Cargo.lock`
+    names four crates for web browsers that no build compiles; a comment
+    in `rust/Cargo.toml` says why.
+  - Not tried: the APK as a store publishes it (the looks used a release
+    build of this repository and debug builds), a phone other than the
+    one at hand, and a damaged vault on a release build. The catalogue's
+    SQLite on the Dart side is another copy of SQLite and is not touched
+    by this change.
 - **The app no longer declares the microphone or the shared-storage
   permissions (P1-M2).** The camera plugin (`camera_android_camerax`)
   brought `RECORD_AUDIO` and `WRITE_EXTERNAL_STORAGE` into the app's merged

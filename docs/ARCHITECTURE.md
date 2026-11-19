@@ -78,7 +78,7 @@ probably over-engineering.
 | # | Promise | What it forbids |
 |---|---------|-----------------|
 | P1 | **Zero data loss** across updates, backups and restores | untested schema migrations; parsers that throw on hostile files |
-| P2 | **Secrets never leak** (vault key stays in Rust; no `String` secrets; no logs/PII) | release-mode logging; unvetted dependencies; unsigned supply chain |
+| P2 | **Secrets never leak** (vault key stays in Rust; no `String` secrets; no logs/PII) | release-mode logging by the app's own code (one exception, ADR 0027: the encryption library SQLCipher writes its own error lines to the device's log, without paths, secrets or personal data); unvetted dependencies; unsigned supply chain |
 | P3 | **F-Droid stays clean** (no Google libraries in the `fdroid` flavor) | any plugin bump without the purity check (`docs/RELEASING.md` §2) |
 | P4 | **Honest, reproducible releases** (pinned toolchain, verified artefact, one signed tag → both stores) | lightweight tags; hand-typed build commands; stale artefacts |
 | P5 | **A beginner can maintain it** (one blessed way, no magic, explained decisions) | new frameworks for solved problems; tooling the maintainer cannot run locally |
