@@ -25,7 +25,7 @@ findings of the review".
   | Decisions, the open part of the plan, ONE handoff, short results | this file |
   | The findings of the four review passes with their boxes, and the items T1 to T13, open and closed | private: `review-tracker.md` |
   | Every design ("in detail"), result, safety check and older handoff, word for word | private: `plan-archive-2026-11-13.md` |
-  | The design of the stage that is being built | private: a file of its own (`<stage>-in-detail.md`), until its fix is pushed; then it goes into the archive. Today: `br10-in-detail.md`, for the device runs, and `p2-m4-in-detail.md`, the design of stage 2 of the plan for the next findings (written 2026-11-19, with the result of its trial and of a check; its go-ahead is given, D81, and nothing of it is built). The design of stage 1 of that plan (`p1-m2-in-detail.md`) is in the archive since 2026-11-18, with its build log (the designs of the stage of D24, of BR8 and of BR9 are in the archive, since 2026-11-16 and 2026-11-17) |
+  | The design of the stage that is being built | private: a file of its own (`<stage>-in-detail.md`), until its fix is pushed; then it goes into the archive. Today: `br10-in-detail.md`, for the device runs. The designs of stage 1 and of stage 2 of the plan for the next findings (`p1-m2-in-detail.md`, `p2-m4-in-detail.md`) are in the archive since 2026-11-18 and 2026-11-19, each with its build log (the designs of the stage of D24, of BR8 and of BR9 are in the archive, since 2026-11-16 and 2026-11-17) |
   | The four review reports, their prompts and the summary | private: `codeReviewReport1.md` to `4.md`, `codeReviewPrompt1.md` to `4.md`, `codeReviewSummary.md` |
 
   "Private" means: files the maintainer keeps outside git (the
@@ -154,17 +154,17 @@ under "D<number>". All are of November 2026.
 | D70 | 18 | `PRIVACY.md`, "Permissions and why", goes one step beyond D66: it also names the permission the app defines for itself (`DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION`, from an Android support library), and it closes with a sentence that says the list is complete, where it is kept, and that a check fails a build that asks for more. With it the section names all eleven permissions of `android/merged-permissions.txt` | built (`3cd1961`) |
 | D71 | 18 | Stage 1 is accepted at its review stop as built, with the changelog's sentence about the look on the phone as shown. The CI step gets no positive control for the play manifest: it would notice both of its lines pointed at one manifest, and a swap of the two is caught as it is. Said with it, what is not proven: the step's first run in CI, the Dependabot entry (it cannot be tested), Android 9 and older (D68), what a store does with the camera features, and the QR scanner reading a code | in force; the step's first run in CI was green on 2026-11-18 (run 44332072893) |
 | D72 | 19 | Stage 2 of that plan (P2-M4), its decision point 1: the packages of the update are fetched, and the update is tried on a copy outside git before the design is final. No file of the repository changes for it | done 2026-11-19: the core compiles unchanged, all 37 Rust tests keep their verdict, the committed vault fixture opens with the new library, and a vault of the new library opens with the old one; the private design file has the rest |
-| D73 | 19 | Stage 2, its decision point 2: `rusqlite` 0.43.0, the version the trial ran. It and 0.42.0 build on the same `libsqlite3-sys` 0.40.0, so the SQLCipher code is the same either way | built 2026-11-19, in the working tree at the review stop |
+| D73 | 19 | Stage 2, its decision point 2: `rusqlite` 0.43.0, the version the trial ran. It and 0.42.0 build on the same `libsqlite3-sys` 0.40.0, so the SQLCipher code is the same either way | built (`17a21b2`) |
 | D74 | 19 | Stage 2, its decision point 3: the crate that carries the SQLCipher source since `libsqlite3-sys` 0.39 (`sqlcipher-src`, two months old, one author) is not taken on its word: its three compiled files are compared once with what SQLCipher's signed tag `v4.20.0` builds | done 2026-11-19: the same bytes, file for file; the tag is signed and points at the commit the crate names; the lock file's checksum pins the bytes that were compared. Whose key signed it rests on a keyserver's e-mail check and on eight years of tags; GitHub gives no verdict for it |
-| D75 | 19 | Stage 2, its decision point 3b: of that check a test is kept that holds `sqlcipher-src` in `rust/Cargo.lock` to the version and checksum that were compared, and `docs/RELEASING.md` gets the commands. When the crate moves, the test fails; whoever moves it repeats the check by hand and moves the test on purpose (the pattern of D67). Not the whole check as a script: it would need the network, `gpg` and SQLCipher's build scripts wherever it runs | built 2026-11-19, in the working tree at the review stop: `rust/tests/sqlcipher_source_pin.rs`, and `docs/RELEASING.md` §9 |
-| D76 | 19 | Stage 2, its decision point 4: both lines of `rust/Cargo.toml` keep the SQLCipher feature, and `rusqlite` gets `default-features = false`. The lock file then names four browser crates that no build compiles (a word of rusqlite's own feature brings them); a comment says so. Not the way with the shortest lock file, in which rusqlite itself asks for plain SQLite and one line alone makes it SQLCipher: a false alarm of the OSV scan costs a look, and a manifest that can come to mean "no encryption" without saying so is the worse failure | built 2026-11-19, in the working tree at the review stop; the lock file is the trial's, byte for byte |
-| D77 | 19 | Stage 2, its decision point 5: `rust/deny.toml` gets an exception for `sqlcipher-src` alone, for the two licences that crate declares and the list does not have (`blessing`, SQLite's own notice; `WTFPL`, of a library that is in the crate and not compiled into the app). Not both in the general list. With it `BSD-2-Clause` leaves the list (its only crate leaves the graph), and one comment is reworded | built 2026-11-19, in the working tree at the review stop |
+| D75 | 19 | Stage 2, its decision point 3b: of that check a test is kept that holds `sqlcipher-src` in `rust/Cargo.lock` to the version and checksum that were compared, and `docs/RELEASING.md` gets the commands. When the crate moves, the test fails; whoever moves it repeats the check by hand and moves the test on purpose (the pattern of D67). Not the whole check as a script: it would need the network, `gpg` and SQLCipher's build scripts wherever it runs | built (`17a21b2`: `rust/tests/sqlcipher_source_pin.rs`; `0f1c143`: `docs/RELEASING.md` §9) |
+| D76 | 19 | Stage 2, its decision point 4: both lines of `rust/Cargo.toml` keep the SQLCipher feature, and `rusqlite` gets `default-features = false`. The lock file then names four browser crates that no build compiles (a word of rusqlite's own feature brings them); a comment says so. Not the way with the shortest lock file, in which rusqlite itself asks for plain SQLite and one line alone makes it SQLCipher: a false alarm of the OSV scan costs a look, and a manifest that can come to mean "no encryption" without saying so is the worse failure | built (`17a21b2`); the lock file is the trial's, byte for byte |
+| D77 | 19 | Stage 2, its decision point 5: `rust/deny.toml` gets an exception for `sqlcipher-src` alone, for the two licences that crate declares and the list does not have (`blessing`, SQLite's own notice; `WTFPL`, of a library that is in the crate and not compiled into the app). Not both in the general list. With it `BSD-2-Clause` leaves the list (its only crate leaves the graph), and one comment is reworded | built (`17a21b2`) |
 | D78 | 19 | Stage 2, its decision point 6: the three `unsafe` calls that hand the key to SQLCipher stay as they are in this stage, although `rusqlite` now has a safe function for it. The trial's strongest result is that `vault.rs` needs no changed line, so whatever behaves differently after the update can only come from the library. The safe function is a later piece of work of its own | in force; kept: outside its tests, `rust/src/vault.rs` changed in two comment lines only |
 | D79 | 19 | Stage 2, its decision point 7: the newer SQLCipher writes its own error and warning lines into the device's log by default, where the old one writes nothing; the library's default is taken, with no code for it. The agent had recommended to keep the silence, because promise P2 of `docs/ARCHITECTURE.md` forbids release-mode logging. By reading, no line the vault can cause holds a path, a secret or user data; that is looked at on Android before the push. P2's sentence is reworded and the exception recorded with the stage's documents, each shown first; and the re-reading of the library's log calls joins the step of D75 | done 2026-11-19: in the emulator the library wrote nothing through the smoke test and a restore, and for a vault file damaged on purpose exactly three lines that name the failed check and the page, with no path, name or statement; P2's sentence reworded and ADR 0027 written, each shown first; the re-reading is point 3 of `docs/RELEASING.md` §9. A count of the design was corrected with it: the file that is compiled has 144 such log calls, not 100, and seven that print a string, not six |
 | D80 | 19 | Stage 2, its decision point 8: two looks count as the proof on Android. An update in place on the phone's play install, over a vault made with the old library; and a vault made in the phone's F-Droid install, its backup restored in the emulator with the updated build. Made-up rows, a throwaway passphrase both know. Not a third look with the published APK. (Decision point 9 of the draft was struck, a slip of the agent's: it asked for an archive of the retired Kotlin app, against ADR 0025) | made 2026-11-19: look 1 on the phone (that vault had no rows, so what it shows is the keyed file opening and taking a write); look 2 in the emulator and not with the phone's F-Droid install (D82) |
-| D81 | 19 | Stage 2, its decision point 10, the go-ahead: the stage is built as designed, tests first, each test and each sentence of a document shown before it is written, with an ADR for its decisions; every commit, the push, an emulator run and a Gradle run with the network keep their own yes. The build starts in a new session | in force; built through to the review stop on 2026-11-19 |
+| D81 | 19 | Stage 2, its decision point 10, the go-ahead: the stage is built as designed, tests first, each test and each sentence of a document shown before it is written, with an ADR for its decisions; every commit, the push, an emulator run and a Gradle run with the network keep their own yes. The build starts in a new session | done: built, pushed and green in CI on 2026-11-19 |
 | D82 | 19 | Stage 2: look 2 of D80 is made in the emulator and not with the phone's F-Droid install, which cannot make a backup as it stands (it holds 10,003 cover pictures since run D, three more than a backup can hold). The release build of 2026-11-17 that is still on the Mac, the same build as that install and with the old library, is installed in the emulator for one session; a vault, a loan and a backup are made there, and the backup is restored into the updated build. Not chosen: emptying the phone's F-Droid install; deleting made-up books on the phone | done 2026-11-19: the restore says one borrower and one loan restored, the vault unlocks, the loan is there, and a write into it works; the same vault file is read by the new library on the Mac |
-| D83 | 19 | Stage 2 is accepted at its review stop as built, with the documents as written (one word of the closing line of `docs/plans/sec-rustsec-2026-0459.md` was put right after it had been shown). Three commits: the update with its tests, the documents, this file. Said with it, what is not proven: CI on Linux, with the OSV scan without the exception and the live advisory list; the APK as a store publishes it; rows of the old library read by the new one on the phone itself (the vault there was empty; look 2 and a run on the Mac show it); a damaged vault on a release build; why the later debug builds of the day are 25 MB larger than the first | in force; the push and its CI run keep their own yes |
+| D83 | 19 | Stage 2 is accepted at its review stop as built, with the documents as written (one word of the closing line of `docs/plans/sec-rustsec-2026-0459.md` was put right after it had been shown). Three commits: the update with its tests, the documents, this file. Said with it, what is not proven: CI on Linux, with the OSV scan without the exception and the live advisory list; the APK as a store publishes it; rows of the old library read by the new one on the phone itself (the vault there was empty; look 2 and a run on the Mac show it); a damaged vault on a release build; why the later debug builds of the day are 25 MB larger than the first | in force; pushed on 2026-11-19, and CI run 44472569628 is green in every job at its first attempt, the OSV scan without the exception and `cargo deny check` with the live advisory list among them |
 
 Decision points of the plan that are still open: 7 (see
 "The plan").
@@ -387,9 +387,10 @@ when it was written; check the repository before relying on it.
    (P2-M4, with a date: 2026-12-09) is DESIGNED and has its
    go-ahead (2026-11-19: D72 to D81; the private
    `p2-m4-in-detail.md`). Since the second session of 2026-11-19
-   it is BUILT through to its review stop (D82 with it) and not
-   pushed: "Where it stands", in that last section, says what is
-   done and what is left.
+   it is DONE as well: built, pushed, green in CI (D82 and D83 with
+   it; its design file with the build log is in the private
+   archive, its last section). The next session PLANS stage 3: "The
+   next session", in that last section.
 
 ### State of the repository
 
@@ -439,14 +440,22 @@ when it was written; check the repository before relying on it.
 - Draft pull request #30 ("Backup and restore rework, stages BR1 to
   BR6"; its title does not name BR7 yet). CI runs on a pull request
   and on a push to `main` only (`ci.yml:7-10`); a push to
-  `reviewFixes` runs it because of #30. **Run 44332072893 at
-  `2e6acba`, the run of stage 1 of the plan for the next findings,
-  is green in all four jobs at its first attempt** (2026-11-18, in
-  the evening), and so is "Update goldens" (44332072002), which
-  pushed no new picture: 7,382 tests, the 26 tests of the new check,
-  the 10 golden tests, both purity checks, the new step for the
-  merged manifest, and the Android unit tests. It is the last run
-  that was looked at. Before it, **run 44289959655 at
+  `reviewFixes` runs it because of #30. **Run 44472569628 at
+  `e6b8ad7`, the run of stage 2 of the plan for the next findings,
+  is green in all four jobs at its first attempt** (2026-11-19),
+  and so is "Update goldens" (44472569136), which pushed no new
+  picture: 7,382 tests, the 10 golden tests, Rust 45 passed and 2
+  ignored, `cargo deny check` with the advisory list fetched, the
+  OSV scan with no exception for the vault's SQLite (164 packages
+  of `rust/Cargo.lock`, no issue), both purity checks, the step for
+  the merged manifest, and the Android unit tests. It is the last
+  run that was looked at. Before it, run 44332072893 at
+  `2e6acba`, the run of stage 1 of that plan, was green in all four
+  jobs at its first attempt (2026-11-18, in the evening), and so
+  was "Update goldens" (44332072002), which pushed no new picture:
+  7,382 tests, the 26 tests of the new check, the 10 golden tests,
+  both purity checks, the new step for the merged manifest, and the
+  Android unit tests. Before it, **run 44289959655 at
   `0240bac`, the run of BR10's records (the guide, ADR 0026 and the
   documents), is green in all four jobs at its first attempt** (seen
   in the third session of 2026-11-18), and so is "Update goldens"
@@ -513,9 +522,38 @@ when it was written; check the repository before relying on it.
   that are not part of this work (`docs/plans/handoff-2026-11-09.md`,
   `item-reminder.md`, `reminder-fixes.md`, `reminder-issues1.md`,
   `remoteImport-issues.md`).
-- This file: `2e6acba` is the last commit of it that was pushed with
+- This file: `e6b8ad7` is the last commit of it that was pushed with
   a CI run that was looked at.
-- **The session of 2026-11-19 changed no file of the app.** It
+- **The second session of 2026-11-19 BUILT stage 2 of the plan for
+  the next findings** (D72 to D83; the last section of this file
+  says what it was). Three commits on top of `28ce051`, made in
+  this checkout with the hook running; what was staged was compared
+  with the patch saved at each step, and `.git/config` with a copy:
+  unchanged. `17a21b2` (the two entries of `rust/Cargo.toml`, the
+  lock file, `rust/deny.toml`, `rust/osv-scanner.toml`, two tests
+  and two comment lines in `rust/src/vault.rs`, the new
+  `rust/tests/sqlcipher_source_pin.rs`), `0f1c143` (`CHANGELOG.md`,
+  `docs/ARCHITECTURE.md`, `docs/RELEASING.md`, ADR 0027 and its
+  index row, `docs/plans/sec-rustsec-2026-0459.md`), and the commit
+  of this file (`e6b8ad7`). **All three were PUSHED on 2026-11-19**
+  with the two earlier commits of this file (`2e6acba..e6b8ad7`,
+  five commits, with the maintainer's yes), and their CI run is
+  green (above). It wrote: this file; the private design file,
+  which is in the private archive since then, byte for byte (the
+  archive's last section; the file itself still lies in the root
+  and may be removed with a yes, after one more comparison); D82
+  and D83 in the archive; the tick of P2-M4 in the private tracker.
+  What was committed to this file after `e6b8ad7` is one more
+  commit of it, or is not committed as long as `git status` names
+  this file. Outside git: `~/pitak-device-runs/stage2-p2m4/` (kept:
+  a copy of the release APK of 2026-11-17, the last build at hand
+  with the vault's old library; the made-up backup of look 2; two
+  scratch scripts; their checksums) and `/tmp/pitak_p2m4/build/`
+  (the logs of every check and of the CI run, the patches of each
+  step, the trial scripts, the vault files pulled from the emulator
+  and from the phone's play install, all made-up; left to the
+  system, like the rest of `/tmp/pitak_p2m4/`).
+- **The first session of 2026-11-19 changed no file of the app.** It
   planned stage 2 of the plan for the next findings (P2-M4; D72 to
   D81; the last section of this file says where it stands). The
   baseline was run on the tree of `03811dc` (the code of `3cd1961`;
@@ -539,10 +577,7 @@ when it was written; check the repository before relying on it.
   what was read and of the private files from before they were
   written to; about 1.5 GB; the system empties `/tmp`, and nothing
   depends on it). What was committed to this file in that session
-  is one more commit on top of `03811dc`, or is not committed as
-  long as `git status` names this file; neither is pushed unless
-  `git status -sb` shows the branch level with
-  `origin/reviewFixes`.
+  is `28ce051`, pushed with stage 2 on the same day.
 - **The fourth session of 2026-11-18 BUILT stage 1 of the plan for
   the next findings** (D64 to D71; the last section of this file
   says what it was). Six commits on top of `cdd6cb8`, made in this
@@ -751,9 +786,9 @@ P2-M4 as its second stage (D63). Start there. **Stage 1 of it is
 DONE (the fourth session of 2026-11-18: built, pushed, green in
 CI). Stage 2, P2-M4, whose date is 2026-12-09, is DESIGNED and has
 its go-ahead (2026-11-19, D72 to D81). In the second session of
-that day it was BUILT through to its review stop; what is left
-(the commits, the push, CI, the records) is in that last section,
-under "Where it stands".** What follows in this section was written before it and
+that day it was BUILT, pushed and seen green in CI: it is DONE. The
+next session PLANS stage 3; how it begins is in that last section,
+under "The next session".** What follows in this section was written before it and
 holds for the backup rework.
 
 **Where the work stands at the end of the second session of
@@ -907,9 +942,13 @@ In this order:
    again:
    - its F-Droid install is the release build of `b9847b7` (the code
      of `28630c2`), with 10,000 made-up books, the three books of
-     run D and the few of run C, and NO borrowers vault. Part 2 of
-     run C imported the files of part 1 again (nothing new was
-     added) and left a merge without its choices;
+     run D and the few of run C. Part 2 of run C imported the files
+     of part 1 again (nothing new was added) and left a merge
+     without its choices. Since 2026-11-19 it HAS a borrowers vault,
+     made by the maintainer under the public passphrase of the test
+     fixture, with one made-up borrower and one loan of a made-up
+     book in it. It cannot make a backup: it holds 10,003 cover
+     pictures, three more than a backup can hold (D82);
    - its play install is, since 2026-11-18, a DEBUG build of today's
      code (1.9.7, version code 39), signed with this Mac's debug key.
      Since the evening of 2026-11-18 it is a debug build of the tree
@@ -917,7 +956,12 @@ In this order:
      stage's look; one made-up book got a new cover in it.
      It went from 1.9.5 to the tag's 1.9.7 and then to today's code,
      and its data was kept (its one book, and three made-up ones).
-     `adb shell run-as dev.khoj.pitaka` can look into its files;
+     `adb shell run-as dev.khoj.pitaka` can look into its files.
+     Since 2026-11-19 it is a debug build of the tree of `17a21b2`
+     (stage 2: the vault's new library), installed over an install
+     the maintainer had emptied that morning: one made-up book, and
+     a vault under the public passphrase of the test fixture with
+     one made-up borrower and one loan; the vault is locked;
    - in the phone's Download folder: one small made-up backup
      (`pitak-synthetic-12x20000.pitabak`), pushed on 2026-11-18. In
      the maintainer's backups folder, as before, the small backup
@@ -942,7 +986,9 @@ In this order:
    and 2 ignored). Run again here on 2026-11-19, on the tree of
    `03811dc` (the same code) and this time with Rust: the same
    numbers, and Rust fmt and clippy clean, 37 passed, 2 ignored
-   (Kotlin not run). Before that stage they were those of
+   (Kotlin not run). **Since stage 2 (the tree of `0f1c143`, run
+   here on 2026-11-19, and CI run 44472569628): the same numbers,
+   but Rust 45 passed, 2 ignored.** Before stage 1 they were those of
    the tree of `c589b3b` (2026-11-18, here, and in CI run 44289959655
    at `0240bac`, which has the same code):
    `build_runner` no diff; format 0 changed of 1,467
@@ -2005,7 +2051,7 @@ log, which holds other apps' lines). It is left to the system.
 | 2026-11-16 | The stage of D24 pushed. Its CI run red in the F-Droid job: the runner's image had changed, and no workflow named a JDK. `3ea1812` names it (Temurin 21). A second failure of the same job, a refused download, went away when the job was run again; then every job green. T1 and T10 closed; the stage's design file into the archive; this file brought up to date. Then the device runs: the phone and its two installs read with `adb`; the questions of step 1 answered; D36. The tool for synthetic backups designed and built, not committed; while it was built, found that the reader of a restore counts entries where the writer counts covers; D37. The tool committed (`549b93c`, not pushed); the files of runs A and B made. The measuring script built and committed (`dde1e80`, not pushed); the first look and run A in the emulator; a release build for the phone made and installed, then found to hold OLD compiled Dart code (the stale-artefact trap of `docs/RELEASING.md` §4): run B stopped before any restore. A clean rebuild, checked from inside, installed; the phone's install emptied by the maintainer; most of run B done (every restore and the backup at today's limits ended well, no freeze seen), then the device runs stopped by the maintainer. Four commits pushed; CI green at `3797288`. D38: run B has passed. A handoff for the planning of BR8. Then the planning session of BR8: the baseline unchanged (7,148 tests); the design written (private file); measurements on the Mac; the decision points 17 to 20 named; all four answered (D39 to D42). BR8 built through to its review stop: the edge tests, the numbers, the sentences of D41, the runs by hand on the Mac, the changelog; 7,194 tests; the Android unit tests green after one Gradle run with the network; four commits (`b01a950`, `a9ae39e`, `421fa8e`, `b15c42f`) and this file's (`f508475`); all pushed with the two earlier commits of this file; the session closed while CI run 43914687234 was running |
 | 2026-11-17 | The CI run of BR8 (43914687234 at `f508475`) seen green, every job at its first attempt, and "Update goldens" with it. BR8 done: its row and the decisions here; P1-M1 and P4-m19 ticked in the private tracker; its design file into the private archive, word for word. The go-ahead for run E. The three made-up backups made again; a release build (after `flutter clean`, looked into) and a debug build at `f508475`. Run E in the emulator, all of it: 10,000 covers and 1 GiB restore and back up, 10,008 covers are refused with the sentence of D41, the writer refuses 10,001, a backup with a vault is made and restored. Run E on the phone, most of it: the same restores and the backup at 1 GiB end well, memory 233.5 MB; by screenshots the screen stood still for about 1.5 to 1.9 s before the share sheet and for at least 1.2 s at the start of a restore; the phone locked in the middle of a restore, and after the unlock its page says "Restore complete"; the cache on the phone read in its Settings (nothing of a pick or of a run's work left; one thing for T2, in the private record); a backup with a vault restored, made, saved by the maintainer and restored again on the phone. Run E is run; five questions for the maintainer. This file committed (`12d4ebc`). The clean-up after run E: the made-up files on the phone, the scratch folders on the Mac, the duplicate of BR8's design file (`91ed643`); both commits pushed, CI run 44015306730 green in every job at its first attempt. The five questions answered, one at a time: D43 to D47. The fix of D46 designed, built after the go-ahead (three tests first, red on the old code; three trials by hand; 7,197 tests) and committed (`ee80a76`); the changelog's sentence of D47 (`1a0ece7`); this file (`d456fdf`); all three pushed, CI run 44020820271 green in every job at its first attempt. A handoff for the next session, which takes up run C, run D, BR9 and BR10 (`48edab6`, not pushed). A second session the same day: the state confirmed; the order chosen (BR9, then run C and run D, then BR10); the baseline unchanged (7,197 tests); the Android reference read; decision points 5 and 6 answered (D48, D49); BR9 designed (private file) and its decision points 21 to 24 answered (D50 to D53); BR9 built through to its review stop in five steps, tests and trials by hand at each: the rules, the Kotlin channel and its Dart side, the two size readers, the dialog on both pages, the changelog. A wrong prediction about how two sizes far apart are written was found in the build and put at once (D54). One test of the whole suite timed out once and not again. 7,377 tests; the Android unit tests green offline, 64 in each flavour. At the review stop: D55 (the guide with BR10), T12, a bounded look for the time-out (24 runs, not found again; a second timing test failed once under load). The five commits made in a plain clone (`3021561`, `c883fae`, `3222077`, `6e7b47f`, `28630c2`) and brought over; this file committed (`28bcdcb`, after a block that stood twice in its first commit was taken out before any push). The look at the real channel in the emulator: both dialogs with real figures, a backup to the share sheet, a restore of 4,000 covers. Eight commits pushed (`d456fdf..2a76f43`); CI run 44041555210 green in every job at its first attempt, 7,377 tests, and "Update goldens" with no new picture. BR9 done: its row here, its design file into the private archive, word for word, and the file removed after a comparison; `84a0d2f` committed and, at the maintainer's wish, not pushed. A handoff for the next session: the device runs first when the phone is at hand, otherwise the parts of BR10 that wait for no device (`b9847b7`). A third session the same day, with the phone: the state confirmed; a release build of `b9847b7` (after `flutter clean`), looked into (a wrong prediction: the string the handoff proposed is kept as UTF-16 and counted 0; five others counted 1 each) and installed. The first look on it: the notice before a backup and before a restore with real figures; the fix of D46 in both halves; then, after the maintainer had cleared the install (the passphrase of the made-up vault was forgotten), a restore and a backup of 10,000 covers through the notice, and both dialogs with the phone's largest font. Run D: two covers photographed in the app, "all fine" (D56). Run C, part 1: Import and Merge on the phone's picker with files from Download, every sentence as the code has it; one thing seen on Import that the changelog words differently (the open questions). The made-up files removed from the phone. This file brought up to date (`aedc3f6`, not pushed). The maintainer: the next session does parts 2 to 4 of run C. A handoff for it: what was checked for part 3 (the tag `1.9.7`, its Flutter version, the signature of the play install on the phone), and the files for the cloud drive made ready |
 | 2026-11-18 | The state confirmed (four commits of this file not pushed). The maintainer put the six made-up files into Google Drive from the Mac. Run C, part 2: Import and Merge with files kept online, the picks made by the agent through `adb` at the maintainer's wish (a helper that reads exact names only); every sentence as the code has it; two predictions of the handoff corrected before the run. Something seen on Merge went into the private tracker as T13. Part 3: a debug build of the tag `1.9.7` in a plain clone, installed over the play install; three picks with the old picker left three copies in the cache; a debug build of today's code installed over it removed exactly those three at its first start (D33 on a phone). Part 4: what the tracker lists for T4, the network cut through `adb`; in the private record. Run C is run. This file brought up to date (`ab7e4bf`, not pushed). D57: D26 stays as it is (`a4d028d`). Then BR10's records begun: asked how far the clean-up of D1 goes, the maintainer said that the Kotlin app has no users and chose the ADR, the documents and the comments (D58), and that the comments which only name where code came from are reworded too (D59); the go-ahead (D60). The baseline unchanged (7,377 tests). ADR 0025 drafted, shown and written; nine sentences of `README.md`, `SECURITY.md` and `docs/ARCHITECTURE.md` shown and written (`1a59621`). 143 rewordings in 82 files under `lib/` and 8 in 6 test files, every changed line a comment but for three names of tests, by a script; format, analyze, 7,377 tests and `build_runner` as before (`e5f3145`). This file (`901d4f4`). Nine commits pushed (`2a76f43..901d4f4`); CI run 44262107031 green in every job at its first attempt, 7,377 tests, and "Update goldens" with no new picture. A second session the same day, for the rest of BR10's records: the state confirmed, the baseline unchanged (7,377 tests). The two step lists of the in-app guide shown and built, the counts of the test first and red on the old copy, one more test that holds the guide to the dialog's button labels (`f827a80`, D55). ADR 0026 drafted, shown and written; the sentences for `docs/ARCHITECTURE.md`, `README.md`, `PRIVACY.md`, `SECURITY.md` and `CHANGELOG.md` shown and written, the limit of T4 named in public in the words that were shown (`c589b3b`); 7,378 tests. The private tracker: nothing new to tick, what is met in part written down. Four commits pushed (`901d4f4..0240bac`); their CI run (44289959655) was not watched, at the maintainer's word. Asked what the review left open, the maintainer chose nine findings to be planned in the next session; a handoff for it, here by id and in full in the private record. A third session the same day, a planning session: the state confirmed; CI run 44289959655 and "Update goldens" 44289959359 seen green in every job at the first attempt (7,378 tests, no new picture). The plan for the next findings begun, as the last section of this file (D61); its order and stages (D62); P2-M4 joins it as stage 2, because upstream has published a release on the newer SQLCipher since the review (D63). The first three findings read again in today's code and confirmed. Stage 1 designed (private file), with Android's and GitHub's documentation read and quoted; its six decision points put, one at a time, and answered, each as proposed (D64 to D69), the last being the go-ahead. Nothing of the stage built; no file of the app changed. A fourth session the same day BUILT stage 1: the state confirmed (three commits of this file not pushed); the baseline unchanged (7,378 tests). The check of the merged manifest with its tests, first and red, then the list of eleven permissions; on the manifests of before the stage the check failed and named the three permissions, the required feature and the Play services entry. The app manifest: three trials for `camera.any` (a plain line leaves it required; either merge marker works; the narrower one taken), and a fourth that answered what the design had left open (`READ_EXTERNAL_STORAGE` comes back without a rule of its own). The CI step, its body run here with `bash -e`; the Dependabot entry; the pin test. Every guard of the script and of the pin test switched off once by hand: one test did not see its guard and was made to. 7,382 tests; Kotlin 64 in each flavour, offline. `aapt2` on a built APK. The documents' sentences shown and written as shown, one step beyond D66 (D70). The build put onto the phone's play install with a yes: `adb` read 13 requested permissions before and 11 after, and the two that left were never granted; the maintainer's five looks, all fine (the QR scanner opens; its reading was not seen). The review stop: accepted as built (D71). Five commits (`a2e693e`, `6c04076`, `52a4aa9`, `4fc900f`, `3cd1961`) and this file's, each with its yes. Then the commit of this file (`2e6acba`) and, at the maintainer's word, the push of nine commits (`0240bac..2e6acba`); CI run 44332072893 green in every job at its first attempt, the new step with "OK" for both flavours, 7,382 tests, and "Update goldens" with no new picture. P1-M2 and P2-n5 ticked in the private tracker; the stage's design file into the private archive, word for word. A handoff for the next session, which plans stage 2 (P2-M4) |
-| 2026-11-19 | A planning session for stage 2 of the plan for the next findings (P2-M4). The state confirmed (one commit of this file not pushed). Read: the finding in the tracker and in the review report, the exception and its analysis, the vault's storage code and its tests. The finding confirmed in today's code. Upstream read, read-only: the versions and what they rest on, the release notes of rusqlite 0.33 to 0.43, SQLCipher's changelog from 4.5.7 to 4.20.0 and its log calls, the new source crate with its scripts, the two advisories, the licences. The baseline unchanged, this time with Rust (7,382 tests; Rust 37 passed, 2 ignored). A first draft of the design (private file). Its decision points, one at a time: D72 (the fetch, and a trial outside git: the core compiles unchanged and every Rust test keeps its verdict; one prediction about the lock file was wrong and was said first), D73, D74 (the new source crate compared with SQLCipher's signed tag: the same bytes), D75, D76, D77, D78, D79 (answered against the agent's recommendation), D80; one decision point of the draft struck as a slip of the agent's (it went against ADR 0025); D81, the go-ahead, with the build in a new session. No file of the app changed; nothing of the stage is built. A handoff for that build. A second session the same day BUILT the stage through to its review stop: the state confirmed, upstream unchanged, the baseline unchanged (7,382 tests; Rust 37 passed). The three tests, shown first, red and green on the old library as designed (a check of the linked versions; a vault file is not readable as it lies on disk; the pin of the source crate in the lock file), each made to fail once by hand on a copy. The update: the two entries of `rust/Cargo.toml`, the lock file (the trial's, byte for byte), the end of the exception in both files, the licence exception; two comment lines in `rust/src/vault.rs`. All checks (7,382 tests; Rust 45 passed, 2 ignored; Kotlin 64 in each flavour, offline; `cargo deny --offline`; the block-buffer guard). The Android build, looked into: the new library for all three ABIs. In the emulator: the smoke test passed; no line of the library in the device log through it; a vault file damaged on purpose left the three lines the trial had seen and nothing else. The phone's F-Droid install could not make a backup (10,003 covers since run D), so look 2 was made in the emulator with the release build of 2026-11-17 (D82): a backup with a vault of the old library restores in the updated build, its rows are read and one is written; the same vault read on the Mac by the new library through the entry point Dart calls, and after that write by the old one. Look 1 on the phone: the updated build over the play install, the vault file untouched by the install, the vault unlocks and takes a loan (it had no rows before). A count of the design corrected: 144 log calls in the compiled file, seven with a string. The documents shown and written: the changelog, promise P2's row, ADR 0027, `docs/RELEASING.md` §9, the closing line of the advisory's plan. Slips of the session, each in the private record: two edits that left a line behind, an APK of the test installed for the app's, a folder pulled into the repository's root and moved out, a passphrase typed while another window was in front on the phone |
+| 2026-11-19 | A planning session for stage 2 of the plan for the next findings (P2-M4). The state confirmed (one commit of this file not pushed). Read: the finding in the tracker and in the review report, the exception and its analysis, the vault's storage code and its tests. The finding confirmed in today's code. Upstream read, read-only: the versions and what they rest on, the release notes of rusqlite 0.33 to 0.43, SQLCipher's changelog from 4.5.7 to 4.20.0 and its log calls, the new source crate with its scripts, the two advisories, the licences. The baseline unchanged, this time with Rust (7,382 tests; Rust 37 passed, 2 ignored). A first draft of the design (private file). Its decision points, one at a time: D72 (the fetch, and a trial outside git: the core compiles unchanged and every Rust test keeps its verdict; one prediction about the lock file was wrong and was said first), D73, D74 (the new source crate compared with SQLCipher's signed tag: the same bytes), D75, D76, D77, D78, D79 (answered against the agent's recommendation), D80; one decision point of the draft struck as a slip of the agent's (it went against ADR 0025); D81, the go-ahead, with the build in a new session. No file of the app changed; nothing of the stage is built. A handoff for that build. A second session the same day BUILT the stage through to its review stop: the state confirmed, upstream unchanged, the baseline unchanged (7,382 tests; Rust 37 passed). The three tests, shown first, red and green on the old library as designed (a check of the linked versions; a vault file is not readable as it lies on disk; the pin of the source crate in the lock file), each made to fail once by hand on a copy. The update: the two entries of `rust/Cargo.toml`, the lock file (the trial's, byte for byte), the end of the exception in both files, the licence exception; two comment lines in `rust/src/vault.rs`. All checks (7,382 tests; Rust 45 passed, 2 ignored; Kotlin 64 in each flavour, offline; `cargo deny --offline`; the block-buffer guard). The Android build, looked into: the new library for all three ABIs. In the emulator: the smoke test passed; no line of the library in the device log through it; a vault file damaged on purpose left the three lines the trial had seen and nothing else. The phone's F-Droid install could not make a backup (10,003 covers since run D), so look 2 was made in the emulator with the release build of 2026-11-17 (D82): a backup with a vault of the old library restores in the updated build, its rows are read and one is written; the same vault read on the Mac by the new library through the entry point Dart calls, and after that write by the old one. Look 1 on the phone: the updated build over the play install, the vault file untouched by the install, the vault unlocks and takes a loan (it had no rows before). A count of the design corrected: 144 log calls in the compiled file, seven with a string. The documents shown and written: the changelog, promise P2's row, ADR 0027, `docs/RELEASING.md` §9, the closing line of the advisory's plan. Slips of the session, each in the private record: two edits that left a line behind, an APK of the test installed for the app's, a folder pulled into the repository's root and moved out, a passphrase typed while another window was in front on the phone. The review stop: accepted as built (D83). Three commits (`17a21b2`, `0f1c143`, `e6b8ad7`), then the push of five (`2e6acba..e6b8ad7`) with the maintainer's yes; CI run 44472569628 green in every job at its first attempt: Rust 45 passed and 2 ignored on Linux, `cargo deny check` with the live advisory list, the OSV scan with no issue and no exception for the vault's SQLite, 7,382 tests, 10 golden tests, and "Update goldens" with no new picture. P2-M4 ticked in the private tracker; the stage's design file into the private archive, word for word; the stage described here. A handoff for the next session, which plans stage 3 (P4-M4) |
 
 ## Device runs: handoff for the next session
 
@@ -2699,9 +2745,10 @@ and the open questions ("Left from run C").
 The second plan of this file (D61). On 2026-11-18 the maintainer
 chose nine findings of the review to be planned, and a tenth, which
 has a date, joined them (D63). A finding is named here by its id
-only until its fix is pushed (D30). The findings of stage 1 are
-fixed, and that stage is described below ("Stage 1: what it was and
-what was built"); the others are not described. What each is, with
+only until its fix is pushed (D30). The findings of stages 1 and 2
+are fixed, and those stages are described below ("Stage 1: what it
+was and what was built", and the same for stage 2); the others are
+not described. What each is, with
 its place in the code, is in the private tracker and in the four
 review reports. The design of the stage that is being built is in a
 private file of its own.
@@ -2719,7 +2766,7 @@ In this order (D62, D63). The sizes are guesses.
 | Stage | Findings | Area | Size, as guessed | State |
 |---|---|---|---|---|
 | 1 | P1-M2 with P2-n5; the first of the three steps the review gives for P2-M3 | the Android manifest; the Dependabot configuration. No Dart behaviour | about a day | **done 2026-11-18**, in one session: `a2e693e`, `6c04076`, `52a4aa9`, `4fc900f`, `3cd1961`; pushed, CI run 44332072893 green; ticked in the private tracker (P2-M3 in part); its design file in the private archive |
-| 2 | P2-M4 | the SQLCipher of the Rust core. Its date: the exception in `rust/osv-scanner.toml` ends on 2026-12-09 | not guessed: by a trial the code change is a few lines, and the work is in the proof (the Android build, the emulator, the phone, CI) | **built 2026-11-19** through to its review stop (D72 to D82; the private `p2-m4-in-detail.md`, its section 13): the tests, the update, the checks, the Android build, the emulator, the two looks, the documents; accepted at its review stop (D83) and committed: `17a21b2` (the update with its tests), `0f1c143` (the documents). Not pushed; its CI run is still to come |
+| 2 | P2-M4 | the SQLCipher of the Rust core. Its date was 2026-12-09, when the exception in `rust/osv-scanner.toml` would have ended | not guessed beforehand; it took a planning session and a build session | **done 2026-11-19**, designed in one session and built in the next (D72 to D83): `17a21b2`, `0f1c143`; pushed, CI run 44472569628 green; ticked in the private tracker; its design file in the private archive |
 | 3 | P4-M4 | the library list and the drawer | half a day to a day | confirmed in today's code (2026-11-18); not designed. Needs a yes to a privacy note of the tracker first |
 | 4 | P4-M1 | forms | about a day | not read |
 | 5 | P4-M3 | lending | about a day | not read; has a decision point of the review |
@@ -2730,145 +2777,53 @@ Every "where" of the review reports is of 2026-11-10. Each place is
 read again in today's code before its stage is designed, and the
 finding is confirmed or struck.
 
-### Where it stands (2026-11-19, the build session of stage 2, at its review stop)
+### Where it stands (2026-11-19, the end of the build session of stage 2)
 
-- **Stage 1 is DONE:** built, seen on the phone, accepted at its
-  review stop (D71), committed, pushed, and green in CI (run
-  44332072893 at `2e6acba`, every job at its first attempt; the new
-  step answered "OK" for both flavours). P1-M2 and P2-n5 are ticked
-  in the private tracker, and P2-M3 is written down there as met in
-  its first step only. The design file with its build log is in the
-  private archive, word for word. The handoff, "State of the
-  repository", has the commits and the checks.
-- **Stage 2 (P2-M4) is DESIGNED and has its go-ahead (2026-11-19,
-  D72 to D81); nothing of it is built.** Its date: 2026-12-09. The
-  private `p2-m4-in-detail.md` has the design: what was read, the
-  facts with their quotes, the parts of the build, every decision
-  point with its answer, the result of the trial outside git (its
-  section 11) and of the check of the new source crate (its section
-  12). In short, and by a trial on a copy: with `rusqlite` 0.43.0
-  and `libsqlite3-sys` 0.40.0 the core compiles unchanged, all 37
-  Rust tests keep their verdict, the committed vault fixture opens,
-  and a vault of the new library opens with the old one. Not shown
-  yet: the Android build, a device, CI.
-- **Stage 2 is BUILT (the second session of 2026-11-19), accepted
-  at its review stop (D83) and committed: `17a21b2` (the update
-  with its tests) and `0f1c143` (the documents), with a commit of
-  this file on top. It is NOT pushed.** Points 1, 2, 4, 5 and 6 of
-  "The next session" below were done first: the state and
-  upstream (nothing has moved); the baseline (unchanged); the three
-  tests, shown first (two in `rust/src/vault.rs`, and the new
-  `rust/tests/sqlcipher_source_pin.rs`), red and green on the old
-  library as designed, and each made to fail once by hand; the
-  update (`rust/Cargo.toml`, `rust/Cargo.lock`, which is the
-  trial's lock file byte for byte, `rust/osv-scanner.toml`,
-  `rust/deny.toml`); the checks for every stage (7,382 tests; Rust
-  45 passed, 2 ignored; Kotlin 64 in each flavour; `cargo deny
-  --offline` ok; the block-buffer guard). Point 3: the maintainer
-  has made both vaults on the phone (no backup of the F-Droid
-  install's vault could be made: D82). Of point 7, done: the Android
-  build (the APK's core holds the new library for all three ABIs,
-  looked into); in the emulator the smoke test passed, the device
-  log held no line of the library through it, and a vault file
-  damaged on purpose left exactly the three lines the trial saw,
-  with no path, name or statement. Look 2 is made, in the emulator
-  (D82: the phone's F-Droid install cannot make a backup as it
-  stands): a backup with a vault, made by the release build of
-  2026-11-17 with the old library, is restored by the updated
-  build, the vault unlocks, the loan is there, and a write into it
-  works; the device log has no line of the library through it; and
-  on the Mac the new library reads that vault through the entry
-  point Dart calls (`real_archive.rs`, by hand: 1 borrower, 1
-  loan). The emulator is shut down. On the phone the F-Droid
-  install holds, besides the maintainer's vault, one made-up
-  borrower and loan from the first try. Look 1 is made too: the
-  updated debug build installed over the phone's play install (the
-  vault file the same bytes before and after the install), the
-  vault of the old library unlocks, takes a made-up borrower and a
-  loan, and shows them after a lock and an unlock; the app's own
-  lines of the phone's log hold nothing of the library. That vault
-  had no rows before, so rows of the old library read by the new
-  one are look 2's. So point 7 is done. Point 8 is done as well: the
-  documents are written as they were shown and accepted
-  (`CHANGELOG.md`; the row of promise P2 in `docs/ARCHITECTURE.md`;
-  ADR 0027 with its row in the index; `docs/RELEASING.md` §9; the
-  closing line of `docs/plans/sec-rustsec-2026-0459.md`, in which
-  one word was put right after it was shown). The review stop is passed and the three commits are
-  made (D83). **What comes next: the push (a yes), and CI green in
-  every job, the OSV scan without the exception among them. Then
-  the tick in the private tracker, the stage's description here
-  (D30), and the design file into the archive.** The private design file has the record (its section 13); the patches
-  of each step are under `/tmp/pitak_p2m4/build/patches/`.
+- **Stage 1 is DONE** (2026-11-18): built, seen on the phone,
+  accepted (D71), pushed, green in CI (run 44332072893 at
+  `2e6acba`). It is described below.
+- **Stage 2 (P2-M4) is DONE** (2026-11-19, twenty days before its
+  date): designed in one session (D72 to D81), built in the
+  next, proven in the emulator and on the phone (D80, D82),
+  accepted at its review stop (D83), committed (`17a21b2`,
+  `0f1c143`), pushed, and green in CI (run 44472569628 at
+  `e6b8ad7`, every job at its first attempt; the OSV scan has no
+  exception for the vault's SQLite any more). P2-M4 is ticked in
+  the private tracker, and the design file with its build log is in
+  the private archive, word for word. It is described below
+  ("Stage 2: what it was and what was built").
 - Stage 3 (P4-M4) still needs a yes to a privacy note of the tracker
   before it is designed.
-- Stage 2 waits for its push and its CI run; nothing else is
-  half-done.
+- Nothing is half-done, and nothing waits for a review.
 
 ### The next session
 
-**Since the build session of 2026-11-19, points 1 to 8 of the list
-below are DONE ("Where it stands" above says how each went; look 2
-was made as D82 says, not as point 7 has it). What is left of
-point 9: the push, CI, the tick, the stage's description and the
-archive; and point 10 if something stops the push. The list is kept as it was written.**
+It PLANS stage 3 (P4-M4, the library list and the drawer). No code
+before a go-ahead (D21). In this order:
 
-It BUILDS stage 2 (the go-ahead is given, D81). Its design is the
-private `p2-m4-in-detail.md`: read it first, in full; "The order as
-it stands" in its part F is the list below in more words. Every
-test and every sentence of a document is shown before it is
-written; every commit, the push, an emulator run and a Gradle run
-with the network keep their own yes. In this order:
-
-1. The state: `git status -sb` (the branch is one or two commits of
-   this file ahead of `origin/reviewFixes`), `git remote -v`
-   (`github.com/PLFIndia/pitak-x`), and that the private files are
-   there, the design file with them. No CI run is left to look at.
-   Then, read-only: whether upstream has moved since 2026-11-19 (a
-   newer `rusqlite`, a new advisory). If it has, that is said
-   before anything else.
-2. The baseline, with Rust. The numbers of 2026-11-19 are in the
-   handoff ("Next", point 5).
-3. BEFORE a new build is put onto the phone: the maintainer makes
-   the two made-up vaults with the old library (D80), one in the
-   play install, one in the F-Droid install with a backup of it,
-   under the throwaway passphrase both know. Ask for it early.
-4. The three tests into the working tree, each shown first: the
-   versions of the linked library (red on today's library); a vault
-   file is not readable as it lies on disk (green before and
-   after); the pin of `sqlcipher-src` in `rust/Cargo.lock` (D75;
-   red until the update is in). That each can fail is tried by
-   hand.
-5. The update, as the trial ran it (D73, D76, D77): the two lines of
-   `rust/Cargo.toml` with their comment; the lock file, its diff
-   compared with the trial's (163 packages become 164); the end of
-   the exception in `rust/osv-scanner.toml` and `rust/deny.toml`;
-   the licence exception for `sqlcipher-src`; `BSD-2-Clause` out.
-   No logic of `rust/src/vault.rs` changes (D78, D79). The crates
-   are in `~/.cargo/registry` since the trial, so the Mac needs no
-   fetch. If the trial's copies under `/tmp/pitak_p2m4/` are gone,
-   nothing is lost but time: the design file has their results.
-6. The checks for every stage, all of them, with Kotlin; `cargo
-   deny --offline check licenses bans sources`; the block-buffer
-   guard.
-7. The Android build of the core (a debug build of the play
-   flavour; how long it takes is not known). Then, with a yes, the
-   emulator: the smoke test of `integration_test/`, the device log
-   through it, a vault file damaged on purpose (D79: what the
-   library writes is seen, not only read), and the restore of the
-   F-Droid install's backup (look 2 of D80). Then look 1 on the
-   phone.
-8. The documents, each sentence shown first: `CHANGELOG.md`, the
-   sentence of promise P2 in `docs/ARCHITECTURE.md` (D79), an ADR
-   (0027) for the stage's decisions, `docs/RELEASING.md` (D75), the
-   closing line of `docs/plans/sec-rustsec-2026-0459.md`.
-9. The review stop; three commits, each with its yes; the push; CI
-   green to the end in every job, the OSV scan WITHOUT the
-   exception among them. Then the tick in the private tracker, the
-   stage's description here (D30), and the design file into the
-   archive.
-10. If something stops the update before 2026-12-09, that is a
-    question for the maintainer, put with what was found: D63 chose
-    the update over a longer exception.
+1. The state: `git status -sb` (the branch is level with
+   `origin/reviewFixes`, or one commit of this file ahead), `git
+   remote -v` (`github.com/PLFIndia/pitak-x`), and that the private
+   files are there. No CI run is left to look at: 44472569628 is
+   green.
+2. The baseline. The numbers are in the handoff ("Next", point 5):
+   7,382 tests, and Rust 45 passed, 2 ignored, since stage 2.
+3. The first question, before any design: the privacy note that the
+   private tracker has for P4-M4. It needs the maintainer's yes;
+   what it is, is in the tracker and in the review report (D30:
+   not here).
+4. Then the finding read again in today's code (it was confirmed on
+   2026-11-18; the code of `lib/` has not changed since), the
+   design in a private file of its own (`p4-m4-in-detail.md`, with
+   its line in `.git/info/exclude`), its decision points one at a
+   time, and the go-ahead.
+5. Left by stage 2 for whenever the maintainer wants it, none of it
+   urgent: whether the design file `p2-m4-in-detail.md` may be
+   removed from the root (the archive holds it byte for byte; a
+   yes, after one more comparison); the phone's two installs, which
+   hold made-up vaults under the public passphrase of the test
+   fixture (the handoff, "Next", point 4); and the three things
+   under "Seen and not part of the stage" below.
 
 ### Stage 1: what it was and what was built
 
@@ -2938,14 +2893,131 @@ here; for `camera.autofocus` the build tool shows no reading either
 way (D65). The QR scanner reading a code: it opens, and no library
 QR was at hand.
 
+### Stage 2: what it was and what was built
+
+**The finding (P2-M4).** The borrowers vault is a SQLCipher
+database, and SQLCipher is C code that is compiled into the app. Up
+to release 1.9.7 it was SQLCipher 4.5.7 on SQLite 3.45.3. SQLite
+before 3.54.0 has a known fault (`RUSTSEC-2026-0459`,
+CVE-2026-119375): a crafted database with a `-wal` file of another
+page size makes SQLite hand back memory of the app. Release 1.9.7
+carried a reviewed exception for it in `rust/osv-scanner.toml` and
+`rust/deny.toml`, with the end date 2026-12-09, because no release
+of the Rust crates had a fixed SQLCipher then; after that date the
+OSV job would have been red on every branch. What stood against the
+fault meanwhile, and still stands: a restore never writes a
+companion file from an archive (pinned by a test since 1.9.7), and
+the vault never uses WAL mode. Since 2026-11-11 there is a fixed
+release (`libsqlite3-sys` 0.40.0).
+
+**What was built.**
+
+- `rust/Cargo.toml` asks for `rusqlite` 0.43 (without its default
+  features) and `libsqlite3-sys` 0.40, both with the SQLCipher
+  feature (D73, D76); `rust/Cargo.lock` follows (164 packages; four
+  of them are for web browsers and in no build). The vault is now
+  SQLCipher 4.20.0 on SQLite 3.54.1, with OpenSSL as before. The
+  exception is gone from both files. `rust/deny.toml` allows two
+  licences for the new source crate alone (D77). `17a21b2`.
+- No line of the vault's logic changed (D78): outside its tests,
+  `rust/src/vault.rs` got two comment lines.
+- Three tests, each shown first (`17a21b2`): the linked library is
+  asked for its versions and must be SQLite 3.54.0 or newer and
+  SQLCipher 4.x; a vault file is not readable as it lies on disk
+  (no plain header, no borrower's details, no schema text in its
+  bytes); and `rust/tests/sqlcipher_source_pin.rs` holds
+  `rust/Cargo.lock` to the version and checksum of the crate
+  `sqlcipher-src` that were checked (D75). Rust: 37 tests became 45.
+- The source of the C code is a crate of its own since
+  `libsqlite3-sys` 0.39 (`sqlcipher-src`, young, one author). Its
+  three compiled files were compared with what SQLCipher's signed
+  tag `v4.20.0` builds: the same bytes (D74). `docs/RELEASING.md`
+  §9 says how to repeat that when the crate moves.
+- The newer SQLCipher writes its own error lines into the device's
+  log, where the old one wrote nothing; that default is taken
+  (D79). Promise P2 of `docs/ARCHITECTURE.md` names it as its one
+  exception, and ADR 0027 records it with the stage's other
+  decisions. `CHANGELOG.md` and the closing line of
+  `docs/plans/sec-rustsec-2026-0459.md` follow. `0f1c143`.
+
+**How it was proven.**
+
+- On the Mac: on the old library the version test and the pin test
+  fail and the file test passes; after the update all pass. Every
+  assertion of the three was made to fail once by hand, on a copy.
+  The committed test vault, made in August 2026 with the old
+  library, opens unchanged. All checks as before (7,382 tests;
+  Kotlin 64 in each flavour), and `cargo deny --offline`.
+- The Android build: the core in the APK holds the new versions for
+  all three ABIs and nothing of libtomcrypt (looked into, because
+  the build took only half a minute).
+- In the emulator: the on-device smoke test passes (a vault made,
+  lent from, locked, unlocked, backed up, restored), and the device
+  log has no line of the library through it. A vault file damaged
+  on purpose (16 bytes of its first page) cannot be opened, and the
+  library writes exactly three lines for it, which name the failed
+  check and the page number and no path, name or statement.
+- An old vault with the new library (D80, D82): a backup with a
+  vault, made in the emulator by the release build of 2026-11-17
+  (the old library; the same build as the phone's F-Droid install),
+  restores in the updated build: one borrower and one loan
+  restored, the vault unlocks, the loan is there and could be
+  marked as returned. The same vault is read on the Mac by the new
+  library through the entry point Dart calls, and after that write
+  by the old library too. On the phone the updated build was
+  installed over the play install: the vault file was the same
+  bytes before and after the install, the vault of the old library
+  unlocks and takes a borrower and a loan, and the app's own lines
+  of the phone's log hold nothing of the library.
+- In CI (run 44472569628): Rust 45 passed and 2 ignored on Linux;
+  `cargo deny check` with the advisory list fetched says
+  "advisories ok, bans ok, licenses ok, sources ok"; the OSV scan
+  reads the 164 packages of `rust/Cargo.lock` and finds no issue,
+  with no exception for the vault's SQLite left.
+
+**What is not proven.** The APK as a store publishes it: the looks
+used a release build of this repository and debug builds. A phone
+other than the one at hand. Rows of the old library read by the new
+one ON THE PHONE: the vault there had no rows (the emulator and the
+Mac show it). A damaged vault on a release build, and the library's
+lines for a failure other than a damaged first page. Whose key
+signed SQLCipher's tag rests on a keyserver's check of an e-mail
+address and on the key's history, not on a statement of its maker
+that was read (ADR 0027).
+
+**What was wrong on the way, and was said.** D80 took a backup of
+the phone's F-Droid install for granted; that install holds 10,003
+cover pictures since run D and cannot make one, so look 2 was made
+in the emulator (D82). The design counted 100 log calls of the
+library and six that print a string; that was one source file, and
+the file that is compiled has 144 and seven (the seventh prints
+OpenSSL's own text for an error number). The first debug APK of the
+day had 222.0 MB and every later one 247.6 MB; why is not known
+(the later ones hold the app's own entry point and the same core).
+
+**Seen and not part of the stage.**
+
+- Since `rusqlite` 0.42 the key can be handed to SQLCipher without
+  `unsafe` (`Connection::key`). With it the three reviewed `unsafe`
+  calls of `rust/src/vault.rs` and the direct dependency on
+  `libsqlite3-sys` could go. Not a weakness; a later piece of work
+  of its own (D78).
+- Comments under `rust/` still give the retired Kotlin app as a
+  reason (some state a fact that still matters: which key call the
+  vault uses, and why). The clean-up of D59 reworded `lib/` and
+  `test/` only. Whether they are reworded is a question for the
+  maintainer.
+- The OSV scanner says in every run that the other entry of
+  `rust/osv-scanner.toml` is unused. That is a finding of the
+  private tracker that stays open; this stage did not touch it.
+
 ### What a stage needs besides the Mac
 
 - Stage 1: done. (No Gradle run of it needed the network; the look
   on the phone was made on 2026-11-18.)
-- Stage 2: the package fetch is made (2026-11-19, for the trial).
-  Still to come: the Android build of the core, an emulator run (a
-  yes), and the phone for two looks (D80), for which the maintainer
-  makes two made-up vaults BEFORE a new build is installed.
+- Stage 2: done. (A package fetch for the trial; four Gradle runs
+  through the `flutter` tool, which were not watched for the
+  network; the emulator; the phone for look 1.)
 - Stage 6, and of the later ones P4-M6 and the rest of P2-M3: the
   phone.
 
