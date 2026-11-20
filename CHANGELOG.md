@@ -32,6 +32,16 @@ Two known limits, measured in that run on a fast phone and accepted
   screen can stand still for about a second.
 
 ### Changed
+- **A form asks before Back throws away what was typed (review finding
+  P4-M1; `PLAN.md`, D93 to D101; ADR 0028).** On the nine forms (book,
+  other item, magazine title, issue, wishlist entry, borrower, lend,
+  reminder template, and "Basic info" of Publish), Back with unsaved input
+  now asks "Discard changes?", with "Keep editing" and "Discard". An
+  untouched form, or one where the input was put back, leaves at once.
+  While a save runs, Back waits. "Basic info" keeps what was typed when
+  another tab is shown, and asks from every tab. On Android 16 these
+  screens show no back preview. Seen in an emulator with Android 16 and on
+  a phone with Android 14 on 2026-11-20.
 - **The Library screen says when the borrowers vault is locked (review
   finding P4-M4; `PLAN.md`, D84 to D91).** After every app start the vault
   is locked, and the list then cannot mark what is lent out: a lent item
@@ -390,6 +400,10 @@ Two known limits, measured in that run on a fast phone and accepted
   file is always dropped.
 
 ### Tests
+- The forms' leaving: 249 tests of the guard and the nine forms, 7 of the
+  two small moves that made room in the forms, and
+  `test/architecture/form_discard_guard_test.dart` (16), which holds a new
+  form to the guard.
 - `tool/check_merged_manifest.py` has 26 tests on small manifests the
   tests write themselves: each refusal, the pass, and every case in which
   the check cannot be made and therefore fails. CI runs them in the

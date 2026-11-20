@@ -155,6 +155,7 @@ These fail the build; change them deliberately, never to "make it pass".
 | `test/architecture/archive_sink_protocol_test.dart` | the ZIP output budget still fits `package:archive`: the five package files that decide how the inflater writes and reads are pinned by content (a package update that touches them fails until they are read again), and the sink of the ZIP reader still guards every write path (ADR 0009 and its amendments) |
 | `test/architecture/cover_files_immutable_test.dart` | a stored cover file never changes once saved (ADR 0020 Decision 1): every file that reaches the covers folder is reviewed, readers write nothing, and the four writers are pinned to fresh names, a not-yet-live generation, or a move that never overwrites |
 | `test/architecture/document_picking_test.dart` | a file the user chooses reaches the app through its own picker only: no file under `lib/`, `test/` or `integration_test/` imports the `file_selector` plugin, `pubspec.yaml` does not name it, and `pubspec.lock` holds none of its parts that run on a phone (decisions D8, D24, D32) |
+| `test/architecture/form_discard_guard_test.dart` | a form asks before Back throws away unsaved input: every file under `lib/` that creates a text controller either uses `DiscardChangesGuard` or is listed in the test with the reason why it is not a form; a passphrase is never given to the guard (review finding P4-M1, ADR 0028) |
 
 ---
 
