@@ -18,30 +18,13 @@ import 'package:pitaka/features/vault/domain/loan_status.dart';
 import 'package:pitaka/features/vault/presentation/pages/borrowed_items_page.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../support/fake_vault_session.dart';
+
 final testNow = DateTime(2026, 11, 6, 12).millisecondsSinceEpoch;
 
-class TestVaultSession extends VaultSessionController {
-  TestVaultSession(this._initial);
-  final VaultSessionState _initial;
-
-  @override
-  Future<VaultSessionState> build() async => _initial;
-
-  void show(VaultSessionState next) {
-    state = AsyncData(next);
-  }
-
-  void showLoadingWithPrevious() {
-    state = const AsyncLoading<VaultSessionState>().copyWithPrevious(state);
-  }
-
-  void showErrorWithPrevious() {
-    state = AsyncError<VaultSessionState>(
-      StateError('session unavailable'),
-      StackTrace.current,
-    ).copyWithPrevious(state);
-  }
-}
+/// The session of the Borrowed Items tests: the shared stand-in, which can
+/// be moved to another state and can take "Mark returned".
+typedef TestVaultSession = ReturnsVaultSession;
 
 BorrowedLoan testEntry({
   int loanId = 1,
@@ -169,6 +152,10 @@ pumpBorrowedItems(
   TextScaler? textScaler,
   Map<String, Object>? preferences,
   Size viewport = const Size(800, 1200),
+  // When true the cards follow the session, as they do in the app: only the
+  // entries of [snapshot] whose loan is still out in the session's vault are
+  // shown, and none while the vault is not unlocked.
+  bool followSession = false,
 }) async {
   tester.view.physicalSize = viewport;
   tester.view.devicePixelRatio = 1;
@@ -182,7 +169,25 @@ pumpBorrowedItems(
     ProviderScope(
       overrides: [
         vaultSessionControllerProvider.overrideWith(() => effectiveSession),
-        borrowedItemsSnapshotProvider.overrideWith((ref) async => snapshot),
+        borrowedItemsSnapshotProvider.overrideWith((ref) async {
+          if (!followSession) return snapshot;
+          final state = ref
+              .watch(vaultSessionControllerProvider)
+              .unwrapPrevious()
+              .valueOrNull;
+          if (state is! VaultUnlocked) return null;
+          final out = {
+            for (final loan in state.data.loans)
+              if (!loan.isReturned) loan.id,
+          };
+          return BorrowedItemsSnapshot(
+            entries: [
+              for (final entry in snapshot.entries)
+                if (out.contains(entry.loan.id)) entry,
+            ],
+            unresolvedCount: snapshot.unresolvedCount,
+          );
+        }),
         prepareLoanReminderUseCaseProvider.overrideWith((ref) async {
           await prepareGate?.future;
           return PrepareLoanReminderUseCase(

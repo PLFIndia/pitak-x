@@ -14,6 +14,7 @@ import 'package:pitaka/features/vault/domain/loan_reminder_preparation.dart';
 import 'package:pitaka/features/vault/domain/value_objects/borrower_contact.dart';
 import 'package:pitaka/features/vault/presentation/pages/vault_page.dart';
 import 'package:pitaka/features/vault/presentation/widgets/borrowed_items_content.dart';
+import 'package:pitaka/features/vault/presentation/widgets/loan_return_action.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 /// Shows one actionable card per active loan, never stale content when locked.
@@ -59,6 +60,7 @@ class _BorrowedItemsPageState extends ConsumerState<BorrowedItemsPage> {
             onCall: _callBorrower,
             onShare: _prepareAndShare,
             onWhatsAppText: _prepareWhatsAppText,
+            onMarkReturned: _markReturned,
           ),
         },
       ),
@@ -196,6 +198,21 @@ class _BorrowedItemsPageState extends ConsumerState<BorrowedItemsPage> {
       // A successful launch only opens the conversation; it is not a send.
     } on Object {
       if (mounted) _show('Could not open WhatsApp on this device.');
+    } finally {
+      if (mounted) setState(() => _busyLoanIds.remove(loanId));
+    }
+  }
+
+  /// "Mark returned" on a card (review finding P4-M3). The gesture itself,
+  /// with its bar and "Undo", is the shared one of loan_return_action.dart.
+  /// The page adds what its other actions have: the card's one busy state,
+  /// and the check that the vault is unlocked NOW.
+  Future<void> _markReturned(BorrowedLoan entry) async {
+    final loanId = entry.loan.id;
+    if (_busyLoanIds.contains(loanId) || !_canHandOff()) return;
+    setState(() => _busyLoanIds.add(loanId));
+    try {
+      await markLoanReturnedWithUndo(context, loanId: loanId);
     } finally {
       if (mounted) setState(() => _busyLoanIds.remove(loanId));
     }

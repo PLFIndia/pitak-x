@@ -48,6 +48,7 @@ final class BorrowedItemsContent extends ConsumerWidget {
     required this.onCall,
     required this.onShare,
     required this.onWhatsAppText,
+    required this.onMarkReturned,
     super.key,
   });
 
@@ -57,7 +58,7 @@ final class BorrowedItemsContent extends ConsumerWidget {
   /// Called when a filter chip is selected.
   final ValueChanged<BorrowedItemsFilter> onFilterChanged;
 
-  /// Loan IDs whose reminder action is currently busy.
+  /// Loan IDs of the cards with an action that is running.
   final Set<int> busyLoanIds;
 
   /// Opens the catalogue detail for one loan.
@@ -71,6 +72,9 @@ final class BorrowedItemsContent extends ConsumerWidget {
 
   /// Opens the borrower's WhatsApp conversation with text only.
   final ValueChanged<BorrowedLoan> onWhatsAppText;
+
+  /// Marks one loan returned.
+  final ValueChanged<BorrowedLoan> onMarkReturned;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -142,6 +146,7 @@ final class BorrowedItemsContent extends ConsumerWidget {
                     onCall: onCall,
                     onShare: onShare,
                     onWhatsAppText: onWhatsAppText,
+                    onMarkReturned: onMarkReturned,
                   ),
                 ),
             ],
@@ -193,6 +198,7 @@ final class _LoanSliver extends StatelessWidget {
     required this.onCall,
     required this.onShare,
     required this.onWhatsAppText,
+    required this.onMarkReturned,
   });
 
   /// True on wide screens (≥ `largeScreenMinWidth`): cover-card grid.
@@ -203,6 +209,7 @@ final class _LoanSliver extends StatelessWidget {
   final ValueChanged<BorrowedLoan> onCall;
   final void Function(BorrowedLoan, BuildContext) onShare;
   final ValueChanged<BorrowedLoan> onWhatsAppText;
+  final ValueChanged<BorrowedLoan> onMarkReturned;
 
   @override
   Widget build(BuildContext context) {
@@ -225,6 +232,7 @@ final class _LoanSliver extends StatelessWidget {
             onCall: _callCallback(entry),
             onShare: (buttonContext) => onShare(entry, buttonContext),
             onWhatsAppText: _whatsAppTextCallback(entry),
+            onMarkReturned: () => onMarkReturned(entry),
           );
         },
       );
@@ -242,6 +250,7 @@ final class _LoanSliver extends StatelessWidget {
           onCall: _callCallback(entry),
           onShare: (buttonContext) => onShare(entry, buttonContext),
           onWhatsAppText: _whatsAppTextCallback(entry),
+          onMarkReturned: () => onMarkReturned(entry),
         );
       },
     );

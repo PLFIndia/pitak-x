@@ -16,13 +16,14 @@ final class BorrowedLoanRow extends StatelessWidget {
     required this.onCall,
     required this.onShare,
     required this.onWhatsAppText,
+    required this.onMarkReturned,
     super.key,
   });
 
   /// Complete active-loan read model.
   final BorrowedLoan entry;
 
-  /// Whether this loan's reminder action is busy.
+  /// Whether one of this loan's actions is running.
   final bool busy;
 
   /// Opens catalogue detail.
@@ -36,6 +37,9 @@ final class BorrowedLoanRow extends StatelessWidget {
 
   /// Opens the borrower's WhatsApp conversation with text only, when available.
   final VoidCallback? onWhatsAppText;
+
+  /// Marks this loan returned.
+  final VoidCallback onMarkReturned;
 
   @override
   Widget build(BuildContext context) {
@@ -68,6 +72,7 @@ final class BorrowedLoanRow extends StatelessWidget {
                       onCall: onCall,
                       onShare: onShare,
                       onWhatsAppText: onWhatsAppText,
+                      onMarkReturned: onMarkReturned,
                     ),
                   ],
                 ),
