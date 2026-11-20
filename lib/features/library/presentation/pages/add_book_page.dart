@@ -26,6 +26,7 @@ import 'package:pitaka/features/library/application/library_controller.dart';
 import 'package:pitaka/features/library/domain/catalogue_rules.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/presentation/catalogue_save_messages.dart';
+import 'package:pitaka/features/library/presentation/widgets/catalogue_choice_labels.dart';
 import 'package:pitaka/features/library/presentation/widgets/language_field.dart';
 import 'package:pitaka/features/lookup/domain/entities/book_metadata.dart';
 import 'package:pitaka/features/lookup/domain/isbn_format.dart';
@@ -397,7 +398,7 @@ class _AddBookPageState extends ConsumerState<AddBookPage> {
             items: [
               const DropdownMenuItem(child: Text('Not set')),
               for (final t in ItemSourceType.values)
-                DropdownMenuItem(value: t, child: Text(_sourceLabel(t))),
+                DropdownMenuItem(value: t, child: Text(itemSourceLabel(t))),
             ],
             onChanged: (v) => setState(() => _sourceType = v),
           ),
@@ -412,7 +413,7 @@ class _AddBookPageState extends ConsumerState<AddBookPage> {
             items: [
               const DropdownMenuItem(child: Text('Not set')),
               for (final g in AgeGroup.values)
-                DropdownMenuItem(value: g, child: Text(_ageGroupLabel(g))),
+                DropdownMenuItem(value: g, child: Text(ageGroupLabel(g))),
             ],
             onChanged: (v) => setState(() => _ageGroup = v),
           ),
@@ -491,22 +492,6 @@ class _AddBookPageState extends ConsumerState<AddBookPage> {
       ),
     );
   }
-
-  static String _sourceLabel(ItemSourceType t) => switch (t) {
-    ItemSourceType.purchased => 'Purchased',
-    ItemSourceType.gift => 'Gift',
-    ItemSourceType.donated => 'Donated',
-    ItemSourceType.inherited => 'Inherited',
-    ItemSourceType.other => 'Other',
-  };
-
-  static String _ageGroupLabel(AgeGroup g) => switch (g) {
-    AgeGroup.above3 => 'Ages 3+',
-    AgeGroup.above6 => 'Ages 6+',
-    AgeGroup.above10 => 'Ages 10+',
-    AgeGroup.above15 => 'Ages 15+',
-    AgeGroup.advanced => 'Advanced',
-  };
 
   static String _formatDate(int epochMillis) {
     // Keep the catalogue's `0` sentinel and legacy-date rules out of the

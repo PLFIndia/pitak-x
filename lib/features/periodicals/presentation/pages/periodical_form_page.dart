@@ -24,6 +24,7 @@ import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/value_objects/calendar_date.dart';
 import 'package:pitaka/features/library/presentation/catalogue_save_messages.dart';
+import 'package:pitaka/features/library/presentation/widgets/catalogue_choice_labels.dart';
 import 'package:pitaka/features/library/presentation/widgets/form_cover_field.dart';
 import 'package:pitaka/features/library/presentation/widgets/language_field.dart';
 import 'package:pitaka/features/periodicals/application/periodical_form_controller.dart';
@@ -352,7 +353,7 @@ class _PeriodicalFormPageState extends ConsumerState<PeriodicalFormPage> {
             items: [
               const DropdownMenuItem(child: Text('Not set')),
               for (final t in ItemSourceType.values)
-                DropdownMenuItem(value: t, child: Text(_sourceLabel(t))),
+                DropdownMenuItem(value: t, child: Text(itemSourceLabel(t))),
             ],
             onChanged: (v) => setState(() => _sourceType = v),
           ),
@@ -367,7 +368,7 @@ class _PeriodicalFormPageState extends ConsumerState<PeriodicalFormPage> {
             items: [
               const DropdownMenuItem(child: Text('Not set')),
               for (final g in AgeGroup.values)
-                DropdownMenuItem(value: g, child: Text(_ageGroupLabel(g))),
+                DropdownMenuItem(value: g, child: Text(ageGroupLabel(g))),
             ],
             onChanged: (v) => setState(() => _ageGroup = v),
           ),
@@ -420,20 +421,4 @@ class _PeriodicalFormPageState extends ConsumerState<PeriodicalFormPage> {
       ),
     );
   }
-
-  static String _sourceLabel(ItemSourceType t) => switch (t) {
-    ItemSourceType.purchased => 'Purchased',
-    ItemSourceType.gift => 'Gift',
-    ItemSourceType.donated => 'Donated',
-    ItemSourceType.inherited => 'Inherited',
-    ItemSourceType.other => 'Other',
-  };
-
-  static String _ageGroupLabel(AgeGroup g) => switch (g) {
-    AgeGroup.above3 => 'Ages 3+',
-    AgeGroup.above6 => 'Ages 6+',
-    AgeGroup.above10 => 'Ages 10+',
-    AgeGroup.above15 => 'Ages 15+',
-    AgeGroup.advanced => 'Advanced',
-  };
 }
