@@ -519,8 +519,10 @@ void main() {
   // worker isolate so the UI isolate keeps painting frames while a large
   // backup is being assembled.
   group('N10-c — build runs off the calling isolate', () {
-    /// A library + covers large enough that HEAD's synchronous build took
-    /// ~1 s locally (3 × 1 MiB random covers = incompressible, 4000 rows).
+    /// A library + covers large enough that the synchronous build this test
+    /// was written against took ~1 s locally (3 × 1 MiB random covers =
+    /// incompressible, 4000 rows). Today's build, on its worker, takes 13 to
+    /// 19 ms once warm and 70 to 200 ms the first time (measured 2026-11).
     Future<BackupArchiveWriter> bigFixture() async {
       Directory('${tmp.path}/covers').createSync(recursive: true);
       final rng = Random(1);
@@ -552,13 +554,19 @@ void main() {
       // build is NOT blocking this isolate. A synchronous build (HEAD) holds
       // the event loop, so the timer fires only after the build returns.
       final w = await bigFixture();
+      // The rows are made BEFORE the clock and the timer start. Making them
+      // is work of this test on this isolate, and the timer cannot fire
+      // while it runs. (Until 2026-11 they were made inside the call below.
+      // That took 3 to 36 ms of a build that is quick today, and "half of
+      // the build's time" was then passed now and then: D121, D127.)
+      final books = bigBooks();
       final fired = Completer<int>();
       final sw = Stopwatch()..start();
       Timer(const Duration(milliseconds: 1), () {
         fired.complete(sw.elapsedMilliseconds);
       });
       final work = w.build(
-        books: bigBooks(),
+        books: books,
         wishlist: const [],
         periodicals: const [],
         workDir: '${tmp.path}/work',
