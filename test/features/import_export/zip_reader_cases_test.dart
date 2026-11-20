@@ -689,6 +689,12 @@ void m05Regressions() {
       // check can run, through the unbounded native path. The reader must
       // therefore not use decodeBytes at all. A symlink entry is refused as
       // "not a regular file", and the probe proves no inflate happened.
+      //
+      // That no code of the app names the package's reader is held by
+      // `test/architecture/package_zip_reader_test.dart`. (Until 2026-11
+      // this test also looked at a stopwatch, "under 200 ms". Unpacking the
+      // 64 MiB takes 12 to 97 ms, so that bound could not notice it, and on
+      // a busy machine it was passed with nothing unpacked: D121, D126.)
       const bombSize = 64 * 1024 * 1024;
       final zip = buildHostileZip([
         HostileEntry(
@@ -708,7 +714,6 @@ void m05Regressions() {
         maxArchiveBytes: 1024 * 1024,
       );
       var probeCalls = 0;
-      final sw = Stopwatch()..start();
       expect(
         () => readZip(
           zip,
@@ -724,9 +729,6 @@ void m05Regressions() {
         ),
       );
       expect(probeCalls, 0, reason: 'refused before our inflate ran');
-      // A full 64 MiB native inflate costs ~10-20 ms on this machine; the
-      // header-only path is sub-millisecond. Generous bound, still a tell.
-      expect(sw.elapsedMilliseconds, lessThan(200));
     });
 
     test('UNIX-made regular files (mode 0100644) are still accepted', () {

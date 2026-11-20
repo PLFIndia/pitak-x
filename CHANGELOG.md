@@ -429,6 +429,12 @@ Two known limits, measured in that run on a fast phone and accepted
   file is always dropped.
 
 ### Tests
+- The test that a ZIP made to unpack without limit is refused before
+  anything is unpacked no longer looks at a clock. Its bound of 200 ms
+  could not notice the unpacking it was there for (12 to 97 ms), and on a
+  busy machine it was passed with nothing unpacked. In its place
+  `test/architecture/package_zip_reader_test.dart` (6 tests) holds that no
+  code under `lib/` names a ZIP reader of `package:archive`.
 - Returns: 101 tests. The rule of taking a return back and the one
   operation (`loan_return_test.dart`, `change_loan_return_test.dart`, the
   session's tests); the gesture with its bar, "Undo" after the page is
