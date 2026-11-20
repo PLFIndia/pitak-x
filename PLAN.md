@@ -202,11 +202,12 @@ under "D<number>". All are of November 2026.
 | D118 | 20 | Stage 5, the fourth point of its review stop: two things the look in the emulator showed about how the stage's gesture feels are left as they are, the first of three ways, as proposed. One follows from the design's own choice of one busy state for a whole card, and lasts as long as one write; the other is how a timed bar with a button behaves over another button, does no harm, and has the lasting way of D114 beside it. Not chosen: a busy sign of its own for the one new button; a note for later. The private design file has both | in force; nothing to build. ADR 0029 names the first under its known limits |
 | D119 | 20 | Stage 5, the fifth point of its review stop: one test file that had nothing of its own left is removed, as proposed (`test/features/vault/item_wording_test.dart`: its one test, changed in step 1, repeats a stricter one of `borrower_edit_page_test.dart`). The yes was for `git rm`; git refused it because step 1's change to the file was not committed, nothing was done, and the yes was asked again for `git rm -f`, which stages the deletion of that one file and commits nothing | done 2026-11-20: the deletion was staged, the only thing in the index, and committed with `9a30de9`. The suite has 7,778 tests, the format check 1,492 files; the changelog's count follows |
 | D120 | 20 | Stage 5, the sixth point of its review stop: T15 and T16, which were found before step 4 in the screen as it was and are outside the stage, stay in the private tracker as open items and are decided later, as T14 is; the first of three ways, as proposed. That the agent had written the two rows into the tracker without asking first was said with it. Not chosen: a small stage of their own right after this one; one of the two fixed inside this stage | in force; nothing to build |
-| D121 | 20 | Stage 5, the seventh point of its review stop, which is not about the stage: the assertion on wall-clock time in `zip_reader_cases_test.dart:729` failed in 3 of the 12 whole runs of the two sessions that built stage 5 (858, 220 and 206 ms against 200) and passed alone each time. Read with it: the test's other assertions hold what it guards; its own comment puts a full unpack at 10 to 20 ms, which a bound of 200 would not notice; and since BR7 the timed part includes the disk work of the tests' reader (two temporary folders, the archive written and read twice), which alone can pass the bound on a busy Mac. The second of three ways, as proposed: after stage 5 is pushed it becomes a small change of its own. What replaces or removes the clock is shown first; test code only, its own commit and CI run. Not chosen: leaving it a third time; a higher bound that nobody derived. The other wall-clock test of the handoff (`backup_archive_writer_test.dart:549`, which showed once that day) is read when that change is designed and put then | in force; not designed, not built |
+| D121 | 20 | Stage 5, the seventh point of its review stop, which is not about the stage: the assertion on wall-clock time in `zip_reader_cases_test.dart:729` failed in 3 of the 12 whole runs of the two sessions that built stage 5 (858, 220 and 206 ms against 200) and passed alone each time. Read with it: the test's other assertions hold what it guards; its own comment puts a full unpack at 10 to 20 ms, which a bound of 200 would not notice; and since BR7 the timed part includes the disk work of the tests' reader (two temporary folders, the archive written and read twice), which alone can pass the bound on a busy Mac. The second of three ways, as proposed: after stage 5 is pushed it becomes a small change of its own. What replaces or removes the clock is shown first; test code only, its own commit and CI run. Not chosen: leaving it a third time; a higher bound that nobody derived. The other wall-clock test of the handoff (`backup_archive_writer_test.dart:549`, which showed once that day) is read when that change is designed and put then | designed and built the same evening (D126): the clock is gone from that test, and `test/architecture/package_zip_reader_test.dart` stands in its place: `9ab7638`. The other wall-clock test is not put yet |
 | D122 | 20 | Stage 5, at its review stop, after the maintainer's first report from the phone (a save in the vault takes 3 to 4 seconds in the debug build there): two of the stage's three gestures show no sign of working while the vault writes. They are left as built, the first of three ways, as proposed, because the wait itself is taken away next (D123); ADR 0029 and the changelog name it as a known limit, in sentences that were shown. Not chosen: a busy sign for both inside this stage; holding the stage back. Said with it: the agent had not looked for it, neither in the design nor in the emulator. The private design file has what was read and measured | in force, since D125 for another reason than the one given here: the wait is acceptable in a release build. In ADR 0029 and the changelog (`e39e00c`, put right by `ca03b62`) |
 | D123 | 20 | The maintainer asked for an architectural fix of what makes a save in the vault slow. **P3-M3 joins the plan for the next findings as its next stage, stage 6, ahead of P4-M8**, which becomes stage 7. Of the two steps the review gives for P3-M3 it is the second, the one that changes the security design and needs ADR 0005 and ADR 0006 changed; this answers decision point 4 of pass 3 of the review. It is in the vault's security code, so it is designed first, in a planning session: a threat model, what was read and tried, its decision points one at a time, and no code before its go-ahead (D21). The file on the device stays encrypted at all times; that was said to the maintainer in so many words. Stage 5 is finished first and is not held back for it | **taken back by D125** the same evening, after the maintainer had tried a release build on the phone. Nothing was read, designed or built for it |
 | D124 | 20 | Stage 5 (P4-M3) is accepted at its review stop as built, after the look in the emulator, which was the agent's and was read from the screen's accessibility tree, and after the maintainer's look on the phone's play install (a debug build). With it the answers of the review stop, each as proposed but D121, which took the second way: D115 to D123. Said with it, what is not proven: CI on Linux, the golden pictures with it; a screen reader, on any device; the screens with the vault unlocked as pictures (the agent read them, the maintainer saw them; which of the look's points were made on the phone was not said, beyond that a save took 3 to 4 seconds there); a release build's speed on the phone; a narrow or a weak phone itself; iOS. No commit of the stage was built by itself: the tree that was checked is the last one | in force; committed on 2026-11-20 in four commits, `9a30de9`, `b97eda4`, `1c69d6c`, `e39e00c`, each with the maintainer's yes, and a fifth after D125, `ca03b62`; pushed that evening with this file (`c855c61..7ba6837`, with the maintainer's yes), and CI run 44766273946 is green in every job at its first attempt: 7,778 tests, and the 10 golden tests with the pictures as they were |
 | D125 | 20 | After the commits of stage 5: the maintainer tried a release build on the phone and found the time a return and the other saves take acceptable in practice ("we need not change the stuff"). **D123 is taken back the same evening: P3-M3 does not join the plan**, the scanner is stage 6 again, and the finding stays open in the private tracker, in no stage; decision point 4 of pass 3 of the review is thereby answered with neither of its two steps for now. D122 stands (two gestures of stage 5 show no sign of working while the vault writes), now for this reason and not for the one given with it. ADR 0029 and the changelog had been committed an hour before with two sentences that named a next stage; they are put right in a commit of their own on top, in words that were shown, and nothing committed is rewritten. The agent's reading of the maintainer's message was put first and confirmed. Not chosen: folding the correction into the commit before it | done: `ca03b62` |
+| D126 | 20 | The small change of D121, its decision point: what takes the place of the assertion on wall-clock time in `zip_reader_cases_test.dart:729`. Put with a trial outside git: on a quiet Mac the timed call takes under a millisecond; an inflate of the test's 64 MiB, which the bound of 200 ms is there to notice, costs 12 to 97 ms; so the assertion cannot fail for its reason, and fails for another on a busy machine. The second of three ways, as proposed: the clock goes, and a test under `test/architecture/` holds the sentence of that test's own comment, that the app's code does not use the ZIP reader of `package:archive` (ADR 0009): no code line under `lib/` names it. With its row in `docs/ARCHITECTURE.md` §2.1, which is one line beyond the "test code only" of D121. Not chosen: the clock gone and nothing in its place; the clock kept, around the reader alone | built 2026-11-20, as shown and with the changelog's line (the maintainer's yes to all four parts): the stopwatch and its assertion left `zip_reader_cases_test.dart`; `test/architecture/package_zip_reader_test.dart` (6 tests) holds that no code line under `lib/` names `ZipDecoder`, `ZipDirectory`, `ZipFile`, `ZipFileHeader` or `extractFileToDisk`; its row in `docs/ARCHITECTURE.md` §2.1; a line under "Tests" in the changelog. Seen red twice by hand: with one such line under `lib/` the gate fails and names the file and the line; with the scan pointed at a folder without the reader, the test that asks whether the scan saw its files fails. 7,784 tests passed in the first whole run. Committed with the maintainer's yes: `9ab7638` |
 
 Decision points of the plan that are still open: 7 (see
 "The plan").
@@ -515,8 +516,12 @@ when it was written; check the repository before relying on it.
   the 10 golden tests with the pictures as they were, Rust 45
   passed and 2 ignored, `cargo deny check`, the OSV scan, both
   purity checks, the step for the merged manifest ("OK" for both
-  flavours), and the Android unit tests. It is the last run that
-  was looked at. Before it, run 44667415379 at
+  flavours), and the Android unit tests. After it, run 44775610543
+  at `ea84735` (this file alone: the bookkeeping of stage 5) was
+  green in all four jobs at its first attempt as well, with the
+  same numbers, and so was "Update goldens" (44775610446; it
+  pushed no commit). It is the last run that was looked at. Before
+  those two, run 44667415379 at
   `7874d4f`, the run of stage 4 of the plan for the next findings,
   was green in all four jobs at its first attempt (2026-11-20, in
   the morning),
@@ -630,11 +635,12 @@ when it was written; check the repository before relying on it.
   that are not part of this work (`docs/plans/handoff-2026-11-09.md`,
   `item-reminder.md`, `reminder-fixes.md`, `reminder-issues1.md`,
   `remoteImport-issues.md`).
-- This file: `7ba6837` is the last commit of it that was pushed with
+- This file: `ea84735` is the last commit of it that was pushed with
   a CI run that was looked at.
-- **The fourth session of 2026-11-20 changed no file of the app.**
+- **The fourth session of 2026-11-20 changed no file under `lib/`.**
   It did the bookkeeping of stage 5 of the plan for the next
-  findings. The state was as the handoff said (level with
+  findings, and then built D121's small change (D126; the end of
+  this bullet). The state was as the handoff said (level with
   `origin/reviewFixes` at `7ba6837`; this file changed and not
   committed; the private files there). The numbers of the committed
   tree, here: `build_runner` wrote 0 outputs, no diff; format 0
@@ -661,11 +667,40 @@ when it was written; check the repository before relying on it.
   (a last section about that session); the private archive (the
   design file byte for byte as its last section, its line in the
   list of titles, and one entry for each of D103 to D125 after
-  D102). The design file itself lies in the root, as a duplicate,
-  until its removal has had the maintainer's yes. `.git/config` was
+  D102). The design file itself lies in the root, as a duplicate:
+  asked that evening, the maintainer chose to leave it for now
+  (compared once more with the archive's copy then: the same
+  bytes). `.git/config` was
   compared with a copy at the end: unchanged. Outside git:
-  `/tmp/pitak_p4m3_book/` ("Scratch folders outside git"). What was
-  written into this file in that session is one more commit of it,
+  `/tmp/pitak_p4m3_book/` ("Scratch folders outside git"). With the
+  maintainer's yes this file was then committed (`ea84735`; what
+  was staged was compared with the saved copy, and everything that
+  went out was searched for a home path, an address, a serial and
+  a long checksum: none) and PUSHED (`7ba6837..ea84735`, 22:09).
+  **CI run 44775610543 at `ea84735` is green in all four jobs at
+  its first attempt**, read from its log: 7,778 tests, the
+  calendar-day runs (226, twice), the 10 golden tests, line
+  coverage 84.99%, Rust 45 passed and 2 ignored, the merged
+  manifest "OK" for both flavours, the Android unit tests, the OSV
+  scan; "Update goldens" (44775610446) is green too and pushed no
+  commit. The assertion that failed in all three whole runs on the
+  Mac that evening passed on Linux. A slip: the run was first
+  watched with one long blocking call, which was broken off; it
+  was then read in short looks.
+  **Then D121's small change, designed (D126), BUILT and committed
+  (`9ab7638`, with the maintainer's yes; what was staged was
+  compared with the saved copies, the hook ran and found the
+  generated code current, `.git/config` unchanged):** one new file,
+  `test/architecture/package_zip_reader_test.dart`, and three
+  changed, `test/features/import_export/zip_reader_cases_test.dart`
+  (its stopwatch gone), `docs/ARCHITECTURE.md` (one row) and
+  `CHANGELOG.md` (one line). Checks on that tree: **7,784 tests
+  passed** in the first whole run; `build_runner` no diff; format 0
+  changed of 1,493 files; analyze 47, the same issues. Rust and
+  Kotlin were not touched and not run again (45 passed and 2
+  ignored, 64 in each flavour, earlier that evening). D126 is in the
+  private archive in full, after the entry of D125. What was
+  written into this file after `ea84735` is one more commit of it,
   or is not committed as long as `git status` names this file.
 - **The second and the third session of 2026-11-20 BUILT stage 5
   of the plan for the next findings through its seven steps, and
@@ -2420,6 +2455,9 @@ None of them blocks the next stage.
   started after five quiet minutes; the Mac ran on its battery).
   That is six of the fifteen whole runs since the build of stage 5
   began, and the last three in a row.
+  **The clock is gone since D126** (built the same evening): the
+  first whole run without it passed, 7,784 tests. The other
+  wall-clock test, and the three of its shape, are still to be put.
 - `lock_suppressor_test.dart`, "clears after the grace window",
   timed out ONCE on 2026-11-20, in a whole run that was in the
   background while the Mac went to sleep for two and a half hours
@@ -2786,7 +2824,16 @@ last section and the archive's new entries were joined from
 file and of the two git settings files from before the session's
 first write (`before/`, with checksums). Nothing of the
 maintainer's own is in it but those copies; it is left to the
-system.
+system. It also has the log of CI run 44775610543
+(`logs/ci-44775610543.log`). `/tmp/pitak_d121/` holds the trial
+for D121's design (one test file with three tests, and its log);
+it imports the app's test helpers by their whole path and changes
+nothing. Since the build of D126 it also holds the new test as it
+was tried outside git, the logs of its green run, of the two
+trials by hand and of the checks (`logs/`), a patch of the three
+changed files and a copy of all four with checksums (`patches/`),
+D126's entry for the archive, and copies from before the build
+(`before/`).
 
 ## Log
 
@@ -2805,7 +2852,7 @@ system.
 | 2026-11-20 | The seventh session of the plan for the next findings: stage 4 (P4-M1) finished. The state confirmed (the 23 files of the build the same as their snapshot), the whole checks (7,631 tests). Step 5, "Basic info": 29 tests shown, written first, 20 red and 9 green on the old tab as predicted; the tab keeps its state across a change of tab and asks from every tab; a 30th test for a `finally` around its save; 16 trials by hand. Step 6: the twelve files that are not forms each read in full (one reason of the design put right); the gate test (16 tests), ADR 0028 and the row of `docs/ARCHITECTURE.md`, each shown first; 7 trials by hand. Step 7: all checks (7,677 tests; Rust 45 passed, 2 ignored; Kotlin 64 in each flavour); a debug build on the phone's play install, the data kept; the look in the emulator of API 36 by the agent (Android 16's way of Back, and no back preview on a form), and on the phone by the maintainer: fine as it is; seen in the emulator and outside the stage: a change of the navigation mode restarts the app's screen, written into ADR 0028 as a known limit; the changelog. The review stop: accepted (D102). Six commits (`aef6db4`, `a530dff`, `6bb671a`, `4742519`, `6d835ba`, `47ff3b7`) and this file (`7874d4f`); pushed (`1201ae4..7874d4f`); CI run 44667415379 green in every job at its first attempt, the golden pictures as they were. P4-M1 ticked in the private tracker; the stage described here; its design file in the private archive, word for word. Next: the planning of stage 5 (P4-M3) |
 | 2026-11-20 | The eighth session of the plan for the next findings: stage 5 (P4-M3) planned, and its build begun. The state confirmed (level with `origin/reviewFixes` at `c855c61`; this file changed and not committed). The baseline, Kotlin with it: unchanged (7,677 tests). The finding read in the tracker, the report and the summary, and confirmed in today's code, every part of it. Read in the Flutter SDK and in Flutter's documentation; two trials outside git (11 tests). The design in the private `p4-m3-in-detail.md`; ten decision points put one at a time, each answered as proposed (D103 to D112); the go-ahead, the whole build through to the review stop (D113). Step 1 and step 2 built, tests first. Two statements of the agent were wrong and are named as such in the design file: a search before D110 had not covered `integration_test/` (a third caller, changed to the call the app uses), and D106 as it was put did not hold (a third trial, 3 tests); the build stopped for the second, and D114 answered it. Step 3 built, each of its guards switched off once by hand; D109's condition came up and was answered by layout, the words unchanged. 7,734 tests passed after step 3. Each of the two wall-clock tests of the handoff failed once, in the whole runs after steps 1 and 2, and passed alone three times. Nothing committed. Steps 4 to 7 are not begun |
 | 2026-11-20 | The ninth session of the plan for the next findings: the build of stage 5 (P4-M3) went on, steps 4 to 6 and the first part of step 7. The state confirmed (level with `origin/reviewFixes` at `c855c61`; this file changed; eleven files changed and six new, as the handoff says); the private design file read in full; copies of the private files and a patch of everything through step 3 saved first. A trial outside git against the screen of step 4 as it was (3 tests): two things seen that are there today and are not of the stage (T15, T16, into the private tracker). Step 4 built, tests first (20; 19 red and 1 green on the old code), with the stand-in session of step 3 moved to `test/support/` for the three test files that need it; nine trials by hand, each seen (two only after one test was written more sharply). 7,754 tests. Step 5 built, tests first (16 on the screen, 13 red and 3 green on the old code; 7 of its rule; 1 more on the screen of step 3). **Found in it, and said first: a check of step 3 could not fail**, so one thing the build log of step 3 says was shown had not been (a trial outside git, 4 tests; the check put right in `test/support/text_lines.dart`; D109's row corrected). Two things beyond the design, each with a test seen red: what names a person asks for itself whether the vault is unlocked now, and a row's waiting state is tied to what the row is about (on the screen of step 3 as well). Thirteen trials by hand, each seen. One whole run was in the background when the Mac went to sleep for two and a half hours and does not count (one test that waits on the clock timed out); run again in the foreground: 7,778 tests. Step 6: the guide's step with a test that holds it to the buttons' own words (seen red), its approved copy in the mockup (the `.html` beside it is a frozen artefact and was left), ADR 0029 with its line in the index, the changelog; none of the three texts was shown before it was written, all three go to the review stop. Three whole runs: in the first two `zip_reader_cases_test.dart:729` failed (220 ms, 206 ms against 200) and passed alone three times; the third passed, **7,779 tests**. Step 7, its first part: `build_runner` no new diff, format 0 changed of 1,493 files, analyze 47, Rust 45 passed and 2 ignored, Kotlin 64 in each flavour offline. Slips, each written where it happened: a script copied one of the maintainer's own untracked files into `/tmp` (the repository was not touched); a background run that never started; two lints of the agent's own, put right. The maintainer's yes for the debug build and the emulator run (D111). Step 7, its second part: the build looked into; the device smoke test that step 2 had changed passed in the emulator of API 36; the look there, read from the screen's accessibility tree because the screen-capture protection blanks every screenshot while the vault is unlocked: every point of the design's list but a screen reader, which the image does not have; D109's words measured with a real font at the largest font and at 320 dp; the device's log without an error and without a made-up name. A slip there: a chain of taps sent blind closed the app and landed one tap in the image's other install (nothing typed; the image is read-only). ADR 0029's paragraph about the devices and the changelog's sentence, the emulator's part; the Dart checks once more: 7,779 tests. The review stop, its points one at a time: D115 (D109 as built), D116 (the words as written), D117 (five small things beyond the design kept), D118 (two things of the look left), D119 (one test file removed; `git rm` was refused for an uncommitted change, and the yes was asked again for `git rm -f`), D120 (T15 and T16 kept open), D121 (the wall-clock test of the ZIP reader as a change of its own after the push). The debug build onto the phone's play install with a yes, the phone's state read before and after, the vault's files the same bytes. The maintainer's first report from there, a save takes 3 to 4 seconds: read and measured (each save runs the vault's key step twice, which is the review's P3-M3 and not of this stage; a debug build makes that step about 14 times slower, 1.15 s against 0.08 s on the Mac), and with it a gap of the stage's own that the agent had not looked for (two of its gestures show no sign of working during that wait): D122, a known limit. The maintainer asked for an architectural fix of the vault (D123: P3-M3 as the next stage), accepted the stage (D124), and, after the four commits (`9a30de9`, `b97eda4`, `1c69d6c`, `e39e00c`) and after trying a release build on the phone, took D123 back (D125); two sentences of the fourth commit were put right in a fifth (`ca03b62`). 7,778 tests after D119. The commit of this file (`7ba6837`) and the push of six commits (`c855c61..7ba6837`), with the maintainer's yes; CI run 44766273946 green in every job at its first attempt (7,778 tests, the 10 golden tests with the pictures as they were, Rust 45 passed and 2 ignored, the merged manifest "OK" for both flavours, the Android unit tests), and "Update goldens" with no new picture. Left of the stage: the ticks, its description here, the design file into the archive |
-| 2026-11-20 | The tenth session of the plan for the next findings: the bookkeeping of stage 5 (P4-M3). The state confirmed (level with `origin/reviewFixes` at `7ba6837`; this file changed and not committed; the private files there); the private design file read in full; copies of the private files first. The numbers of the committed tree: `build_runner` no diff, format 0 changed of 1,492 files, analyze 47, Rust 45 passed and 2 ignored, Kotlin 64 in each flavour offline. Three whole runs of the suite, and each ended with 7,777 passed and one failed, the same assertion on wall-clock time each time (`zip_reader_cases_test.dart:729`: 762, 435 and 679 ms against 200; alone between the first two runs three times 41 of 41); the first was started 12 seconds after analyze, against this file's own trap, a slip; the third after five quiet minutes; the Mac ran on its battery. A fourth was not made: nothing of the app changed, and that assertion is the next piece of work (D121). P4-M3 ticked in the private tracker with its commits (85 findings with an open box, 12 ticked), P4-m5 written down there as met in part; the stage described here ("Stage 5: what it was and what was built") and the states of D103 to D119 brought up to date; the design file, with a last section about this session, into the private archive byte for byte, with its line in the list of titles and one entry for each of D103 to D125 after D102. A slip: one shell line of the agent's own used a form this Mac's shell does not have; the check it stood beside was made by the script in the same command. Another: one heading of the archive's new entries came out of the agent's script with a phrase doubled and was put right by hand, after the comparison (the archive without its three additions was the copy from before, and the design file between its marker lines the same bytes). Nothing of the app changed; nothing committed. Left: the yes for the commit of this file and for its push, and for the removal of the design file from the root; then D121's small change |
+| 2026-11-20 | The tenth session of the plan for the next findings: the bookkeeping of stage 5 (P4-M3). The state confirmed (level with `origin/reviewFixes` at `7ba6837`; this file changed and not committed; the private files there); the private design file read in full; copies of the private files first. The numbers of the committed tree: `build_runner` no diff, format 0 changed of 1,492 files, analyze 47, Rust 45 passed and 2 ignored, Kotlin 64 in each flavour offline. Three whole runs of the suite, and each ended with 7,777 passed and one failed, the same assertion on wall-clock time each time (`zip_reader_cases_test.dart:729`: 762, 435 and 679 ms against 200; alone between the first two runs three times 41 of 41); the first was started 12 seconds after analyze, against this file's own trap, a slip; the third after five quiet minutes; the Mac ran on its battery. A fourth was not made: nothing of the app changed, and that assertion is the next piece of work (D121). P4-M3 ticked in the private tracker with its commits (85 findings with an open box, 12 ticked), P4-m5 written down there as met in part; the stage described here ("Stage 5: what it was and what was built") and the states of D103 to D119 brought up to date; the design file, with a last section about this session, into the private archive byte for byte, with its line in the list of titles and one entry for each of D103 to D125 after D102. A slip: one shell line of the agent's own used a form this Mac's shell does not have; the check it stood beside was made by the script in the same command. Another: one heading of the archive's new entries came out of the agent's script with a phrase doubled and was put right by hand, after the comparison (the archive without its three additions was the copy from before, and the design file between its marker lines the same bytes). Nothing of the app changed. With the maintainer's yes: the commit of this file (`ea84735`) and its push (`7ba6837..ea84735`); CI run 44775610543 green in every job at its first attempt (7,778 tests, the 10 golden tests; the assertion that failed three times on the Mac passed on Linux), and "Update goldens" with no new picture. Asked for the removal of the design file from the root: it stays for now (the maintainer). Then D121's small change, in the same session. Read and tried outside git (3 tests): the timed call takes under a millisecond on a quiet Mac, and the inflate the bound of 200 ms is there to notice costs 12 to 97 ms, so the assertion could not fail for its reason. Put with three ways; D126: the clock goes and a source scan under `test/architecture/` takes its place. The scan tried outside git against today's `lib/` (6 tests), shown, and built with the maintainer's yes to all four parts (the test, the old test without its clock, the row of `docs/ARCHITECTURE.md` §2.1, a line of the changelog). Beyond what was shown: both tests of the scan ask ONE function for the files, so that the second can see a scan that looked at nothing (a weakness of the shown text, found when the trial for it was planned); the old test's comment got five lines where one clause had been said. Two trials by hand, each seen red, each file put back and compared. A slip: the first run of the second trial was sent in the same block as the edit that put the file back, so its "passed" said nothing; done again, one step at a time. Checks: 7,784 tests passed in the first whole run (the Mac on mains power again), `build_runner` no diff, format 0 changed of 1,493 files, analyze 47; Rust and Kotlin not touched and not run again. Committed with the maintainer's yes (`9ab7638`), then this file |
 
 ## Device runs: handoff for the next session
 
@@ -3628,12 +3675,47 @@ this order:
    the assertion fails 19 to 27 seconds into a whole run, when many
    test files run at once, with 206 to 858 ms against its bound of
    200; alone its file has passed every time, and so it has in CI.
-   Read at the end of the fourth session of 2026-11-20, and no
-   more than that: the test's comment says the reader must not use
-   the package's `ZipDecoder` at all; a search of `lib/` finds that
-   name in comments only, and no test under `test/architecture/`
-   names it. Whether a test of that kind is what takes the clock's
-   place is for the design to say.
+   **Read and tried at the end of the fourth session of 2026-11-20
+   (a trial outside git, 3 tests; nothing changed), and put to the
+   maintainer. Answered: D126, the second of the ways below, and
+   BUILT the same evening (D126's row; the numbers of point 2 are
+   then 7,784 tests and 1,493 files), and committed as `9ab7638`.
+   If `git status -sb` shows the branch ahead of
+   `origin/reviewFixes`, what is left is the push and its CI run;
+   the log's last row says whether that run was looked at. What
+   was read for it:**
+   - the clock is of 2026-09-08 (`6d09278`), when the reader worked
+     on bytes in memory. Since BR7 the timed call also makes two
+     temporary folders and writes and reads the archive twice;
+   - on a quiet Mac the timed call takes 0.3 to 0.4 ms (8 ms the
+     first time), and the reader alone 0.04 ms. The 206 to 858 ms
+     of the whole runs are the machine, not the reader;
+   - what the bound is there to notice, an inflate of the test's 64
+     MiB, costs 12 to 19 ms with `dart:io`'s zlib and 88 to 97 ms
+     with the package's own inflater here. Both are far under 200:
+     the assertion cannot fail for the reason it is there, and
+     fails for another;
+   - the test's two other assertions hold what it guards (the
+     refusal's sentence; the reader's own inflate never reached);
+   - the test's comment says the reader must not use the package's
+     `ZipDecoder` at all. Nothing holds that: a search of `lib/`
+     finds the name in comments only, the reader's two files
+     import the package with a `show` list, the writer's file
+     imports all of it, and no test under `test/architecture/`
+     names it. (`archive` 4.6.0's own reader refuses this very
+     file in 5 ms, held to the 512 bytes it declares: one file,
+     one version.)
+   The ways that were put: the clock goes and nothing takes its
+   place; the clock goes and a source scan holds the comment's
+   sentence (a test under `test/architecture/` needs its row in
+   `docs/ARCHITECTURE.md` §2.1, one line beyond "test code only");
+   the clock stays, around the reader alone.
+   Also read: `backup_archive_writer_test.dart:549` is of another
+   kind (a 1 ms timer must fire before half of a build's time has
+   passed, to show the build does not block the calling isolate),
+   and three more tests have its shape (`image_downscaler_test`,
+   `merge_planner_test`, `pdf_library_renderer_test`). It is put
+   after the first is answered.
 4. Then stage 6, P4-M8 (the scanner), in a session with the phone:
    a planning session first, as for every stage. (P3-M3 is NOT a
    stage: D123 put it here for an hour and D125 took it back.)
