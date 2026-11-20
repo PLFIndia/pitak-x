@@ -32,6 +32,36 @@ Two known limits, measured in that run on a fast phone and accepted
   screen can stand still for about a second.
 
 ### Changed
+- **"Mark returned" where the item is handed back, and a return can be
+  taken back (review finding P4-M3 and, in part, P4-m5; `PLAN.md`, D103
+  to D114; ADR 0029).** A loan could be marked returned only on the
+  borrower's page, and a wrong tap could not be undone. The button now
+  says "Mark returned" and stands on the loan card of Borrowed Items, on
+  the item's page (one line for each loan of the item that is out, "Lent
+  to Asha · due 12 November 2026") and on the borrower's page. After a
+  return a bar says "Marked returned." and offers "Undo" for six seconds.
+  Later, every returned loan under "History" on the borrower's page has
+  "Not returned", which asks first. A return is taken back only while a
+  copy of the item is still free: if the item was lent again in the
+  meantime, Pitak says so and changes nothing.
+  - The loan list is gone from the Edit borrower form. The borrower's page
+    shows the same loans, with their titles.
+  - Privacy: the item's page names a borrower only while the vault is
+    unlocked. The bar and the question name neither a borrower nor an
+    item, and the bar leaves the screen when the vault is locked. Nothing
+    new is stored, sent or logged.
+  - The in-app guide "Lending and the borrowers vault" names the three
+    places and both ways back.
+  - Known limit: while the vault writes, "Undo" and "Not returned" show
+    no sign of working. A save in the vault can take seconds on a slow
+    phone today; that wait is the next piece of work (review finding
+    P3-M3; `PLAN.md`, D123).
+  - Seen in an emulator with Android 16 on 2026-11-20, also with the
+    font at its largest and on a screen 320 dp wide: the words of the
+    button take one line everywhere but on the loan card of that narrow
+    screen at the largest font, where they take two. A screen reader was
+    not tried. On a phone with Android 14 it was looked at and accepted
+    by the maintainer the same day, in a debug build.
 - **A form asks before Back throws away what was typed (review finding
   P4-M1; `PLAN.md`, D93 to D101; ADR 0028).** On the nine forms (book,
   other item, magazine title, issue, wishlist entry, borrower, lend,
@@ -400,6 +430,15 @@ Two known limits, measured in that run on a fast phone and accepted
   file is always dropped.
 
 ### Tests
+- Returns: 101 tests. The rule of taking a return back and the one
+  operation (`loan_return_test.dart`, `change_loan_return_test.dart`, the
+  session's tests); the gesture with its bar, "Undo" after the page is
+  gone and the bar's end at a lock (`loan_return_action_test.dart`); the
+  loan card as a row and as a grid card
+  (`borrowed_items_return_test.dart`); the item's page, where no name is
+  drawn unless the vault is unlocked now
+  (`catalogue_item_loans_test.dart`, `item_active_loans_test.dart`); the
+  borrower's page; and one that holds the guide to the buttons' own words.
 - The forms' leaving: 249 tests of the guard and the nine forms, 7 of the
   two small moves that made room in the forms, and
   `test/architecture/form_discard_guard_test.dart` (16), which holds a new

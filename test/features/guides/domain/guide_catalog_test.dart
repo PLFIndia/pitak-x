@@ -10,6 +10,7 @@ import 'package:pitaka/features/guides/domain/guide_markup.dart';
 import 'package:pitaka/features/publish/domain/availability/availability_pacing.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_account_id.dart';
 import 'package:pitaka/features/publish/presentation/widgets/cloudflare_token_dialog.dart';
+import 'package:pitaka/features/vault/presentation/widgets/loan_return_action.dart';
 
 void main() {
   test('exactly nine guides, unique ids, in the approved order', () {
@@ -101,8 +102,9 @@ void main() {
       // ("Make a backup" 2 → 3, "Restore on a new phone" 3 → 4).
       GuideId.backup: [0, 6, 4, 3, 4, 1, 1, 1, 2],
       // 2026-11-09 (PR #26 retired the Pending page): "Returns and
-      // reminders" has 4 bullets (Return, Borrowed Items, Reminder message
-      // card, contact buttons) and a "Lending rules" paragraph follows.
+      // reminders" has 4 bullets (Mark returned, Borrowed Items, Reminder
+      // message card, contact buttons) and a "Lending rules" paragraph
+      // follows. Review finding P4-M3 rewrote the first bullet, not the count.
       GuideId.vault: [0, 3, 3, 4, 1, 3],
       // ADR 0024: "Event alerts (Android)" paragraphs (2) before the end.
       GuideId.network: [0, 1, 2, 5, 2, 0],
@@ -260,6 +262,36 @@ void main() {
       stepsOf('Restore on a new phone').steps.last,
       contains('**$restoreLabel**'),
     );
+  });
+
+  test('the vault guide says where an item is marked returned, with the '
+      "buttons' on-screen labels", () {
+    // Review finding P4-M3 (decisions D109 and D114). The guide used to
+    // send the reader through the vault to the borrower for a "Return"
+    // button. The button now says "Mark returned" and stands on Borrowed
+    // Items, on the item's page and on the borrower's page; a wrong tap is
+    // taken back with "Undo" or, later, with "Not returned".
+    final returns = guideById(GuideId.vault).sections
+        .whereType<GuideBullets>()
+        .singleWhere((section) => section.title == 'Returns and reminders');
+    final first = returns.bullets.first;
+
+    for (final label in [
+      markReturnedLabel,
+      undoReturnLabel,
+      notReturnedLabel,
+    ]) {
+      expect(first, contains('**$label**'), reason: label);
+    }
+    expect(first, contains('**History**'), reason: 'where "Not returned" is');
+    expect(first, isNot(contains('**Return**')), reason: 'the old label');
+    // Borrowed Items is named first (D109): it is where people look first.
+    final borrowedItems = first.indexOf('**☰ → Borrowed Items**');
+    expect(borrowedItems, greaterThanOrEqualTo(0));
+    expect(borrowedItems, lessThan(first.indexOf("item's page")));
+    expect(borrowedItems, lessThan(first.indexOf("borrower's page")));
+    expect(first.indexOf("item's page"), greaterThan(0));
+    expect(first.indexOf("borrower's page"), greaterThan(0));
   });
 
   group('Cloudflare guide matches the real setup', () {
