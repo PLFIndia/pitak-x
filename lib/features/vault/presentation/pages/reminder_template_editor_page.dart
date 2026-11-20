@@ -4,6 +4,7 @@ library;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/core/widgets/discard_changes_guard.dart';
 import 'package:pitaka/features/vault/application/reminder_templates_controller.dart';
 import 'package:pitaka/features/vault/domain/loan_status.dart';
 import 'package:pitaka/features/vault/domain/reminder_template.dart';
@@ -30,6 +31,22 @@ class _ReminderTemplateEditorPageState
   bool _busy = false;
   String? _error;
 
+  /// What the form held when it opened, so that Back can ask before unsaved
+  /// input is lost (the "Discard changes?" guard, ADR 0028).
+  late final OpenedValues _opened;
+
+  /// Every text controller of the form: disposed together, and read
+  /// together by [_values], so a field cannot be in one and not the other.
+  List<TextEditingController> get _texts => [
+    _name,
+    _overdue,
+    _upcoming,
+    _noDueDate,
+  ];
+
+  /// Everything Save would store, as one list for [_opened].
+  List<Object?> _values() => [for (final c in _texts) c.text];
+
   @override
   void initState() {
     super.initState();
@@ -38,11 +55,12 @@ class _ReminderTemplateEditorPageState
     _overdue = TextEditingController(text: existing?.overdueBody ?? '');
     _upcoming = TextEditingController(text: existing?.upcomingBody ?? '');
     _noDueDate = TextEditingController(text: existing?.noDueDateBody ?? '');
+    _opened = OpenedValues(_values);
   }
 
   @override
   void dispose() {
-    for (final controller in [_name, _overdue, _upcoming, _noDueDate]) {
+    for (final controller in _texts) {
       controller.dispose();
     }
     super.dispose();
@@ -117,7 +135,7 @@ class _ReminderTemplateEditorPageState
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    final page = Scaffold(
       appBar: AppBar(
         title: Text(widget.existing == null ? 'Add template' : 'Edit template'),
       ),
@@ -189,6 +207,11 @@ class _ReminderTemplateEditorPageState
           ],
         ),
       ),
+    );
+    return DiscardChangesGuard(
+      hasChanges: () => _opened.changed,
+      saving: _busy,
+      child: page,
     );
   }
 

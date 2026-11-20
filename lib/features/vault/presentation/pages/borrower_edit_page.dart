@@ -11,6 +11,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fpdart/fpdart.dart' show unit;
 import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/core/widgets/discard_changes_guard.dart';
 import 'package:pitaka/features/vault/application/vault_session_controller.dart';
 import 'package:pitaka/features/vault/domain/entities/borrower.dart';
 import 'package:pitaka/features/vault/domain/entities/vault_session_state.dart';
@@ -39,6 +40,25 @@ class _BorrowerEditPageState extends ConsumerState<BorrowerEditPage> {
 
   bool get _isEdit => widget.existing != null;
 
+  /// What the form held when it opened, so that Back can ask before unsaved
+  /// input is lost (the "Discard changes?" guard, ADR 0028). It is a second
+  /// copy of this borrower's name and contact details, in memory only, and
+  /// it goes with the page.
+  late final OpenedValues _opened;
+
+  /// Every text controller of the form: disposed together, and read
+  /// together by [_values], so a field cannot be in one and not the other.
+  List<TextEditingController> get _texts => [
+    _name,
+    _phone,
+    _email,
+    _contactOther,
+    _notes,
+  ];
+
+  /// Everything Save would store, as one list for [_opened].
+  List<Object?> _values() => [for (final c in _texts) c.text];
+
   @override
   void initState() {
     super.initState();
@@ -50,15 +70,14 @@ class _BorrowerEditPageState extends ConsumerState<BorrowerEditPage> {
     _email = TextEditingController(text: contact.email);
     _contactOther = TextEditingController(text: contact.other);
     _notes = TextEditingController(text: e?.notes ?? '');
+    _opened = OpenedValues(_values);
   }
 
   @override
   void dispose() {
-    _name.dispose();
-    _phone.dispose();
-    _email.dispose();
-    _contactOther.dispose();
-    _notes.dispose();
+    for (final c in _texts) {
+      c.dispose();
+    }
     super.dispose();
   }
 
@@ -115,7 +134,7 @@ class _BorrowerEditPageState extends ConsumerState<BorrowerEditPage> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return Scaffold(
+    final page = Scaffold(
       appBar: AppBar(title: Text(_isEdit ? 'Edit borrower' : 'Add borrower')),
       body: ListView(
         padding: const EdgeInsets.all(16),
@@ -186,6 +205,13 @@ class _BorrowerEditPageState extends ConsumerState<BorrowerEditPage> {
           if (_isEdit) _LoansSection(borrowerId: widget.existing!.id),
         ],
       ),
+    );
+    // The "Return" buttons of the loan rows act at once and are not part
+    // of what the guard asks about.
+    return DiscardChangesGuard(
+      hasChanges: () => _opened.changed,
+      saving: _busy,
+      child: page,
     );
   }
 }

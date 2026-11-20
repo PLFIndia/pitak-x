@@ -3,6 +3,7 @@
 /// overflowing (isExpanded + ellipsis).
 library;
 
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -21,12 +22,15 @@ import 'package:pitaka/features/vault/domain/borrower_limit_policy.dart';
 import 'package:pitaka/features/vault/domain/borrower_limit_policy_store.dart';
 import 'package:pitaka/features/vault/domain/entities/borrower.dart';
 import 'package:pitaka/features/vault/domain/entities/vault_data.dart';
+import 'package:pitaka/features/vault/domain/entities/vault_session_state.dart';
 import 'package:pitaka/features/vault/domain/repositories/vault_repository.dart';
 import 'package:pitaka/features/vault/infrastructure/vault_store.dart';
 import 'package:pitaka/features/vault/presentation/pages/lend_book_page.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../support/a11y.dart';
+import '../../support/fake_vault_session.dart';
+import '../../support/form_back_harness.dart';
 import 'vault_repository_write_stub.dart';
 
 class _ReadOnlyVault with VaultWriteUnsupported implements VaultRepository {
@@ -104,6 +108,10 @@ class _ScriptedUseCase extends LendBookUseCase {
   final List<Either<Failure, LendOutcome>> results;
   final calls = <_UseCaseCall>[];
 
+  /// While set, a call waits for it before it answers (P4-M1: "Back while
+  /// the lend runs").
+  Completer<void>? hold;
+
   @override
   Future<Either<Failure, LendOutcome>> call({
     required int bookId,
@@ -126,7 +134,10 @@ class _ScriptedUseCase extends LendBookUseCase {
     if (calls.length > results.length) {
       throw StateError('Unexpected extra lend call ${calls.length}');
     }
-    return Future.value(results[calls.length - 1]);
+    final result = results[calls.length - 1];
+    final held = hold;
+    if (held == null) return Future.value(result);
+    return held.future.then((_) => result);
   }
 }
 
@@ -480,6 +491,212 @@ void main() {
     expect(find.text(message), findsOneWidget);
     expect(find.byType(AlertDialog), findsNothing);
     expect(useCase.calls, hasLength(1));
+  });
+
+  // Review finding P4-M1: Back must not throw away what was entered without
+  // asking. The form stands above the page 'Host' (see `pumpScripted`);
+  // "the form is gone" means 'Host' shows again.
+  group('leaving the form (P4-M1)', () {
+    final page = find.byType(LendBookPage);
+    final newName = find.widgetWithText(TextField, 'New borrower name');
+    final notes = find.widgetWithText(TextField, 'Notes (optional)');
+    final lend = find.widgetWithText(FilledButton, 'Lend');
+
+    void expectGoneWithoutQuestion() {
+      expect(findDiscardQuestion(), findsNothing);
+      expect(page, findsNothing);
+      expect(find.text('Host'), findsOneWidget);
+    }
+
+    void expectAsked() {
+      expect(findDiscardQuestion(), findsOneWidget);
+      expect(page, findsOneWidget);
+    }
+
+    testWidgets('untouched, Back: the form leaves at once', (tester) async {
+      await pumpScripted(tester, _ScriptedUseCase([]));
+      await pressSystemBack(tester);
+
+      expectGoneWithoutQuestion();
+    });
+
+    testWidgets('the screen "Unlock the vault to lend an item." has nothing '
+        'to lose: Back leaves, no question', (tester) async {
+      await pumpFormAboveHome(
+        tester,
+        const LendBookPage(bookId: 7, bookTitle: 'Godaan'),
+        overrides: [
+          vaultSessionControllerProvider.overrideWith(
+            () => FixedVaultSession(const VaultLocked()),
+          ),
+        ],
+      );
+      expect(find.text('Unlock the vault to lend an item.'), findsOneWidget);
+      await pressSystemBack(tester);
+
+      expect(findDiscardQuestion(), findsNothing);
+      expect(page, findsNothing);
+      expect(findFormBackHome(), findsOneWidget);
+    });
+
+    testWidgets('a new name typed, Back: the question. "Keep editing" keeps '
+        'the form and the text; Back again and "Discard" leaves', (
+      tester,
+    ) async {
+      final useCase = _ScriptedUseCase([]);
+      await pumpScripted(tester, useCase);
+      await tester.enterText(newName, 'Meera');
+      await pressSystemBack(tester);
+      expectAsked();
+      expect(
+        find.text('What you entered on this page has not been saved.'),
+        findsOneWidget,
+      );
+
+      await tester.tap(findKeepEditing());
+      await tester.pumpAndSettle();
+      expect(findDiscardQuestion(), findsNothing);
+      expect(find.widgetWithText(TextField, 'Meera'), findsOneWidget);
+
+      await pressSystemBack(tester);
+      await tester.tap(findDiscard());
+      await tester.pumpAndSettle();
+      expectGoneWithoutQuestion();
+      expect(useCase.calls, isEmpty, reason: 'discarded, nothing lent');
+    });
+
+    testWidgets('the question shows nothing that was typed', (tester) async {
+      await pumpScripted(tester, _ScriptedUseCase([]));
+      await tester.enterText(newName, 'Meera Private');
+      await pressSystemBack(tester);
+      expectAsked();
+
+      expect(
+        find.descendant(
+          of: find.byType(AlertDialog),
+          matching: find.textContaining('Meera'),
+        ),
+        findsNothing,
+      );
+    });
+
+    testWidgets('the form shows exactly the two text fields these tests '
+        'know', (tester) async {
+      await pumpScripted(tester, _ScriptedUseCase([]));
+
+      expect(find.byType(TextField), findsNWidgets(2));
+      expect(newName, findsOneWidget);
+      expect(notes, findsOneWidget);
+    });
+
+    testWidgets('notes typed, Back: the question', (tester) async {
+      await pumpScripted(tester, _ScriptedUseCase([]));
+      await tester.enterText(notes, 'Back by Friday');
+      await pressSystemBack(tester);
+
+      expectAsked();
+    });
+
+    testWidgets('an existing borrower picked, Back: the question', (
+      tester,
+    ) async {
+      await pumpScripted(tester, _ScriptedUseCase([]));
+      await selectAsha(tester);
+      await pressSystemBack(tester);
+
+      expectAsked();
+    });
+
+    testWidgets('a due date picked, Back: the question', (tester) async {
+      await pumpScripted(tester, _ScriptedUseCase([]));
+      await tester.tap(find.widgetWithText(TextButton, 'Pick'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('OK'));
+      await tester.pumpAndSettle();
+      expect(find.text('No due date'), findsNothing);
+      await pressSystemBack(tester);
+
+      expectAsked();
+    });
+
+    testWidgets('the arrow of the app bar asks as well', (tester) async {
+      await pumpScripted(tester, _ScriptedUseCase([]));
+      await tester.enterText(newName, 'Meera');
+      await tester.tap(find.byType(BackButton));
+      await tester.pumpAndSettle();
+
+      expectAsked();
+    });
+
+    testWidgets('typed and put back, Back: leaves', (tester) async {
+      await pumpScripted(tester, _ScriptedUseCase([]));
+      await tester.enterText(newName, 'Meera');
+      await tester.enterText(newName, '');
+      await pressSystemBack(tester);
+
+      expectGoneWithoutQuestion();
+    });
+
+    testWidgets('Back while the lend runs does nothing; the form then '
+        'leaves by itself, with no question (D95)', (tester) async {
+      final useCase = _ScriptedUseCase([right(const LoanRecorded())])
+        ..hold = Completer<void>();
+      await pumpScripted(tester, useCase);
+      await selectAsha(tester);
+      await tester.tap(lend);
+      // No waiting for rest: the button shows a spinner while held.
+      await tester.pump();
+      await tester.pump();
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+
+      await pressSystemBack(tester, settle: false);
+      expect(findDiscardQuestion(), findsNothing);
+      expect(page, findsOneWidget, reason: 'Back waits for the lend');
+
+      useCase.hold!.complete();
+      await tester.pumpAndSettle();
+      expectGoneWithoutQuestion();
+      expect(useCase.calls, hasLength(1));
+    });
+
+    testWidgets('after a lend that was refused, Back asks', (tester) async {
+      final useCase = _ScriptedUseCase([
+        left(const ValidationFailure('This item is not available.')),
+      ]);
+      await pumpScripted(tester, useCase);
+      await selectAsha(tester);
+      await tester.tap(lend);
+      await tester.pumpAndSettle();
+      expect(find.text('This item is not available.'), findsOneWidget);
+      await pressSystemBack(tester);
+
+      expectAsked();
+    });
+
+    testWidgets('the limit dialog is open, Back: that dialog closes, no '
+        '"Discard changes?" on top of it, the form stays; Back again asks', (
+      tester,
+    ) async {
+      final useCase = _ScriptedUseCase([
+        right(const LimitConfirmationNeeded(limit: 1, active: 1)),
+      ]);
+      await pumpScripted(tester, useCase);
+      await selectAsha(tester);
+      await tester.tap(lend);
+      // Busy stays on while the dialog is open: the spinner never rests.
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.text('Borrower limit reached'), findsOneWidget);
+
+      await pressSystemBack(tester);
+      expect(find.text('Borrower limit reached'), findsNothing);
+      expect(findDiscardQuestion(), findsNothing);
+      expect(page, findsOneWidget);
+      expect(useCase.calls, hasLength(1), reason: 'not lent anyway');
+
+      await pressSystemBack(tester);
+      expectAsked();
+    });
   });
 
   testWidgets('meets accessibility guidelines', (tester) async {
