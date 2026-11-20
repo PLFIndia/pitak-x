@@ -124,10 +124,11 @@ The decisions were taken one at a time (`PLAN.md`, D103 to D114).
   - the two ways back show no sign of working while the vault writes:
     the bar goes the moment "Undo" is tapped, and "Not returned" stands
     unchanged after its question (a second yes in that time writes
-    nothing and says "The loan is open again." once more). Today a save
-    in the vault can take seconds on a slow phone (review finding
-    P3-M3). The stage that takes that wait away is the next one of the
-    plan (`PLAN.md`, D123); this limit is looked at again with it;
+    nothing and says "The loan is open again." once more). A save in
+    the vault is not instant (review finding P3-M3, which is open and
+    in no stage). In a debug build on a phone it took 3 to 4 seconds;
+    in a release build on the same phone the maintainer found the wait
+    acceptable in practice (`PLAN.md`, D125);
   - with the fast lane on (ADR 0019), a return is published after 20
     seconds. A return that is taken back inside that time leaves the
     published list as it was; whether one write is still sent then was
@@ -170,4 +171,5 @@ has none installed). On a phone with Android 14, in a debug build: looked
 at and accepted by the maintainer; which points of the look were made was
 not said. A save in the vault took 3 to 4 seconds there. A debug build
 makes the vault's key step about 14 times slower than a release build
-(measured on a Mac); a release build was not timed on the phone.
+(measured on a Mac). In a release build on the same phone the maintainer
+found the time of a return acceptable in practice; it was not timed.

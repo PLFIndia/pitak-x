@@ -53,9 +53,8 @@ Two known limits, measured in that run on a fast phone and accepted
   - The in-app guide "Lending and the borrowers vault" names the three
     places and both ways back.
   - Known limit: while the vault writes, "Undo" and "Not returned" show
-    no sign of working. A save in the vault can take seconds on a slow
-    phone today; that wait is the next piece of work (review finding
-    P3-M3; `PLAN.md`, D123).
+    no sign of working. In a release build on a phone that wait was
+    found acceptable in practice (ADR 0029; `PLAN.md`, D125).
   - Seen in an emulator with Android 16 on 2026-11-20, also with the
     font at its largest and on a screen 320 dp wide: the words of the
     button take one line everywhere but on the loan card of that narrow
