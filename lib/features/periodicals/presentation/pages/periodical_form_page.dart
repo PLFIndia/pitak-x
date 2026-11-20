@@ -21,9 +21,11 @@ library;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pitaka/core/di/providers.dart';
+import 'package:pitaka/core/widgets/discard_changes_guard.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/value_objects/calendar_date.dart';
 import 'package:pitaka/features/library/presentation/catalogue_save_messages.dart';
+import 'package:pitaka/features/library/presentation/maintainer_stamp.dart';
 import 'package:pitaka/features/library/presentation/widgets/catalogue_choice_labels.dart';
 import 'package:pitaka/features/library/presentation/widgets/form_cover_field.dart';
 import 'package:pitaka/features/library/presentation/widgets/language_field.dart';
@@ -32,7 +34,6 @@ import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
 import 'package:pitaka/features/periodicals/domain/value_objects/issn.dart';
 import 'package:pitaka/features/periodicals/domain/value_objects/periodical_frequency.dart';
 import 'package:pitaka/features/periodicals/presentation/widgets/form_rows.dart';
-import 'package:pitaka/features/settings/application/settings_controller.dart';
 
 /// Form screen to add a new magazine title or edit an existing one.
 class PeriodicalFormPage extends ConsumerStatefulWidget {
@@ -87,6 +88,47 @@ class _PeriodicalFormPageState extends ConsumerState<PeriodicalFormPage> {
 
   bool get _isEdit => widget.periodical != null;
 
+  /// What the form held when it opened, so that Back can ask before unsaved
+  /// input is lost (the "Discard changes?" guard, ADR 0028).
+  late final OpenedValues _opened;
+
+  /// Every text controller of the form: disposed together, and read
+  /// together by [_values], so a field cannot be in one and not the other.
+  List<TextEditingController> get _texts => [
+    _title,
+    _transliteration,
+    _issn,
+    _publisher,
+    _language,
+    _notes,
+    _location,
+    _sourceDetail,
+  ];
+
+  /// The subscription window as Save stores it: none while the switch is
+  /// off (the form keeps picked dates in its state then, see above).
+  int? get _savedSubscriptionStart =>
+      _trackSubscription ? _subscriptionStart : null;
+  int? get _savedSubscriptionEnd =>
+      _trackSubscription ? _subscriptionEnd : null;
+
+  /// Everything Save would store, as one list for [_opened]. The switch
+  /// "Track subscription" counts through the two saved dates (D5: tracked
+  /// means "has an end date"). The cover counts through [_coverDirty] (a
+  /// photo taken or removed on purpose) and [_coverPending] (a photo still
+  /// being stored, which leaving would lose).
+  List<Object?> _values() => [
+    for (final c in _texts) c.text,
+    _sourceType,
+    _ageGroup,
+    _frequency,
+    _addedDate,
+    _savedSubscriptionStart,
+    _savedSubscriptionEnd,
+    _coverDirty,
+    _coverPending,
+  ];
+
   @override
   void initState() {
     super.initState();
@@ -107,20 +149,12 @@ class _PeriodicalFormPageState extends ConsumerState<PeriodicalFormPage> {
     _subscriptionStart = p?.subscriptionStart;
     _subscriptionEnd = p?.subscriptionEnd;
     _trackSubscription = p?.subscriptionEnd != null;
+    _opened = OpenedValues(_values);
   }
 
   @override
   void dispose() {
-    for (final c in [
-      _title,
-      _transliteration,
-      _issn,
-      _publisher,
-      _language,
-      _notes,
-      _location,
-      _sourceDetail,
-    ]) {
+    for (final c in _texts) {
       c.dispose();
     }
     super.dispose();
@@ -139,16 +173,6 @@ class _PeriodicalFormPageState extends ConsumerState<PeriodicalFormPage> {
     return raw.isNotEmpty && !Issn.isValid(raw);
   }
 
-  /// The maintainer name from settings, or null when unset/blank. Only used
-  /// to attribute newly-added titles (mirrors the book form).
-  String? _maintainerStamp() {
-    final name = ref
-        .read(settingsControllerProvider)
-        .maybeWhen(data: (s) => s.maintainerName, orElse: () => '')
-        .trim();
-    return name.isEmpty ? null : name;
-  }
-
   /// Assembles the entity to persist from the form fields, taking every
   /// field the form does not edit from [base]: null in add mode, the FRESH
   /// row in edit mode (N03). The gate (`Periodical.validate` in the use
@@ -165,8 +189,8 @@ class _PeriodicalFormPageState extends ConsumerState<PeriodicalFormPage> {
       language: _trimToNull(_language),
       coverUrl: _coverDirty ? _coverRef : base?.coverUrl,
       frequency: _frequency,
-      subscriptionStart: _trackSubscription ? _subscriptionStart : null,
-      subscriptionEnd: _trackSubscription ? _subscriptionEnd : null,
+      subscriptionStart: _savedSubscriptionStart,
+      subscriptionEnd: _savedSubscriptionEnd,
       notes: _trimToNull(_notes),
       location: _trimToNull(_location),
       sourceType: _sourceType,
@@ -189,7 +213,7 @@ class _PeriodicalFormPageState extends ConsumerState<PeriodicalFormPage> {
     }
     if (_issnInvalid) return; // the inline error already says why
     final controller = ref.read(periodicalFormControllerProvider.notifier);
-    final stamp = _maintainerStamp();
+    final stamp = maintainerStampOf(ref);
     final editing = widget.periodical;
     if (editing == null) {
       await controller.save(_buildPeriodical(null, maintainerStamp: stamp));
@@ -237,7 +261,7 @@ class _PeriodicalFormPageState extends ConsumerState<PeriodicalFormPage> {
         ? current.coverUrl
         : _coverRef;
 
-    return Scaffold(
+    final page = Scaffold(
       appBar: AppBar(
         title: Text(_isEdit ? 'Edit magazine title' : 'New magazine title'),
       ),
@@ -419,6 +443,11 @@ class _PeriodicalFormPageState extends ConsumerState<PeriodicalFormPage> {
           ],
         ],
       ),
+    );
+    return DiscardChangesGuard(
+      hasChanges: () => _opened.changed,
+      saving: saving,
+      child: page,
     );
   }
 }

@@ -6,6 +6,8 @@
 /// projection and the duplicate refusal are the feature under test.
 library;
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -24,7 +26,21 @@ import 'package:pitaka/features/periodicals/presentation/pages/add_issue_page.da
 import '../../../../support/a11y.dart';
 import '../../../../support/async_value_gate.dart';
 import '../../../../support/cover_capture_fakes.dart';
+import '../../../../support/form_back_harness.dart';
 import '../../application/periodical_fakes.dart';
+
+/// The item store of these tests, with one place where a test can hold a
+/// save open. With nothing set it behaves like [FakeItems].
+class _HeldItems extends FakeItems {
+  /// While set, `insert` waits for it before it stores anything.
+  Completer<void>? holdInsert;
+
+  @override
+  Future<Either<Failure, CatalogueItem>> insert(CatalogueItem book) async {
+    await holdInsert?.future;
+    return super.insert(book);
+  }
+}
 
 /// Lets a test choose the completion order of each series' prefill read.
 class _GatedPeriodicals extends FakePeriodicals {
@@ -41,12 +57,12 @@ class _GatedPeriodicals extends FakePeriodicals {
 
 void main() {
   late _GatedPeriodicals periodicals;
-  late FakeItems items;
+  late _HeldItems items;
   late Periodical frontline;
 
   setUp(() {
     periodicals = _GatedPeriodicals();
-    items = FakeItems();
+    items = _HeldItems();
     frontline = periodicals.seed(
       const Periodical(
         title: 'Frontline',
@@ -560,5 +576,423 @@ void main() {
   testWidgets('meets accessibility guidelines', (tester) async {
     await openForm(tester, preselected: frontline);
     await expectMeetsA11yGuidelines(tester);
+  });
+
+  // Review finding P4-M1: Back must not throw away what was typed without
+  // asking. "The form is gone" means the home page's button shows again.
+  group('leaving the form (P4-M1)', () {
+    final notes = find.widgetWithText(TextField, 'Notes');
+    final page = find.byType(AddIssuePage);
+    final home = find.text('open');
+
+    void expectGoneWithoutQuestion() {
+      expect(findDiscardQuestion(), findsNothing);
+      expect(page, findsNothing);
+      expect(home, findsOneWidget);
+    }
+
+    void expectAsked() {
+      expect(findDiscardQuestion(), findsOneWidget);
+      expect(page, findsOneWidget);
+    }
+
+    /// Picks day [day] of the month the date picker opens on.
+    Future<void> pickDay(WidgetTester tester, Finder change, String day) async {
+      await scrollTap(tester, change);
+      await tester.tap(find.text(day).last);
+      await tester.pump();
+      await tester.tap(find.text('OK'));
+      await tester.pumpAndSettle();
+    }
+
+    /// Gives Frontline a latest issue (No 3, three copies, 64 pages), so
+    /// that the form has something to suggest: No 4, the next cover date,
+    /// the shelf, the pages and the copies.
+    CatalogueItem seedLatestIssue() {
+      final uid = frontline.periodicalUid!;
+      final latest = items.seed(
+        CatalogueItem(
+          title: 'Frontline — No 3',
+          pageCount: 64,
+          copyCount: 3,
+          details: IssueOf(
+            periodicalUid: uid,
+            issueNumber: 3,
+            issueDate: DateTime.utc(2026, 8, 15).millisecondsSinceEpoch,
+          ),
+        ),
+      );
+      periodicals.issues[uid] = [latest];
+      return latest;
+    }
+
+    /// An issue to edit: a bound volume with a cover of its own.
+    CatalogueItem seedBoundVolume() {
+      final uid = frontline.periodicalUid!;
+      final existing = items.seed(
+        CatalogueItem(
+          title: 'Frontline — Jan to Mar 2026',
+          coverUrl: 'covers/old.jpg',
+          notes: 'Signed copy',
+          details: IssueOf(
+            periodicalUid: uid,
+            issueDate: DateTime.utc(2026, 1, 15).millisecondsSinceEpoch,
+            boundUntil: DateTime.utc(2026, 3, 15).millisecondsSinceEpoch,
+          ),
+        ),
+      );
+      periodicals.issues[uid] = [existing];
+      return existing;
+    }
+
+    testWidgets('untouched, Back: the form leaves at once', (tester) async {
+      await openForm(tester);
+      await pressSystemBack(tester);
+
+      expectGoneWithoutQuestion();
+    });
+
+    testWidgets('an edit form opened and left as it was: Back leaves', (
+      tester,
+    ) async {
+      await openForm(tester, edit: seedBoundVolume());
+      await pressSystemBack(tester);
+
+      expectGoneWithoutQuestion();
+    });
+
+    group('what the app suggests by itself', () {
+      testWidgets('opened for a title, the suggestion arrives (number, date, '
+          'shelf, pages, copies), Back: leaves, nobody typed anything', (
+        tester,
+      ) async {
+        seedLatestIssue();
+        await openForm(tester, preselected: frontline);
+        // The suggestion is on the screen.
+        expect(fieldText(tester, 'Issue number'), '4');
+        expect(fieldText(tester, 'Pages'), '64');
+        expect(fieldText(tester, 'Copies'), '3');
+        expect(fieldText(tester, 'Shelf location'), 'Reading room');
+        expect(find.textContaining('15 September 2026'), findsOneWidget);
+
+        await pressSystemBack(tester);
+
+        expectGoneWithoutQuestion();
+      });
+
+      testWidgets('a suggested value changed by the user: the question; put '
+          'back to the suggestion: Back leaves', (tester) async {
+        seedLatestIssue();
+        await openForm(tester, preselected: frontline);
+        final number = find.widgetWithText(TextField, 'Issue number');
+        await tester.enterText(number, '5');
+        await pressSystemBack(tester);
+        expectAsked();
+
+        await tester.tap(findKeepEditing());
+        await tester.pumpAndSettle();
+        await tester.enterText(number, '4');
+        await pressSystemBack(tester);
+        expectGoneWithoutQuestion();
+      });
+
+      testWidgets('notes typed BEFORE the suggestion arrives stay a change: '
+          'the question; with the notes emptied again Back leaves', (
+        tester,
+      ) async {
+        final latest = seedLatestIssue();
+        final gate = prefillGate();
+        periodicals.prefillGates[frontline.periodicalUid!] = [gate];
+        await openForm(tester, preselected: frontline);
+        await gate.entered;
+        expect(fieldText(tester, 'Issue number'), isEmpty);
+
+        await tester.enterText(notes, 'typed first');
+        gate.succeed(right([latest]));
+        await tester.pumpAndSettle();
+        expect(fieldText(tester, 'Issue number'), '4');
+
+        await pressSystemBack(tester);
+        expectAsked();
+
+        await tester.tap(findKeepEditing());
+        await tester.pumpAndSettle();
+        await tester.enterText(notes, '');
+        await pressSystemBack(tester);
+        expectGoneWithoutQuestion();
+      });
+
+      testWidgets('a title picked in the form: the question, although the '
+          'rest was suggested', (tester) async {
+        seedLatestIssue();
+        await openForm(tester);
+        await pickSeries(tester, 'Frontline');
+        expect(fieldText(tester, 'Issue number'), '4');
+        await pressSystemBack(tester);
+
+        expectAsked();
+      });
+
+      testWidgets('opened for a title, another title picked: the question', (
+        tester,
+      ) async {
+        periodicals.seed(const Periodical(title: 'Outlook'));
+        await openForm(tester, preselected: frontline);
+        await pickSeries(tester, 'Outlook');
+        await pressSystemBack(tester);
+
+        expectAsked();
+      });
+    });
+
+    testWidgets('notes typed, Back: the question. "Keep editing" keeps the '
+        'form and the text; Back again and "Discard" leaves', (tester) async {
+      await openForm(tester, preselected: frontline);
+      await tester.enterText(notes, 'A note');
+      await pressSystemBack(tester);
+      expectAsked();
+      expect(
+        find.text('What you entered on this page has not been saved.'),
+        findsOneWidget,
+      );
+
+      await tester.tap(findKeepEditing());
+      await tester.pumpAndSettle();
+      expect(findDiscardQuestion(), findsNothing);
+      expect(find.widgetWithText(TextField, 'A note'), findsOneWidget);
+
+      await pressSystemBack(tester);
+      await tester.tap(findDiscard());
+      await tester.pumpAndSettle();
+      expectGoneWithoutQuestion();
+      expect(items.inserted, isEmpty, reason: 'discarded, not saved');
+    });
+
+    testWidgets('the arrow of the app bar asks as well', (tester) async {
+      await openForm(tester);
+      await tester.enterText(notes, 'A note');
+      await tester.tap(find.byType(BackButton));
+      await tester.pumpAndSettle();
+
+      expectAsked();
+    });
+
+    testWidgets('typed and put back, Back: leaves', (tester) async {
+      await openForm(tester);
+      await tester.enterText(notes, 'A note');
+      await tester.enterText(notes, '');
+      await pressSystemBack(tester);
+
+      expectGoneWithoutQuestion();
+    });
+
+    // Every text field the form shows. A field that is added to the page
+    // has to be added here (the count below fails otherwise), and then its
+    // own test says whether the guard knows of it.
+    const textFields = [
+      'Volume',
+      'Issue number',
+      'Label (e.g. Annual number)',
+      'Copies',
+      'Pages',
+      'Shelf location',
+      'Notes',
+    ];
+
+    testWidgets('the form shows exactly the text fields these tests know', (
+      tester,
+    ) async {
+      await openForm(tester);
+
+      expect(find.byType(TextField), findsNWidgets(textFields.length));
+      for (final label in textFields) {
+        expect(find.widgetWithText(TextField, label), findsOneWidget);
+      }
+    });
+
+    for (final label in textFields) {
+      testWidgets('"$label" changed, Back: the question', (tester) async {
+        await openForm(tester);
+        // A digit: the fields for numbers take nothing else.
+        await tester.enterText(find.widgetWithText(TextField, label), '7');
+        await pressSystemBack(tester);
+
+        expectAsked();
+      });
+    }
+
+    group('a value that is not typed text', () {
+      testWidgets('"Bound volume" switched on: the question', (tester) async {
+        await openForm(tester);
+        await scrollTap(tester, find.byType(SwitchListTile));
+        await pressSystemBack(tester);
+
+        expectAsked();
+      });
+
+      testWidgets('"Bound volume" switched on and off again: Back leaves', (
+        tester,
+      ) async {
+        await openForm(tester);
+        await scrollTap(tester, find.byType(SwitchListTile));
+        await scrollTap(tester, find.byType(SwitchListTile));
+        await pressSystemBack(tester);
+
+        expectGoneWithoutQuestion();
+      });
+
+      testWidgets('a cover date picked: the question', (tester) async {
+        await openForm(tester);
+        await pickDay(tester, find.text('Change'), '1');
+        await pressSystemBack(tester);
+
+        expectAsked();
+      });
+
+      testWidgets('edit, a bound volume: another "from" date picked: the '
+          'question', (tester) async {
+        await openForm(tester, edit: seedBoundVolume());
+        await pickDay(tester, find.text('Change').at(0), '20');
+        expect(find.textContaining('20 January 2026'), findsOneWidget);
+        await pressSystemBack(tester);
+
+        expectAsked();
+      });
+
+      testWidgets('edit, a bound volume: another "to" date picked: the '
+          'question', (tester) async {
+        await openForm(tester, edit: seedBoundVolume());
+        await pickDay(tester, find.text('Change').at(1), '20');
+        expect(find.textContaining('20 March 2026'), findsOneWidget);
+        await pressSystemBack(tester);
+
+        expectAsked();
+      });
+
+      testWidgets('edit, a bound volume: "Bound volume" switched off: the '
+          'question (Save would drop the "to" date)', (tester) async {
+        await openForm(tester, edit: seedBoundVolume());
+        await scrollTap(tester, find.byType(SwitchListTile));
+        await pressSystemBack(tester);
+
+        expectAsked();
+      });
+
+      testWidgets('a cover photographed: the question', (tester) async {
+        final coverFakes = installCoverCaptureFakes();
+        await openForm(tester, coverFakes: coverFakes);
+        await tester.tap(find.text('Add cover'));
+        await tester.pump();
+        await coverFakes.pickerGate.entered;
+        coverFakes.finishPicker();
+        await tester.pump();
+        await coverFakes.cropperGate.entered;
+        coverFakes.finishCropper();
+        await tester.pump();
+        await coverFakes.storeGate.entered;
+        coverFakes.finishStore('covers/new.jpg');
+        await tester.pumpAndSettle();
+        await pressSystemBack(tester);
+
+        expectAsked();
+      });
+
+      testWidgets('a cover that is still being stored: the question', (
+        tester,
+      ) async {
+        final coverFakes = installCoverCaptureFakes();
+        await openForm(tester, coverFakes: coverFakes);
+        await tester.tap(find.text('Add cover'));
+        await tester.pump();
+        await coverFakes.pickerGate.entered;
+        coverFakes.finishPicker();
+        await tester.pump();
+        await coverFakes.cropperGate.entered;
+        coverFakes.finishCropper();
+        await tester.pump();
+        await coverFakes.storeGate.entered;
+        await tester.pump();
+        // The cover field shows a spinner now: no waiting for rest.
+        await pressSystemBack(tester, settle: false);
+
+        expectAsked();
+
+        await tester.tap(findKeepEditing());
+        coverFakes.finishStore('covers/new.jpg');
+        await tester.pumpAndSettle();
+        expect(page, findsOneWidget);
+      });
+
+      testWidgets('edit: the cover removed: the question', (tester) async {
+        await openForm(tester, edit: seedBoundVolume());
+        await tester.tap(find.text('Remove cover'));
+        await tester.pump();
+        await pressSystemBack(tester);
+
+        expectAsked();
+      });
+
+      testWidgets('edit: a cover that arrives in the background while the '
+          'form is untouched is no change: Back leaves', (tester) async {
+        final existing = seedBoundVolume();
+        await openForm(tester, edit: existing);
+        items.rows[existing.id] = existing.copyWith(coverUrl: 'covers/new.jpg');
+        ProviderScope.containerOf(
+          tester.element(page),
+        ).invalidate(libraryControllerProvider);
+        await tester.pumpAndSettle();
+        expect(
+          tester.widget<ItemCover>(find.byType(ItemCover)).coverUrl,
+          'covers/new.jpg',
+          reason: 'the form shows the cover that arrived',
+        );
+        await pressSystemBack(tester);
+
+        expectGoneWithoutQuestion();
+      });
+    });
+
+    testWidgets('Back while the save runs does nothing; the form then '
+        'leaves by itself, with no question (D95)', (tester) async {
+      await openForm(tester, preselected: frontline);
+      await tester.enterText(
+        find.widgetWithText(TextField, 'Issue number'),
+        '5',
+      );
+      items.holdInsert = Completer<void>();
+      FocusManager.instance.primaryFocus?.unfocus();
+      await tester.pump();
+      // No waiting for rest: the Save button shows a spinner while held.
+      await tester.tap(find.byType(FilledButton));
+      await tester.pump();
+      await tester.pump();
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+
+      await pressSystemBack(tester, settle: false);
+      expect(findDiscardQuestion(), findsNothing);
+      expect(page, findsOneWidget, reason: 'Back waits for the save');
+
+      items.holdInsert!.complete();
+      await tester.pumpAndSettle();
+      expectGoneWithoutQuestion();
+      expect(items.rows, hasLength(1));
+    });
+
+    testWidgets('after a save that failed, Back asks', (tester) async {
+      items.insertFailure = const StorageFailure('synthetic');
+      await openForm(tester, preselected: frontline);
+      await tester.enterText(
+        find.widgetWithText(TextField, 'Issue number'),
+        '5',
+      );
+      await save(tester);
+      expect(
+        find.text('Could not save the issue. Please try again.'),
+        findsOneWidget,
+      );
+      await pressSystemBack(tester);
+
+      expectAsked();
+    });
   });
 }

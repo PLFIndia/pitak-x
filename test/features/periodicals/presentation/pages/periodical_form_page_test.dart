@@ -5,12 +5,17 @@
 /// edit mode saves on top of the CURRENT row (N03).
 library;
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/di/providers.dart';
+import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/core/widgets/item_cover.dart';
 import 'package:pitaka/features/library/application/form_cover_controller.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/periodicals/application/periodicals_controller.dart';
 import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
 import 'package:pitaka/features/periodicals/domain/value_objects/periodical_frequency.dart';
@@ -18,14 +23,28 @@ import 'package:pitaka/features/periodicals/presentation/pages/periodical_form_p
 
 import '../../../../support/a11y.dart';
 import '../../../../support/cover_capture_fakes.dart';
+import '../../../../support/form_back_harness.dart';
 import '../../application/periodical_fakes.dart';
 
+/// The magazine-title store of these tests, with one place where a test can
+/// hold a save open. With nothing set it behaves like [FakePeriodicals].
+class _HeldPeriodicals extends FakePeriodicals {
+  /// While set, `insert` waits for it before it stores anything.
+  Completer<void>? holdInsert;
+
+  @override
+  Future<Either<Failure, Periodical>> insert(Periodical periodical) async {
+    await holdInsert?.future;
+    return super.insert(periodical);
+  }
+}
+
 void main() {
-  late FakePeriodicals periodicals;
+  late _HeldPeriodicals periodicals;
   late FakeItems items;
 
   setUp(() {
-    periodicals = FakePeriodicals();
+    periodicals = _HeldPeriodicals();
     items = FakeItems();
   });
 
@@ -80,10 +99,13 @@ void main() {
   Future<void> openForm(
     WidgetTester tester, {
     Periodical? edit,
+    String? initialIssn,
     CoverCaptureFakes? coverFakes,
   }) async {
     useBigSurface(tester);
-    await tester.pumpWidget(app(edit: edit, coverFakes: coverFakes));
+    await tester.pumpWidget(
+      app(edit: edit, initialIssn: initialIssn, coverFakes: coverFakes),
+    );
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
   }
@@ -429,5 +451,399 @@ void main() {
   testWidgets('meets accessibility guidelines', (tester) async {
     await openForm(tester);
     await expectMeetsA11yGuidelines(tester);
+  });
+
+  // Review finding P4-M1: Back must not throw away what was typed without
+  // asking. "The form is gone" means the home page's button shows again.
+  group('leaving the form (P4-M1)', () {
+    final title = find.widgetWithText(TextField, 'Title *');
+    final page = find.byType(PeriodicalFormPage);
+    final home = find.text('open');
+
+    void expectGoneWithoutQuestion() {
+      expect(findDiscardQuestion(), findsNothing);
+      expect(page, findsNothing);
+      expect(home, findsOneWidget);
+    }
+
+    void expectAsked() {
+      expect(findDiscardQuestion(), findsOneWidget);
+      expect(page, findsOneWidget);
+    }
+
+    Future<void> pickFrom(
+      WidgetTester tester,
+      Finder dropdown,
+      String choice,
+    ) async {
+      await tester.tap(dropdown);
+      await tester.pumpAndSettle();
+      // The open menu repeats the selected text; `.last` is the menu's.
+      await tester.tap(find.text(choice).last);
+      await tester.pumpAndSettle();
+    }
+
+    /// Picks day [day] of the month the date picker opens on.
+    Future<void> pickDay(WidgetTester tester, Finder change, String day) async {
+      await scrollTap(tester, change);
+      await tester.tap(find.text(day).last);
+      await tester.pump();
+      await tester.tap(find.text('OK'));
+      await tester.pumpAndSettle();
+    }
+
+    Periodical seedTracked() => periodicals.seed(
+      Periodical(
+        title: 'Frontline',
+        coverUrl: 'covers/old.jpg',
+        subscriptionStart: DateTime.utc(2026, 1, 15).millisecondsSinceEpoch,
+        subscriptionEnd: DateTime.utc(2026, 2, 15).millisecondsSinceEpoch,
+      ),
+    );
+
+    testWidgets('untouched, Back: the form leaves at once', (tester) async {
+      await openForm(tester);
+      await pressSystemBack(tester);
+
+      expectGoneWithoutQuestion();
+    });
+
+    testWidgets('an edit form opened and left as it was: Back leaves', (
+      tester,
+    ) async {
+      await openForm(tester, edit: seedTracked());
+      await pressSystemBack(tester);
+
+      expectGoneWithoutQuestion();
+    });
+
+    testWidgets('opened with a scanned ISSN and nothing else: Back leaves', (
+      tester,
+    ) async {
+      await openForm(tester, initialIssn: '1234-5679');
+      expect(find.widgetWithText(TextField, '1234-5679'), findsOneWidget);
+      await pressSystemBack(tester);
+
+      expectGoneWithoutQuestion();
+    });
+
+    testWidgets('a title typed, Back: the question. "Keep editing" keeps '
+        'the form and the text; Back again and "Discard" leaves', (
+      tester,
+    ) async {
+      await openForm(tester);
+      await tester.enterText(title, 'Frontline');
+      await pressSystemBack(tester);
+      expectAsked();
+      expect(
+        find.text('What you entered on this page has not been saved.'),
+        findsOneWidget,
+      );
+
+      await tester.tap(findKeepEditing());
+      await tester.pumpAndSettle();
+      expect(findDiscardQuestion(), findsNothing);
+      expect(find.widgetWithText(TextField, 'Frontline'), findsOneWidget);
+
+      await pressSystemBack(tester);
+      await tester.tap(findDiscard());
+      await tester.pumpAndSettle();
+      expectGoneWithoutQuestion();
+      expect(periodicals.rows, isEmpty, reason: 'discarded, not saved');
+    });
+
+    testWidgets('the arrow of the app bar asks as well', (tester) async {
+      await openForm(tester);
+      await tester.enterText(title, 'Frontline');
+      await tester.tap(find.byType(BackButton));
+      await tester.pumpAndSettle();
+
+      expectAsked();
+    });
+
+    testWidgets('typed and put back, Back: leaves', (tester) async {
+      await openForm(tester);
+      await tester.enterText(title, 'Frontline');
+      await tester.enterText(title, '');
+      await pressSystemBack(tester);
+
+      expectGoneWithoutQuestion();
+    });
+
+    // Every text field the form shows. A field that is added to the page
+    // has to be added here (the count below fails otherwise), and then its
+    // own test says whether the guard knows of it.
+    const textFields = [
+      'Title *',
+      'Title (transliteration)',
+      'ISSN',
+      'Publisher',
+      'Shelf location',
+      'Source detail',
+      'Notes',
+    ];
+
+    testWidgets('the form shows exactly the text fields these tests know', (
+      tester,
+    ) async {
+      await openForm(tester);
+
+      expect(find.byType(TextField), findsNWidgets(textFields.length));
+      for (final label in textFields) {
+        expect(find.widgetWithText(TextField, label), findsOneWidget);
+      }
+    });
+
+    for (final label in textFields) {
+      testWidgets('"$label" changed, Back: the question', (tester) async {
+        await openForm(tester);
+        await tester.enterText(find.widgetWithText(TextField, label), '7');
+        await pressSystemBack(tester);
+
+        expectAsked();
+      });
+    }
+
+    group('a value that is not typed text', () {
+      final language = find.byKey(const ValueKey('language-dropdown'));
+
+      testWidgets('a language picked: the question', (tester) async {
+        await openForm(tester);
+        await pickFrom(tester, language, 'English');
+        await pressSystemBack(tester);
+
+        expectAsked();
+      });
+
+      testWidgets('"Other…" picked and a language typed: the question', (
+        tester,
+      ) async {
+        await openForm(tester);
+        await pickFrom(tester, language, 'Other…');
+        await tester.enterText(
+          find.widgetWithText(TextField, 'Other language'),
+          'Marathi',
+        );
+        await pressSystemBack(tester);
+
+        expectAsked();
+      });
+
+      testWidgets('a frequency picked: the question', (tester) async {
+        await openForm(tester);
+        await pickFrom(
+          tester,
+          find.byType(DropdownButtonFormField<PeriodicalFrequency?>),
+          'Monthly',
+        );
+        await pressSystemBack(tester);
+
+        expectAsked();
+      });
+
+      testWidgets('a source picked: the question', (tester) async {
+        await openForm(tester);
+        await pickFrom(
+          tester,
+          find.byType(DropdownButtonFormField<ItemSourceType?>),
+          'Gift',
+        );
+        await pressSystemBack(tester);
+
+        expectAsked();
+      });
+
+      testWidgets('an age group picked: the question', (tester) async {
+        await openForm(tester);
+        await pickFrom(
+          tester,
+          find.byType(DropdownButtonFormField<AgeGroup?>),
+          'Ages 6+',
+        );
+        await pressSystemBack(tester);
+
+        expectAsked();
+      });
+
+      testWidgets('another "Date added" picked: the question', (tester) async {
+        await openForm(tester);
+        // Subscription tracking is off: "Date added" has the only button.
+        await pickDay(tester, find.text('Change'), '1');
+        await pressSystemBack(tester);
+
+        expectAsked();
+      });
+
+      testWidgets('"Track subscription" switched on: the question', (
+        tester,
+      ) async {
+        await openForm(tester);
+        await scrollTap(tester, find.byType(SwitchListTile));
+        await pressSystemBack(tester);
+
+        expectAsked();
+      });
+
+      testWidgets('"Track subscription" switched on and off again: Back '
+          'leaves (Save would store no dates, as before)', (tester) async {
+        await openForm(tester);
+        await scrollTap(tester, find.byType(SwitchListTile));
+        await scrollTap(tester, find.byType(SwitchListTile));
+        expect(find.textContaining('Subscription start'), findsNothing);
+        await pressSystemBack(tester);
+
+        expectGoneWithoutQuestion();
+      });
+
+      testWidgets('edit: "Track subscription" switched off: the question', (
+        tester,
+      ) async {
+        await openForm(tester, edit: seedTracked());
+        await scrollTap(tester, find.byType(SwitchListTile));
+        await pressSystemBack(tester);
+
+        expectAsked();
+      });
+
+      testWidgets('edit: another subscription start picked: the question', (
+        tester,
+      ) async {
+        await openForm(tester, edit: seedTracked());
+        await pickDay(tester, find.text('Change').at(0), '20');
+        expect(
+          find.textContaining('Subscription start: 20 January 2026'),
+          findsOneWidget,
+        );
+        await pressSystemBack(tester);
+
+        expectAsked();
+      });
+
+      testWidgets('edit: another subscription end picked: the question', (
+        tester,
+      ) async {
+        await openForm(tester, edit: seedTracked());
+        await pickDay(tester, find.text('Change').at(1), '20');
+        expect(
+          find.textContaining('Subscription end: 20 February 2026'),
+          findsOneWidget,
+        );
+        await pressSystemBack(tester);
+
+        expectAsked();
+      });
+
+      testWidgets('a cover photographed: the question', (tester) async {
+        final coverFakes = installCoverCaptureFakes();
+        await openForm(tester, coverFakes: coverFakes);
+        await tester.tap(find.text('Add cover'));
+        await tester.pump();
+        await coverFakes.pickerGate.entered;
+        coverFakes.finishPicker();
+        await tester.pump();
+        await coverFakes.cropperGate.entered;
+        coverFakes.finishCropper();
+        await tester.pump();
+        await coverFakes.storeGate.entered;
+        coverFakes.finishStore('covers/new.jpg');
+        await tester.pumpAndSettle();
+        await pressSystemBack(tester);
+
+        expectAsked();
+      });
+
+      testWidgets('a cover that is still being stored: the question', (
+        tester,
+      ) async {
+        final coverFakes = installCoverCaptureFakes();
+        await openForm(tester, coverFakes: coverFakes);
+        await tester.tap(find.text('Add cover'));
+        await tester.pump();
+        await coverFakes.pickerGate.entered;
+        coverFakes.finishPicker();
+        await tester.pump();
+        await coverFakes.cropperGate.entered;
+        coverFakes.finishCropper();
+        await tester.pump();
+        await coverFakes.storeGate.entered;
+        await tester.pump();
+        // The cover field shows a spinner now: no waiting for rest.
+        await pressSystemBack(tester, settle: false);
+
+        expectAsked();
+
+        await tester.tap(findKeepEditing());
+        coverFakes.finishStore('covers/new.jpg');
+        await tester.pumpAndSettle();
+        expect(page, findsOneWidget);
+      });
+
+      testWidgets('edit: the cover removed: the question', (tester) async {
+        await openForm(tester, edit: seedTracked());
+        await tester.tap(find.text('Remove cover'));
+        await tester.pump();
+        await pressSystemBack(tester);
+
+        expectAsked();
+      });
+
+      testWidgets('edit: a cover that arrives in the background while the '
+          'form is untouched is no change: Back leaves', (tester) async {
+        final existing = seedTracked();
+        await openForm(tester, edit: existing);
+        periodicals.rows[existing.id] = existing.copyWith(
+          coverUrl: 'covers/new.jpg',
+        );
+        ProviderScope.containerOf(
+          tester.element(page),
+        ).invalidate(periodicalsControllerProvider);
+        await tester.pumpAndSettle();
+        expect(
+          tester.widget<ItemCover>(find.byType(ItemCover)).coverUrl,
+          'covers/new.jpg',
+          reason: 'the form shows the cover that arrived',
+        );
+        await pressSystemBack(tester);
+
+        expectGoneWithoutQuestion();
+      });
+    });
+
+    testWidgets('Back while the save runs does nothing; the form then '
+        'leaves by itself, with no question (D95)', (tester) async {
+      await openForm(tester);
+      await tester.enterText(title, 'Frontline');
+      periodicals.holdInsert = Completer<void>();
+      FocusManager.instance.primaryFocus?.unfocus();
+      await tester.pump();
+      // No waiting for rest: the Save button shows a spinner while held.
+      await tester.tap(find.byType(FilledButton));
+      await tester.pump();
+      await tester.pump();
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+
+      await pressSystemBack(tester, settle: false);
+      expect(findDiscardQuestion(), findsNothing);
+      expect(page, findsOneWidget, reason: 'Back waits for the save');
+
+      periodicals.holdInsert!.complete();
+      await tester.pumpAndSettle();
+      expectGoneWithoutQuestion();
+      expect(periodicals.rows, hasLength(1));
+    });
+
+    testWidgets('after a save that failed, Back asks', (tester) async {
+      periodicals.insertFailure = const StorageFailure('synthetic');
+      await openForm(tester);
+      await tester.enterText(title, 'Frontline');
+      await save(tester);
+      expect(
+        find.text('Could not save the magazine title. Please try again.'),
+        findsOneWidget,
+      );
+      await pressSystemBack(tester);
+
+      expectAsked();
+    });
   });
 }

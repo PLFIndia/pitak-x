@@ -21,6 +21,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/core/widgets/discard_changes_guard.dart';
 import 'package:pitaka/features/lookup/domain/entities/book_metadata.dart';
 import 'package:pitaka/features/lookup/domain/isbn_format.dart';
 import 'package:pitaka/features/lookup/domain/lookup_result.dart';
@@ -67,6 +68,30 @@ class _AddWishlistPageState extends ConsumerState<AddWishlistPage> {
 
   bool get _isEdit => widget.book != null;
 
+  /// What the form held when it opened, so that Back can ask before unsaved
+  /// input is lost (the "Discard changes?" guard, ADR 0028).
+  late final OpenedValues _opened;
+
+  /// Every text controller of the form: disposed together, and read
+  /// together by [_values], so a field cannot be in one and not the other.
+  List<TextEditingController> get _texts => [
+    _title,
+    _author,
+    _isbn,
+    _publisher,
+    _year,
+    _price,
+    _notes,
+  ];
+
+  /// Everything Save would store, as one list for [_opened].
+  List<Object?> _values() => [
+    for (final c in _texts) c.text,
+    _priority,
+    _needsMetadata,
+    _lookupCoverUrl,
+  ];
+
   @override
   void initState() {
     super.initState();
@@ -80,19 +105,12 @@ class _AddWishlistPageState extends ConsumerState<AddWishlistPage> {
     _notes = TextEditingController(text: b?.notes);
     _priority = b?.priority ?? WishlistBook.priorityMed;
     _needsMetadata = b?.needsMetadata ?? false;
+    _opened = OpenedValues(_values);
   }
 
   @override
   void dispose() {
-    for (final c in [
-      _title,
-      _author,
-      _isbn,
-      _publisher,
-      _year,
-      _price,
-      _notes,
-    ]) {
+    for (final c in _texts) {
       c.dispose();
     }
     super.dispose();
@@ -218,6 +236,8 @@ class _AddWishlistPageState extends ConsumerState<AddWishlistPage> {
     final state = ref.read(addWishlistControllerProvider);
     if (!mounted) return;
     if (state.hasValue && state.value != null) {
+      // Saved: from here on Back must not ask, also while the list reloads.
+      _opened.markSaved();
       await ref.read(wishlistControllerProvider.notifier).refresh();
       if (mounted) Navigator.of(context).pop();
     }
@@ -228,7 +248,7 @@ class _AddWishlistPageState extends ConsumerState<AddWishlistPage> {
     final state = ref.watch(addWishlistControllerProvider);
     final saving = state.isLoading;
 
-    return Scaffold(
+    final page = Scaffold(
       appBar: AppBar(
         title: Text(_isEdit ? 'Edit wishlist item' : 'Add to wishlist'),
       ),
@@ -322,6 +342,11 @@ class _AddWishlistPageState extends ConsumerState<AddWishlistPage> {
           ],
         ],
       ),
+    );
+    return DiscardChangesGuard(
+      hasChanges: () => _opened.changed,
+      saving: saving,
+      child: page,
     );
   }
 
