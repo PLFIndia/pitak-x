@@ -35,7 +35,6 @@ class _HeldVaultSession extends FixedVaultSession {
 
   final List<Borrower> added = [];
   final List<Borrower> updated = [];
-  final List<Loan> updatedLoans = [];
 
   @override
   Future<Either<Failure, int>> addBorrower(Borrower borrower) async {
@@ -52,12 +51,6 @@ class _HeldVaultSession extends FixedVaultSession {
     final failed = failure;
     if (failed != null) return left(failed);
     updated.add(borrower);
-    return right(unit);
-  }
-
-  @override
-  Future<Either<Failure, Unit>> updateLoan(Loan loan) async {
-    updatedLoans.add(loan);
     return right(unit);
   }
 }
@@ -84,7 +77,7 @@ void main() {
   final page = find.byType(BorrowerEditPage);
 
   Future<void> openForm(WidgetTester tester, {Borrower? edit}) async {
-    // Tall enough to build every field and the loan rows under them.
+    // Tall enough to build every field and whatever would stand under them.
     tester.view.physicalSize = const Size(1080, 2400);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
@@ -230,15 +223,19 @@ void main() {
     });
   }
 
-  testWidgets('"Return" on a loan row acts at once and is no change of the '
-      'form: Back leaves', (tester) async {
+  testWidgets('the form of a borrower who has a loan out lists no loan and '
+      'offers no return: that is on their profile, not on a form (review '
+      'finding P4-M3, D108)', (tester) async {
     await openForm(tester, edit: existing);
-    await tester.tap(find.widgetWithText(TextButton, 'Return'));
-    await tester.pumpAndSettle();
-    expect(session.updatedLoans, hasLength(1));
-    await pressSystemBack(tester);
+    expect(find.text('Edit borrower'), findsOneWidget);
 
-    expectGoneWithoutQuestion();
+    expect(find.text('Loans'), findsNothing);
+    expect(find.textContaining('Item #'), findsNothing);
+    expect(find.text('Out'), findsNothing);
+    expect(find.text('Return'), findsNothing);
+    expect(find.text('Mark returned'), findsNothing);
+    // The only buttons left are Back and Save.
+    expect(find.byType(TextButton), findsNothing);
   });
 
   testWidgets('Back while the save runs does nothing; the form then leaves '

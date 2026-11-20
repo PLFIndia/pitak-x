@@ -3,21 +3,21 @@
 /// Shows: name + contact + notes, live
 /// stats (total loans, average return days, overdue rate), the currently-out
 /// loans, and the returned history. Reads the computed [BorrowerProfile] from
-/// the unlocked session; offers Edit and (when no active loans) Delete. Returns
-/// a loan inline. All vault work goes through the session controller.
+/// the unlocked session; offers Edit and (when no active loans) Delete. Marks
+/// a loan returned inline, and takes a return back from the History. All
+/// vault work goes through the session controller.
 library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:pitaka/core/di/providers.dart';
-import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/core/text/display_date.dart';
-import 'package:pitaka/features/vault/application/vault_session_controller.dart';
 import 'package:pitaka/features/vault/domain/borrower_profile.dart';
 import 'package:pitaka/features/vault/domain/entities/borrower.dart';
 import 'package:pitaka/features/vault/domain/value_objects/borrower_contact.dart';
 import 'package:pitaka/features/vault/presentation/pages/borrower_edit_page.dart';
+import 'package:pitaka/features/vault/presentation/widgets/loan_return_action.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 /// Displays a borrower's details, stats, and loan history.
@@ -74,7 +74,14 @@ class BorrowerProfilePage extends ConsumerWidget {
               child: Text('Nothing out right now.'),
             )
           else
-            for (final loan in profile.active) _ActiveLoanTile(loan: loan),
+            for (final loan in profile.active)
+              // The key ties a row, and the busy state of its button, to
+              // its LOAN. Without it Flutter matches rows by their place,
+              // and when the first row goes the next takes over its state.
+              _ActiveLoanTile(
+                key: ValueKey('profile-loan-${loan.id}'),
+                loan: loan,
+              ),
           const SizedBox(height: 16),
           Text('History', style: textTheme.titleMedium),
           if (profile.returned.isEmpty)
@@ -117,69 +124,81 @@ class _LoanTitle extends ConsumerWidget {
   }
 }
 
-/// An out-on-loan row (N06): shows the book title, per-return progress, and
-/// a typed failure message instead of silently doing nothing. Returning an
-/// already-returned loan is a no-op (idempotent).
-class _ActiveLoanTile extends ConsumerStatefulWidget {
-  const _ActiveLoanTile({required this.loan});
+/// An out-on-loan row (N06): the item's title, its due date, and "Mark
+/// returned". The button, its busy state, the bar with "Undo" and the
+/// failure sentences are the shared ones of loan_return_action.dart (review
+/// finding P4-M3), so this row holds no rule and no state of its own. On
+/// success the session changes, the profile rebuilds, and the loan moves to
+/// History by itself.
+class _ActiveLoanTile extends StatelessWidget {
+  const _ActiveLoanTile({required this.loan, super.key});
 
   final Loan loan;
 
   @override
-  ConsumerState<_ActiveLoanTile> createState() => _ActiveLoanTileState();
+  Widget build(BuildContext context) {
+    return _LoanRow(
+      bookId: loan.itemId,
+      line: BorrowerProfilePage.dueLabel(loan),
+      action: MarkReturnedButton(loanId: loan.id),
+    );
+  }
 }
 
-class _ActiveLoanTileState extends ConsumerState<_ActiveLoanTile> {
-  bool _busy = false;
+/// One loan as a row: the item's title, one line under it, and one button.
+///
+/// A `Wrap`, not a `ListTile` (beginner note): a `ListTile` refuses to lay
+/// out a trailing widget that needs the whole width, and "Mark returned" at
+/// twice the text size does. In a `Wrap` the button stands beside the text
+/// while both fit and moves under it when they do not: the same idea as the
+/// stats card above (N12). The words stay whole either way (D109).
+class _LoanRow extends StatelessWidget {
+  const _LoanRow({
+    required this.bookId,
+    required this.line,
+    required this.action,
+  });
 
-  Future<void> _return() async {
-    // Idempotent: a loan that is already returned is never written again.
-    if (_busy || widget.loan.returnedDate != null) return;
-    setState(() => _busy = true);
-    final result = await ref
-        .read(vaultSessionControllerProvider.notifier)
-        .updateLoan(
-          widget.loan.copyWith(
-            returnedDate: DateTime.now().millisecondsSinceEpoch,
-          ),
-        );
-    if (!mounted) return;
-    setState(() => _busy = false);
-    if (result.isLeft()) {
-      // Safe message only — the Failure reason is never user-facing (§5).
-      final failure = result.swap().toNullable();
-      final message = failure is NotFoundFailure
-          ? 'That loan no longer exists.'
-          : 'Could not return this item. Please try again.';
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(message)));
-    }
-    // On success the session state changes, the profile rebuilds, and this
-    // loan moves to History on its own.
-  }
+  final int bookId;
+  final String line;
+  final Widget action;
 
   @override
   Widget build(BuildContext context) {
-    return ListTile(
-      contentPadding: EdgeInsets.zero,
-      title: _LoanTitle(bookId: widget.loan.itemId),
-      subtitle: Text(BorrowerProfilePage.dueLabel(widget.loan)),
-      trailing: TextButton(
-        onPressed: _busy ? null : _return,
-        child: _busy
-            ? const SizedBox(
-                height: 16,
-                width: 16,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              )
-            : const Text('Return'),
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Wrap(
+        alignment: WrapAlignment.spaceBetween,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        spacing: 8,
+        children: [
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              DefaultTextStyle.merge(
+                style: theme.textTheme.bodyLarge,
+                child: _LoanTitle(bookId: bookId),
+              ),
+              Text(
+                line,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+          action,
+        ],
       ),
     );
   }
 }
 
-/// A returned-loan history row (N06) with the resolved book title.
+/// A returned-loan history row (N06) with the resolved book title, and the
+/// lasting way to take a return back: "Not returned" asks first, then puts
+/// the loan back under "Currently out" with the dates it had (D114).
 class _ReturnedLoanTile extends StatelessWidget {
   const _ReturnedLoanTile({required this.loan});
 
@@ -187,13 +206,13 @@ class _ReturnedLoanTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListTile(
-      contentPadding: EdgeInsets.zero,
-      title: _LoanTitle(bookId: loan.itemId),
-      subtitle: Text(
-        'Returned ${BorrowerProfilePage.formatDate(loan.returnedDate)}',
+    return _LoanRow(
+      bookId: loan.itemId,
+      line: 'Returned ${BorrowerProfilePage.formatDate(loan.returnedDate)}',
+      action: TextButton(
+        onPressed: () => confirmAndReopenLoan(context, loanId: loan.id),
+        child: const Text(notReturnedLabel),
       ),
-      trailing: const Icon(Icons.check_circle_outline),
     );
   }
 }

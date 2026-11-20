@@ -821,20 +821,19 @@ void main() {
         isTrue,
       );
       expect((h.state! as VaultUnlocked).data.borrowers.single.name, 'Edited');
-      expect(
-        (await h.controller.updateLoan(
-          const Loan(
-            id: 1,
-            itemId: 5,
-            borrowerId: 1,
-            lentDate: 1,
-            returnedDate: 2,
-          ),
-        )).isRight(),
-        isTrue,
-      );
+      // Since 2026-11 (review finding P4-M3, D110) the controller has no
+      // `updateLoan` and no `deleteLoan` of its own. The update adapter is
+      // reached by marking the loan returned, the delete adapter by the
+      // purge of an item's loans.
+      expect((await h.controller.setLoanReturned(1, 2)).isRight(), isTrue);
       expect(h.controller.currentLoans!.single.isReturned, isTrue);
-      expect((await h.controller.deleteLoan(1)).isRight(), isTrue);
+      expect(h.controller.currentLoans!.single.returnedDate, 2);
+      expect(
+        h.controller.hasLoansForBook(5),
+        isTrue,
+        reason: 'a returned loan still names the item',
+      );
+      expect((await h.controller.purgeLoansForBook(5)).isRight(), isTrue);
       expect(h.controller.currentLoans, isEmpty);
       expect(h.controller.hasLoansForBook(5), isFalse);
       await h.controller.lock();

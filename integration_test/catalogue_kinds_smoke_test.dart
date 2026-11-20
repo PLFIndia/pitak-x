@@ -169,9 +169,13 @@ Future<void> _clearForRestore(
       .where((loan) => loan.itemId == loanItemId && loan.returnedDate == null)
       .toList();
   expect(loans, hasLength(1), reason: 'expected one active loan to clear');
+  // The session controller has no `deleteLoan` of its own since 2026-11
+  // (review finding P4-M3, D110): nothing in the app deleted one loan. The
+  // purge of an item's loans is what the app uses, and it clears the one
+  // loan this item has.
   final deleted = await container
       .read(vaultSessionControllerProvider.notifier)
-      .deleteLoan(loans.single.id);
+      .purgeLoansForBook(loanItemId);
   expect(deleted.isRight(), isTrue, reason: 'could not clear loan: $deleted');
 
   // The complete backup was already created. Clear only now, then restore

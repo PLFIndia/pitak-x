@@ -14,7 +14,6 @@ import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/core/widgets/discard_changes_guard.dart';
 import 'package:pitaka/features/vault/application/vault_session_controller.dart';
 import 'package:pitaka/features/vault/domain/entities/borrower.dart';
-import 'package:pitaka/features/vault/domain/entities/vault_session_state.dart';
 import 'package:pitaka/features/vault/domain/value_objects/borrower_contact.dart';
 
 /// Screen to create or edit a [Borrower].
@@ -202,71 +201,16 @@ class _BorrowerEditPageState extends ConsumerState<BorrowerEditPage> {
             const SizedBox(height: 16),
             Text(_error!, style: TextStyle(color: scheme.error)),
           ],
-          if (_isEdit) _LoansSection(borrowerId: widget.existing!.id),
         ],
       ),
     );
-    // The "Return" buttons of the loan rows act at once and are not part
-    // of what the guard asks about.
+    // This page is a form and nothing else. A borrower's loans, and the
+    // button that marks one returned, are on their profile (review finding
+    // P4-M3, D108); until 2026-11 a list of them stood under the fields.
     return DiscardChangesGuard(
       hasChanges: () => _opened.changed,
       saving: _busy,
       child: page,
-    );
-  }
-}
-
-/// Shows the borrower's loans (from the unlocked session) with a Return action
-/// on active ones. Returning sets `returnedDate` via the session controller.
-class _LoansSection extends ConsumerWidget {
-  const _LoansSection({required this.borrowerId});
-
-  final int borrowerId;
-
-  Future<void> _return(BuildContext context, WidgetRef ref, Loan loan) async {
-    final returned = loan.copyWith(
-      returnedDate: DateTime.now().millisecondsSinceEpoch,
-    );
-    final result = await ref
-        .read(vaultSessionControllerProvider.notifier)
-        .updateLoan(returned);
-    if (!context.mounted) return;
-    result.match(
-      (_) => ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not mark as returned.')),
-      ),
-      (_) {},
-    );
-  }
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final session = ref.watch(vaultSessionControllerProvider).valueOrNull;
-    if (session is! VaultUnlocked) return const SizedBox.shrink();
-    final loans = session.data.loans
-        .where((l) => l.borrowerId == borrowerId)
-        .toList();
-    if (loans.isEmpty) return const SizedBox.shrink();
-
-    final textTheme = Theme.of(context).textTheme;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const SizedBox(height: 24),
-        Text('Loans', style: textTheme.titleSmall),
-        for (final loan in loans)
-          ListTile(
-            contentPadding: EdgeInsets.zero,
-            title: Text('Item #${loan.itemId}'),
-            subtitle: Text(loan.isReturned ? 'Returned' : 'Out'),
-            trailing: loan.isReturned
-                ? const Icon(Icons.check_circle_outline)
-                : TextButton(
-                    onPressed: () => _return(context, ref, loan),
-                    child: const Text('Return'),
-                  ),
-          ),
-      ],
     );
   }
 }

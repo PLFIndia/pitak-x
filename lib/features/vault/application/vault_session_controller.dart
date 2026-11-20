@@ -26,6 +26,7 @@ import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/library/application/delete_catalogue_item_use_case.dart';
 import 'package:pitaka/features/library/domain/catalogue_replacement_guard.dart';
+import 'package:pitaka/features/vault/application/change_loan_return.dart';
 import 'package:pitaka/features/vault/application/insert_loan_with_policy.dart';
 import 'package:pitaka/features/vault/application/lend_book_use_case.dart';
 import 'package:pitaka/features/vault/application/vault_secret_keeper.dart';
@@ -558,28 +559,26 @@ class VaultSessionController extends _$VaultSessionController
     );
   });
 
-  /// Updates a loan, then re-reads the vault. Vault must be unlocked.
-  Future<Either<Failure, Unit>> updateLoan(Loan loan) =>
-      _mutate((p, store, blob) async {
-        final r = await _vault.updateLoan(
+  /// Marks loan [id] returned at [returnedAt] (epoch millis) or, when that
+  /// is null, takes the return back ("Undo"); then re-reads the vault. The
+  /// rules and their reasons: change_loan_return.dart (finding P4-M3).
+  Future<Either<Failure, Unit>> setLoanReturned(int id, int? returnedAt) =>
+      _mutate((p, store, blob) {
+        final generation = _keeper.generation;
+        return changeLoanReturn(
+          vault: _vault,
+          loadItem: (itemId) async => (await ref.read(
+            catalogueItemRepositoryProvider.future,
+          )).getById(itemId),
+          currentLoans: () => currentLoans ?? const [],
+          isCurrent: () => _keeper.isCurrent(generation),
+          cancelled: _cancelled,
           passphrase: p,
           blob: blob,
           dbPath: store.dbPath,
-          loan: loan,
+          loanId: id,
+          returnedAt: returnedAt,
         );
-        return r.map((_) => unit);
-      });
-
-  /// Deletes a loan by id, then re-reads the vault. Vault must be unlocked.
-  Future<Either<Failure, Unit>> deleteLoan(int id) =>
-      _mutate((p, store, blob) async {
-        final r = await _vault.deleteLoan(
-          passphrase: p,
-          blob: blob,
-          dbPath: store.dbPath,
-          id: id,
-        );
-        return r.map((_) => unit);
       });
 
   /// Whether the unlocked vault has any loan referencing [bookId]. Returns
