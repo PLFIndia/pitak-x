@@ -25,7 +25,7 @@ findings of the review".
   | Decisions, the open part of the plan, ONE handoff, short results | this file |
   | The findings of the four review passes with their boxes, and the items T1 to T16, open and closed | private: `review-tracker.md` |
   | Every design ("in detail"), result, safety check and older handoff, word for word | private: `plan-archive-2026-11-13.md` |
-  | The design of the stage that is being built | private: a file of its own (`<stage>-in-detail.md`), until its fix is pushed; then it goes into the archive. Today: `br10-in-detail.md`, for the device runs, and `p4-m3-in-detail.md`, for stage 5 of the plan for the next findings (begun 2026-11-20). The designs of stages 1 to 4 of the plan for the next findings (`p1-m2-in-detail.md`, `p2-m4-in-detail.md`, `p4-m4-in-detail.md`, `p4-m1-in-detail.md`) are in the archive since 2026-11-18, 2026-11-19 (the two in the middle) and 2026-11-20, each with its build log (the designs of the stage of D24, of BR8 and of BR9 are in the archive, since 2026-11-16 and 2026-11-17) |
+  | The design of the stage that is being built | private: a file of its own (`<stage>-in-detail.md`), until its fix is pushed; then it goes into the archive. Today: `br10-in-detail.md`, for the device runs. The designs of stages 1 to 5 of the plan for the next findings (`p1-m2-in-detail.md`, `p2-m4-in-detail.md`, `p4-m4-in-detail.md`, `p4-m1-in-detail.md`, `p4-m3-in-detail.md`) are in the archive since 2026-11-18, 2026-11-19 (the second and the third) and 2026-11-20 (the last two), each with its build log (the designs of the stage of D24, of BR8 and of BR9 are in the archive, since 2026-11-16 and 2026-11-17) |
   | The four review reports, their prompts and the summary | private: `codeReviewReport1.md` to `4.md`, `codeReviewPrompt1.md` to `4.md`, `codeReviewSummary.md` |
 
   "Private" means: files the maintainer keeps outside git (the
@@ -184,28 +184,28 @@ under "D<number>". All are of November 2026.
 | D100 | 19 | Stage 4, its decision point 8, the go-ahead: the stage is built as designed through to its review stop, the tests shown first and written first and seen red where they can be, every guard switched off once by hand, the ADR's draft and the changelog's entry shown first, with a pause whenever something is not as designed. Every commit, the push, the debug build, its install on the phone and the emulator run keep their own yes. The build starts in a new session, as for stages 2 and 3 (D81, D91); if it runs long, it stops after a whole step and hands over | in force; the build began in the sixth session of 2026-11-19 and stopped after its fourth step with a handover; the seventh session (2026-11-20) built steps 5 to 7, through to the review stop; done (D102) |
 | D101 | 19 | Stage 4, put at the first stop of its build: two places of the design did not say the same thing about one moment; the one that D95 rests on is built, as proposed, with a test of its own. The private design file has both | built (`a530dff`: `markSaved()`; `6bb671a`: the three forms that reload a list call it) |
 | D102 | 20 | Stage 4 (P4-M1) is accepted at its review stop as built, after the look in the emulator, which was the agent's, and on the phone's play install, which the maintainer found fine as it is (D99). With it, the answers of the build's second session, each as proposed: the tests of the ninth form as listed; the gate test with a third test that keeps passphrases out of the guard, the row and ADR 0028 as shown; the debug build, its install on the phone and the emulator run; the documents' sentences after the look. Also accepted, as put at the stop: a second move for room that the design did not name; the issue form at 499 of its 500 lines; a `finally` with a test of its own in "Basic info"; the gate's tests on made-up files; one count of the changelog put right. Six commits and this file. Said with it, what is not proven: CI on Linux, the golden pictures with it; the look on the phone, which was the maintainer's alone, and which of its eight points were looked at was not said; the borrower form and the lend form on a device by the agent; a screen reader on a device; a narrow or a weak phone; iOS | in force; pushed on 2026-11-20, and CI run 44667415379 is green in every job at its first attempt: 7,677 tests, and the 10 golden tests with the pictures as they were |
-| D103 | 20 | Stage 5 of that plan (P4-M3), its decision point 1, which is the first half of the tracker's point 2 of pass 4: the first of three ways, as proposed. The private design file has them | built, not committed (steps 3 to 5 of the build: the three screens) |
-| D104 | 20 | Stage 5, its decision point 2, which answers the privacy note the tracker has for the finding: the first of two ways, as proposed, under the condition the note names. The private design file has both, with a short threat model | built, not committed (step 5). Built more strictly than it was put, and that is said at the review stop: what the condition is about decides for itself whether it holds NOW, instead of trusting the screen it stands on (the private design file has why) |
-| D105 | 20 | Stage 5, its decision point 3, which is the second half of the tracker's point 2 of pass 4: the first of three ways, as proposed. The private design file has them | built, not committed (step 3 of the build) |
-| D106 | 20 | Stage 5, its decision point 4: the first of three ways, as proposed: what the Flutter SDK does by itself since 3.38 (read in the SDK the app is pinned to and in Flutter's documentation, and tried outside git), with its cost named. A follow-up point fell away with this answer and was not put. The private design file has them | designed; **found in the build not to hold as it was put** (the agent's own statement of it was wrong in one part; tried outside git, 3 tests); the build stopped before its step 3 for it. Put again as the stage's decision point 11 and answered: D114 takes the place of the part that did not hold |
-| D107 | 20 | Stage 5, its decision point 5: what one operation checks before it writes, the first of three ways, as proposed: one check, not every rule and not none. The private design file has them | built, not committed (step 2 of the build) |
-| D108 | 20 | Stage 5, its decision point 6: how much of a second finding, P4-m5, comes along: the first of three ways, as proposed: the part the review's direction for P4-M3 names, and nothing else of it. P4-m5 will be ticked in part; its other half was not among the findings chosen on 2026-11-18 (D62, D63) | built, not committed (step 1 of the build) |
-| D109 | 20 | Stage 5, its decision point 7: the words, the first of two sets, as proposed. If the longer words do not fit one narrow row at 320 pixels or at twice the text size, that comes back to the maintainer. The private design file has both sets | built for one of the three screens, not committed (step 3). **The condition came up**: at twice the text size the longer words did not fit that row, which Flutter then refuses to lay out at all. The words were not changed and the test was not loosened: the row became a `Wrap`, the idiom that page already has, and holds the words whole at 320 pixels, at twice the text size and at both. It goes back to the maintainer as the condition says: open. **Put right in the next session (step 5):** "whole" stands (nothing is cut, nothing overflows, no button leaves the screen); that the words stand on ONE line at twice the text size had not been shown: the check for it could not fail. In a widget test, whose font draws every letter as a square, they take two lines there; on a phone that is looked at with the largest font (D111). The tests now ask only what they can show. Built for the other two screens as well (steps 4 and 5). **Seen in the emulator with a real font (step 7):** with Android's font at its largest the words stand on one line on all three screens at the usual width, and on two of the three at 320 dp; on the third they take two lines there, whole. The private design file has the table. Answered at the review stop: as built (D115) |
-| D110 | 20 | Stage 5, its decision point 8: room in `vault_session_controller.dart`, which stands one line under its recorded size (`test/architecture/layer_boundaries_test.dart`): the first of three ways, as proposed: two of its methods that will have no caller go (`AGENTS.md` §2.4), checked beforehand to be part of no interface. Not a higher ceiling, and not another refactor of that file | built, not committed (step 2): ONE method took the place of the two, the fallback the design names (two would have put the file at 838 of 836; it stands at 834). The search before this decision had covered `lib/` and `test/` and not `integration_test/`: a third caller of one of the two methods was there, in a device smoke test, and now makes the call the app itself uses (analyze showed it; that smoke test has not been run since) |
+| D103 | 20 | Stage 5 of that plan (P4-M3), its decision point 1, which is the first half of the tracker's point 2 of pass 4: the first of three ways, as proposed. The private design file has them | built (`9a30de9`, `b97eda4`, `1c69d6c`): "Mark returned" on the loan card of Borrowed Items and on the item's page; the borrower's page keeps its button |
+| D104 | 20 | Stage 5, its decision point 2, which answers the privacy note the tracker has for the finding: the first of two ways, as proposed, under the condition the note names. The private design file has both, with a short threat model | built (`1c69d6c`): each line of the item's page names the borrower and the due date, only while the vault is unlocked. Built more strictly than it was put, and that was said at the review stop (D117): the lines ask the vault's session themselves whether it is unlocked NOW, instead of trusting the page they stand on, which still carries an earlier unlock while the session loads again |
+| D105 | 20 | Stage 5, its decision point 3, which is the second half of the tracker's point 2 of pass 4: the first of three ways, as proposed. The private design file has them | built (`9a30de9`): no question before a return; after it a bar "Marked returned." with "Undo" |
+| D106 | 20 | Stage 5, its decision point 4: the first of three ways, as proposed: what the Flutter SDK does by itself since 3.38 (read in the SDK the app is pinned to and in Flutter's documentation, and tried outside git), with its cost named. A follow-up point fell away with this answer and was not put. The private design file has them | designed: the bar stays until it is used, closed, swiped away or replaced by the next message, and goes when the vault is locked. **Found in the build not to hold as it was put**: a bar that stays is not replaced by the app's other messages, it holds them back (the agent's own statement of it was wrong in one part; tried outside git, 3 tests); the build stopped before its step 3 for it. Put again as the stage's decision point 11 and answered: D114 takes the place of the part that did not hold |
+| D107 | 20 | Stage 5, its decision point 5: what one operation checks before it writes, the first of three ways, as proposed: one check, not every rule and not none. The private design file has them | built (`9a30de9`): taking a return back checks that a copy of the item is still free, and refuses with a sentence when the item was lent again in the meantime; not the borrower limit, and not "removed from the library" |
+| D108 | 20 | Stage 5, its decision point 6: how much of a second finding, P4-m5, comes along: the first of three ways, as proposed: the part the review's direction for P4-M3 names, and nothing else of it. P4-m5 will be ticked in part; its other half was not among the findings chosen on 2026-11-18 (D62, D63) | built (`9a30de9`): the loan list left the Edit borrower form. The other half of P4-m5 ("Delete" on a borrower shows no sign of working while the vault writes) is open, and the finding keeps its open box |
+| D109 | 20 | Stage 5, its decision point 7: the words, the first of two sets, as proposed. If the longer words do not fit one narrow row at 320 pixels or at twice the text size, that comes back to the maintainer. The private design file has both sets | built (`9a30de9`, `b97eda4`, `1c69d6c`; the guide in `e39e00c`): "Mark returned" on every button, the borrower's page too, where it said "Return"; the bar "Marked returned." with "Undo"; after a taking-back "The loan is open again." First built for one of the three screens (step 3). **The condition came up**: at twice the text size the longer words did not fit that row, which Flutter then refuses to lay out at all. The words were not changed and the test was not loosened: the row became a `Wrap`, the idiom that page already has, and holds the words whole at 320 pixels, at twice the text size and at both. It goes back to the maintainer as the condition says: open. **Put right in the next session (step 5):** "whole" stands (nothing is cut, nothing overflows, no button leaves the screen); that the words stand on ONE line at twice the text size had not been shown: the check for it could not fail. In a widget test, whose font draws every letter as a square, they take two lines there; on a phone that is looked at with the largest font (D111). The tests now ask only what they can show. Built for the other two screens as well (steps 4 and 5). **Seen in the emulator with a real font (step 7):** with Android's font at its largest the words stand on one line on all three screens at the usual width, and on two of the three at 320 dp; on the third they take two lines there, whole. The private design file has the table. Answered at the review stop: as built (D115) |
+| D110 | 20 | Stage 5, its decision point 8: room in `vault_session_controller.dart`, which stands one line under its recorded size (`test/architecture/layer_boundaries_test.dart`): the first of three ways, as proposed: two of its methods that will have no caller go (`AGENTS.md` §2.4), checked beforehand to be part of no interface. Not a higher ceiling, and not another refactor of that file | built (`9a30de9`): the session controller's `updateLoan` and `deleteLoan` went, and ONE method, `setLoanReturned`, took the place of the two, the fallback the design names (two would have put the file at 838 of 836; it stands at 834). The search before this decision had covered `lib/` and `test/` and not `integration_test/`: a third caller of one of the two methods was there, in a device smoke test, and now makes the call the app itself uses (analyze showed it; that smoke test has not been run since) |
 | D111 | 20 | Stage 5, its decision point 9: the look on a device as in D99: the agent in the emulator of API 36, then the maintainer on the phone's play install, which holds a made-up vault (a debug build over it; the install keeps its own yes). Not the emulator alone | the agent's half is made (2026-11-20, with the maintainer's yes for the debug build and the emulator run): the emulator of API 36, read from the screen's accessibility tree and not from pictures, because the app's screen-capture protection blanks every screenshot while the vault is unlocked; a screen reader was not tried (the image has none). For the maintainer's half the debug build is on the phone's play install since 2026-11-20 17:47 (with the yes; the phone's state read before and after, the vault's files the same bytes); the maintainer's look was made that evening, and the stage is accepted (D124) |
-| D112 | 20 | Stage 5, its decision point 10: ADR 0029 is written in the build, with its line in `docs/adr/README.md`. Not the changelog and the comments alone | written, not committed (step 6), with its line in `docs/adr/README.md`; not shown before it was written (D113), so it was shown at the review stop and stands as written (D116). Its paragraph about the look on the devices has the emulator's part and, since the acceptance, the phone's sentence |
-| D113 | 20 | Stage 5, the go-ahead: the stage is built as designed, its seven steps through to the review stop without a stop after each step, tests first, with a pause when an assumption breaks or a new decision comes up. It was given knowing that one helper of the design reads Riverpod's provider container directly instead of a page's `ref` (`AGENTS.md` §4), for a reason that was tried outside git; ADR 0029 will record it. Nothing is committed before the review stop; every commit, the push and the install on the phone keep their own yes | given 2026-11-20 |
-| D114 | 20 | Stage 5, its decision point 11, which is D106 put again with what the build had found and with the agent's wrong statement named: the first of four ways, as proposed. It keeps what D106 was after by a second, lasting way, which is a follow-up point that had fallen away with D106 and is now part of the stage; about half a session more. The private design file has the four ways and the trial | built, not committed (step 3 of the build): one of the three screens has both ways. The guide names both (step 6) |
+| D112 | 20 | Stage 5, its decision point 10: ADR 0029 is written in the build, with its line in `docs/adr/README.md`. Not the changelog and the comments alone | written (`e39e00c`; put right after D125 by `ca03b62`), with its line in `docs/adr/README.md`; not shown before it was written (D113), so it was shown at the review stop and stands as written (D116). Its paragraph about the look on the devices has the emulator's part and, since the acceptance, the phone's sentence |
+| D113 | 20 | Stage 5, the go-ahead: the stage is built as designed, its seven steps through to the review stop without a stop after each step, tests first, with a pause when an assumption breaks or a new decision comes up. It was given knowing that one helper of the design reads Riverpod's provider container directly instead of a page's `ref` (`AGENTS.md` §4), for a reason that was tried outside git; ADR 0029 will record it. Nothing is committed before the review stop; every commit, the push and the install on the phone keep their own yes | given 2026-11-20; done: built through to the review stop the same day (D124). The helper is `loan_return_action.dart`; ADR 0029 records the step as its decision 6 |
+| D114 | 20 | Stage 5, its decision point 11, which is D106 put again with what the build had found and with the agent's wrong statement named: the first of four ways, as proposed. It keeps what D106 was after by a second, lasting way, which is a follow-up point that had fallen away with D106 and is now part of the stage; about half a session more. The private design file has the four ways and the trial | built (`9a30de9`; the guide in `e39e00c`): the bar is timed, six seconds, and on the borrower's page a returned loan under "History" has a lasting "Not returned", which asks first ("Mark as not returned?"). The guide names both ways |
 | D115 | 20 | Stage 5, the first point of its review stop: D109's condition had come up, and the look in the emulator gave its facts. The first of three ways, as proposed: as built. The words stay as they are on all three screens, and where there is no room beside the text the button stands under it. That the words take two lines in ONE place, on the narrowest screen (320 dp) with Android's font at its largest, is accepted: they stay whole, and that is how large text is meant to behave. Not chosen: a layout of that one screen that gives the button more room there (a change for every user, with new tests); shorter words on that screen alone (the three screens would no longer say the same thing). The private design file has the measurements | in force; nothing to build. ADR 0029 names it under its known limits |
 | D116 | 20 | Stage 5, the second point of its review stop: the words that were written in the build and not shown first stand as written, the first of three ways, as proposed: the step of the in-app guide, the sentences of two of the three screens and of the question, the failure sentences, ADR 0029 and the changelog's entry. The private design file has each word for word | in force; nothing to change |
-| D117 | 20 | Stage 5, the third point of its review stop: five small things the build added beyond the design stay as built, the first of three ways, as proposed. Each has a test that was seen to fail without it, and none changes a decision: what names a person asks for itself whether the vault is unlocked now (D104, built more strictly); a row's waiting state is tied to what the row is about, on two screens; the order of one screen's lines is a rule of the domain layer with tests of its own; one button's word became a named constant so that a test can hold the guide to it; the stand-in session of the tests moved to `test/support/`. The private design file has each | in force; built, not committed (steps 4 to 6) |
+| D117 | 20 | Stage 5, the third point of its review stop: five small things the build added beyond the design stay as built, the first of three ways, as proposed. Each has a test that was seen to fail without it, and none changes a decision: what names a person asks for itself whether the vault is unlocked now (D104, built more strictly); a row's waiting state is tied to what the row is about, on two screens; the order of one screen's lines is a rule of the domain layer with tests of its own; one button's word became a named constant so that a test can hold the guide to it; the stand-in session of the tests moved to `test/support/`. The private design file has each | in force; built (`9a30de9`, `b97eda4`, `1c69d6c`) |
 | D118 | 20 | Stage 5, the fourth point of its review stop: two things the look in the emulator showed about how the stage's gesture feels are left as they are, the first of three ways, as proposed. One follows from the design's own choice of one busy state for a whole card, and lasts as long as one write; the other is how a timed bar with a button behaves over another button, does no harm, and has the lasting way of D114 beside it. Not chosen: a busy sign of its own for the one new button; a note for later. The private design file has both | in force; nothing to build. ADR 0029 names the first under its known limits |
-| D119 | 20 | Stage 5, the fifth point of its review stop: one test file that had nothing of its own left is removed, as proposed (`test/features/vault/item_wording_test.dart`: its one test, changed in step 1, repeats a stricter one of `borrower_edit_page_test.dart`). The yes was for `git rm`; git refused it because step 1's change to the file was not committed, nothing was done, and the yes was asked again for `git rm -f`, which stages the deletion of that one file and commits nothing | done 2026-11-20: the deletion is staged, the only thing in the index. The suite has 7,778 tests, the format check 1,492 files; the changelog's count follows |
+| D119 | 20 | Stage 5, the fifth point of its review stop: one test file that had nothing of its own left is removed, as proposed (`test/features/vault/item_wording_test.dart`: its one test, changed in step 1, repeats a stricter one of `borrower_edit_page_test.dart`). The yes was for `git rm`; git refused it because step 1's change to the file was not committed, nothing was done, and the yes was asked again for `git rm -f`, which stages the deletion of that one file and commits nothing | done 2026-11-20: the deletion was staged, the only thing in the index, and committed with `9a30de9`. The suite has 7,778 tests, the format check 1,492 files; the changelog's count follows |
 | D120 | 20 | Stage 5, the sixth point of its review stop: T15 and T16, which were found before step 4 in the screen as it was and are outside the stage, stay in the private tracker as open items and are decided later, as T14 is; the first of three ways, as proposed. That the agent had written the two rows into the tracker without asking first was said with it. Not chosen: a small stage of their own right after this one; one of the two fixed inside this stage | in force; nothing to build |
 | D121 | 20 | Stage 5, the seventh point of its review stop, which is not about the stage: the assertion on wall-clock time in `zip_reader_cases_test.dart:729` failed in 3 of the 12 whole runs of the two sessions that built stage 5 (858, 220 and 206 ms against 200) and passed alone each time. Read with it: the test's other assertions hold what it guards; its own comment puts a full unpack at 10 to 20 ms, which a bound of 200 would not notice; and since BR7 the timed part includes the disk work of the tests' reader (two temporary folders, the archive written and read twice), which alone can pass the bound on a busy Mac. The second of three ways, as proposed: after stage 5 is pushed it becomes a small change of its own. What replaces or removes the clock is shown first; test code only, its own commit and CI run. Not chosen: leaving it a third time; a higher bound that nobody derived. The other wall-clock test of the handoff (`backup_archive_writer_test.dart:549`, which showed once that day) is read when that change is designed and put then | in force; not designed, not built |
 | D122 | 20 | Stage 5, at its review stop, after the maintainer's first report from the phone (a save in the vault takes 3 to 4 seconds in the debug build there): two of the stage's three gestures show no sign of working while the vault writes. They are left as built, the first of three ways, as proposed, because the wait itself is taken away next (D123); ADR 0029 and the changelog name it as a known limit, in sentences that were shown. Not chosen: a busy sign for both inside this stage; holding the stage back. Said with it: the agent had not looked for it, neither in the design nor in the emulator. The private design file has what was read and measured | in force, since D125 for another reason than the one given here: the wait is acceptable in a release build. In ADR 0029 and the changelog (`e39e00c`, put right by `ca03b62`) |
 | D123 | 20 | The maintainer asked for an architectural fix of what makes a save in the vault slow. **P3-M3 joins the plan for the next findings as its next stage, stage 6, ahead of P4-M8**, which becomes stage 7. Of the two steps the review gives for P3-M3 it is the second, the one that changes the security design and needs ADR 0005 and ADR 0006 changed; this answers decision point 4 of pass 3 of the review. It is in the vault's security code, so it is designed first, in a planning session: a threat model, what was read and tried, its decision points one at a time, and no code before its go-ahead (D21). The file on the device stays encrypted at all times; that was said to the maintainer in so many words. Stage 5 is finished first and is not held back for it | **taken back by D125** the same evening, after the maintainer had tried a release build on the phone. Nothing was read, designed or built for it |
-| D124 | 20 | Stage 5 (P4-M3) is accepted at its review stop as built, after the look in the emulator, which was the agent's and was read from the screen's accessibility tree, and after the maintainer's look on the phone's play install (a debug build). With it the answers of the review stop, each as proposed but D121, which took the second way: D115 to D123. Said with it, what is not proven: CI on Linux, the golden pictures with it; a screen reader, on any device; the screens with the vault unlocked as pictures (the agent read them, the maintainer saw them; which of the look's points were made on the phone was not said, beyond that a save took 3 to 4 seconds there); a release build's speed on the phone; a narrow or a weak phone itself; iOS. No commit of the stage was built by itself: the tree that was checked is the last one | in force; committed on 2026-11-20 in four commits, `9a30de9`, `b97eda4`, `1c69d6c`, `e39e00c`, each with the maintainer's yes, and a fifth after D125, `ca03b62`; not pushed |
+| D124 | 20 | Stage 5 (P4-M3) is accepted at its review stop as built, after the look in the emulator, which was the agent's and was read from the screen's accessibility tree, and after the maintainer's look on the phone's play install (a debug build). With it the answers of the review stop, each as proposed but D121, which took the second way: D115 to D123. Said with it, what is not proven: CI on Linux, the golden pictures with it; a screen reader, on any device; the screens with the vault unlocked as pictures (the agent read them, the maintainer saw them; which of the look's points were made on the phone was not said, beyond that a save took 3 to 4 seconds there); a release build's speed on the phone; a narrow or a weak phone itself; iOS. No commit of the stage was built by itself: the tree that was checked is the last one | in force; committed on 2026-11-20 in four commits, `9a30de9`, `b97eda4`, `1c69d6c`, `e39e00c`, each with the maintainer's yes, and a fifth after D125, `ca03b62`; pushed that evening with this file (`c855c61..7ba6837`, with the maintainer's yes), and CI run 44766273946 is green in every job at its first attempt: 7,778 tests, and the 10 golden tests with the pictures as they were |
 | D125 | 20 | After the commits of stage 5: the maintainer tried a release build on the phone and found the time a return and the other saves take acceptable in practice ("we need not change the stuff"). **D123 is taken back the same evening: P3-M3 does not join the plan**, the scanner is stage 6 again, and the finding stays open in the private tracker, in no stage; decision point 4 of pass 3 of the review is thereby answered with neither of its two steps for now. D122 stands (two gestures of stage 5 show no sign of working while the vault writes), now for this reason and not for the one given with it. ADR 0029 and the changelog had been committed an hour before with two sentences that named a next stage; they are put right in a commit of their own on top, in words that were shown, and nothing committed is rewritten. The agent's reading of the maintainer's message was put first and confirmed. Not chosen: folding the correction into the commit before it | done: `ca03b62` |
 
 Decision points of the plan that are still open: 7 (see
@@ -453,8 +453,11 @@ when it was written; check the repository before relying on it.
    build log), and since the third session of that day it is BUILT
    through its seven steps, with D114, looked at in the emulator
    and on the phone, ACCEPTED (D124) and COMMITTED in five commits,
-   `9a30de9` to `ca03b62`; it is not pushed. What of it is built:
-   "Where it stands" and "The next session", in that last section.
+   `9a30de9` to `ca03b62`, PUSHED that evening and green in CI.
+   Since the fourth session of that day its bookkeeping is made,
+   and it is DONE (its design file with the build log is in the
+   private archive, its last section). How the next session
+   begins: "The next session", in that last section.
 
 ### State of the repository
 
@@ -504,15 +507,25 @@ when it was written; check the repository before relying on it.
 - Draft pull request #30 ("Backup and restore rework, stages BR1 to
   BR6"; its title does not name BR7 yet). CI runs on a pull request
   and on a push to `main` only (`ci.yml:7-10`); a push to
-  `reviewFixes` runs it because of #30. **Run 44667415379 at
+  `reviewFixes` runs it because of #30. **Run 44766273946 at
+  `7ba6837`, the run of stage 5 of the plan for the next findings,
+  is green in all four jobs at its first attempt** (2026-11-20, in
+  the evening), and so is "Update goldens" (44766273246; it pushed
+  no commit): 7,778 tests, the calendar-day runs, coverage 84.99%,
+  the 10 golden tests with the pictures as they were, Rust 45
+  passed and 2 ignored, `cargo deny check`, the OSV scan, both
+  purity checks, the step for the merged manifest ("OK" for both
+  flavours), and the Android unit tests. It is the last run that
+  was looked at. Before it, run 44667415379 at
   `7874d4f`, the run of stage 4 of the plan for the next findings,
-  is green in all four jobs at its first attempt** (2026-11-20),
+  was green in all four jobs at its first attempt (2026-11-20, in
+  the morning),
   and so is "Update goldens" (44667414673; it pushed no commit):
   7,677 tests, the calendar-day runs, coverage 84.91%, the 10 golden
   tests with the pictures as they were, Rust 45 passed and 2
   ignored, `cargo deny check`, the OSV scan, both purity checks, the
   step for the merged manifest ("OK" for both flavours), and the
-  Android unit tests. It is the last run that was looked at. Before
+  Android unit tests. Before
   it, run 44513494076 at
   `1201ae4`, the run of stage 3 of the plan for the next findings,
   was green in all four jobs at its first attempt (2026-11-19, in
@@ -581,7 +594,10 @@ when it was written; check the repository before relying on it.
   only copy of each, on this Mac only; their lines in
   `.git/info/exclude` stay.) Since the second session of 2026-11-20
   `p4-m3-in-detail.md`, the design of stage 5, lies there too, with
-  its line in `.git/info/exclude`. Lines in
+  its line in `.git/info/exclude`. Since the fourth session of that
+  day the archive holds it byte for byte (its last section); the
+  file itself lies in the root until its removal has had the
+  maintainer's yes. Lines in
   `.git/info/exclude` (a setting of that checkout only) keep them
   out of `git status` and `git add`. Git does not keep them: they
   exist on that machine only. `br7-in-detail.md`, the working copy of
@@ -614,14 +630,51 @@ when it was written; check the repository before relying on it.
   that are not part of this work (`docs/plans/handoff-2026-11-09.md`,
   `item-reminder.md`, `reminder-fixes.md`, `reminder-issues1.md`,
   `remoteImport-issues.md`).
-- This file: `7874d4f` is the last commit of it that was pushed with
+- This file: `7ba6837` is the last commit of it that was pushed with
   a CI run that was looked at.
+- **The fourth session of 2026-11-20 changed no file of the app.**
+  It did the bookkeeping of stage 5 of the plan for the next
+  findings. The state was as the handoff said (level with
+  `origin/reviewFixes` at `7ba6837`; this file changed and not
+  committed; the private files there). The numbers of the committed
+  tree, here: `build_runner` wrote 0 outputs, no diff; format 0
+  changed of 1,492 files; analyze 47, the same issues; Rust fmt and
+  clippy clean, 45 passed, 2 ignored; Kotlin 64 in each flavour,
+  offline, the XML files of that run. **The whole suite was run
+  three times and passed in none: each time 7,777 passed and one
+  failed, the same test, `zip_reader_cases_test.dart:729`, the
+  assertion on wall-clock time that D121 is about** (762, 435 and
+  679 ms against 200, 25 to 27 seconds into each run; in the
+  foreground, under `caffeinate -dis`). Alone, between the first
+  two, its file passed three times, 41 of 41. A slip with it: the
+  first run was started 12 seconds after analyze, which the traps
+  of this file say not to do; the second came 5 seconds after
+  those three runs of the file alone; the third after five quiet
+  minutes, and it failed the same way. The Mac ran on its battery
+  that evening; whether that matters was not tried. No fourth run
+  was made: no file of the app changed in that session, the 7,777
+  other tests passed three times, and that assertion is the next
+  piece of work. It wrote: the private tracker (the tick of P4-M3 with
+  its commits; 85 findings with an open box, 12 ticked; P4-m5
+  written down as met in part); this file (the stage's description,
+  the states of D103 to D119, the handoff); the private design file
+  (a last section about that session); the private archive (the
+  design file byte for byte as its last section, its line in the
+  list of titles, and one entry for each of D103 to D125 after
+  D102). The design file itself lies in the root, as a duplicate,
+  until its removal has had the maintainer's yes. `.git/config` was
+  compared with a copy at the end: unchanged. Outside git:
+  `/tmp/pitak_p4m3_book/` ("Scratch folders outside git"). What was
+  written into this file in that session is one more commit of it,
+  or is not committed as long as `git status` names this file.
 - **The second and the third session of 2026-11-20 BUILT stage 5
   of the plan for the next findings through its seven steps, and
   after the acceptance (D124) COMMITTED it in five commits,
-  `9a30de9`, `b97eda4`, `1c69d6c`, `e39e00c` and `ca03b62`. They
-  are NOT pushed** (P4-M3; D103 to D125; the last section of this
-  file says where it stands). 37 files changed, new or deleted,
+  `9a30de9`, `b97eda4`, `1c69d6c`, `e39e00c` and `ca03b62`. With
+  the commit of this file (`7ba6837`) they were PUSHED that evening
+  (`c855c61..7ba6837`, six commits, with the maintainer's yes), and
+  their CI run is green (above)** (P4-M3; D103 to D125; the last
+  section of this file says where it stands). 37 files changed, new or deleted,
   and this file. Copies of that tree, and a patch of it against
   `c855c61`, are under `/tmp/pitak_p4m3/` ("Scratch folders
   outside git"), which the system empties; since the commits
@@ -1062,9 +1115,10 @@ it is DESIGNED and has its go-ahead (D103 to D113), and its build
 was begun in the same session (steps 1 to 3 of 7; D114). In the
 third session of that day the build went on through step 7, the
 look in the emulator and on the phone with it; the stage was
-accepted (D124) and committed, and is not pushed. How far
-its build is, and how the next session begins, is in that last section,
-under "Where it stands" and "The next session".** What
+accepted (D124), committed, pushed and seen green in CI. In the
+fourth session of that day its bookkeeping was made: it is DONE.
+How the next session begins is in that last section, under "The
+next session".** What
 follows in this section was written before it and
 holds for the backup rework.
 
@@ -1248,7 +1302,12 @@ In this order:
      stage 4 (the tree of `47ff3b7`), installed over that one
      with the data kept: the catalogue, the vault file and the
      record for fingerprint unlock were the same bytes before and
-     after;
+     after.
+     Since 17:47 of 2026-11-20 it is a debug build of stage 5 (the
+     code that was committed as `9a30de9` to `1c69d6c`), installed
+     over that one with the data kept: the same three files were
+     the same bytes before and after. What was done in its made-up
+     vault during the look of that evening is the maintainer's;
    - in the phone's Download folder: one small made-up backup
      (`pitak-synthetic-12x20000.pitabak`), pushed on 2026-11-18. In
      the maintainer's backups folder, as before, the small backup
@@ -2353,6 +2412,14 @@ None of them blocks the next stage.
   clock is shown first.** The other wall-clock test
   (`backup_archive_writer_test.dart:549`) is read when that change
   is designed, and put then.
+  **It showed three times more that evening**, in all three whole
+  runs of the session that did the bookkeeping of stage 5, with no
+  file of the app changed since the green runs before (762, 435
+  and 679 ms against 200, 25 to 27 seconds into each run; alone
+  between the first two, three times 41 of 41; the third run was
+  started after five quiet minutes; the Mac ran on its battery).
+  That is six of the fifteen whole runs since the build of stage 5
+  began, and the last three in a row.
 - `lock_suppressor_test.dart`, "clears after the grace window",
   timed out ONCE on 2026-11-20, in a whole run that was in the
   background while the Mac went to sleep for two and a half hours
@@ -2710,6 +2777,17 @@ accessibility tree, with the helper that makes them and a
 `README.txt`), and one picture of an item's page under a locked
 vault; made-up data only.
 
+Since the fourth session of 2026-11-20: `/tmp/pitak_p4m3_book/`
+holds the bookkeeping of stage 5: the logs of the checks, of both
+whole runs of the suite and of the three runs of one test file
+alone (`logs/`); the parts this file's new text, the design file's
+last section and the archive's new entries were joined from
+(`plan/`, `archive/`); and copies of the private files, of this
+file and of the two git settings files from before the session's
+first write (`before/`, with checksums). Nothing of the
+maintainer's own is in it but those copies; it is left to the
+system.
+
 ## Log
 
 | Date | What |
@@ -2726,7 +2804,8 @@ vault; made-up data only.
 | 2026-11-19, 2026-11-20 | The sixth session of 2026-11-19, a build session for stage 4 of the plan for the next findings (P4-M1), which ran into the next morning. The state and the baseline (unchanged: 7,405 tests; Rust 45 passed, 2 ignored). The private design file read in full, the places it names read again in today's code, the three trial files of the planning session run once more. Steps 1 to 4 of the design's seven built, each group of tests shown first, written first and run on the code as it was, then the code; 87 trials by hand, each seen. D101 at the first stop. One prediction was wrong and is said in the build log; one more move for room than the design named. One whole run of the suite failed in a test that is not of the stage (an open question: it showed again). After the fourth step: 7,631 tests passed. Nothing committed: a handover in the private design file and here |
 | 2026-11-20 | The seventh session of the plan for the next findings: stage 4 (P4-M1) finished. The state confirmed (the 23 files of the build the same as their snapshot), the whole checks (7,631 tests). Step 5, "Basic info": 29 tests shown, written first, 20 red and 9 green on the old tab as predicted; the tab keeps its state across a change of tab and asks from every tab; a 30th test for a `finally` around its save; 16 trials by hand. Step 6: the twelve files that are not forms each read in full (one reason of the design put right); the gate test (16 tests), ADR 0028 and the row of `docs/ARCHITECTURE.md`, each shown first; 7 trials by hand. Step 7: all checks (7,677 tests; Rust 45 passed, 2 ignored; Kotlin 64 in each flavour); a debug build on the phone's play install, the data kept; the look in the emulator of API 36 by the agent (Android 16's way of Back, and no back preview on a form), and on the phone by the maintainer: fine as it is; seen in the emulator and outside the stage: a change of the navigation mode restarts the app's screen, written into ADR 0028 as a known limit; the changelog. The review stop: accepted (D102). Six commits (`aef6db4`, `a530dff`, `6bb671a`, `4742519`, `6d835ba`, `47ff3b7`) and this file (`7874d4f`); pushed (`1201ae4..7874d4f`); CI run 44667415379 green in every job at its first attempt, the golden pictures as they were. P4-M1 ticked in the private tracker; the stage described here; its design file in the private archive, word for word. Next: the planning of stage 5 (P4-M3) |
 | 2026-11-20 | The eighth session of the plan for the next findings: stage 5 (P4-M3) planned, and its build begun. The state confirmed (level with `origin/reviewFixes` at `c855c61`; this file changed and not committed). The baseline, Kotlin with it: unchanged (7,677 tests). The finding read in the tracker, the report and the summary, and confirmed in today's code, every part of it. Read in the Flutter SDK and in Flutter's documentation; two trials outside git (11 tests). The design in the private `p4-m3-in-detail.md`; ten decision points put one at a time, each answered as proposed (D103 to D112); the go-ahead, the whole build through to the review stop (D113). Step 1 and step 2 built, tests first. Two statements of the agent were wrong and are named as such in the design file: a search before D110 had not covered `integration_test/` (a third caller, changed to the call the app uses), and D106 as it was put did not hold (a third trial, 3 tests); the build stopped for the second, and D114 answered it. Step 3 built, each of its guards switched off once by hand; D109's condition came up and was answered by layout, the words unchanged. 7,734 tests passed after step 3. Each of the two wall-clock tests of the handoff failed once, in the whole runs after steps 1 and 2, and passed alone three times. Nothing committed. Steps 4 to 7 are not begun |
-| 2026-11-20 | The ninth session of the plan for the next findings: the build of stage 5 (P4-M3) went on, steps 4 to 6 and the first part of step 7. The state confirmed (level with `origin/reviewFixes` at `c855c61`; this file changed; eleven files changed and six new, as the handoff says); the private design file read in full; copies of the private files and a patch of everything through step 3 saved first. A trial outside git against the screen of step 4 as it was (3 tests): two things seen that are there today and are not of the stage (T15, T16, into the private tracker). Step 4 built, tests first (20; 19 red and 1 green on the old code), with the stand-in session of step 3 moved to `test/support/` for the three test files that need it; nine trials by hand, each seen (two only after one test was written more sharply). 7,754 tests. Step 5 built, tests first (16 on the screen, 13 red and 3 green on the old code; 7 of its rule; 1 more on the screen of step 3). **Found in it, and said first: a check of step 3 could not fail**, so one thing the build log of step 3 says was shown had not been (a trial outside git, 4 tests; the check put right in `test/support/text_lines.dart`; D109's row corrected). Two things beyond the design, each with a test seen red: what names a person asks for itself whether the vault is unlocked now, and a row's waiting state is tied to what the row is about (on the screen of step 3 as well). Thirteen trials by hand, each seen. One whole run was in the background when the Mac went to sleep for two and a half hours and does not count (one test that waits on the clock timed out); run again in the foreground: 7,778 tests. Step 6: the guide's step with a test that holds it to the buttons' own words (seen red), its approved copy in the mockup (the `.html` beside it is a frozen artefact and was left), ADR 0029 with its line in the index, the changelog; none of the three texts was shown before it was written, all three go to the review stop. Three whole runs: in the first two `zip_reader_cases_test.dart:729` failed (220 ms, 206 ms against 200) and passed alone three times; the third passed, **7,779 tests**. Step 7, its first part: `build_runner` no new diff, format 0 changed of 1,493 files, analyze 47, Rust 45 passed and 2 ignored, Kotlin 64 in each flavour offline. Slips, each written where it happened: a script copied one of the maintainer's own untracked files into `/tmp` (the repository was not touched); a background run that never started; two lints of the agent's own, put right. The maintainer's yes for the debug build and the emulator run (D111). Step 7, its second part: the build looked into; the device smoke test that step 2 had changed passed in the emulator of API 36; the look there, read from the screen's accessibility tree because the screen-capture protection blanks every screenshot while the vault is unlocked: every point of the design's list but a screen reader, which the image does not have; D109's words measured with a real font at the largest font and at 320 dp; the device's log without an error and without a made-up name. A slip there: a chain of taps sent blind closed the app and landed one tap in the image's other install (nothing typed; the image is read-only). ADR 0029's paragraph about the devices and the changelog's sentence, the emulator's part; the Dart checks once more: 7,779 tests. The review stop, its points one at a time: D115 (D109 as built), D116 (the words as written), D117 (five small things beyond the design kept), D118 (two things of the look left), D119 (one test file removed; `git rm` was refused for an uncommitted change, and the yes was asked again for `git rm -f`), D120 (T15 and T16 kept open), D121 (the wall-clock test of the ZIP reader as a change of its own after the push). The debug build onto the phone's play install with a yes, the phone's state read before and after, the vault's files the same bytes. The maintainer's first report from there, a save takes 3 to 4 seconds: read and measured (each save runs the vault's key step twice, which is the review's P3-M3 and not of this stage; a debug build makes that step about 14 times slower, 1.15 s against 0.08 s on the Mac), and with it a gap of the stage's own that the agent had not looked for (two of its gestures show no sign of working during that wait): D122, a known limit. The maintainer asked for an architectural fix of the vault (D123: P3-M3 as the next stage), accepted the stage (D124), and, after the four commits (`9a30de9`, `b97eda4`, `1c69d6c`, `e39e00c`) and after trying a release build on the phone, took D123 back (D125); two sentences of the fourth commit were put right in a fifth (`ca03b62`). 7,778 tests after D119. Not pushed |
+| 2026-11-20 | The ninth session of the plan for the next findings: the build of stage 5 (P4-M3) went on, steps 4 to 6 and the first part of step 7. The state confirmed (level with `origin/reviewFixes` at `c855c61`; this file changed; eleven files changed and six new, as the handoff says); the private design file read in full; copies of the private files and a patch of everything through step 3 saved first. A trial outside git against the screen of step 4 as it was (3 tests): two things seen that are there today and are not of the stage (T15, T16, into the private tracker). Step 4 built, tests first (20; 19 red and 1 green on the old code), with the stand-in session of step 3 moved to `test/support/` for the three test files that need it; nine trials by hand, each seen (two only after one test was written more sharply). 7,754 tests. Step 5 built, tests first (16 on the screen, 13 red and 3 green on the old code; 7 of its rule; 1 more on the screen of step 3). **Found in it, and said first: a check of step 3 could not fail**, so one thing the build log of step 3 says was shown had not been (a trial outside git, 4 tests; the check put right in `test/support/text_lines.dart`; D109's row corrected). Two things beyond the design, each with a test seen red: what names a person asks for itself whether the vault is unlocked now, and a row's waiting state is tied to what the row is about (on the screen of step 3 as well). Thirteen trials by hand, each seen. One whole run was in the background when the Mac went to sleep for two and a half hours and does not count (one test that waits on the clock timed out); run again in the foreground: 7,778 tests. Step 6: the guide's step with a test that holds it to the buttons' own words (seen red), its approved copy in the mockup (the `.html` beside it is a frozen artefact and was left), ADR 0029 with its line in the index, the changelog; none of the three texts was shown before it was written, all three go to the review stop. Three whole runs: in the first two `zip_reader_cases_test.dart:729` failed (220 ms, 206 ms against 200) and passed alone three times; the third passed, **7,779 tests**. Step 7, its first part: `build_runner` no new diff, format 0 changed of 1,493 files, analyze 47, Rust 45 passed and 2 ignored, Kotlin 64 in each flavour offline. Slips, each written where it happened: a script copied one of the maintainer's own untracked files into `/tmp` (the repository was not touched); a background run that never started; two lints of the agent's own, put right. The maintainer's yes for the debug build and the emulator run (D111). Step 7, its second part: the build looked into; the device smoke test that step 2 had changed passed in the emulator of API 36; the look there, read from the screen's accessibility tree because the screen-capture protection blanks every screenshot while the vault is unlocked: every point of the design's list but a screen reader, which the image does not have; D109's words measured with a real font at the largest font and at 320 dp; the device's log without an error and without a made-up name. A slip there: a chain of taps sent blind closed the app and landed one tap in the image's other install (nothing typed; the image is read-only). ADR 0029's paragraph about the devices and the changelog's sentence, the emulator's part; the Dart checks once more: 7,779 tests. The review stop, its points one at a time: D115 (D109 as built), D116 (the words as written), D117 (five small things beyond the design kept), D118 (two things of the look left), D119 (one test file removed; `git rm` was refused for an uncommitted change, and the yes was asked again for `git rm -f`), D120 (T15 and T16 kept open), D121 (the wall-clock test of the ZIP reader as a change of its own after the push). The debug build onto the phone's play install with a yes, the phone's state read before and after, the vault's files the same bytes. The maintainer's first report from there, a save takes 3 to 4 seconds: read and measured (each save runs the vault's key step twice, which is the review's P3-M3 and not of this stage; a debug build makes that step about 14 times slower, 1.15 s against 0.08 s on the Mac), and with it a gap of the stage's own that the agent had not looked for (two of its gestures show no sign of working during that wait): D122, a known limit. The maintainer asked for an architectural fix of the vault (D123: P3-M3 as the next stage), accepted the stage (D124), and, after the four commits (`9a30de9`, `b97eda4`, `1c69d6c`, `e39e00c`) and after trying a release build on the phone, took D123 back (D125); two sentences of the fourth commit were put right in a fifth (`ca03b62`). 7,778 tests after D119. The commit of this file (`7ba6837`) and the push of six commits (`c855c61..7ba6837`), with the maintainer's yes; CI run 44766273946 green in every job at its first attempt (7,778 tests, the 10 golden tests with the pictures as they were, Rust 45 passed and 2 ignored, the merged manifest "OK" for both flavours, the Android unit tests), and "Update goldens" with no new picture. Left of the stage: the ticks, its description here, the design file into the archive |
+| 2026-11-20 | The tenth session of the plan for the next findings: the bookkeeping of stage 5 (P4-M3). The state confirmed (level with `origin/reviewFixes` at `7ba6837`; this file changed and not committed; the private files there); the private design file read in full; copies of the private files first. The numbers of the committed tree: `build_runner` no diff, format 0 changed of 1,492 files, analyze 47, Rust 45 passed and 2 ignored, Kotlin 64 in each flavour offline. Three whole runs of the suite, and each ended with 7,777 passed and one failed, the same assertion on wall-clock time each time (`zip_reader_cases_test.dart:729`: 762, 435 and 679 ms against 200; alone between the first two runs three times 41 of 41); the first was started 12 seconds after analyze, against this file's own trap, a slip; the third after five quiet minutes; the Mac ran on its battery. A fourth was not made: nothing of the app changed, and that assertion is the next piece of work (D121). P4-M3 ticked in the private tracker with its commits (85 findings with an open box, 12 ticked), P4-m5 written down there as met in part; the stage described here ("Stage 5: what it was and what was built") and the states of D103 to D119 brought up to date; the design file, with a last section about this session, into the private archive byte for byte, with its line in the list of titles and one entry for each of D103 to D125 after D102. A slip: one shell line of the agent's own used a form this Mac's shell does not have; the check it stood beside was made by the script in the same command. Another: one heading of the archive's new entries came out of the agent's script with a phrase doubled and was put right by hand, after the comparison (the archive without its three additions was the copy from before, and the design file between its marker lines the same bytes). Nothing of the app changed; nothing committed. Left: the yes for the commit of this file and for its push, and for the removal of the design file from the root; then D121's small change |
 
 ## Device runs: handoff for the next session
 
@@ -3421,9 +3500,9 @@ The second plan of this file (D61). On 2026-11-18 the maintainer
 chose nine findings of the review to be planned, and a tenth, which
 has a date, joined them (D63). A finding
 is named here by its id
-only until its fix is pushed (D30). The findings of stages 1 to 4
+only until its fix is pushed (D30). The findings of stages 1 to 5
 are fixed, and those stages are described below ("Stage 1: what it
-was and what was built", and the same for stages 2 to 4); the
+was and what was built", and the same for stages 2 to 5); the
 others are not described. What each is, with
 its place in the code, is in the private tracker and in the four
 review reports. The design of the stage that is being built is in a
@@ -3445,7 +3524,7 @@ In this order (D62, D63). The sizes are guesses. (For one hour of 2026-11-20 an 
 | 2 | P2-M4 | the SQLCipher of the Rust core. Its date was 2026-12-09, when the exception in `rust/osv-scanner.toml` would have ended | not guessed beforehand; it took a planning session and a build session | **done 2026-11-19**, designed in one session and built in the next (D72 to D83): `17a21b2`, `0f1c143`; pushed, CI run 44472569628 green; ticked in the private tracker; its design file in the private archive |
 | 3 | P4-M4 | the library list and the drawer | half a day to a day; it took a planning session and a build session of an afternoon | **done 2026-11-19**, designed in one session and built in the next (D84 to D92): `2858c6b`, `bd3954f`, `915001f`; pushed, CI run 44513494076 green; ticked in the private tracker; its design file in the private archive |
 | 4 | P4-M1 | forms | about a day; it took a planning session and two long build sessions | **designed 2026-11-19, with its go-ahead** (D93 to D100; the private `p4-m1-in-detail.md`): confirmed in today's code, all eight decision points answered, each as proposed. **Done 2026-11-20**, built in two sessions (D101, D102): `aef6db4`, `a530dff`, `6bb671a`, `4742519`, `6d835ba`, `47ff3b7`; pushed, CI run 44667415379 green; ticked in the private tracker; its design file in the private archive |
-| 5 | P4-M3; of P4-m5 the part the review's direction for P4-M3 names (D108) | lending | about a day; read against the code: two build sessions | **designed 2026-11-20, with its go-ahead** (D103 to D113; the private `p4-m3-in-detail.md`): confirmed in today's code, all ten decision points answered, each as proposed. **Built through its seven steps, accepted at its review stop (D124) and committed** (the same session and the next). The build stopped once, before step 3, because D106 did not hold as it was put; D114 answered it. The look in the emulator and the look on the phone are made (D111), the points of the review stop are answered (D115 to D123, with D125), and it is **committed**: `9a30de9`, `b97eda4`, `1c69d6c`, `e39e00c`, `ca03b62`; not pushed. Left: the push, CI |
+| 5 | P4-M3; of P4-m5 the part the review's direction for P4-M3 names (D108) | lending | about a day; read against the code: two build sessions | **designed 2026-11-20, with its go-ahead** (D103 to D113; the private `p4-m3-in-detail.md`): confirmed in today's code, all ten decision points answered, each as proposed. **Built through its seven steps, accepted at its review stop (D124), committed and pushed** (the same session and the next). The build stopped once, before step 3, because D106 did not hold as it was put; D114 answered it. The look in the emulator and the look on the phone are made (D111), the points of the review stop are answered (D115 to D123, with D125), and it is **committed, pushed and green in CI**: `9a30de9`, `b97eda4`, `1c69d6c`, `e39e00c`, `ca03b62`; CI run 44766273946 at `7ba6837`. **Done 2026-11-20**: ticked in the private tracker (P4-m5 in part, its box stays open); described below; its design file in the private archive |
 | 6 | P4-M8 | the scanner | about a day | not read; in a session with the phone |
 | later, each with a plan of its own | P4-M2 with P3-M4; P4-M6; P2-M2; the rest of P2-M3 | the library list; how a file leaves the app; two packages | a planned piece of work each | not read |
 
@@ -3453,7 +3532,7 @@ Every "where" of the review reports is of 2026-11-10. Each place is
 read again in today's code before its stage is designed, and the
 finding is confirmed or struck.
 
-### Where it stands (2026-11-20, stage 4 done; stage 5 built, accepted and committed, not pushed)
+### Where it stands (2026-11-20, stages 1 to 5 done)
 
 - **Stage 1 is DONE** (2026-11-18): built, seen on the phone,
   accepted (D71), pushed, green in CI (run 44332072893 at
@@ -3489,91 +3568,21 @@ finding is confirmed or struck.
   ticked in the private tracker, and the design file with its build
   log is in the private archive, word for word. It is described
   below ("Stage 4: what it was and what was built").
-- **Stage 5 (P4-M3, lending) is DESIGNED and has its go-ahead**
-  (the second session of 2026-11-20: D103 to D113). The baseline
-  was unchanged. The finding is confirmed in today's code, every
-  part of it. The design, nine things the review does not say, what
-  was read in the Flutter SDK and in Flutter's documentation, the
-  trials outside git (plain Flutter and Riverpod, and since the
-  build two against the app's own screens) and the order of the
-  build are in the private `p4-m3-in-detail.md`. Its ten decision
-  points were put one at a time and answered, each as proposed; the
-  review's own decision point is the first and the third of them.
-  An eleventh came up in the build and is answered (D114). No Rust,
-  no Kotlin, no new package, no change to the database or to a file
-  format.
-- **Stage 5 is BUILT through its seven steps, ACCEPTED at its
-  review stop (D124) and COMMITTED; it is NOT pushed** (the second
-  and the third session of 2026-11-20). Five commits on top of
-  `c855c61`: `9a30de9` (the operation, its rule, the gesture, the
-  borrower's page, the Edit borrower form: 19 files, one of them
-  deleted), `b97eda4` (the loan card: 7), `1c69d6c` (the item's
-  page: 5), `e39e00c` (ADR 0029, the guide and its mockup, the
-  changelog: 6), and `ca03b62` (two documents put right after
-  D125). Before each, what was staged was compared with the saved
-  copies: the same bytes. The working tree holds nothing of the
-  stage any more; this file is one more commit, or is not
-  committed as long as `git status` names it. The private design
-  file's build log says what each file is, what was seen red, and
-  every trial by hand (9 for step 4, 13 for step 5, each seen by a
-  test).
-  Checks on that tree (2026-11-20, about 16:00; the Dart ones once
-  more after the look, and again after D119, about 18:30): **7,778
-  tests passed, none failed** (101 more than the baseline; 7,779
-  before D119 took one test file out); `build_runner` no new diff;
-  format 0 changed of 1,492 files; analyze 47, the same issues; Rust
-  fmt and clippy clean, 45 passed, 2 ignored; Kotlin 64 in each
-  flavour, offline, the XML files of that run.
-  Three things of the build are said first, each a statement of the
-  agent's that was wrong or a check that did not do its work:
-  - a search before D110 had not covered `integration_test/`
-    (step 2);
-  - D106 as it was put did not hold; the build stopped for it, and
-    D114 answered it (before step 3);
-  - **a check of step 3 could not fail** (found in step 5): it was
-    to show that the words of a button stand on one line at twice
-    the text size, and it passed for two lines as well. What it had
-    "shown" was therefore not shown, and D109's row says what is
-    true. The check is put right
-    (`test/support/text_lines.dart`), and the tests ask only what
-    a widget test can show.
-  Whole runs of the suite that did NOT pass, none of them through a
-  test of this stage: after steps 1 and 2 one wall-clock test each;
-  after step 5 one run across a sleep of the Mac (one test that
-  waits on the clock); after step 6 two runs in a row with the same
-  wall-clock test (`zip_reader_cases_test.dart:729`, 220 ms and 206
-  ms against 200), then the green one. "Questions the maintainer
-  has not answered yet" has them.
-  **The look in the emulator is made** (D111; Android 16, a debug
-  build of that tree, made-up data, each with the maintainer's yes):
-  the device smoke test that step 2 had changed passed; every point
-  of the design's list was seen but one, a screen reader, which the
-  image does not have. It was read from the screen's accessibility
-  tree, not from pictures: while the vault is unlocked the app's
-  screen-capture protection blanks every screenshot. With a real
-  font and Android's font at its largest, D109's words stand on one
-  line everywhere at the usual width; at 320 dp they take two lines
-  on one of the three screens. The device's log held no error and
-  nothing of the made-up names. The private design file has the
-  table of what each screen said; the readings are kept in
-  `~/pitak-device-runs/stage5-p4m3/`.
-  **The debug build of that tree is on the phone's play install**
-  (2026-11-20 17:47, with the maintainer's yes; the phone's state
-  was read before and after, and its vault's files are the same
-  bytes; nothing was started or typed there).
-  **The review stop is over** (the same evening): its points were
-  put one at a time and answered, D115 to D123 (D109 as built; the
-  words as written; five small things beyond the design kept; two
-  things of the look left as they are; one test file removed; T15
-  and T16 kept open; the wall-clock test of the ZIP reader as a
-  change of its own after the push; and, after the maintainer's
-  first report from the phone, a known limit of two of the stage's
-  gestures; for an hour also P3-M3 as the plan's next stage, D123,
-  which D125 took back once the maintainer had tried a release
-  build on the phone). The maintainer looked on the phone and
-  accepted the stage (D124).
-  **Not done:** the push, CI; then the ticks in the tracker, the
-  stage's description here, and the design file into the archive.
+- **Stage 5 (P4-M3, lending; of P4-m5 one half) is DONE**
+  (2026-11-20): designed in the second session of that day (D103 to
+  D113), built in that session and the third, tests first, with one
+  stop because D106 did not hold as it was put (D114), read in the
+  emulator of API 36 by the agent and seen on the phone by the
+  maintainer (D111), accepted at its review stop (D115 to D124,
+  with D125), committed (`9a30de9`, `b97eda4`, `1c69d6c`,
+  `e39e00c`, `ca03b62`), pushed, and green in CI (run 44766273946
+  at `7ba6837`, every job at its first attempt; the golden job
+  passed with the pictures as they were). In the fourth session of
+  that day P4-M3 was ticked in the private tracker (P4-m5 is
+  written down there as met in part and keeps its open box), and
+  the design file with its build log went into the private archive,
+  word for word, with an entry for each of D103 to D125. It is
+  described below ("Stage 5: what it was and what was built").
 - Found while stage 3 was designed, and outside it: T14 in the
   private tracker (from reading, not tried).
 - Found before step 4 of stage 5 was built, and outside it: T15 and
@@ -3583,50 +3592,59 @@ finding is confirmed or struck.
 
 ### The next session
 
-Stage 5 of this plan (P4-M3, lending) is built, accepted (D124) and
-committed in five commits; it is NOT pushed. The next session
-begins with the push, if this one did not make it. The push keeps
-its own yes. In this order:
+Stage 5 of this plan (P4-M3, lending) is DONE: built, accepted
+(D124), pushed, green in CI (run 44766273946 at `7ba6837`), ticked
+in the private tracker, described below, its design file in the
+private archive (the fourth session of 2026-11-20 did that
+bookkeeping). Every commit and every push keeps its own yes. In
+this order:
 
-1. The state: `git status -sb` (ahead of `origin/reviewFixes`, which
-   is at `c855c61`, by the five commits of the stage, `9a30de9`
-   to `ca03b62`, and by the commits of this file; the working tree
-   clean but for the untracked files the handoff names, or this
-   file changed), `git remote -v` (`github.com/PLFIndia/pitak-x`),
-   and that the private files are there, `p4-m3-in-detail.md`
-   among them. An agent that cannot see them stops and asks.
-2. The numbers of the tree that was committed: 7,778 tests; analyze
-   47; format 0 changed of 1,492 files (`tool/` counted in);
-   `build_runner` no change; Rust 45 passed, 2 ignored; Kotlin 64
-   in each flavour. A whole run of the suite goes in the
-   foreground, under `caffeinate -dis`, and not right after
-   `build_runner` or analyze (the traps, "learned on 2026-11-20
-   (the build of stage 5)").
-3. The push (`git push origin reviewFixes`, with the maintainer's
-   yes), then CI on pull request #30 and the workflow "Update
-   goldens": every job is looked at, the test count (7,778), the
-   golden job with the pictures as they were. No golden picture
-   shows one of the stage's screens.
-4. After the green run: the ticks in the private tracker (P4-M3;
-   P4-m5 in part, its other half stays open); the stage's
-   description in this file ("Stage 5: what it was and what was
-   built"), now that it may be described (D30); the private design
-   file into the private archive, word for word, with one entry
-   for each of D103 to D125 that points at its place in that copy
-   (the archive has the decisions in full only up to D102); then
-   the design file's removal from the root, with a yes.
-5. Then the small change of D121 (the assertion on wall-clock time
-   in `zip_reader_cases_test.dart:729`): its design is shown
-   first; it is test code only and gets its own commit and CI run.
-6. Then stage 6, P4-M8 (the scanner), in a session with the phone:
+1. The state: `git status -sb` (level with `origin/reviewFixes`, or
+   commits of this file ahead; the working tree clean but for the
+   untracked files the handoff names, or this file changed),
+   `git remote -v` (`github.com/PLFIndia/pitak-x`), and that the
+   private files are there: `review-tracker.md`,
+   `plan-archive-2026-11-13.md` and `br10-in-detail.md`.
+   (`p4-m3-in-detail.md` lies there too until its removal has had
+   its yes; the archive's last section is its copy, byte for byte.)
+   An agent that cannot see them stops and asks.
+2. The numbers of the tree that is committed (no file of the app
+   has changed since `ca03b62`): 7,778 tests; analyze 47; format 0
+   changed of 1,492 files (`tool/` counted in); `build_runner` no
+   change; Rust 45 passed, 2 ignored; Kotlin 64 in each flavour. A
+   whole run of the suite goes in the foreground, under
+   `caffeinate -dis`, and not right after `build_runner` or analyze
+   (the traps, "learned on 2026-11-20 (the build of stage 5)").
+   **A whole run can end with 7,777 passed and one failed, in
+   `zip_reader_cases_test.dart:729`**: all three whole runs of the
+   fourth session of 2026-11-20 did, and six of the last fifteen.
+   That is point 3, and no reason to look elsewhere as long as the
+   file passes alone.
+3. The small change of D121 (the assertion on wall-clock time in
+   `zip_reader_cases_test.dart:729`): its design is shown first; it
+   is test code only and gets its own commit and CI run. The other
+   wall-clock test (`backup_archive_writer_test.dart:549`) is read
+   with it and put then. What the runs have shown, for the design:
+   the assertion fails 19 to 27 seconds into a whole run, when many
+   test files run at once, with 206 to 858 ms against its bound of
+   200; alone its file has passed every time, and so it has in CI.
+   Read at the end of the fourth session of 2026-11-20, and no
+   more than that: the test's comment says the reader must not use
+   the package's `ZipDecoder` at all; a search of `lib/` finds that
+   name in comments only, and no test under `test/architecture/`
+   names it. Whether a test of that kind is what takes the clock's
+   place is for the design to say.
+4. Then stage 6, P4-M8 (the scanner), in a session with the phone:
    a planning session first, as for every stage. (P3-M3 is NOT a
    stage: D123 put it here for an hour and D125 took it back.)
-7. Left for whenever the maintainer wants it, none of it urgent:
+5. Left for whenever the maintainer wants it, none of it urgent:
+   the removal of `p4-m3-in-detail.md` from the root, if it still
+   lies there (a yes, after one more comparison with the archive);
    the phone's two installs, which hold made-up vaults under the
    public passphrase of the test fixture (the handoff, "Next",
    point 4; the play install has the debug build of stage 5 since
    2026-11-20 17:47); the things under "Seen and not part of the
-   stage" of stages 2 to 4 below; T14 to T16 (D120).
+   stage" of stages 2 to 5 below; T14 to T16 (D120).
 
 ### Stage 1: what it was and what was built
 
@@ -4084,6 +4102,236 @@ full. One count of the changelog was shown wrong and written right.
 - The archive's list of titles lacked the line of stage 3's design
   file; it was added with stage 4's.
 
+### Stage 5: what it was and what was built
+
+**The finding (P4-M3, and of P4-m5 one half).** A loan could not be
+marked as returned where the user looks for it, and a return could
+not be taken back. A book comes back. The user opened Borrowed
+Items, found the card, and saw no way to say so. A tap on the card
+led to the item's page, which said "Mark it returned before lending
+it again" and did not say where. The real path was the menu, the
+borrowers vault, the borrower, "Return". A wrong tap there could not
+be taken back: no question, no undo, and lending the book again lost
+the dates of the first loan. The review's direction: "Mark returned"
+on the loan card and on the item's page, with the borrower's name;
+after a return a bar with "Undo" for a few seconds; and the loan
+list off the Edit borrower form, where "Return" showed no sign of
+working and a loan was called "Item #12" (that is the half of P4-m5
+the review names with P4-M3). Its decision point: on the card, on
+the item's page, or both, and should a return have a few seconds of
+Undo? Its privacy note: the borrower's name on the item's page only
+while the vault is unlocked.
+
+**What today's reading added.** The review says "small". Nine things
+were not in it. An undo could not be written at all: `Loan.copyWith`
+keeps the old date of return when it is given none. The method that
+stored a return checked nothing, so a return taken back after the
+copy had been lent again would have put one copy out twice. The
+return was written in two widgets, each from the copy of the row it
+was drawn with. The session controller stood one line under its
+recorded size. An item can have several copies, so its page needs a
+line for each loan that is out. Since Flutter 3.38 a bar with a
+button does not go away by itself. A bar outlives the page that
+showed it: after Back it is still there and its button still runs.
+Stage 4 had pinned, with a test, the behaviour of the Edit borrower
+form that goes. And with the fast lane on, a return is published 20
+seconds later (noted; not part of the stage).
+
+**What was decided.** On the loan card AND on the item's page, and
+the borrower's page keeps its button (D103). Each line of the item's
+page names the borrower and the due date, only while the vault is
+unlocked (D104). No question before a return; a bar "Marked
+returned." with "Undo" (D105). The bar was first to stay until it is
+used (D106); a trial in the build showed that such a bar holds back
+every other message of the app, a failure message among them, so it
+is timed, six seconds, and beside it a returned loan in a borrower's
+"History" has a lasting "Not returned", which asks first (D114).
+Taking a return back checks one thing, that a copy is still free;
+not the borrower limit and not "removed from the library": it
+corrects a record, it does not lend (D107). The loan list leaves the
+Edit borrower form, and nothing else of P4-m5 is built (D108). "Mark
+returned" on every button, the borrower's page too, where it said
+"Return" (D109). Room in the session controller by taking out two of
+its methods that are left with no caller (D110). The look in the
+emulator and on the phone (D111). ADR 0029 (D112). The go-ahead,
+given knowing that one helper reads Riverpod's container itself
+(D113). At the review stop: the words and the layout as built (D115,
+D116); five small things beyond the design kept (D117); two things
+of the look left (D118); one test file removed (D119); T15 and T16
+kept open (D120); the wall-clock test of the ZIP reader as a change
+of its own (D121); a known limit of the two ways back (D122); the
+acceptance (D124). D123 and D125 are one evening's decision and its
+taking back, and built nothing.
+
+**What was built.**
+
+- The rule and the operation (`9a30de9`). `Loan.reopened()`.
+  `lib/features/vault/domain/loan_return.dart`: `ReopenDecision`,
+  the rule of D107 with its sentence ("This item was lent again in
+  the meantime, so the return cannot be undone. Mark the new loan
+  returned first."). `application/change_loan_return.dart`:
+  `changeLoanReturn`, which runs inside the session's queue, takes
+  the loan's id and never a row, reads the loan as it is now, and
+  counts a loan that is already in the state asked for as a success
+  without a write (two fast taps are one return with one date).
+  `VaultSessionController.setLoanReturned(id, returnedAt)`, null
+  meaning "take the return back", in the place of `updateLoan` and
+  `deleteLoan`: ONE method and not two, the design's fallback, and
+  the file stands at 834 of its 836 lines.
+- The gesture (`9a30de9`):
+  `presentation/widgets/loan_return_action.dart`.
+  `markLoanReturnedWithUndo` (the call, the bar with "Undo" for six
+  seconds, the fixed failure sentences, the bar's end when the vault
+  stops being unlocked), `confirmAndReopenLoan` (the question
+  "Mark as not returned?", then the same operation as "Undo"), and
+  `MarkReturnedButton`, which keeps its own "I am waiting". "Undo"
+  takes the app's provider container and its messenger before the
+  first wait, because its page may be gone when it is tapped. A
+  text from the vault's core is shown only when it is the rule's own
+  sentence; everything else gets a fixed one. No sentence of the bar
+  or of the question names a borrower or a title.
+- The borrower's page (`9a30de9`): "Mark returned" under "Currently
+  out", "Not returned" under "History". Both rows are a `Wrap`: the
+  button stands beside the text while both fit and under it when
+  they do not. Each row has a key made of its loan's id.
+- The Edit borrower form (`9a30de9`) has no loan list any more.
+- The loan card of Borrowed Items, list and grid (`b97eda4`): a
+  button with the words, under the three icon buttons, under the
+  card's one busy state; a tap on it while the card waits does not
+  open the item.
+- The item's page (`1c69d6c`): under the Lend button, one line for
+  each loan of the item that is out, "Lent to Asha · due 12 November
+  2026" (or "no due date", "due date unavailable", "Lent, borrower
+  not found"), each with its button; ordered by due date, none
+  last. Which loans and in which order is a rule of the domain
+  (`domain/item_active_loans.dart`); the widget
+  (`presentation/widgets/item_active_loans.dart`) asks the session
+  itself and draws nothing unless the vault is unlocked NOW: a
+  session that loads again, or has failed, and still carries an
+  earlier unlock draws no name.
+- The guide's bullet of "Returns and reminders", its approved copy
+  in the mockup, ADR 0029 with its line in `docs/adr/README.md`,
+  and the changelog (`e39e00c`; put right after D125 by
+  `ca03b62`).
+- For the tests: `test/support/fake_vault_session.dart` got the
+  stand-in session three test files share, and
+  `test/support/text_lines.dart` the two questions a widget test
+  can ask about lines of text. The device smoke test
+  (`integration_test/catalogue_kinds_smoke_test.dart`) clears its
+  loan with the call the app itself uses.
+- No Kotlin, no Rust, no new package, no change to the database or
+  to a file format; one generated hash line.
+
+**How it was proven.**
+
+- Tests first: 102 new ones, and the one file D119 removed took one
+  out, so the suite went from 7,677 to 7,778. 12 of the rule, 16 of
+  the operation, 6 of the controller, 16 of the gesture, 8 of the
+  borrower's page, 20 of the loan card, 7 of the item's rule, 16 of
+  the item's page, 1 that holds the guide to the buttons' own
+  words. Where a test could run on the code as it was, it was seen
+  red first (19 of the card's 20; 13 of the item page's 16; the
+  guide's).
+- Every guard was switched off once by hand, one change under
+  `lib/` at a time, the file put back and compared each time: 4 for
+  the gesture, 9 for the card, 13 for the item's page, each seen by
+  a test.
+- Five trials outside git (21 tests), plain Flutter and Riverpod
+  and two against the app's own screens: what a bar does by itself
+  in this SDK; "Undo" without its page; a bar that stays and the
+  app's other messages; the loan card as it was; what a check for
+  "one line" can show.
+- All checks, here: 7,778 tests; Rust 45 passed, 2 ignored; Kotlin
+  64 in each flavour.
+- In the emulator image of API 36 (Android 16), by the agent, with
+  made-up books and borrowers. While the vault is unlocked the
+  app's screen-capture protection blanks every screenshot, so the
+  look was read from Android's accessibility tree: what is on the
+  screen, in which order and how large, not how it looks. Seen: the
+  button in all three places; a return, and the card or the line
+  gone; "Undo" tapped on the Library screen after Back; the bar
+  gone by itself after its time and gone at once at a lock; a
+  locked vault's item page with no line and no name; "Not returned"
+  with its question; the Edit borrower form without loans; the
+  guide. The device smoke test passed there. The device's log held
+  no error and no line with a name, a title or a sentence of the
+  bar. The readings: `~/pitak-device-runs/stage5-p4m3/`.
+- On the phone (OnePlus 9R, Android 14, the play install): a debug
+  build, the phone's state read before and after the install, the
+  vault's files the same bytes. The look was the maintainer's:
+  accepted (D124).
+- In CI (run 44766273946): 7,778 tests on Linux, and the golden job
+  passed with the pictures as they were.
+
+**What is not proven.** A screen reader, on any device (the
+emulator's image has none). The screens with the vault unlocked as
+pictures: the agent read them, the maintainer saw them. Which points
+of the look on the phone were made was not said, beyond that a save
+took 3 to 4 seconds in the debug build there. A release build's
+speed on the phone was tried by the maintainer and not timed (D125).
+A narrow or a weak phone itself (320 dp was a setting of the
+emulator). iOS and the desktop builds. No commit of the stage was
+built by itself: the tree that was checked is the last one.
+
+**Known limits, accepted and written into ADR 0029.** Only the last
+return can be taken back from the bar; the others go through
+"History". A user of a screen reader gets the same six seconds, and
+has "History" as well. The loan card has one busy state, so while a
+return is written its spinner shows on the share button. "Undo" and
+"Not returned" show no sign of working while the vault writes
+(D122). With Android's font at its largest, on a screen 320 dp wide,
+the words of the button take two lines on the loan card, whole
+(D115); a widget test cannot say how many lines a phone draws. A
+return taken back inside the fast lane's 20 seconds: whether one
+write is still sent was not read to its end; the published data is
+right either way.
+
+**What was wrong on the way, and was said.** A search before D110
+had covered `lib/` and `test/` and not `integration_test/`: a third
+caller of one of the two methods was there. D106 as it was put did
+not hold: the agent had shown that the app's messages wait in one
+line and had not connected that with a bar that stays; the build
+stopped for it (D114). A check of step 3 could not fail: the height
+of a caret is a hair more than the height of a line, so "lower than
+two carets" passed for two lines, and what the build log said was
+shown had not been. In the emulator a chain of taps sent blind
+closed the app and landed one tap in the image's other install
+(nothing typed; the image is read-only). A `git rm` needed a force
+flag the agent had not foreseen; the yes was asked again. A script
+copied one of the maintainer's own untracked files into `/tmp`. And
+a next stage (D123) was put on a measurement of a debug build,
+before a release build had been tried; the maintainer tried one and
+took it back (D125).
+
+**Seen and not part of the stage.**
+
+- T15 and T16 in the private tracker: found in a trial against the
+  loan card as it was before the stage; open (D120).
+- "Delete" on a borrower still shows no sign of working while the
+  vault writes: the other half of P4-m5, which keeps its open box.
+- A save in the vault is not instant (the review's P3-M3, open, in
+  no stage: D125). A debug build makes its slow step about 14 times
+  slower than a release build (measured on the Mac).
+- Two assertions on wall-clock time fail now and then in a whole
+  run of the suite and pass alone
+  (`zip_reader_cases_test.dart:729`,
+  `backup_archive_writer_test.dart:549`). The first gets a small
+  change of its own (D121); the second is read with it.
+- A late tap on "Undo" lands on what stands under the bar's place
+  (D118).
+- `docs/mockups/how-pitak-works.html` is a frozen artefact and was
+  not brought in line; the `.md` beside it was.
+- The comment in Flutter's `snack_bar.dart` still says a bar with a
+  button waits for a screen reader's user; with `persist: false`
+  its code does not. Flutter's, not the app's.
+- "Checks for every stage" names `lib test integration_test` for
+  the format check, and the numbers this file records have `tool/`
+  counted in. Both say 0 changed.
+- The private archive had the decisions in full only up to D102.
+  D103 to D125 are there since this stage's bookkeeping as one
+  entry each, which points at its place in the copy of the design
+  file.
+
 ### What a stage needs besides the Mac
 
 - Stage 1: done. (No Gradle run of it needed the network; the look
@@ -4097,11 +4345,10 @@ full. One count of the changelog was shown wrong and written right.
 - Stage 4: done. (The look was made on 2026-11-20: the emulator by
   the agent, the phone by the maintainer; one Gradle run through
   the `flutter` tool, not watched for the network.)
-- Stage 5: the emulator of API 36 for the agent's look (made on
-  2026-11-20; three Gradle runs through the `flutter` tool, not
-  watched for the network: the debug build, the device smoke test,
-  the debug build again). Still to come: the phone, for the
-  maintainer's look (D111).
+- Stage 5: done. (The look was made on 2026-11-20: the emulator of
+  API 36 by the agent, the phone by the maintainer; three Gradle
+  runs through the `flutter` tool, not watched for the network: the
+  debug build, the device smoke test, the debug build again.)
 - Stage 6, and of the later ones P4-M6 and the rest of P2-M3: the
   phone.
 
