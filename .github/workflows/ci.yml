@@ -28,7 +28,7 @@ jobs:
           components: rustfmt, clippy
       # Pins are COMMIT SHAs (v2.9.2 is an annotated tag; its tag-object SHA
       # 63fed3e2… is a different object — resolve with `git rev-parse v2.9.2^{commit}`).
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: rust
       # Rust gates at parity with the Dart ones: format, lints,
@@ -188,7 +188,7 @@ jobs:
   # Uses the project's reusable workflow, SHA-pinned like every other action.
   osv-scan:
     name: OSV scan (pubspec.lock + Cargo.lock)
-    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@b1d267aea5211fa648d9d442fa64b90dbdcbdd36 # v2.7.0
+    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@32d3cd482bdadfb38b186c0ad1b031902d55d932 # v2.7.1
     with:
       # Scan the two committed lockfiles only (not a recursive repo walk).
       scan-args: |-
