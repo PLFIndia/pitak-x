@@ -114,8 +114,8 @@ produces a file you control.
 ## Permissions and why
 
 - **Camera** — used only on screens you open deliberately: scanning ISBN
-  barcodes to add books, and photographing book covers. Photos are processed
-  and stored on-device.
+  barcodes to add books, scanning a library's QR code or library card, and
+  photographing book covers. Photos are processed and stored on-device.
 - **Internet** — used for the actions listed below. Google Play builds also
   check for updates on launch and, after you accept Play's update dialog,
   download in the background (item 7); the F-Droid flavor has no Play

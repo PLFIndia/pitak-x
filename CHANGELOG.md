@@ -32,6 +32,51 @@ Two known limits, measured in that run on a fast phone and accepted
   screen can stand still for about a second.
 
 ### Changed
+- **A scan page says why it has no camera picture, and offers a way on
+  (review finding P4-M8; `PLAN.md`, D128 to D141; ADR 0030).** With the
+  camera refused, "Scan ISBN barcode", "Scan a library QR" and "Scan a
+  library card" showed an empty scan frame for good, without a word; a
+  phone without a camera got the same. Now the page says "Pitak is not
+  allowed to use the camera." with "Open settings", which opens Pitak's
+  own page of the phone's settings, and tries the camera again by itself
+  on the way back; or "This phone has no camera."; or "The camera did not
+  start." with "Try again". The ISBN scan page also offers "Enter it by
+  hand": from a form it closes the scan page, from the Library's "Scan to
+  add" it opens the "Add to library" sheet.
+  - The cover camera says the same: "Pitak is not allowed to use the
+    camera." with "Open settings" in the bar (six seconds), or "This
+    phone has no camera."; everything else keeps "Could not capture a
+    photo.".
+  - The scanner's switch-camera button is gone, and its light button has
+    words for a screen reader ("Turn on the light", "Turn off the
+    light"). The button's icon, which was one tap behind the light, now
+    follows it.
+  - Both scan pages show the camera through one shared widget
+    (`CameraScanView`); a test keeps every other file under `lib/` from
+    importing the scanner package. One test file runs the scanner
+    package's real widget over a stand-in camera and holds what the app
+    relies on in it.
+  - `camera`, the plugin the scanner is built on, is now a named
+    dependency (it was in the lock file already, at the same version;
+    nothing new is downloaded). The app asks it which cameras the phone
+    has. The scanner package stays at 2.3.0; its update is planned
+    separately.
+  - Privacy: no new permission (the list in
+    `android/merged-permissions.txt` is unchanged). "Open settings" tells
+    the phone's settings app the app's own package name and nothing
+    else; nothing leaves the phone. The app shows and logs nothing a
+    plugin reports. `PRIVACY.md` now names the QR scans under "Camera".
+  - Known limits: the page tries again by itself only after its own
+    "Open settings"; the cover camera does not try again by itself; the
+    front camera can no longer be switched to for scanning; "This phone
+    has no camera." was not seen on a device (ADR 0030).
+  - Seen in an emulator with Android 16 on 2026-11-21, also with the font
+    at its largest and on a screen 320 dp wide, where every button keeps
+    its words on one line. On a phone with Android 14 the same day, in a
+    debug build: a real barcode read, the torch and its icon together, the
+    refused states, and the way through the settings and back; looked at
+    and accepted by the maintainer. Not tried: the app lock on the way
+    back from the settings, a library QR being read, a screen reader.
 - **"Mark returned" where the item is handed back, and a return can be
   taken back (review finding P4-M3 and, in part, P4-m5; `PLAN.md`, D103
   to D114; ADR 0029).** A loan could be marked returned only on the

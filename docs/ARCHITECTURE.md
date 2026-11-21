@@ -157,6 +157,7 @@ These fail the build; change them deliberately, never to "make it pass".
 | `test/architecture/document_picking_test.dart` | a file the user chooses reaches the app through its own picker only: no file under `lib/`, `test/` or `integration_test/` imports the `file_selector` plugin, `pubspec.yaml` does not name it, and `pubspec.lock` holds none of its parts that run on a phone (decisions D8, D24, D32) |
 | `test/architecture/form_discard_guard_test.dart` | a form asks before Back throws away unsaved input: every file under `lib/` that creates a text controller either uses `DiscardChangesGuard` or is listed in the test with the reason why it is not a form; a passphrase is never given to the guard (review finding P4-M1, ADR 0028) |
 | `test/architecture/package_zip_reader_test.dart` | the app reads a ZIP container with its own reader only: no code line under `lib/` names a ZIP reader of `package:archive` (`ZipDecoder`, the three classes it is made of, `extractFileToDisk`); the inflater and the checksum are all the reader takes from the package (ADR 0009, review finding M05) |
+| `test/architecture/camera_scanner_gate_test.dart` | a camera that reads codes is shown through `CameraScanView` only: no other file under `lib/` imports the scanner package (`flutter_zxing`), so that a scan page cannot be built without the sentence for a refused camera, a phone without a camera, or a camera that did not start (review finding P4-M8, ADR 0030) |
 
 ---
 
@@ -200,14 +201,24 @@ lib/
                           copy, under a cap) with file_picked_document_reader.dart,
                           bounded_file_read.dart (the ONE "read this file, but
                           never more than a cap"), document_pick_messages.dart
-                          (the sentences every picking page shares)
+                          (the sentences every picking page shares),
+                          device_cameras.dart (port: does this phone have a
+                          camera; asked before a scan page shows the scanner),
+                          app_settings_opener.dart (port: opens Pitak's own
+                          page of the phone's settings; Android side:
+                          AppSettingsChannel.kt; elsewhere "not available"),
+                          camera_failures.dart (sorts a camera plugin's error
+                          code into the reason the screen names)
     security/             hardened_secure_storage.dart — the ONE hardened
                           flutter_secure_storage configuration
     storage/              data_generations.dart (atomic restore), run_folders.dart
                           (the ONE set of rules for deleting a private work folder),
                           legacy_picker_copies.dart (removes, once, the copies the
                           old file picker left in the cache folder)
-    widgets/              app_gate.dart (splash → lock → Library), qr_view/qr_scan_page
+    widgets/              app_gate.dart (splash → lock → Library), qr_view/qr_scan_page,
+                          camera_scan_view.dart (the ONE camera that reads
+                          codes: both scan pages show it, and it says why
+                          when there is no camera picture; ADR 0030)
   features/
     library/              catalogue items (`CatalogueItem`, the base row of every
                           kind: books, magazine issues, others — ADR 0013);
