@@ -1,6 +1,6 @@
 /// Publish-to-GitHub-Pages orchestrator (application layer, AGENTS.md §4, #32).
 ///
-/// Port of Kotlin `PublishLibraryUseCase`. Pushes the world-facing catalogue
+/// Pushes the world-facing catalogue
 /// (books.json + index.html viewer + library.json + salted covers/) as ONE
 /// atomic, incremental commit via [GitHubGitDataApi] (the git-data role of
 /// the GitHub port, S5 — this use case never touches auth or repo admin).

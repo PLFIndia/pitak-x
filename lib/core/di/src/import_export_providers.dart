@@ -1,9 +1,9 @@
 /// Import/export/merge DI bindings (AGENTS.md §4; one DI module per feature).
 ///
-/// What lives here: the bundle reader + imported-cover store, the
-/// import/export use cases, the PDF renderer seams, and the multi-maintainer
-/// merge use case. Concrete codecs/renderers are infrastructure, wired here
-/// at the composition root (N14).
+/// What lives here: the imported-cover store, the import/export use cases,
+/// the PDF renderer seams, and the multi-maintainer merge use case. Concrete
+/// codecs/renderers are infrastructure, wired here at the composition root
+/// (N14).
 library;
 
 import 'dart:typed_data';
@@ -16,11 +16,9 @@ import 'package:pitaka/features/import_export/application/export_library_use_cas
 import 'package:pitaka/features/import_export/application/import_library_use_case.dart';
 import 'package:pitaka/features/import_export/application/merge_library_use_case.dart';
 import 'package:pitaka/features/import_export/domain/bundle_cover_files.dart';
-import 'package:pitaka/features/import_export/domain/import_bundle.dart';
 import 'package:pitaka/features/import_export/domain/pdf_text_raster.dart';
 import 'package:pitaka/features/import_export/infrastructure/background_merge_planner.dart';
 import 'package:pitaka/features/import_export/infrastructure/file_bundle_cover_store.dart';
-import 'package:pitaka/features/import_export/infrastructure/library_bundle_reader.dart';
 import 'package:pitaka/features/import_export/infrastructure/logo_file_reader.dart';
 import 'package:pitaka/features/import_export/infrastructure/pdf_library_renderer.dart';
 import 'package:pitaka/features/import_export/infrastructure/pdf_text_rasterizer.dart'
@@ -32,11 +30,6 @@ import 'package:pitaka/features/vault/application/vault_session_controller.dart'
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 part 'import_export_providers.g.dart';
-
-/// Side-effect-free bundle decoding, exposed through its domain contract.
-@riverpod
-Future<BundleReader> libraryBundleReader(LibraryBundleReaderRef ref) async =>
-    const LibraryBundleReader();
 
 /// Operation-owned imported covers under the existing app-private covers dir.
 @riverpod

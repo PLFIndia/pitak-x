@@ -2,7 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 
 void main() {
-  group('AgeGroup.fromToken (tolerant, mirrors Kotlin)', () {
+  group('AgeGroup.fromToken (tolerant)', () {
     test('current tokens round-trip', () {
       for (final v in AgeGroup.values) {
         expect(AgeGroup.fromToken(v.token), v);
@@ -89,7 +89,7 @@ void main() {
       expect(updated.copyCount, 2);
     });
 
-    test('defaults match Kotlin', () {
+    test('defaults', () {
       const book = CatalogueItem(title: 'T');
       expect(book.id, CatalogueItem.emptyId);
       expect(book.copyCount, 1);

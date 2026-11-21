@@ -1,9 +1,8 @@
 /// Paginated PDF book-list renderer (infrastructure layer, AGENTS.md §3.1).
 ///
-/// Faithful port of Kotlin `data/export/PdfLibraryRenderer.kt`, rendered with
-/// the pure-Dart `pdf` package instead of `android.graphics.pdf.PdfDocument`.
+/// Rendered with the pure-Dart `pdf` package.
 ///
-/// Features (Kotlin parity):
+/// Features:
 ///  - User-selectable columns (resolved by [resolvePrintColumns]); widths
 ///    distributed by per-column weight across the printable area.
 ///  - Header: optional library logo drawn beside the library name.
@@ -14,8 +13,8 @@
 ///
 /// COORDINATE NOTE: Android Canvas has its origin top-left with Y growing
 /// downward; the `pdf` package uses PDF user space — origin bottom-left, Y
-/// growing UPWARD. To keep this a line-for-line port of the Kotlin top-down
-/// layout maths, all `y` values below are TOP-DOWN (0 = top of page), and we
+/// growing UPWARD. To keep the layout maths top-down (as on a canvas),
+/// all `y` values below are TOP-DOWN (0 = top of page), and we
 /// convert to PDF space only at draw time via `_ty(y) = pageH - y`. Text is
 /// drawn from its baseline in both APIs, so a top-down baseline `y` maps to
 /// `pageH - y`.
@@ -200,7 +199,7 @@ class PdfLibraryRenderer implements LibraryPdfRenderer {
     }
 
     // Approx chars that fit a column width at the row text size. At 12pt, an
-    // average Helvetica glyph is ~6.6pt wide. (Kotlin uses the same constant.)
+    // average Helvetica glyph is ~6.6pt wide.
     int maxChars(double width) {
       final n = (width / 6.6).floor();
       return n < 3 ? 3 : n;

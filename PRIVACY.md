@@ -73,12 +73,15 @@ analytics, no advertising, and no tracking of any kind.**
   biometric check (fingerprint or Class 3 face unlock — a PIN cannot stand
   in). Adding or removing a fingerprint or face destroys that key, so
   biometric unlock switches itself off and you re-enable it with your
-  passphrase. Two honest limits: (1) while the app is open, an unlocked vault
+  passphrase. Three honest limits: (1) while the app is open, an unlocked vault
   stays unlocked in memory until you lock it or the app exits — there is no
   automatic timeout; (2) the optional app-lock biometric gate is a screen
   cover, not a vault lock: it does not encrypt your data or lock an
-  already-unlocked vault. Changing your passphrase re-wraps the same vault
-  key; it does not rotate it, so old vault copies paired with an old
+  already-unlocked vault; (3) the app does not hide that a vault exists:
+  while it is locked, the Library screen says so in one line, to anyone who
+  sees that screen; what is in the vault, and whether anything is lent out,
+  is not shown while it is locked. Changing your passphrase re-wraps the same
+  vault key; it does not rotate it, so old vault copies paired with an old
   passphrase could still be opened.
 - **Settings** (theme, library name, sort preferences, and — if you fill them
   in — the contact details you choose to publish) in the app's private
@@ -111,8 +114,8 @@ produces a file you control.
 ## Permissions and why
 
 - **Camera** — used only on screens you open deliberately: scanning ISBN
-  barcodes to add books, and photographing book covers. Photos are processed
-  and stored on-device.
+  barcodes to add books, scanning a library's QR code or library card, and
+  photographing book covers. Photos are processed and stored on-device.
 - **Internet** — used for the actions listed below. Google Play builds also
   check for updates on launch and, after you accept Play's update dialog,
   download in the background (item 7); the F-Droid flavor has no Play
@@ -121,12 +124,30 @@ produces a file you control.
   them on.
 - **Notifications** (Android 13+ asks you; older Android does not) — used
   only for event alerts (item 10). Pitak shows no other notifications.
+- **Biometrics** (`USE_BIOMETRIC`; on Android 8 and older, `USE_FINGERPRINT`)
+  — used only if you switch on one of two options in Settings → Security,
+  both off by default: **Require biometric to open Pitak** (the app lock)
+  and **Biometric unlock** for your borrowers vault. Android shows the
+  prompt and checks your fingerprint or face itself; Pitak learns only
+  whether the check passed, and never sees or stores a fingerprint or a
+  face.
+- **Vibration** (`VIBRATE`) — declared by the notifications library. An
+  event alert (item 10) may vibrate your phone, as your phone's
+  notification settings say. Pitak vibrates for nothing else.
 - **Android system permissions merged by the scheduling library**
   (`ACCESS_NETWORK_STATE`, `RECEIVE_BOOT_COMPLETED`, `WAKE_LOCK`,
   `FOREGROUND_SERVICE`): they let the scheduled check wait for a network
   connection, survive a reboot and keep the device awake for the few seconds
   a check takes. Pitak runs no foreground service and reads no network
   details beyond "connected or not".
+- **A permission Pitak defines for itself**
+  (`DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION`, added by an Android support
+  library) — it gives Pitak access to nothing. It keeps other apps from
+  sending messages to Pitak's own internal receivers.
+
+That is every permission the app asks for. The list is kept in
+`android/merged-permissions.txt`, and an automated check fails any build
+that asks for more.
 
 ## When anything leaves your device
 
@@ -332,7 +353,18 @@ builds (item 8):
    of libraries anywhere.
 7. **Exports and backups.** JSON/CSV/PDF exports and `.pitabak` backups are
    files the app hands to your device's share sheet; you choose where they
-   go. Backups you restore are read locally and never transmitted. Note:
+   go. Before it creates or restores a backup, the app asks Android how much
+   free storage and memory the phone has, to tell you whether the run will
+   fit. This needs no permission; the figures are shown once and are not
+   stored, logged or sent anywhere. Backups you restore are read locally and never transmitted. To
+   restore, the app makes a private temporary copy of the backup file you
+   choose, inside its own storage where no other app can read it, and
+   removes that copy again: when the restore has succeeded, when you choose
+   another file or leave the Restore screen, or at the next start of the
+   app. The same happens when you choose a file to import or to merge; that
+   copy is removed as soon as the file has been read. Earlier versions left a
+   copy of every file you chose in the app's cache folder; this version
+   removes those copies the first time it starts. Note:
    `.pitabak` backups are **not fully encrypted** — books, magazine titles and
    issues, other items, wishlist and cover images inside are stored plainly;
    only the borrowers vault and its wrapped key blob remain encrypted inside

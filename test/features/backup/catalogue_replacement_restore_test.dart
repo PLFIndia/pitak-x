@@ -1,5 +1,4 @@
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -15,6 +14,7 @@ import 'package:pitaka/features/vault/domain/entities/borrower.dart';
 import 'package:pitaka/features/vault/infrastructure/vault_store.dart';
 
 import '../library/replacement_harness.dart';
+import 'test_vault_gate.dart';
 
 /// Hook into the BUILDER generation's catalogue (M02: restore writes there,
 /// never into the live one) so a test can inject a fault or a lock right
@@ -49,7 +49,11 @@ void main() {
   });
   tearDown(() => h.close());
 
-  Future<Uint8List> archive(
+  var archives = 0;
+
+  /// A backup FILE made by the app's own writer; answers its path. BR6: a
+  /// restore reads the backup from a file.
+  Future<String> archive(
     List<CatalogueItem> incoming, {
     List<Periodical> periodicals = const [],
   }) =>
@@ -57,6 +61,7 @@ void main() {
             vaultStore: VaultStore(
               baseDir: '${h.directory.path}/no_source_vault',
             ),
+            vaultGate: TestVaultGate(),
             coversDir: '${h.directory.path}/incoming_covers',
           )
           .build(
@@ -69,7 +74,14 @@ void main() {
             networkJson: null,
             publishStateJson: null,
           )
-          .then((r) => r.getOrElse((f) => fail('unexpected left: $f')));
+          // The writer names its file by the time in the manifest, which
+          // is the same for every archive here, so each one is copied to a
+          // file of its own before the next build replaces it.
+          .then(
+            (r) => File(
+              r.getOrElse((f) => fail('unexpected left: $f')).path,
+            ).copySync('${h.directory.path}/chosen-${archives++}').path,
+          );
 
   Future<void> existing({bool returned = false}) async {
     await h.books.insert(_book);
@@ -83,11 +95,11 @@ void main() {
       () async {
         await existing(returned: returned);
         final restorer = await h.container.read(restoreBackupProvider.future);
-        final bytes = await archive([
+        final backup = await archive([
           const CatalogueItem(id: 7, itemUid: 'new', title: 'New'),
           _book.copyWith(id: 99, title: 'Changed'),
         ]);
-        final result = await restorer.restore(archiveBytes: bytes);
+        final result = await restorer.restore(archivePath: backup);
         expect(result.isRight(), isTrue);
         final summary = result.toNullable()!;
         expect(summary.existingVaultKept, isTrue);
@@ -106,9 +118,9 @@ void main() {
         // M02: the session was ended by the switch; a retained vault must be
         // unlocked again before the next replacement can verify its loans.
         expect(h.session.isUnlocked, isFalse);
-        expect((await restorer.restore(archiveBytes: bytes)).isLeft(), isTrue);
+        expect((await restorer.restore(archivePath: backup)).isLeft(), isTrue);
         await h.session.unlock(ReplacementHarness.secret());
-        expect((await restorer.restore(archiveBytes: bytes)).isRight(), isTrue);
+        expect((await restorer.restore(archivePath: backup)).isRight(), isTrue);
         final again = await h.currentBooks();
         expect((await again.getById(7)).toNullable()!.itemUid, 'stable');
       },
@@ -132,7 +144,7 @@ void main() {
       source.writeAsBytesSync([8, 8]);
       final restorer = await h.container.read(restoreBackupProvider.future);
       final result = await restorer.restore(
-        archiveBytes: await archive([
+        archivePath: await archive([
           const CatalogueItem(id: 7, itemUid: 'unrelated', title: 'Other'),
         ]),
       );
@@ -157,7 +169,7 @@ void main() {
       hooks.afterRebuild = () => h.session.lock();
       final restorer = await h.container.read(restoreBackupProvider.future);
       final result = await restorer.restore(
-        archiveBytes: await archive([_book.copyWith(id: 99, title: 'Changed')]),
+        archivePath: await archive([_book.copyWith(id: 99, title: 'Changed')]),
       );
       expect(result.getLeft().toNullable(), isA<ValidationFailure>());
       final books = await h.currentBooks();
@@ -175,7 +187,7 @@ void main() {
           throw StateError('synthetic FTS failure');
       final restorer = await h.container.read(restoreBackupProvider.future);
       final result = await restorer.restore(
-        archiveBytes: await archive([_book.copyWith(id: 99, title: 'Changed')]),
+        archivePath: await archive([_book.copyWith(id: 99, title: 'Changed')]),
       );
       expect(result.getLeft().toNullable(), isA<StorageFailure>());
       final books = await h.currentBooks();
@@ -191,14 +203,16 @@ void main() {
       await existing();
       await h.session.lock();
       final restorer = await h.container.read(restoreBackupProvider.future);
-      final bytes = await archive([_book.copyWith(id: 99)]);
-      expect((await restorer.restore(archiveBytes: bytes)).isLeft(), isTrue);
+      final backup = await archive([_book.copyWith(id: 99)]);
+      expect((await restorer.restore(archivePath: backup)).isLeft(), isTrue);
+      // BR6: the run folder of the refused restore is gone again.
+      final workRoot = Directory('${h.directory.path}/app_temp/restore_work');
       expect(
-        Directory('${h.directory.path}/restore_work').existsSync(),
-        isFalse,
+        workRoot.existsSync() ? workRoot.listSync() : const <Object>[],
+        isEmpty,
       );
       await h.session.unlock(ReplacementHarness.secret());
-      expect((await restorer.restore(archiveBytes: bytes)).isRight(), isTrue);
+      expect((await restorer.restore(archivePath: backup)).isRight(), isTrue);
     },
   );
 
@@ -210,7 +224,7 @@ void main() {
     await existing();
     final restorer = await h.container.read(restoreBackupProvider.future);
     const series = Periodical(title: 'Chandamama', periodicalUid: 'puid-1');
-    final bytes = await archive(
+    final backup = await archive(
       [
         _book.copyWith(
           id: 99,
@@ -225,7 +239,7 @@ void main() {
       ],
       periodicals: const [series],
     );
-    final result = await restorer.restore(archiveBytes: bytes);
+    final result = await restorer.restore(archivePath: backup);
     expect(result.isRight(), isTrue);
     final summary = result.toNullable()!;
     expect(summary.kindsApplied, 1);
@@ -246,7 +260,7 @@ void main() {
     await existing(returned: true);
     final restorer = await h.container.read(restoreBackupProvider.future);
     expect(
-      (await restorer.restore(archiveBytes: await archive([]))).isLeft(),
+      (await restorer.restore(archivePath: await archive([]))).isLeft(),
       isTrue,
     );
     final books = await h.currentBooks();

@@ -7,6 +7,7 @@ import 'package:fpdart/fpdart.dart';
 import 'package:image/image.dart' as img;
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/core/images/image_downscaler.dart';
 import 'package:pitaka/features/library/application/book_cover_controller.dart';
 import 'package:pitaka/features/library/application/cover_file_janitor.dart';
 import 'package:pitaka/features/library/domain/catalogue_item_page.dart';
@@ -19,6 +20,8 @@ import 'package:pitaka/features/settings/domain/app_settings.dart';
 import 'package:pitaka/features/settings/domain/settings_repository.dart';
 import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
 import 'package:pitaka/features/wishlist/domain/repositories/wishlist_repository.dart';
+
+import '../../support/detailed_test_image.dart';
 
 /// Records update() calls; scriptable failure for the fail-closed test.
 class _FakeBookRepo implements CatalogueItemRepository {
@@ -150,6 +153,81 @@ void main() {
     // The file exists on disk.
     final leaf = coverRef.split('/').last;
     expect(File('${tmp.path}/$leaf').existsSync(), isTrue);
+  });
+
+  // Decision of 2026-11-10: a photographed cover is stored at most 240×360
+  // at JPEG quality 70 (`PhotoCoverRecipe`). The expectations use the plain
+  // numbers on purpose, so a change of the recipe has to be made here too.
+  group('stored size and quality', () {
+    Future<Uint8List> storedBytes(Uint8List capture) async {
+      final container = makeContainer(_FakeBookRepo());
+      final result = await container
+          .read(bookCoverControllerProvider.notifier)
+          .replaceCover(book, capture);
+      final coverRef = result.getOrElse((f) => fail('unexpected failure: $f'));
+      return File('${tmp.path}/${coverRef.split('/').last}').readAsBytesSync();
+    }
+
+    test('a large capture is stored at 240x360, quality 70', () async {
+      final capture = img.encodeJpg(
+        detailedTestImage(width: 720, height: 1080),
+      );
+
+      final stored = await storedBytes(capture);
+
+      final picture = img.decodeImage(stored)!;
+      expect(picture.width, 240);
+      expect(picture.height, 360);
+      // Same picture, same settings, same bytes: this pins the quality too.
+      final atQuality70 = ImageDownscaler.downscaleJpeg(
+        capture,
+        maxW: 240,
+        maxH: 360,
+        quality: 70,
+      )!;
+      final atDefaultQuality = ImageDownscaler.downscaleJpeg(
+        capture,
+        maxW: 240,
+        maxH: 360,
+      )!;
+      expect(stored, orderedEquals(atQuality70));
+      expect(
+        stored,
+        isNot(orderedEquals(atDefaultQuality)),
+        reason: 'the test picture must tell quality 70 from the default 80',
+      );
+    });
+
+    test('a wide capture is bounded by its width', () async {
+      final capture = img.encodeJpg(
+        detailedTestImage(width: 1080, height: 720),
+      );
+
+      final picture = img.decodeImage(await storedBytes(capture))!;
+
+      expect(picture.width, 240);
+      expect(picture.height, 160);
+    });
+
+    test('a small capture is not enlarged', () async {
+      final picture = img.decodeImage(await storedBytes(validImage()))!;
+
+      expect(picture.width, 60);
+      expect(picture.height, 90);
+    });
+
+    test('EXIF, including the GPS position, is not stored', () async {
+      final source = detailedTestImage(width: 720, height: 1080);
+      source.exif.imageIfd[0x010F] = img.IfdValueAscii('TestMake'); // Make
+      source.exif.gpsIfd[0x0002] = img.IfdValueRational(48, 1); // Latitude
+      final capture = img.encodeJpg(source);
+      // The test picture really carries EXIF before it is stored.
+      expect(img.decodeImage(capture)!.exif.isEmpty, isFalse);
+
+      final picture = img.decodeImage(await storedBytes(capture))!;
+
+      expect(picture.exif.isEmpty, isTrue);
+    });
   });
 
   // Decision Q12 (review 2026-09-03): replacing a cover must delete the

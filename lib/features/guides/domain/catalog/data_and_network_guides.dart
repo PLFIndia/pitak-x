@@ -74,7 +74,9 @@ const Guide backupGuide = Guide(
       title: 'Make a backup',
       steps: [
         '**☰ → Settings → Data → Create backup**.',
-        'Tap **Create backup** and choose where to save the file.',
+        'Tap **Create backup**. Pitak says how much storage and memory the '
+            'backup needs, and how much this phone has.',
+        'Tap **Go on** and choose where to save the file.',
       ],
     ),
     GuideSteps(
@@ -85,6 +87,8 @@ const Guide backupGuide = Guide(
             'contains.',
         "If it contains a vault, enter that vault's passphrase. Tap "
             '**Restore**.',
+        'Pitak says how much storage and memory the restore needs, and how '
+            'much this phone has. Tap **Restore** again to start.',
       ],
     ),
     GuideParagraphs(

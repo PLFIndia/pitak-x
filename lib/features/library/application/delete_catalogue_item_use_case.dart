@@ -1,6 +1,6 @@
 /// Hard-delete a library book (application layer, AGENTS.md §4).
 ///
-/// Port of Kotlin `DeleteBookUseCase` (D3). A permanent delete must also purge
+/// A permanent delete must also purge
 /// the book's loan rows in the encrypted vault — a vault-write op — so it is
 /// gated on the vault's state:
 ///  - no vault has ever existed on this device → delete straight away (M12:
@@ -11,11 +11,11 @@
 ///  - vault locked but the book has no loans → delete straight away.
 ///
 /// We avoid any unencrypted "loan count per book" index that would leak vault
-/// state while locked (Kotlin's same §1.1 reasoning); when locked we cannot
+/// state while locked (§1.1); when locked we cannot
 /// know whether loans exist, so a locked delete of a book that MIGHT have loans
 /// must route through unlock. We model that conservatively: when locked we
-/// require unlock (the safe, no-leak choice), matching Kotlin's behaviour of
-/// surfacing RequiresVaultUnlock whenever it can't confirm there are no loans.
+/// require unlock (the safe, no-leak choice): RequiresVaultUnlock is
+/// surfaced whenever it cannot be confirmed that there are no loans.
 library;
 
 import 'package:fpdart/fpdart.dart';
@@ -84,7 +84,7 @@ class DeleteCatalogueItemUseCase {
   Future<Either<Failure, DeleteBookOutcome>> call(int id) async {
     if (vault.vaultExists && !vault.isUnlocked) {
       // Locked EXISTING vault: we cannot confirm there are no loans without
-      // leaking vault state, so require unlock (Kotlin's conservative
+      // leaking vault state, so require unlock (the conservative
       // RequiresVaultUnlock). A device where no vault was ever created has
       // nothing to unlock (M12) and falls through to a plain delete.
       return right(DeleteBookOutcome.requiresVaultUnlock);

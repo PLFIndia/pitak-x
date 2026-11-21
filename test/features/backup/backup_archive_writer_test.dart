@@ -7,6 +7,7 @@ import 'dart:typed_data';
 import 'package:archive/archive.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/features/backup/domain/backup_archive_builder.dart';
 import 'package:pitaka/features/backup/domain/backup_manifest.dart';
 import 'package:pitaka/features/backup/infrastructure/backup_archive_writer.dart';
 import 'package:pitaka/features/backup/infrastructure/item_details_archive_codec.dart';
@@ -22,6 +23,8 @@ import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
 import 'package:sqlite3/common.dart';
 import 'package:sqlite3/sqlite3.dart';
 
+import 'test_vault_gate.dart';
+
 /// A store that claims a vault exists but points at a file that does not —
 /// the shape of "the DB disappeared between the check and the copy".
 class _VanishedVault implements VaultArtifactsStore {
@@ -32,6 +35,16 @@ class _VanishedVault implements VaultArtifactsStore {
   bool isInitialized() => true;
   @override
   String? readBlob() => 'salt.iv.ct';
+  // Rider 2: no SQLite side file, so the writer goes on to the copy.
+  @override
+  bool hasUnfinishedWrite() => false;
+  // BR4: the same copy the real store makes, so a missing file fails the
+  // same way.
+  @override
+  Future<void> snapshotDatabaseTo(String targetPath) async {
+    await File(dbPath).copy(targetPath);
+  }
+
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
@@ -44,6 +57,7 @@ void main() {
     tmp = Directory.systemTemp.createTempSync('backup_writer_test');
     writer = BackupArchiveWriter(
       vaultStore: VaultStore(baseDir: '${tmp.path}/novault'),
+      vaultGate: TestVaultGate(),
       coversDir: '${tmp.path}/covers',
     );
   });
@@ -52,6 +66,20 @@ void main() {
   });
 
   Archive unzip(Uint8List bytes) => ZipDecoder().decodeBytes(bytes);
+
+  // BR4: a build hands back a FILE. These tests look at its content, so
+  // they read it into memory (the archives here are small).
+  Uint8List bytesOf(BuiltBackup built) => File(built.path).readAsBytesSync();
+
+  // The names of everything a build left in its work folder.
+  List<String> leftIn(String workDir) {
+    final dir = Directory(workDir);
+    if (!dir.existsSync()) return const [];
+    return [
+      for (final entity in dir.listSync())
+        entity.uri.pathSegments.lastWhere((segment) => segment.isNotEmpty),
+    ];
+  }
 
   Uint8List? entry(Archive a, String name) {
     for (final f in a.files) {
@@ -104,7 +132,10 @@ void main() {
       networkJson: networkJson,
       publishStateJson: publishStateJson,
     );
-    return result.getOrElse((f) => fail('build refused a fitting archive: $f'));
+    // BR3: the Right is a `BuiltBackup` (the archive + what was left out).
+    return bytesOf(
+      result.getOrElse((f) => fail('build refused a fitting archive: $f')),
+    );
   }
 
   test('writes a manifest reflecting no vault when none exists', () async {
@@ -459,6 +490,7 @@ void main() {
     store.writeBlob('salt.iv.ct');
     final w = BackupArchiveWriter(
       vaultStore: store,
+      vaultGate: TestVaultGate(),
       coversDir: '${tmp.path}/covers',
     );
     final bytes = await w
@@ -472,7 +504,7 @@ void main() {
           networkJson: null,
           publishStateJson: null,
         )
-        .then((r) => r.getOrElse((f) => fail('unexpected left: $f')));
+        .then((r) => bytesOf(r.getOrElse((f) => fail('unexpected left: $f'))));
     final archive = unzip(bytes);
     expect(entry(archive, 'borrowers.db'), Uint8List.fromList([9, 9, 9]));
     expect(utf8.decode(entry(archive, 'backup_blob')!), 'salt.iv.ct');
@@ -487,8 +519,10 @@ void main() {
   // worker isolate so the UI isolate keeps painting frames while a large
   // backup is being assembled.
   group('N10-c — build runs off the calling isolate', () {
-    /// A library + covers large enough that HEAD's synchronous build took
-    /// ~1 s locally (3 × 1 MiB random covers = incompressible, 4000 rows).
+    /// A library + covers large enough that the synchronous build this test
+    /// was written against took ~1 s locally (3 × 1 MiB random covers =
+    /// incompressible, 4000 rows). Today's build, on its worker, takes 13 to
+    /// 19 ms once warm and 70 to 200 ms the first time (measured 2026-11).
     Future<BackupArchiveWriter> bigFixture() async {
       Directory('${tmp.path}/covers').createSync(recursive: true);
       final rng = Random(1);
@@ -499,6 +533,7 @@ void main() {
       }
       return BackupArchiveWriter(
         vaultStore: VaultStore(baseDir: '${tmp.path}/novault'),
+        vaultGate: TestVaultGate(),
         coversDir: '${tmp.path}/covers',
       );
     }
@@ -519,13 +554,19 @@ void main() {
       // build is NOT blocking this isolate. A synchronous build (HEAD) holds
       // the event loop, so the timer fires only after the build returns.
       final w = await bigFixture();
+      // The rows are made BEFORE the clock and the timer start. Making them
+      // is work of this test on this isolate, and the timer cannot fire
+      // while it runs. (Until 2026-11 they were made inside the call below.
+      // That took 3 to 36 ms of a build that is quick today, and "half of
+      // the build's time" was then passed now and then: D121, D127.)
+      final books = bigBooks();
       final fired = Completer<int>();
       final sw = Stopwatch()..start();
       Timer(const Duration(milliseconds: 1), () {
         fired.complete(sw.elapsedMilliseconds);
       });
       final work = w.build(
-        books: bigBooks(),
+        books: books,
         wishlist: const [],
         periodicals: const [],
         workDir: '${tmp.path}/work',
@@ -535,7 +576,9 @@ void main() {
         publishStateJson: null,
       );
       final firedAt = await fired.future;
-      final bytes = (await work).getOrElse((f) => fail('unexpected left: $f'));
+      final bytes = bytesOf(
+        (await work).getOrElse((f) => fail('unexpected left: $f')),
+      );
       final total = sw.elapsedMilliseconds;
       expect(bytes, isNotEmpty);
       expect(
@@ -565,7 +608,9 @@ void main() {
               networkJson: null,
               publishStateJson: null,
             )
-            .then((r) => r.getOrElse((f) => fail('unexpected left: $f')));
+            .then(
+              (r) => bytesOf(r.getOrElse((f) => fail('unexpected left: $f'))),
+            );
         final archive = unzip(bytes);
         final coverNames = [
           for (final f in archive.files)
@@ -586,35 +631,58 @@ void main() {
       },
     );
 
-    test(
-      'a worker-side failure surfaces typed and leaves no scratch dir',
-      () async {
-        // The caller reads "vault present" + its path, then the worker reads
-        // the file. If the DB is gone by then (or unreadable), the read throws
-        // INSIDE the worker: the error must come back to the caller as a real
-        // exception (the use case turns it into StorageFailure) and the scratch
-        // work dir — already created and holding the two SQLite files — must be
-        // removed on the way out.
-        final w = BackupArchiveWriter(
-          vaultStore: _VanishedVault('${tmp.path}/gone/borrowers.db'),
-          coversDir: '${tmp.path}/covers',
-        );
-        await expectLater(
-          w.build(
-            books: const [CatalogueItem(id: 1, title: 'One')],
-            wishlist: const [],
-            periodicals: const [],
-            workDir: '${tmp.path}/work_fail',
-            exportedAt: 1,
-            identityJson: null,
-            networkJson: null,
-            publishStateJson: null,
-          ),
-          throwsA(isA<FileSystemException>()),
-        );
-        expect(Directory('${tmp.path}/work_fail').existsSync(), isFalse);
-      },
-    );
+    test('a worker-side failure surfaces as an exception and leaves nothing '
+        'in the work folder', () async {
+      // Two books with the same id: the second insert fails INSIDE the
+      // worker, after it has started writing books.db. The error must come
+      // back to the caller as a real exception (the use case turns it into
+      // StorageFailure), and nothing of the build may stay behind.
+      await expectLater(
+        writer.build(
+          books: const [
+            CatalogueItem(id: 1, title: 'One'),
+            CatalogueItem(id: 1, title: 'Same id'),
+          ],
+          wishlist: const [],
+          periodicals: const [],
+          workDir: '${tmp.path}/work_worker_fail',
+          exportedAt: 1,
+          identityJson: null,
+          networkJson: null,
+          publishStateJson: null,
+        ),
+        throwsA(isA<SqliteException>()),
+      );
+      expect(leftIn('${tmp.path}/work_worker_fail'), isEmpty);
+    });
+
+    test('a vault file that vanished fails the build and leaves nothing in the '
+        'work folder', () async {
+      // The caller sees "vault present", then copies the vault database
+      // into the scratch folder (BR4). If the file is gone by then, the
+      // copy throws: the error must reach the caller as a real exception
+      // (the use case turns it into StorageFailure), and the scratch
+      // folder, already created, must be removed on the way out.
+      final w = BackupArchiveWriter(
+        vaultStore: _VanishedVault('${tmp.path}/gone/borrowers.db'),
+        vaultGate: TestVaultGate(),
+        coversDir: '${tmp.path}/covers',
+      );
+      await expectLater(
+        w.build(
+          books: const [CatalogueItem(id: 1, title: 'One')],
+          wishlist: const [],
+          periodicals: const [],
+          workDir: '${tmp.path}/work_fail',
+          exportedAt: 1,
+          identityJson: null,
+          networkJson: null,
+          publishStateJson: null,
+        ),
+        throwsA(isA<FileSystemException>()),
+      );
+      expect(leftIn('${tmp.path}/work_fail'), isEmpty);
+    });
   });
 
   // S5 (L5): the writer must never emit an archive its own READER refuses or
@@ -647,9 +715,9 @@ void main() {
       final failure = result.getLeft().toNullable();
       expect(failure, isA<BackupTooLargeFailure>());
       expect((failure! as BackupTooLargeFailure).detail, 'itemKindsTooLarge');
-      // Nothing was written out: no archive bytes exist to share.
+      // Nothing was written out: no archive exists to share.
       expect(result.toNullable(), isNull);
-      expect(Directory('${tmp.path}/work_big_kinds').existsSync(), isFalse);
+      expect(leftIn('${tmp.path}/work_big_kinds'), isEmpty);
     });
 
     test('too many kind rows is refused (row cap, not bytes)', () async {
@@ -683,8 +751,8 @@ void main() {
         (failure! as BackupTooLargeFailure).detail,
         'itemKindsTooManyRows',
       );
-      // Refused before any file work: no scratch directory was created.
-      expect(Directory('${tmp.path}/work_many_kinds').existsSync(), isFalse);
+      // Refused before the worker wrote a file; nothing is left behind.
+      expect(leftIn('${tmp.path}/work_many_kinds'), isEmpty);
     });
 
     test('a fitting v4 library still builds and reads back', () async {

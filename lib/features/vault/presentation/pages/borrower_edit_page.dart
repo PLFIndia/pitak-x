@@ -2,7 +2,7 @@
 ///
 /// Adds a new borrower or edits an existing one through
 /// [VaultSessionController]. Name is required (mirrors the vault's NOT NULL
-/// `name` column and the Kotlin `AddBorrowerUseCase` validation); contact and
+/// `name` column); contact and
 /// notes are optional. The controller re-reads the vault after a successful
 /// write, so the list updates when this page pops.
 library;
@@ -11,9 +11,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fpdart/fpdart.dart' show unit;
 import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/core/widgets/discard_changes_guard.dart';
 import 'package:pitaka/features/vault/application/vault_session_controller.dart';
 import 'package:pitaka/features/vault/domain/entities/borrower.dart';
-import 'package:pitaka/features/vault/domain/entities/vault_session_state.dart';
 import 'package:pitaka/features/vault/domain/value_objects/borrower_contact.dart';
 
 /// Screen to create or edit a [Borrower].
@@ -39,6 +39,25 @@ class _BorrowerEditPageState extends ConsumerState<BorrowerEditPage> {
 
   bool get _isEdit => widget.existing != null;
 
+  /// What the form held when it opened, so that Back can ask before unsaved
+  /// input is lost (the "Discard changes?" guard, ADR 0028). It is a second
+  /// copy of this borrower's name and contact details, in memory only, and
+  /// it goes with the page.
+  late final OpenedValues _opened;
+
+  /// Every text controller of the form: disposed together, and read
+  /// together by [_values], so a field cannot be in one and not the other.
+  List<TextEditingController> get _texts => [
+    _name,
+    _phone,
+    _email,
+    _contactOther,
+    _notes,
+  ];
+
+  /// Everything Save would store, as one list for [_opened].
+  List<Object?> _values() => [for (final c in _texts) c.text];
+
   @override
   void initState() {
     super.initState();
@@ -50,15 +69,14 @@ class _BorrowerEditPageState extends ConsumerState<BorrowerEditPage> {
     _email = TextEditingController(text: contact.email);
     _contactOther = TextEditingController(text: contact.other);
     _notes = TextEditingController(text: e?.notes ?? '');
+    _opened = OpenedValues(_values);
   }
 
   @override
   void dispose() {
-    _name.dispose();
-    _phone.dispose();
-    _email.dispose();
-    _contactOther.dispose();
-    _notes.dispose();
+    for (final c in _texts) {
+      c.dispose();
+    }
     super.dispose();
   }
 
@@ -115,7 +133,7 @@ class _BorrowerEditPageState extends ConsumerState<BorrowerEditPage> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return Scaffold(
+    final page = Scaffold(
       appBar: AppBar(title: Text(_isEdit ? 'Edit borrower' : 'Add borrower')),
       body: ListView(
         padding: const EdgeInsets.all(16),
@@ -183,64 +201,16 @@ class _BorrowerEditPageState extends ConsumerState<BorrowerEditPage> {
             const SizedBox(height: 16),
             Text(_error!, style: TextStyle(color: scheme.error)),
           ],
-          if (_isEdit) _LoansSection(borrowerId: widget.existing!.id),
         ],
       ),
     );
-  }
-}
-
-/// Shows the borrower's loans (from the unlocked session) with a Return action
-/// on active ones. Returning sets `returnedDate` via the session controller.
-class _LoansSection extends ConsumerWidget {
-  const _LoansSection({required this.borrowerId});
-
-  final int borrowerId;
-
-  Future<void> _return(BuildContext context, WidgetRef ref, Loan loan) async {
-    final returned = loan.copyWith(
-      returnedDate: DateTime.now().millisecondsSinceEpoch,
-    );
-    final result = await ref
-        .read(vaultSessionControllerProvider.notifier)
-        .updateLoan(returned);
-    if (!context.mounted) return;
-    result.match(
-      (_) => ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not mark as returned.')),
-      ),
-      (_) {},
-    );
-  }
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final session = ref.watch(vaultSessionControllerProvider).valueOrNull;
-    if (session is! VaultUnlocked) return const SizedBox.shrink();
-    final loans = session.data.loans
-        .where((l) => l.borrowerId == borrowerId)
-        .toList();
-    if (loans.isEmpty) return const SizedBox.shrink();
-
-    final textTheme = Theme.of(context).textTheme;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const SizedBox(height: 24),
-        Text('Loans', style: textTheme.titleSmall),
-        for (final loan in loans)
-          ListTile(
-            contentPadding: EdgeInsets.zero,
-            title: Text('Item #${loan.itemId}'),
-            subtitle: Text(loan.isReturned ? 'Returned' : 'Out'),
-            trailing: loan.isReturned
-                ? const Icon(Icons.check_circle_outline)
-                : TextButton(
-                    onPressed: () => _return(context, ref, loan),
-                    child: const Text('Return'),
-                  ),
-          ),
-      ],
+    // This page is a form and nothing else. A borrower's loans, and the
+    // button that marks one returned, are on their profile (review finding
+    // P4-M3, D108); until 2026-11 a list of them stood under the fields.
+    return DiscardChangesGuard(
+      hasChanges: () => _opened.changed,
+      saving: _busy,
+      child: page,
     );
   }
 }

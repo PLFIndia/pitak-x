@@ -1,6 +1,6 @@
 /// Lend-a-book screen (presentation layer, AGENTS.md §3.1).
 ///
-/// Mirrors Kotlin `LendBookUseCase` (D25): lend a specific book to either an
+/// Lends a specific book to either an
 /// existing borrower or a newly-created one, with an optional due date and
 /// notes. Requires the vault to be UNLOCKED (it reads borrowers from the
 /// session). The decision + writes live in the application-layer
@@ -13,6 +13,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/core/text/display_date.dart';
+import 'package:pitaka/core/widgets/discard_changes_guard.dart';
 import 'package:pitaka/features/vault/application/lend_book_use_case.dart';
 import 'package:pitaka/features/vault/application/vault_session_controller.dart';
 import 'package:pitaka/features/vault/domain/entities/borrower.dart';
@@ -61,6 +62,25 @@ class _LendBookPageState extends ConsumerState<LendBookPage> {
   DateTime? _dueDate;
   bool _busy = false;
   String? _error;
+
+  /// What the form held when it opened (nothing chosen, nothing typed), so
+  /// that Back can ask before what was entered is lost (the "Discard
+  /// changes?" guard, ADR 0028).
+  late final OpenedValues _opened;
+
+  /// Everything a tap on Lend would use, as one list for [_opened].
+  List<Object?> _values() => [
+    _borrowerId,
+    _newName.text,
+    _dueDate,
+    _notes.text,
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    _opened = OpenedValues(_values);
+  }
 
   @override
   void dispose() {
@@ -209,7 +229,10 @@ class _LendBookPageState extends ConsumerState<LendBookPage> {
     }
     final borrowers = session.data.borrowers;
 
-    return Scaffold(
+    // The guard is around the form only: the screen above, which asks for
+    // the vault to be unlocked, has nothing that could be lost. While the
+    // limit dialog is open, Back closes that dialog, as before.
+    final page = Scaffold(
       appBar: AppBar(title: const Text('Lend item')),
       body: ListView(
         padding: const EdgeInsets.all(16),
@@ -295,6 +318,11 @@ class _LendBookPageState extends ConsumerState<LendBookPage> {
           ],
         ],
       ),
+    );
+    return DiscardChangesGuard(
+      hasChanges: () => _opened.changed,
+      saving: _busy,
+      child: page,
     );
   }
 }

@@ -1,13 +1,14 @@
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/crypto/secret_bytes.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/core/widgets/camera_scan_messages.dart';
 import 'package:pitaka/core/widgets/item_cover.dart';
 import 'package:pitaka/features/library/application/library_controller.dart';
 import 'package:pitaka/features/library/domain/catalogue_item_page.dart';
@@ -27,6 +28,8 @@ import 'package:pitaka/features/vault/domain/repositories/vault_repository.dart'
 import 'package:pitaka/features/vault/infrastructure/vault_store.dart';
 
 import '../../support/a11y.dart';
+import '../../support/cover_capture_fakes.dart';
+import '../../support/fake_scan_camera.dart';
 import '../periodicals/application/periodical_fakes.dart';
 import '../vault/vault_repository_write_stub.dart';
 
@@ -913,6 +916,125 @@ void main() {
       await tester.tap(find.widgetWithText(TextButton, 'Unlock the vault'));
       await tester.pumpAndSettle();
       expect(find.text('Borrowers vault'), findsOneWidget);
+    });
+  });
+
+  // Review finding P4-M8, decision D134: "Replace cover" answered every
+  // failure of the camera with "Could not capture a photo.", a refused
+  // permission too. The bar itself is tested in
+  // `cover_camera_message_test.dart`; here: that this page goes through it.
+  group('the cover camera fails', () {
+    Future<CoverCaptureFakes> replaceCoverFailing(
+      WidgetTester tester,
+      Object error, {
+      required FakeAppSettingsOpener settings,
+    }) async {
+      final fakes = installCoverCaptureFakes();
+      final repo = _MemBookRepo([_seed]);
+      await tester.pumpWidget(
+        _host(
+          repo,
+          tmp.path,
+          initialBook: _seed,
+          extraOverrides: [
+            appSettingsOpenerProvider.overrideWithValue(settings),
+          ],
+        ),
+      );
+      await _openDetail(tester);
+      await tester.tap(find.text('Replace cover'));
+      await tester.pump();
+      await fakes.pickerGate.entered;
+      fakes.pickerGate.fail(error);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 800));
+      return fakes;
+    }
+
+    testWidgets('refused: the sentence says so, with "Open settings"', (
+      tester,
+    ) async {
+      final settings = FakeAppSettingsOpener();
+      final fakes = await replaceCoverFailing(
+        tester,
+        PlatformException(
+          code: 'camera_access_denied',
+          message: 'The user did not allow camera access.',
+        ),
+        settings: settings,
+      );
+
+      expect(find.text(scanCameraRefusedSentence), findsOneWidget);
+      expect(find.text(coverCaptureFailedSentence), findsNothing);
+      expect(find.textContaining('did not allow'), findsNothing);
+      expect(fakes.cropper.calls, 0);
+
+      await tester.tap(find.text(openSettingsLabel));
+      await tester.pumpAndSettle();
+      expect(settings.openCalls, 1);
+      // Nothing retries by itself: the user taps "Replace cover" again.
+      expect(fakes.picker.calls, 1);
+    });
+
+    testWidgets('a camera that fails after the page was left shows '
+        'nothing and throws nothing', (tester) async {
+      final fakes = installCoverCaptureFakes();
+      await tester.pumpWidget(
+        _host(
+          _MemBookRepo([_seed]),
+          tmp.path,
+          initialBook: _seed,
+          extraOverrides: [
+            appSettingsOpenerProvider.overrideWithValue(
+              FakeAppSettingsOpener(),
+            ),
+          ],
+        ),
+      );
+      await _openDetail(tester);
+      await tester.tap(find.text('Replace cover'));
+      await tester.pump();
+      await fakes.pickerGate.entered;
+
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(find.text('open detail'), findsOneWidget);
+      fakes.pickerGate.fail(PlatformException(code: 'camera_access_denied'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 800));
+
+      expect(tester.takeException(), isNull);
+      expect(find.text(scanCameraRefusedSentence), findsNothing);
+      expect(find.byType(SnackBar), findsNothing);
+    });
+
+    testWidgets('a phone without a camera: the sentence says so', (
+      tester,
+    ) async {
+      await replaceCoverFailing(
+        tester,
+        PlatformException(code: 'no_available_camera'),
+        settings: FakeAppSettingsOpener(),
+      );
+
+      expect(find.text(scanNoCameraSentence), findsOneWidget);
+      expect(find.text(openSettingsLabel), findsNothing);
+      await tester.pump(const Duration(seconds: 5));
+    });
+
+    testWidgets('anything else keeps "Could not capture a photo."', (
+      tester,
+    ) async {
+      await replaceCoverFailing(
+        tester,
+        PlatformException(code: 'already_active', message: 'secret detail'),
+        settings: FakeAppSettingsOpener(),
+      );
+
+      expect(find.text(coverCaptureFailedSentence), findsOneWidget);
+      expect(find.text(openSettingsLabel), findsNothing);
+      expect(find.textContaining('secret'), findsNothing);
+      await tester.pump(const Duration(seconds: 5));
     });
   });
 

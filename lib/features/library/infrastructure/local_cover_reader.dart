@@ -3,7 +3,6 @@ library;
 
 import 'dart:io';
 
-import 'package:file_selector/file_selector.dart' show XFile;
 import 'package:path/path.dart' as p;
 import 'package:pitaka/core/images/image_downscaler.dart';
 import 'package:pitaka/core/platform/bounded_file_read.dart';
@@ -31,8 +30,8 @@ final class LocalCoverReader {
       }
       // Reuse the core streamed cap (reported length + actual byte count)
       // rather than maintaining a second copy of that security boundary.
-      final bytes = await readPickedFileBounded(
-        XFile(file.path),
+      final bytes = await readFileBounded(
+        file.path,
         maxBytes: maxLocalCoverSourceBytes,
       );
       if (bytes == null) {

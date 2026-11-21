@@ -6,6 +6,8 @@ import 'package:pitaka/features/backup/infrastructure/backup_archive_writer.dart
 import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
 import 'package:pitaka/features/vault/infrastructure/vault_store.dart';
 
+import 'test_vault_gate.dart';
+
 /// Direct writer proof for the periodicals.json byte bound. The companion
 /// item_kinds bounds already live in backup_archive_writer_test.dart.
 void main() {
@@ -16,6 +18,7 @@ void main() {
     tmp = Directory.systemTemp.createTempSync('periodical_writer_bounds');
     writer = BackupArchiveWriter(
       vaultStore: VaultStore(baseDir: '${tmp.path}/novault'),
+      vaultGate: TestVaultGate(),
       coversDir: '${tmp.path}/covers',
     );
   });
@@ -48,6 +51,12 @@ void main() {
     expect(failure, isA<BackupTooLargeFailure>());
     expect((failure! as BackupTooLargeFailure).detail, 'periodicalsTooLarge');
     expect(result.toNullable(), isNull);
-    expect(Directory('${tmp.path}/work_big_periodicals').existsSync(), isFalse);
+    // BR4: the writer makes its scratch folder before the worker starts and
+    // removes it on every way out, so the work folder is left empty.
+    final work = Directory('${tmp.path}/work_big_periodicals');
+    expect(
+      work.existsSync() ? work.listSync() : const <FileSystemEntity>[],
+      isEmpty,
+    );
   });
 }

@@ -22,6 +22,8 @@ import 'package:pitaka/features/publish/presentation/widgets/share_library_sheet
 import 'package:pitaka/features/settings/application/settings_controller.dart';
 import 'package:pitaka/features/settings/presentation/pages/settings_page.dart';
 import 'package:pitaka/features/share_apps/presentation/widgets/share_apps_sheet.dart';
+import 'package:pitaka/features/vault/application/vault_session_controller.dart';
+import 'package:pitaka/features/vault/domain/entities/vault_session_state.dart';
 import 'package:pitaka/features/vault/presentation/pages/borrowed_items_page.dart';
 import 'package:pitaka/features/vault/presentation/pages/vault_page.dart';
 import 'package:pitaka/features/wishlist/presentation/pages/wishlist_page.dart';
@@ -44,6 +46,15 @@ class AppDrawer extends ConsumerWidget {
         .watch(settingsControllerProvider)
         .maybeWhen(data: (s) => s.libraryName.trim(), orElse: () => '');
     final headerTitle = libraryName.isEmpty ? 'Pitak' : libraryName;
+    // The lock of the vault's tile follows the vault (P4-M4): open only
+    // while it is unlocked. Closed for a locked vault, for none, and while
+    // the state is not known. `select`: only that one answer rebuilds the
+    // drawer (§8).
+    final vaultUnlocked = ref.watch(
+      vaultSessionControllerProvider.select(
+        (session) => session.valueOrNull is VaultUnlocked,
+      ),
+    );
     return Drawer(
       child: SafeArea(
         child: Column(
@@ -78,7 +89,15 @@ class AppDrawer extends ConsumerWidget {
                 padding: EdgeInsets.zero,
                 children: [
                   ListTile(
-                    leading: const Icon(Icons.lock_outline),
+                    leading: Icon(
+                      vaultUnlocked
+                          ? Icons.lock_open_outlined
+                          : Icons.lock_outline,
+                      // A change of icon says nothing to a screen reader, so
+                      // the open lock has a word. The closed lock has none:
+                      // "Locked" would be wrong where no vault exists.
+                      semanticLabel: vaultUnlocked ? 'Unlocked' : null,
+                    ),
                     title: const Text('Borrowers vault'),
                     onTap: () => _go(context, const VaultPage()),
                   ),

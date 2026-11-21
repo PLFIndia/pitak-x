@@ -1,7 +1,7 @@
 # Pitak
 
-A privacy-first, offline personal **library catalogue** for Android. Pitak is a
-Kotlin→Flutter port of the original Android app: catalogue your books,
+A privacy-first, offline personal **library catalogue** for Android. With
+Pitak you catalogue your books,
 magazines and other items, lend them to borrowers from an **encrypted vault**,
 keep a wishlist, import/export (JSON · CSV · PDF), make portable backups,
 publish a read-only library site to **GitHub Pages or Cloudflare Workers**
@@ -51,9 +51,17 @@ a **library network** (pins on a map, hub/member cards).
 - **Wishlist** — track books to acquire; move to the library on purchase.
 - **Import / Export** — JSON, CSV (incl. Goodreads import), and **PDF** (a
   paginated A4 library list with Indic-script support via shaped-image text).
-- **Backup / Restore** — `.pitabak` archives. Pitak restores its own archives
-  **and** archives made by the original Kotlin app (one-way: Kotlin → Pitak;
-  the Kotlin app is retired and is not a restore target). **Honest limit:**
+  A file you choose to import or to merge is read from a **private temporary
+  copy** inside the app's own storage (where no other app can read it); the
+  copy is removed as soon as the file has been read.
+- **Backup / Restore** — `.pitabak` archives. Pitak restores the archives it
+  makes, and a backup made by an older Pitak restores in a newer one.
+  A backup holds up to 10,000 cover pictures and 1 GiB of content; one
+  that is above the limits of 1.9.7 (4,086 covers, 500 MiB) does not open
+  in 1.9.7 or older. Before a backup and before a restore Pitak says how
+  much free storage and memory the run needs and how much the phone has;
+  it informs and never blocks (ADR 0026).
+  **Honest limit:**
   the archive is *not* fully encrypted — the catalogue (every kind, including
   full magazine-series and issue records), wishlist, covers and item-kind
   mappings are stored plainly inside it; only the borrowers vault and its
@@ -72,6 +80,11 @@ a **library network** (pins on a map, hub/member cards).
   restore leaves your current data untouched. The previous folder is deleted
   after a successful switch; if the system refuses the delete, Pitak removes
   the leftover on the next launch.
+  While you restore, Pitak keeps a **private temporary copy** of the backup
+  file you chose (inside the app's own storage, where no other app can read
+  it) and reads the backup from that copy. The copy is removed when the
+  restore has succeeded, when you choose another file or leave the Restore
+  screen, and at the next start of the app if it was closed in between.
 - **Publish** — push a read-only library viewer to **one active host**:
   **GitHub Pages** (device-flow auth + git data API) or **Cloudflare Workers**
   (a pasted `Workers Scripts · Edit` token, one account, assets-only Worker),
@@ -176,6 +189,11 @@ cover, not a vault lock (see the security notes below).
   screen; it does not lock or encrypt the vault itself. It is a software
   check (a yes/no from the OS prompt), unlike the vault's biometric unlock
   below.
+- **A vault's existence is not hidden:** while a borrowers vault exists and
+  is locked, the Library screen shows one line that says so and leads to the
+  unlock screen. Anyone who sees that screen learns that a vault exists. What
+  is in it, and whether anything is lent out, is not shown while it is
+  locked.
 - **Vault biometric unlock is hardware-bound (Android):** the random secret
   that opens the vault's biometric key blob is stored only as ciphertext under
   an Android Keystore AES key created with `setUserAuthenticationRequired`
@@ -321,6 +339,7 @@ fvm flutter test --coverage --exclude-tags golden
 ( cd rust && cargo clippy --all-targets -- -D warnings )  # lints as errors
 ( cd rust && cargo deny check )                # advisories + licenses + bans + sources
 ( cd rust && cargo test --release )            # native crate tests (2 #[ignore]d — need a real vault via PITAK_* env)
+( cd android && ./gradlew :app:testFdroidDebugUnitTest :app:testPlayDebugUnitTest )  # Android unit tests (JUnit); needs the network, `--offline` fails
 ```
 
 These are the main local checks; the build-runner/diff pair is also what

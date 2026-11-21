@@ -22,6 +22,7 @@ import 'package:pitaka/core/widgets/cover_crop.dart';
 import 'package:pitaka/core/widgets/item_cover.dart';
 import 'package:pitaka/core/widgets/lock_suppressor.dart';
 import 'package:pitaka/features/library/application/form_cover_controller.dart';
+import 'package:pitaka/features/library/presentation/widgets/cover_camera_message.dart';
 
 /// Cover preview + capture + remove for a form.
 class FormCoverField extends ConsumerStatefulWidget {
@@ -107,9 +108,10 @@ class _FormCoverFieldState extends ConsumerState<FormCoverField> {
         // reclaims (Q12) — nothing to undo here.
         (coverRef) => widget.onChanged(coverRef),
       );
-    } on Exception {
+    } on Exception catch (e) {
       // Plugin (camera/crop) failure only — pipeline errors are typed above.
-      _snack('Could not capture a photo.');
+      // A refused camera and a phone without one get their own sentence.
+      if (mounted) showCoverCameraFailure(context, ref, e);
     } finally {
       _setBusy(false);
     }

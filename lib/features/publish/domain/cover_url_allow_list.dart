@@ -1,6 +1,6 @@
 /// Cover-URL sanitiser for published JSON (pure domain, AGENTS.md §3.1, #32).
 ///
-/// Port of Kotlin `CoverUrlAllowList` (F-09). Threat: a poisoned `coverUrl`
+/// Threat (F-09): a poisoned `coverUrl`
 /// silently exfiltrates every visitor of the published page (IP/UA/Referer) via
 /// a cross-origin `<img src>`. HTML-escaping stops scripts but not image loads,
 /// so origins must be allow-listed.

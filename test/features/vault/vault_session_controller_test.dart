@@ -22,6 +22,7 @@ import 'package:pitaka/features/vault/domain/entities/biometric_enrolment.dart';
 import 'package:pitaka/features/vault/domain/entities/borrower.dart';
 import 'package:pitaka/features/vault/domain/entities/vault_data.dart';
 import 'package:pitaka/features/vault/domain/entities/vault_session_state.dart';
+import 'package:pitaka/features/vault/domain/loan_return.dart';
 import 'package:pitaka/features/vault/domain/repositories/vault_repository.dart';
 import 'package:pitaka/features/vault/infrastructure/prefs_borrower_limit_policy_store.dart';
 import 'package:pitaka/features/vault/infrastructure/vault_store.dart';
@@ -158,13 +159,25 @@ class _InMemoryVault implements VaultRepository {
     return right(id);
   }
 
+  /// How many loan updates reached the vault. An operation that finds
+  /// nothing to change must not write.
+  int loanUpdates = 0;
+
   @override
   Future<Either<Failure, Unit>> updateLoan({
     required SecretBytes passphrase,
     required String blob,
     required String dbPath,
     required Loan loan,
-  }) async => right(unit);
+  }) async {
+    // Like the Rust core: the row with that id is replaced; no row, no write.
+    final loans = _loans[dbPath] ?? <Loan>[];
+    final index = loans.indexWhere((l) => l.id == loan.id);
+    if (index < 0) return left(const NotFoundFailure());
+    loanUpdates++;
+    loans[index] = loan;
+    return right(unit);
+  }
 
   @override
   Future<Either<Failure, Unit>> deleteLoan({
@@ -613,6 +626,147 @@ void main() {
       );
       expect(dataOf(container).loans, isEmpty);
     });
+  });
+
+  group('marking a loan returned and taking that back (P4-M3)', () {
+    // The test catalogue has item 1 and item 2, one copy each.
+    Future<(VaultSessionController, int)> unlockedWithLoanOfItem1(
+      ProviderContainer container,
+    ) async {
+      await container.read(vaultSessionControllerProvider.future);
+      final notifier = container.read(vaultSessionControllerProvider.notifier);
+      await notifier.enable(good());
+      touchDb();
+      final borrower = (await notifier.addBorrower(
+        const Borrower(name: 'Asha'),
+      )).toNullable()!;
+      final lent = await notifier.addLoan(
+        Loan(itemId: 1, borrowerId: borrower, lentDate: 100, dueDate: 500),
+      );
+      expect(lent.isRight(), isTrue);
+      return (notifier, borrower);
+    }
+
+    List<Loan> loansOf(ProviderContainer container) =>
+        (container.read(vaultSessionControllerProvider).value! as VaultUnlocked)
+            .data
+            .loans;
+
+    test('a date marks the loan returned; the session shows it', () async {
+      final vault = _InMemoryVault();
+      final container = makeContainer(vault);
+      final (notifier, _) = await unlockedWithLoanOfItem1(container);
+      final id = loansOf(container).single.id;
+
+      final result = await notifier.setLoanReturned(id, 400);
+
+      expect(result.isRight(), isTrue);
+      final loan = loansOf(container).single;
+      expect(loan.returnedDate, 400);
+      expect(loan.lentDate, 100);
+      expect(loan.dueDate, 500);
+      expect(vault.loanUpdates, 1);
+    });
+
+    test(
+      'null takes the return back: out again, with its first dates',
+      () async {
+        final vault = _InMemoryVault();
+        final container = makeContainer(vault);
+        final (notifier, _) = await unlockedWithLoanOfItem1(container);
+        final id = loansOf(container).single.id;
+        await notifier.setLoanReturned(id, 400);
+
+        final result = await notifier.setLoanReturned(id, null);
+
+        expect(result.isRight(), isTrue);
+        final loan = loansOf(container).single;
+        expect(loan.isReturned, isFalse);
+        expect(loan.lentDate, 100);
+        expect(loan.dueDate, 500);
+        expect(vault.loanUpdates, 2);
+      },
+    );
+
+    test('taking back is refused when the one copy was lent again; nothing '
+        'changes', () async {
+      final vault = _InMemoryVault();
+      final container = makeContainer(vault);
+      final (notifier, _) = await unlockedWithLoanOfItem1(container);
+      final first = loansOf(container).single.id;
+      await notifier.setLoanReturned(first, 400);
+      final other = (await notifier.addBorrower(
+        const Borrower(name: 'Meera'),
+      )).toNullable()!;
+      final lentAgain = await notifier.addLoan(
+        Loan(itemId: 1, borrowerId: other, lentDate: 450),
+      );
+      expect(lentAgain.isRight(), isTrue);
+
+      final result = await notifier.setLoanReturned(first, null);
+
+      final failure = result.swap().toNullable();
+      expect(failure, isA<ValidationFailure>());
+      expect(
+        (failure! as ValidationFailure).message,
+        reopenRefusedNoCopyFreeMessage,
+      );
+      final loans = loansOf(container);
+      expect(loans.firstWhere((l) => l.id == first).returnedDate, 400);
+      expect(loans.where((l) => !l.isReturned), hasLength(1));
+      expect(vault.loanUpdates, 1, reason: 'only the return was written');
+    });
+
+    test('two taps at once on one loan: both succeed, ONE write, the first '
+        'date stays', () async {
+      final vault = _InMemoryVault();
+      final container = makeContainer(vault);
+      final (notifier, _) = await unlockedWithLoanOfItem1(container);
+      final id = loansOf(container).single.id;
+
+      final results = await Future.wait([
+        notifier.setLoanReturned(id, 400),
+        notifier.setLoanReturned(id, 401),
+      ]);
+
+      expect(results.every((r) => r.isRight()), isTrue);
+      expect(vault.loanUpdates, 1);
+      expect(loansOf(container).single.returnedDate, 400);
+    });
+
+    test(
+      'a loan that is not there: NotFoundFailure, nothing written',
+      () async {
+        final vault = _InMemoryVault();
+        final container = makeContainer(vault);
+        final (notifier, _) = await unlockedWithLoanOfItem1(container);
+
+        final marked = await notifier.setLoanReturned(999, 400);
+        final reopened = await notifier.setLoanReturned(999, null);
+
+        expect(marked.swap().toNullable(), isA<NotFoundFailure>());
+        expect(reopened.swap().toNullable(), isA<NotFoundFailure>());
+        expect(vault.loanUpdates, 0);
+      },
+    );
+
+    test(
+      'while the vault is locked both fail closed, nothing written',
+      () async {
+        final vault = _InMemoryVault();
+        final container = makeContainer(vault);
+        final (notifier, _) = await unlockedWithLoanOfItem1(container);
+        final id = loansOf(container).single.id;
+        await notifier.lock();
+
+        final marked = await notifier.setLoanReturned(id, 400);
+        final reopened = await notifier.setLoanReturned(id, null);
+
+        expect(marked.swap().toNullable(), isA<ValidationFailure>());
+        expect(reopened.swap().toNullable(), isA<ValidationFailure>());
+        expect(vault.loanUpdates, 0);
+      },
+    );
   });
 
   test('a mutation while locked fails closed with ValidationFailure', () async {

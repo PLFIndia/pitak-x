@@ -835,7 +835,7 @@ void main() {
       expect(summary.periodicalsAdded, 2);
       expect(summary.booksAdded, 4);
 
-      await expectS11InterchangeState(target, localCoverPreserved: false);
+      await expectS11InterchangeState(target);
     });
   });
 }

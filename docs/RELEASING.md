@@ -73,6 +73,16 @@ The Dart code is identical; only what the Android build links differs.
    `in_app_update` → our own channel.
 2. The `fdroid-purity` CI job is the automated check and self-tests by
    requiring the same grep to *match* on the `play` classpath.
+3. The same job holds the **merged manifest** of both flavors to the list
+   `android/merged-permissions.txt` (`tool/check_merged_manifest.py`): every
+   permission must be on the list, no hardware feature may be required, and
+   the `fdroid` manifest may hold no `com.google.` name. A plugin update is
+   how a new permission arrives. When the step is red: if the app needs the
+   permission, add it to the list with where it comes from, and say what it
+   is for in `PRIVACY.md` ("Permissions and why") in the same change; if it
+   does not, remove it in `android/app/src/main/AndroidManifest.xml` with
+   `tools:node="remove"`, as was done for the microphone. Never add a line
+   only to make the check green.
 
 Verify by hand before tagging (both must print **nothing**):
 
@@ -87,6 +97,16 @@ unzip -p build/app/outputs/apk/fdroid/release/app-fdroid-arm64-v8a-release.apk '
 (To prove the check works, run the second one on a `play` APK and watch it
 light up. The only "Play Services" hits F-Droid tolerates are inert string
 constants inside AndroidX CameraX.)
+
+The merged-manifest check by hand (both must end with `OK`):
+
+```bash
+( cd android && ./gradlew :app:processFdroidReleaseManifest :app:processPlayReleaseManifest )
+python3 tool/check_merged_manifest.py --flavor fdroid \
+  build/app/intermediates/merged_manifests/fdroidRelease/processFdroidReleaseManifest/AndroidManifest.xml
+python3 tool/check_merged_manifest.py --flavor play \
+  build/app/intermediates/merged_manifests/playRelease/processPlayReleaseManifest/AndroidManifest.xml
+```
 
 ---
 
@@ -518,3 +538,72 @@ published.
   presence → Main store listing → Graphics, save, and send the change for
   review. (Found 2026-11-03: Play still showed the August 2026 icon after the
   1.9.0 face-up redraw.)
+
+---
+
+## 9. When `sqlcipher-src` moves (the source of the vault's SQLCipher)
+
+The borrowers vault is encrypted by SQLCipher, C code that is compiled
+into the app. `libsqlite3-sys` takes that code from the crate
+`sqlcipher-src` (ADR 0027). `rust/tests/sqlcipher_source_pin.rs` holds
+`rust/Cargo.lock` to the one version and checksum of that crate that were
+checked, and fails when an update of `rusqlite` or `libsqlite3-sys`
+brings another. **Never change the test only to make it green.** First:
+
+1. **Compare the new source with SQLCipher's own signed tag.** In an
+   empty folder, with a keyring of its own, so that yours is not touched.
+   The commands are those of 2026-11-19 for 4.20.0; put the new versions
+   in:
+
+   ```bash
+   export GNUPGHOME="$PWD/gnupg"; mkdir -m 700 "$GNUPGHOME"
+   git init -q sqlcipher.git
+   git -C sqlcipher.git fetch -q --depth 1 \
+     https://github.com/sqlcipher/sqlcipher.git \
+     refs/tags/v4.20.0:refs/tags/v4.20.0
+   curl -sSL -o key.asc \
+     https://keys.openpgp.org/vks/v1/by-fingerprint/D92204901CD8BFDF63A2D9F952E8883F1591F4CE
+   gpg --quiet --batch --import key.asc
+   git -C sqlcipher.git verify-tag --raw v4.20.0    # must say VALIDSIG … D922…F4CE
+   commit=$(git -C sqlcipher.git rev-parse 'v4.20.0^{commit}')
+   mkdir src && git -C sqlcipher.git archive "$commit" | tar x -C src
+   (cd src && ./configure && make sqlite3.c)
+   shasum -a 256 src/sqlite3.c src/sqlite3.h src/sqlite3ext.h
+   shasum -a 256 ~/.cargo/registry/src/*/sqlcipher-src-420.0.0+*/sqlcipher/sqlcipher.c \
+     ~/.cargo/registry/src/*/sqlcipher-src-420.0.0+*/sqlcipher/sqlite3.h \
+     ~/.cargo/registry/src/*/sqlcipher-src-420.0.0+*/sqlcipher/sqlite3ext.h
+   ```
+
+   The three pairs must have the same checksum (`sqlite3.c` of the build
+   is `sqlcipher.c` of the crate). The build needs `tclsh`. GitHub shows
+   SQLCipher's tags as "unverified" because the signing key is not
+   uploaded there; `verify-tag` with the key from the keyserver is the
+   check. A tag that is not signed by that key stops the update until it
+   is understood why.
+2. **Read SQLCipher's `CHANGELOG.md`** from the old version to the new,
+   for anything about the format of a file or its defaults (page size,
+   KDF, HMAC). A new major version is a piece of work of its own: the
+   test of the linked versions in `rust/src/vault.rs` stops it on
+   purpose.
+3. **Read the library's log calls again** (ADR 0027, decision 6). In the
+   crate's `sqlcipher/sqlcipher.c`:
+
+   ```bash
+   grep -c 'sqlcipher_log(SQLCIPHER_LOG_\(ERROR\|WARN\)' sqlcipher.c
+   grep -n 'sqlcipher_log(SQLCIPHER_LOG_\(ERROR\|WARN\)' sqlcipher.c \
+     | sed 's/"%s: /"FUNC: /' | grep '%s'
+   ```
+
+   For 4.20.0 the first prints 144, and the second prints seven calls
+   that print a string other than the function's name: four of `PRAGMA
+   cipher_migrate`, two of rekeying, one with OpenSSL's text for an error
+   number. A new call that can print a path, a name, a statement or key
+   material, in code the vault can reach, is a reason not to update
+   before it is switched off.
+4. **Run the proofs:** `cargo test --release` in `rust/` (the committed
+   test vault must open unchanged; do not make it again), then the
+   on-device smoke test (§6.1, point 7) with `adb logcat -s sqlcipher`
+   running, which must stay empty.
+5. Only then change `PINNED_VERSION` and `PINNED_CHECKSUM` in the test,
+   in the same change as the update, and say in the changelog that the
+   check was repeated.

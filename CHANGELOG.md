@@ -14,6 +14,537 @@ heading as part of the `chore(release):` commit.
 
 ## [Unreleased]
 
+The backup and restore rework so far (review of November 2026; stages BR1
+to BR9 in `PLAN.md`, with Import and Merge on the app's own picker
+between BR7 and BR8). Stage BR8 raises the limits of a backup; the run
+on a phone at the new limits was made on 2026-11-17 and has passed
+(`PLAN.md`, run E). Stage BR9 adds the notice before a backup and before
+a restore; it was seen on a phone on 2026-11-17 (a verdict other than
+"enough" has not been seen on a device).
+
+Two known limits, measured in that run on a fast phone and accepted
+(`PLAN.md`, D44 and D45; a slow phone has not been tried):
+
+- With a backup of 1 GiB the screen can stand still for about 2 seconds
+  just before the share sheet opens: the share plugin copies the whole
+  file first. The time grows with the size of the backup.
+- At the start of a restore into a large library (10,000 books) the
+  screen can stand still for about a second.
+
+### Changed
+- **A scan page says why it has no camera picture, and offers a way on
+  (review finding P4-M8; `PLAN.md`, D128 to D141; ADR 0030).** With the
+  camera refused, "Scan ISBN barcode", "Scan a library QR" and "Scan a
+  library card" showed an empty scan frame for good, without a word; a
+  phone without a camera got the same. Now the page says "Pitak is not
+  allowed to use the camera." with "Open settings", which opens Pitak's
+  own page of the phone's settings, and tries the camera again by itself
+  on the way back; or "This phone has no camera."; or "The camera did not
+  start." with "Try again". The ISBN scan page also offers "Enter it by
+  hand": from a form it closes the scan page, from the Library's "Scan to
+  add" it opens the "Add to library" sheet.
+  - The cover camera says the same: "Pitak is not allowed to use the
+    camera." with "Open settings" in the bar (six seconds), or "This
+    phone has no camera."; everything else keeps "Could not capture a
+    photo.".
+  - The scanner's switch-camera button is gone, and its light button has
+    words for a screen reader ("Turn on the light", "Turn off the
+    light"). The button's icon, which was one tap behind the light, now
+    follows it.
+  - Both scan pages show the camera through one shared widget
+    (`CameraScanView`); a test keeps every other file under `lib/` from
+    importing the scanner package. One test file runs the scanner
+    package's real widget over a stand-in camera and holds what the app
+    relies on in it.
+  - `camera`, the plugin the scanner is built on, is now a named
+    dependency (it was in the lock file already, at the same version;
+    nothing new is downloaded). The app asks it which cameras the phone
+    has. The scanner package stays at 2.3.0; its update is planned
+    separately.
+  - Privacy: no new permission (the list in
+    `android/merged-permissions.txt` is unchanged). "Open settings" tells
+    the phone's settings app the app's own package name and nothing
+    else; nothing leaves the phone. The app shows and logs nothing a
+    plugin reports. `PRIVACY.md` now names the QR scans under "Camera".
+  - Known limits: the page tries again by itself only after its own
+    "Open settings"; the cover camera does not try again by itself; the
+    front camera can no longer be switched to for scanning; "This phone
+    has no camera." was not seen on a device (ADR 0030).
+  - Seen in an emulator with Android 16 on 2026-11-21, also with the font
+    at its largest and on a screen 320 dp wide, where every button keeps
+    its words on one line. On a phone with Android 14 the same day, in a
+    debug build: a real barcode read, the torch and its icon together, the
+    refused states, and the way through the settings and back; looked at
+    and accepted by the maintainer. Not tried: the app lock on the way
+    back from the settings, a library QR being read, a screen reader.
+- **"Mark returned" where the item is handed back, and a return can be
+  taken back (review finding P4-M3 and, in part, P4-m5; `PLAN.md`, D103
+  to D114; ADR 0029).** A loan could be marked returned only on the
+  borrower's page, and a wrong tap could not be undone. The button now
+  says "Mark returned" and stands on the loan card of Borrowed Items, on
+  the item's page (one line for each loan of the item that is out, "Lent
+  to Asha · due 12 November 2026") and on the borrower's page. After a
+  return a bar says "Marked returned." and offers "Undo" for six seconds.
+  Later, every returned loan under "History" on the borrower's page has
+  "Not returned", which asks first. A return is taken back only while a
+  copy of the item is still free: if the item was lent again in the
+  meantime, Pitak says so and changes nothing.
+  - The loan list is gone from the Edit borrower form. The borrower's page
+    shows the same loans, with their titles.
+  - Privacy: the item's page names a borrower only while the vault is
+    unlocked. The bar and the question name neither a borrower nor an
+    item, and the bar leaves the screen when the vault is locked. Nothing
+    new is stored, sent or logged.
+  - The in-app guide "Lending and the borrowers vault" names the three
+    places and both ways back.
+  - Known limit: while the vault writes, "Undo" and "Not returned" show
+    no sign of working. In a release build on a phone that wait was
+    found acceptable in practice (ADR 0029; `PLAN.md`, D125).
+  - Seen in an emulator with Android 16 on 2026-11-20, also with the
+    font at its largest and on a screen 320 dp wide: the words of the
+    button take one line everywhere but on the loan card of that narrow
+    screen at the largest font, where they take two. A screen reader was
+    not tried. On a phone with Android 14 it was looked at and accepted
+    by the maintainer the same day, in a debug build.
+- **A form asks before Back throws away what was typed (review finding
+  P4-M1; `PLAN.md`, D93 to D101; ADR 0028).** On the nine forms (book,
+  other item, magazine title, issue, wishlist entry, borrower, lend,
+  reminder template, and "Basic info" of Publish), Back with unsaved input
+  now asks "Discard changes?", with "Keep editing" and "Discard". An
+  untouched form, or one where the input was put back, leaves at once.
+  While a save runs, Back waits. "Basic info" keeps what was typed when
+  another tab is shown, and asks from every tab. On Android 16 these
+  screens show no back preview. Seen in an emulator with Android 16 and on
+  a phone with Android 14 on 2026-11-20.
+- **The Library screen says when the borrowers vault is locked (review
+  finding P4-M4; `PLAN.md`, D84 to D91).** After every app start the vault
+  is locked, and the list then cannot mark what is lent out: a lent item
+  looked like one on the shelf, and nothing on the screen said why. While a
+  vault exists and is locked, one line between the filter chips and the
+  list now says "Unlock the borrowers vault to see which items are lent
+  out.", with a button "Unlock" that opens the vault screen. The line
+  stays when the list scrolls and cannot be hidden. In the drawer the lock
+  of "Borrowers vault" is open while the vault is unlocked (a screen reader
+  says "Unlocked").
+  - Privacy, accepted with D84: anyone who sees the Library screen now
+    learns, without a tap, that a vault exists and is locked. The line is
+    driven by the vault's state alone (the provider `loanStatusHidden`),
+    is the same sentence for every locked vault, and is not shown while
+    the state is not known. `SECURITY.md`, `README.md` and `PRIVACY.md`
+    name it as a known limit.
+  - No golden picture was added (D89); the look was judged on a phone on
+    2026-11-19, where the sentence takes two lines.
+- The in-app guide "Backup, restore, export, import" names the notice:
+  "Make a backup" has three steps, "Restore on a new phone" four (D55).
+- ADR 0026 records the limits of a backup, backup and restore from
+  files, the app's own picker, the size of a photographed cover, the
+  notice, and the known limits that were accepted. `README.md`,
+  `SECURITY.md`, `PRIVACY.md` and `docs/ARCHITECTURE.md` follow it.
+- **Before a backup and before a restore Pitak says what the run needs
+  and what the phone has (BR9; `PLAN.md`, D5 and D48 to D54).** A tap on
+  "Create backup" or "Restore" first opens one dialog: how much free
+  storage and memory the run needs, how much this phone has, and whether
+  that is enough, tight or not enough. It only informs: the button that
+  starts the run is there whatever it found, also while the figures are
+  still being read and when they could not be read (on a device without
+  the Android code it says so).
+  - Storage is "enough" with the need plus 20% free, and at least 100 MB
+    more than the need; "not enough" below the need; "tight" in between.
+    A backup is counted with twice the size of the library on disk (its
+    file, and the copy the share sheet's plugin makes); a restore with
+    what it writes after the chosen file has been copied. Both are
+    estimates and say "about".
+  - Memory is counted with 100 MB for either run and judged by Android's
+    own low-memory mark.
+  - The figures come from a new channel without arguments
+    (`DeviceResourcesChannel.kt`, in both flavours:
+    `StatFs.getAvailableBytes()` and `ActivityManager.getMemoryInfo()`).
+    No permission is needed. They are shown once and never stored,
+    logged or sent.
+  - The two sizes of a line share one unit when both reach the same
+    unit, and each has its own otherwise ("needs about 18.0 MB. This
+    phone has 12.0 GB free.").
+- **A restore asks before it replaces the library (the "one tap" half of
+  P4-M5).** On the Restore page that dialog is also the confirmation: it
+  says that the books, wishlist and cover pictures on the phone are
+  replaced, and the restore starts only from its own "Restore" button.
+  The keyboard's Done key in the passphrase field opens the dialog too
+  and no longer restores by itself. Cancel, Back and a tap outside leave
+  the page as it was, the typed passphrase included. The red box on the
+  page is unchanged.
+- **A backup holds up to 10,000 cover pictures and 1 GiB of content**
+  (before: 4,086 and 500 MiB; `BackupLimits.current`). With the ten other
+  entries that is 10,010 entries, and a backup file of at most 1,028 MiB.
+  The caps per part did not change: 4 MiB per cover, 200 MiB per
+  database. Backup and restore work from files (below), so the memory
+  they need does not grow with the size: on a computer a backup of
+  10,000 covers and about 1 GiB is written with about 70 MB and read
+  back with about 58 MB. On a phone, at the old limits, a restore needed
+  the size of the backup once more in free storage and a backup twice
+  its size while it is shared.
+- **A backup above the old limits does not open in 1.9.7 or older.**
+  Such a version says "This file doesn’t look like a valid Pitak
+  backup." Update Pitak on the other phone before restoring there; the
+  create-backup page says so.
+- **An older backup that no version could restore may now restore.**
+  Up to 1.9.7 the writer had no limits, so a library with more than
+  about 4,086 covers got a backup the reader refused. Such a backup is
+  now read back when it has at most 10,010 entries and 1 GiB of content.
+- **The Restore page tells "holds more than a backup can" from
+  "damaged" (P4-m19).** A file beyond the limits used to get "This file
+  doesn’t look like a valid Pitak backup." Now: "This file holds more
+  than a Pitak backup can. A backup can hold 10,000 cover pictures.", the
+  same with "A backup can hold 1.0 GB.", or "One part of this file is
+  larger than a Pitak backup allows." A file above the file cap keeps
+  "This file is too large to be a Pitak backup. A backup file can be at
+  most 1.0 GB."; a damaged file keeps its sentence. The ZIP reader's
+  refusals carry a kind (`ZipRefusal`), which `restoreRefusalFailure`
+  turns into `BackupTooLargeFailure` with the limit from `BackupLimits`.
+  The number in a sentence is the app's own; nothing from the file is
+  shown.
+- **The Restore page no longer shows an earlier file's sentence while
+  the next file is copied (D46).** After a file that could not be used
+  (one that was refused, or a pick that failed), its sentence stood
+  under "Copying the file…" until the next file had been copied, as if
+  it were about that one: about five seconds with a backup of 1 GiB on a
+  phone. It is not shown while a file is being chosen and copied. A
+  pick that is cancelled brings it back: the page is then as it was.
+- **Import and Merge choose their file through the app's own picker:**
+  the one the Restore page uses (`DocumentPicker`,
+  `PickedDocumentChannel.kt`). It copies the chosen document into the
+  app's private temporary folder and stops at 64 MiB, the cap the parsers
+  have for a text. The controller reads that copy (port
+  `PickedDocumentReader`) and removes it on every way out; one function
+  holds the copy from "picked" to "removed" (`pickAndReadText`). The
+  pages no longer see a file or its bytes: they call
+  `ImportController.importFile()` or `MergeController.mergeFile()` and
+  show a sentence when no file was taken. The picker offers every file,
+  as it does for a restore; a file of the wrong kind is turned away with
+  a sentence. Where the app's Android code is missing (a desktop run
+  while developing), choosing a file answers "not available"; Import
+  still takes pasted text there.
+- **Import and Merge say why a file was not taken:** too large (the
+  sentence names the 64 MB), could not be read, could not be copied to
+  the phone, no picker on this device, or something else went wrong. The
+  last four are the Restore page's sentences, kept in one place
+  (`document_pick_messages.dart`). Before, both pages had two sentences
+  for everything.
+- **While the picker is open the page is busy:** Import shows its
+  spinner and both buttons are off; Merge shows "running", and a choice
+  or review rows of an earlier merge are hidden until the picker is
+  closed. When the picker is closed without a choice, the page shows
+  again what it showed before.
+- **A refused file's sentence does not stand next to an older result.**
+  Import shows the sentence alone; before, the "Import complete" of the
+  file before stayed directly under it. On Merge the sentence goes with
+  the next thing the user does (Join, a confirmed Replace, a review
+  row); before, it stayed above "Merge complete".
+- `PRIVACY.md` (item 7) and `README.md` say that a file chosen for
+  Import or Merge is read from a private temporary copy that is removed
+  as soon as it has been read, and that the copies earlier versions left
+  in the cache folder are removed at the first start.
+- `bounded_file_read.dart` reads a file by its path with `dart:io`
+  (`readFileBounded`); the cover reader uses it as before. The rule
+  "count what really arrives" is a function of its own
+  (`collectBounded`).
+- The states of the Merge page moved, unchanged, from
+  `merge_controller.dart` to `merge_ui_state.dart` (the file had reached
+  the 500-line ceiling).
+- **Restore reads the backup from a file, off the screen's thread
+  (P3-B3):** the Restore page chooses the file through the app's own
+  Android code (`PickedDocumentChannel.kt`, port `DocumentPicker`), which
+  copies it into the app's private temporary folder under the size cap of
+  a backup file. The `file_selector` plugin loaded the whole file into
+  memory before any check could run. `RestoreBackup` takes a path and runs
+  two worker isolates: one checks the archive and takes the manifest, the
+  small entries and the three databases (`restore_archive_reader.dart`);
+  after the vault unlock and the catalogue write, the other unpacks each
+  cover straight into the new data generation
+  (`restore_covers_builder.dart`). What a restore holds in memory no
+  longer grows with the backup. All-or-nothing is unchanged.
+- **The Restore page says what happens (P4-M7):** a line while the chosen
+  file is copied; a sentence of its own when the file is too large, could
+  not be read, could not be copied, or the device has no picker; "Cover
+  1,234 of 9,000" while covers are written. After a failed restore the
+  chosen file is kept while the page is open, so a wrong passphrase can
+  be typed again without choosing the file again. After a restore that
+  succeeded the page forgets the file.
+- **A cover picture above its size cap inside a backup no longer refuses
+  the restore:** it is left out, everything else is restored, and the
+  page names the items that show it (first three titles, then "and N
+  more"). The website publishing record keeps a local cover source only
+  for covers that were written.
+- **A backup is written straight to a file (P3-B1):** `packBackupZip`
+  stores one cover at a time and feeds each database from its file, in a
+  folder of the build's own under the app's temporary folder. The page
+  shares the file by path under the name
+  `Pitak-backup-<date>-<time>.pitabak` and removes it when the share call
+  has returned. Each of the two SQLite files of a backup is written in
+  one transaction. "Cover 1,234 of 9,000" under the button while covers
+  are packed.
+- **The backup writer refuses what the reader would refuse (P1-M1):** a
+  library that does not fit a backup is refused before the ZIP is built,
+  with one sentence that names the limit and both numbers; before, it got
+  a backup that could not be restored. One value, `BackupLimits`, holds
+  the numbers for both sides. A cover file above the per-cover cap is
+  left out of the backup and its items are named.
+- **Photographed covers are stored at 240×360 at most, JPEG quality 70**
+  (`PhotoCoverRecipe`; before: 400×600, quality 80). Covers that are
+  already stored are not touched; the library logo and downloaded covers
+  keep their sizes.
+- **The create-backup page says that a backup made with this version may
+  not open in an older version of Pitak.** An older backup always opens
+  in a newer one; a test restores a frozen backup written by 1.9.7.
+- **Dependencies:** `archive` 4.6.0, `image` 4.12.0, `pdf` 3.13.1,
+  `flutter_local_notifications` 22.3.3.
+
+### Security
+- **The borrowers vault is built on SQLCipher 4.20.0 with SQLite 3.54.1,
+  and the exception for RUSTSEC-2026-0459 has ended (P2-M4).** The Rust
+  core moves from `rusqlite` 0.32 and `libsqlite3-sys` 0.30 (SQLCipher
+  4.5.7 on SQLite 3.45.3) to `rusqlite` 0.43 and `libsqlite3-sys` 0.40.
+  SQLite 3.54.0 closed the fault of that advisory (CVE-2026-119375: a
+  crafted database with a `-wal` file of another page size). The
+  time-boxed exception that release 1.9.7 carried in
+  `rust/osv-scanner.toml` and `rust/deny.toml`, with the end date
+  2026-12-09, is removed. No line of the vault's logic changed. ADR 0027
+  records the decisions (`PLAN.md`, D72 to D82).
+  - **A vault of the old library opens with the new one.** The committed
+    test vault, made in August with the old library, opens unchanged. In
+    an emulator a backup with a vault, made by a release build with the
+    old library, was restored by the new build: the borrower and the
+    loan are there, and a loan could be marked as returned. On a phone
+    the new build was installed over one with a vault of the old
+    library: the vault opens and takes a new borrower and a loan. And a
+    vault the new library has written is read by the old one (tried on
+    the Mac), so a step back would not lock anybody out.
+  - **New tests** (Rust: 37 become 45): the linked library is
+    asked for its versions and must be SQLite 3.54.0 or newer and
+    SQLCipher 4.x; a vault file must not be readable as it lies on disk
+    (no plain SQLite header, no borrower's name, contact or notes, no
+    schema text in its bytes); and `rust/Cargo.lock` must hold the crate
+    `sqlcipher-src` at the version and checksum that were checked.
+  - **Where the SQLCipher source comes from now.** Since `libsqlite3-sys`
+    0.39 it is a crate of its own, `sqlcipher-src`, young and with one
+    author. Its three compiled files were compared with what SQLCipher's
+    own signed tag `v4.20.0` builds: the same bytes, file for file.
+    `docs/RELEASING.md` §9 says how to repeat that when the crate moves.
+  - **New: the encryption library can write into the device's log.**
+    SQLCipher 4.5.7 wrote nothing. From 4.6.0 on it writes its own
+    errors and warnings to Android's log by default (tag `sqlcipher`),
+    and Pitak takes that default. In ordinary use it writes nothing:
+    seen in an emulator through the smoke test and a restore, and on a
+    phone. For a vault file damaged on purpose it wrote three lines
+    that name the failed check and the page number ("hmac check failed
+    for pgno=1"), and no path, no name, no statement and no key.
+    Promise P2 of `docs/ARCHITECTURE.md` names this as its one
+    exception.
+  - `rust/deny.toml` allows two more licenses for `sqlcipher-src` alone
+    (`blessing`, SQLite's own notice, and `WTFPL`, of a library that
+    lies in the crate and is not compiled into the app); `BSD-2-Clause`
+    leaves the list with the crates that used it. `rust/Cargo.lock`
+    names four crates for web browsers that no build compiles; a comment
+    in `rust/Cargo.toml` says why.
+  - Not tried: the APK as a store publishes it (the looks used a release
+    build of this repository and debug builds), a phone other than the
+    one at hand, and a damaged vault on a release build. The catalogue's
+    SQLite on the Dart side is another copy of SQLite and is not touched
+    by this change.
+- **The app no longer declares the microphone or the shared-storage
+  permissions (P1-M2).** The camera plugin (`camera_android_camerax`)
+  brought `RECORD_AUDIO` and `WRITE_EXTERNAL_STORAGE` into the app's merged
+  manifest, the build tools added `READ_EXTERNAL_STORAGE` because of the
+  second, and the plugin marked a camera as required hardware (the
+  microphone permission made a microphone required too). Pitak used none
+  of it: the scanners read the camera's picture without sound, a cover
+  photo is taken by the phone's own camera app, and nothing in the app
+  ever asked for the three permissions, so no install held them. But
+  `PRIVACY.md` says "no access to your … microphone" and "no broad or
+  shared-storage access", and the app's list of permissions said
+  otherwise. The app manifest now removes the three, marks the camera as
+  optional (`camera.any`, and `camera.autofocus` as Android's reference
+  asks), and removes an entry of the image picker that asked Google Play
+  services for a photo picker module the app does not use (P2-n5; both
+  flavors). Read back from a built APK with `aapt2`. Not tried on Android
+  9 or older, where the storage permission was still in force: accepted
+  by reading, because a permission nobody was ever asked for was never
+  held. Seen on a phone on 2026-11-18 (OnePlus 9R, Android 14, a debug
+  build): the ISBN scanner reads, the QR scanner opens, a cover photo and
+  a picture from the gallery work as before, and the phone lists Camera
+  and Notifications for the app and no microphone. Before the change the
+  phone held the microphone and the storage permission as requested and
+  not granted.
+- **A plugin can no longer add a permission unseen.**
+  `android/merged-permissions.txt` lists every permission of the merged
+  manifest with where it comes from, and CI holds the release manifest of
+  both flavors to it (`tool/check_merged_manifest.py`, in the F-Droid
+  purity job): a permission that is not listed, a listed one that is gone,
+  a hardware feature that is required, or a `com.google.` name in the
+  F-Droid manifest fails the run. Until now a comment in the manifest
+  asked a person to compare the merged manifest after a plugin update.
+  `PRIVACY.md`, "Permissions and why", gained the entries it lacked
+  (biometrics, vibration).
+- **`flutter_secure_storage` is held on version 9 (P2-M3, the first
+  step).** On Android, version 11 of the package cannot read what version
+  9 stored; a release on version 10 has to reach users first. Dependabot
+  no longer proposes a major update of it, and
+  `test/architecture/secure_storage_major_pin_test.dart` fails when
+  `pubspec.lock` holds another major version, however it got there.
+  Nothing in the app changed.
+- **A file chosen for Import or Merge is under its size cap before any
+  of it is in memory.** Both pages took their file from the
+  `file_selector` plugin, which on Android read the whole document into
+  memory, on the main thread, before the app's own cap could run (the
+  same fault the Restore page was freed of in the stage before). The
+  app's picker refuses a document that announces more than the cap
+  before a byte is written, counts while it copies, and the read of the
+  copy counts again.
+- **The `file_selector` plugin is no longer part of the app.** Nothing
+  under `lib/` used it any more. `test/architecture/
+  document_picking_test.dart` keeps it out of `lib/`, of `pubspec.yaml`
+  and, for the parts that run on a phone, of `pubspec.lock`.
+- **The copies the plugin left behind are removed.** For every file
+  chosen through it, the plugin also wrote a plain copy into the app's
+  private cache folder and never removed it: library files chosen for
+  Import or Merge, and whole backups chosen for a restore in 1.9.7 and
+  before. Once after the update, at the first start, the app removes
+  them (`LegacyPickerCopies`, started by the Library screen): a folder
+  directly inside the cache folder whose name is a version 3 UUID in
+  lower case, the kind the plugin made, and which holds plain files
+  only. Its files are deleted, then the folder; nothing below it, and no
+  link is followed. A flag in the preferences is set when nothing is
+  left. Android only, by the real system (`Platform.isAndroid`).
+- **Merge no longer starts a second write.** While a Join or a Replace
+  was being written, another file could be chosen and merged at the
+  same time, and whichever ended last set what the page showed. A merge
+  is now refused while a choice is being applied, as it already was
+  while a review row was written, and the button is off.
+- **Stricter ZIP reading.** The app reads the ZIP container itself
+  (`zip_container.dart`) and takes only the inflater and the CRC from
+  `package:archive`. Refused now, where 1.9.7 accepted: a directory
+  record that does not fit inside the directory, a second end record, an
+  entry header that says "encrypted", a 64-bit size with its top bit set,
+  a deflate stream that does not reach its end mark. A restore
+  (`BoundedZipFile`) is stricter still: an entry must be exactly the size
+  it declares, its header must carry the directory's name, no entry may
+  use zip64, and every entry has the cap of its kind. No file the app's
+  writer makes breaks one of these rules.
+- **The app has one ZIP reader, and Import no longer unpacks anything.**
+  The reader that held a whole archive in memory (`BoundedZipExtractor`,
+  up to 500 MiB of unpacked content) is removed; its last caller was the
+  import of a bundle file (see "Removed"). The only ZIP the app opens is
+  a backup the user chose to restore, through the reader that works from
+  a file (`BoundedZipFile`). The domain layer imports no package for ZIP
+  work any more: `archive` left the allow-list of
+  `domain_purity_test.dart` (ADR 0009, third amendment).
+- **A restore unpacks only what the manifest announces and only names
+  the app writes.** A file meant to sit next to a database
+  (`books.db-wal` and its kind) is never unpacked. The covers step checks
+  the file again and refuses when its covers are not the ones the first
+  look listed.
+- **The temporary files of a backup and of a restore have one owner and
+  are removed:** the built backup, the private copy of a chosen backup
+  file and the unpacked databases lie under the app's temporary folder
+  and are removed when their work is over (the copy of a chosen file
+  stays for another try after a failed restore, while the page is open).
+  What a killed app left is swept at the next start (`RunFolders`),
+  including the work folders older versions kept under Documents. A
+  sweep never runs into a pick that is on its way.
+- **The borrowers vault goes into a backup only as a whole database
+  (P1-m1):** it is copied while no vault operation runs. When a SQLite
+  side file lies next to it (a write was cut off), the vault is left out
+  and the page says so and what to do.
+
+### Removed
+- The read-only vault archive viewer, which no screen could reach.
+- **The dependency `file_selector`** (with `file_selector_android`,
+  `file_selector_ios` and `file_selector_web`). Its desktop parts stay
+  in `pubspec.lock`: the desktop packages of `image_picker` ask for
+  them.
+- `ImportController.importBytes`: a picked file now comes in through
+  `importFile()`, and nothing else handed the controller bytes.
+- **Importing a Pitak bundle (`.zip`, `.pitabundle`) from a file.** A
+  bundle was a library file with its cover pictures inside, a format of
+  the retired Kotlin app; this app has never written one. Import takes
+  Pitak JSON and Goodreads CSV, as text or as a file. A ZIP that is
+  picked anyway is refused before it is read, with a sentence that says
+  what Import reads and that a backup (`.pitabak`) is loaded with
+  "Restore backup". "Restore from my published site" is not touched. The
+  JSON importer lost its bundle mode: a local cover reference in a JSON
+  file is always dropped.
+
+### Tests
+- The test that a ZIP made to unpack without limit is refused before
+  anything is unpacked no longer looks at a clock. Its bound of 200 ms
+  could not notice the unpacking it was there for (12 to 97 ms), and on a
+  busy machine it was passed with nothing unpacked. In its place
+  `test/architecture/package_zip_reader_test.dart` (6 tests) holds that no
+  code under `lib/` names a ZIP reader of `package:archive`.
+- Returns: 101 tests. The rule of taking a return back and the one
+  operation (`loan_return_test.dart`, `change_loan_return_test.dart`, the
+  session's tests); the gesture with its bar, "Undo" after the page is
+  gone and the bar's end at a lock (`loan_return_action_test.dart`); the
+  loan card as a row and as a grid card
+  (`borrowed_items_return_test.dart`); the item's page, where no name is
+  drawn unless the vault is unlocked now
+  (`catalogue_item_loans_test.dart`, `item_active_loans_test.dart`); the
+  borrower's page; and one that holds the guide to the buttons' own words.
+- The forms' leaving: 249 tests of the guard and the nine forms, 7 of the
+  two small moves that made room in the forms, and
+  `test/architecture/form_discard_guard_test.dart` (16), which holds a new
+  form to the guard.
+- `tool/check_merged_manifest.py` has 26 tests on small manifests the
+  tests write themselves: each refusal, the pass, and every case in which
+  the check cannot be made and therefore fails. CI runs them in the
+  Flutter job.
+- CI runs the Android unit tests (64 JUnit tests in both flavours since
+  BR9, 55 before) at the end of the F-Droid purity job.
+- The notice of BR9: its rules at every edge
+  (`resource_notice_test.dart`), every sentence word for word
+  (`resource_notice_messages_test.dart`), the dialog on the real
+  providers with a fake device and a fake library size
+  (`resource_notice_dialog_test.dart`: the button that starts the run
+  works in every state and for every verdict), and both pages (Cancel
+  starts nothing; a page that is gone while the dialog is open starts
+  nothing). The channel has nine JUnit tests
+  (`DeviceResourcesChannelTest.kt`). The tests of both pages go through
+  the dialog with one helper each.
+- The tests of the Import and Merge pages no longer replace the
+  `file_selector` plugin's platform object. They use the fake picker of
+  the restore tests (`test/support/fake_document_picker.dart`) and a
+  reader that reads at once (`fake_picked_document_reader.dart`); the
+  controller tests read the fake's copies with the real reader.
+- Three tests make a file unreadable or a folder read-only with `chmod`.
+  Each skips itself, with a message, where the account may read and
+  write everything.
+- The edges of a backup's limits are tested at the app's own numbers
+  (`backup_limits_edges_test.dart`): as many covers, entries and bytes
+  as a backup holds pass, and one more is refused, for the writer and
+  for the reader. The entries only state their size, so no test writes
+  1 GiB. A test builds and reads back a backup of 10,000 one-byte covers
+  with every other entry. By hand, with `tool/make_synthetic_backup.dart`:
+  backups of 10,000 covers (192 MB and 1,022 MB) made and read back, and
+  the writer's and the reader's refusals one step beyond.
+- `restore_page_test.dart`: three tests hold the next pick half-way and
+  look at the page then (the sentence of the file before is not there),
+  and after the pick was cancelled (it is there again).
+- `tool/zip_reader_memory_check.dart`: a check by hand that reading and
+  restoring a 1 GiB backup stays within a capped heap.
+- `tool/make_synthetic_backup.dart`: makes a backup of a chosen size out
+  of made-up books and cover pictures, with the app's own writer, for
+  the runs on a device. The reader of a restore looks at every file
+  before it is handed out, and the tool's tests restore one.
+- `tool/device_run_measure.py`: measures one backup or restore on a
+  device through `adb` (time, the app's largest memory, storage, crash
+  lines in the device log, leftover work files) and writes one table
+  row. It only reads on the device. CI runs its tests, which need no
+  device.
+- Every test reads a ZIP through the reader that ships
+  (`test/support/read_zip.dart`): each entry is taken twice, into memory
+  and into a file, and the two must agree. The cases for odd and hostile
+  archives are `zip_reader_cases_test.dart` and
+  `zip_container_verdicts_test.dart`.
+
 ## [1.9.7] - 2026-11 (tag `1.9.7`, versionCode 39)
 
 Release sentinel (`tool/release_build.sh --sentinel`):

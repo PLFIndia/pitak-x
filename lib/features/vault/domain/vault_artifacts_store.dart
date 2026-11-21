@@ -29,6 +29,34 @@ abstract interface class VaultArtifactsStore {
   /// key blob exists — a real vault is never deleted here. Idempotent.
   void discardOrphanDatabase();
 
+  /// True when a SQLite side file (`-journal`, `-wal` or `-shm`) lies next
+  /// to the vault database (backup rework BR4 rider 2).
+  ///
+  /// Why it matters (beginner note): SQLite keeps such a file while it
+  /// writes, and removes it when the write is done. A side file therefore
+  /// means one of two things: a write is under way right now, or a write
+  /// was cut off (the app was killed in the middle of it) and has not been
+  /// tidied up yet. In both cases the database file ALONE is not a whole
+  /// database, and a copy of it must not be trusted. Opening the vault
+  /// (unlocking it) tidies up a cut-off write.
+  ///
+  /// The check cannot tell a side file that matters from one SQLite would
+  /// simply throw away, so any of them counts (fail closed).
+  bool hasUnfinishedWrite();
+
+  /// Copies the encrypted vault database, as it is on disk right now, to
+  /// [targetPath]: a file in a folder the caller owns (backup rework BR4).
+  ///
+  /// The backup packs this copy instead of the live file, because nothing
+  /// else can write the copy while it is being read. Only the main database
+  /// file is copied, and the copy is the same ciphertext as the original.
+  /// The caller makes sure that no vault operation runs meanwhile
+  /// (`VaultIdleGate`) and that [hasUnfinishedWrite] is false.
+  ///
+  /// Completes with an error on IO failure (for example when the database
+  /// has vanished), so the caller can fail closed.
+  Future<void> snapshotDatabaseTo(String targetPath);
+
   /// Reads the wrapped-key blob, or null if no vault is set up.
   String? readBlob();
 

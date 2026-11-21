@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -6,18 +7,47 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/core/platform/device_cameras.dart';
+import 'package:pitaka/core/storage/run_folders.dart';
 import 'package:pitaka/core/theme/app_theme.dart';
+import 'package:pitaka/core/widgets/camera_scan_messages.dart';
 import 'package:pitaka/features/app_update/domain/app_update_policy.dart';
+import 'package:pitaka/features/backup/domain/backup_work_area.dart';
 import 'package:pitaka/features/library/domain/catalogue_item_page.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/library_query.dart';
 import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
 import 'package:pitaka/features/library/presentation/pages/library_page.dart';
+import 'package:pitaka/features/library/presentation/widgets/catalogue_item_row.dart';
+import 'package:pitaka/features/library/presentation/widgets/library_controls_row.dart';
+import 'package:pitaka/features/library/presentation/widgets/loan_status_hidden_banner.dart';
 import 'package:pitaka/features/periodicals/domain/repositories/periodical_repository.dart';
+import 'package:pitaka/features/vault/application/vault_session_controller.dart';
+import 'package:pitaka/features/vault/domain/entities/borrower.dart';
+import 'package:pitaka/features/vault/domain/entities/vault_data.dart';
+import 'package:pitaka/features/vault/domain/entities/vault_session_state.dart';
+import 'package:pitaka/features/vault/presentation/pages/vault_page.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../support/a11y.dart';
+import '../../support/fake_document_picker.dart';
+import '../../support/fake_scan_camera.dart';
+import '../../support/fake_vault_session.dart';
 import '../app_update/fake_app_update_service.dart';
+
+/// Counts the sweeps asked of it (backup rework BR4); touches no disk.
+class _CountingWorkArea implements BackupWorkArea {
+  int sweeps = 0;
+
+  @override
+  Future<Either<Failure, Unit>> sweep() async {
+    sweeps++;
+    return right(unit);
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
 
 /// In-memory repo: [getAll] returns [_all]; a search page returns only titles
 /// that contain the query (case-insensitive), mimicking the FTS5 contract
@@ -141,6 +171,8 @@ class _NoPeriodicals implements PeriodicalRepository {
 Widget _app(
   CatalogueItemRepository repo, {
   List<Override> extraOverrides = const [],
+  ThemeData? theme,
+  TransitionBuilder? builder,
 }) {
   return ProviderScope(
     overrides: [
@@ -154,9 +186,25 @@ Widget _app(
       // widget tests can settle (same override vault page tests use).
       nowTickProvider.overrideWith((ref) => 0),
     ],
-    child: const MaterialApp(home: LibraryPage()),
+    child: MaterialApp(
+      theme: theme,
+      builder: builder,
+      home: const LibraryPage(),
+    ),
   );
 }
+
+/// A phone's screen (the golden tests' size, 411 dp wide). Without it a
+/// widget test is 800 dp wide, where the Library screen draws its grid.
+void _usePhoneScreen(WidgetTester tester) {
+  tester.view.physicalSize = const Size(1080, 2400);
+  tester.view.devicePixelRatio = 2.625;
+  addTearDown(tester.view.reset);
+}
+
+/// Puts the vault session into [state] for one test (P4-M4).
+Override _vaultIn(VaultSessionState state) =>
+    vaultSessionControllerProvider.overrideWith(() => FixedVaultSession(state));
 
 Future<void> _enterQuery(WidgetTester tester, String query) async {
   await tester.enterText(find.byType(TextField), query);
@@ -179,6 +227,102 @@ void main() {
     CatalogueItem(id: 2, title: 'Dune', author: 'Herbert'),
     CatalogueItem(id: 3, title: 'Old Tales', removed: true),
   ];
+
+  // BR4: a backup that was killed half-way leaves a plain copy of the
+  // library in the app's temporary folder. The Library screen, the first
+  // screen of every start, has it removed: once, after the list has loaded.
+  testWidgets('BR4: stale backup files are swept once, after the list has '
+      'loaded', (tester) async {
+    final workArea = _CountingWorkArea();
+    final repo = _GatedRepo(books)..gate = Completer<void>();
+    await tester.pumpWidget(
+      _app(
+        repo,
+        extraOverrides: [
+          backupWorkAreaProvider.overrideWith((ref) async => workArea),
+        ],
+      ),
+    );
+    await tester.pump();
+    expect(workArea.sweeps, 0, reason: 'not before the first paint of rows');
+
+    repo.gate!.complete();
+    await tester.pumpAndSettle();
+    expect(workArea.sweeps, 1);
+
+    // Rebuilding the screen does not sweep again in the same app session.
+    await _enterQuery(tester, 'dune');
+    await _enterQuery(tester, '');
+    expect(workArea.sweeps, 1);
+  });
+
+  // BR6: the same for a restore that was killed half-way. It leaves the
+  // private copy of the chosen backup file and the databases unpacked from
+  // it; both are plain copies of a library.
+  testWidgets('BR6: what a killed restore left behind is swept once, after '
+      'the list has loaded', (tester) async {
+    final temp = Directory.systemTemp.createTempSync('library_sweep_test');
+    addTearDown(() => temp.deleteSync(recursive: true));
+    final picker = FakeDocumentPicker(Directory('${temp.path}/picked'));
+    final repo = _GatedRepo(books)..gate = Completer<void>();
+    await tester.pumpWidget(
+      _app(
+        repo,
+        extraOverrides: [
+          documentPickerProvider.overrideWith((ref) async => picker),
+          // A keeper of work folders over a folder that does not exist:
+          // its sweep has nothing to look at and touches no disk.
+          restoreWorkFoldersProvider.overrideWith(
+            (ref) async => RunFolders(
+              rootPath: '${temp.path}/restore_work',
+              prefix: 'run',
+            ),
+          ),
+        ],
+      ),
+    );
+    await tester.pump();
+    expect(picker.sweeps, 0, reason: 'not before the first paint of rows');
+
+    repo.gate!.complete();
+    await tester.pumpAndSettle();
+    expect(picker.sweeps, 1);
+
+    // Rebuilding the screen does not sweep again in the same app session.
+    await _enterQuery(tester, 'dune');
+    await _enterQuery(tester, '');
+    expect(picker.sweeps, 1);
+  });
+
+  // D33: the copies of chosen files that the old file picker left in the
+  // cache folder are removed from the same place, the same way. (What the
+  // clean-up itself does is tested in `legacy_picker_copies_test.dart`.)
+  testWidgets('D33: the clean-up of the old file picker\u2019s copies is '
+      'started once, after the list has loaded', (tester) async {
+    var started = 0;
+    final repo = _GatedRepo(books)..gate = Completer<void>();
+    await tester.pumpWidget(
+      _app(
+        repo,
+        extraOverrides: [
+          legacyPickerCopiesSweepProvider.overrideWith((ref) async {
+            started++;
+          }),
+        ],
+      ),
+    );
+    await tester.pump();
+    expect(started, 0, reason: 'not before the first paint of rows');
+
+    repo.gate!.complete();
+    await tester.pumpAndSettle();
+    expect(started, 1);
+
+    // Rebuilding the screen does not start it again in the same session.
+    await _enterQuery(tester, 'dune');
+    await _enterQuery(tester, '');
+    expect(started, 1);
+  });
 
   testWidgets('renders all books newest-first on load', (tester) async {
     await tester.pumpWidget(_app(_FakeBookRepo(books)));
@@ -222,6 +366,292 @@ void main() {
     expect(find.text('Copies: 3'), findsOneWidget);
     expect(find.textContaining(' out'), findsNothing);
     expect(find.byIcon(Icons.outbox), findsNothing);
+  });
+
+  // Review finding P4-M4 (decisions D84 to D87): after every app start the
+  // vault is locked and the rows cannot show what is lent out. The screen
+  // then says so in one line, which is a function of the vault's STATE alone
+  // and never of a loan.
+  group('P4-M4: the line for a locked vault', () {
+    const sentence = LoanStatusHiddenBanner.message;
+    // The banner the widget draws while it shows; the widget itself is
+    // always in the tree and takes no room otherwise.
+    Finder line() => find.byType(MaterialBanner);
+    // By key: the vault screen has an "Unlock" button of its own.
+    Finder unlockButton() => find.byKey(LoanStatusHiddenBanner.unlockKey);
+    // Book 1 has three copies and one is out; book 2 has one copy, and it
+    // is out.
+    const lentOut = VaultData(
+      borrowers: [Borrower(id: 1, name: 'Asha')],
+      loans: [
+        Loan(id: 1, itemId: 1, borrowerId: 1, lentDate: 0),
+        Loan(id: 2, itemId: 2, borrowerId: 1, lentDate: 0),
+      ],
+    );
+
+    testWidgets('a locked vault: the line is between the chips and the list', (
+      tester,
+    ) async {
+      _usePhoneScreen(tester);
+      await tester.pumpWidget(
+        _app(
+          _FakeBookRepo(books),
+          extraOverrides: [_vaultIn(const VaultLocked())],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // The words are written out HERE and nowhere else (D85): the other
+      // tests take them from the widget and would follow a change of them.
+      expect(
+        find.descendant(
+          of: line(),
+          matching: find.text(
+            'Unlock the borrowers vault to see which items are lent out.',
+          ),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: line(),
+          matching: find.widgetWithText(TextButton, 'Unlock'),
+        ),
+        findsOneWidget,
+      );
+      expect(unlockButton(), findsOneWidget);
+      final place = tester.getRect(line());
+      expect(
+        place.top,
+        greaterThanOrEqualTo(
+          tester.getRect(find.byType(LibraryControlsRow)).bottom,
+        ),
+      );
+      expect(
+        place.bottom,
+        lessThanOrEqualTo(
+          tester.getRect(find.byType(CatalogueItemRow).first).top,
+        ),
+      );
+    });
+
+    testWidgets('the line\u2019s button opens the vault screen', (
+      tester,
+    ) async {
+      SharedPreferences.setMockInitialValues(const {});
+      _usePhoneScreen(tester);
+      await tester.pumpWidget(
+        _app(
+          _FakeBookRepo(books),
+          extraOverrides: [_vaultIn(const VaultLocked())],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(unlockButton());
+      await tester.pumpAndSettle();
+
+      expect(find.byType(VaultPage), findsOneWidget);
+      expect(
+        find.textContaining('Enter your vault passphrase'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('the line stays when the list is scrolled to its end', (
+      tester,
+    ) async {
+      _usePhoneScreen(tester);
+      final many = [
+        for (var i = 1; i <= 40; i++) CatalogueItem(id: i, title: 'Book $i'),
+      ];
+      await tester.pumpWidget(
+        _app(
+          _FakeBookRepo(many),
+          extraOverrides: [_vaultIn(const VaultLocked())],
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(line(), findsOneWidget);
+      final before = tester.getRect(line());
+
+      await tester.scrollUntilVisible(
+        find.text('Book 40'),
+        400,
+        scrollable: _bookList(),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Book 1'), findsNothing, reason: 'the list scrolled');
+      expect(find.text(sentence), findsOneWidget);
+      expect(tester.getRect(line()), before);
+    });
+
+    testWidgets('no vault: no line', (tester) async {
+      _usePhoneScreen(tester);
+      await tester.pumpWidget(
+        _app(
+          _FakeBookRepo(books),
+          extraOverrides: [_vaultIn(const VaultUninitialized())],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('The Hobbit'), findsOneWidget);
+      expect(line(), findsNothing);
+      expect(find.text(sentence), findsNothing);
+    });
+
+    testWidgets('an unlocked vault: no line, and the rows show what is lent '
+        'out', (tester) async {
+      _usePhoneScreen(tester);
+      await tester.pumpWidget(
+        _app(
+          _FakeBookRepo(books),
+          // The session itself, not the counts: the rows get them through
+          // the real activeLoanCounts provider.
+          extraOverrides: [_vaultIn(const VaultUnlocked(lentOut))],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(line(), findsNothing);
+      expect(find.text(sentence), findsNothing);
+      expect(find.text('Copies: 3 · 1 out'), findsOneWidget);
+      expect(find.text('Not available'), findsOneWidget);
+    });
+
+    testWidgets('the vault\u2019s state not known yet: no line', (
+      tester,
+    ) async {
+      _usePhoneScreen(tester);
+      await tester.pumpWidget(
+        _app(
+          _FakeBookRepo(books),
+          extraOverrides: [
+            vaultSessionControllerProvider.overrideWith(
+              PendingVaultSession.new,
+            ),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // The app does not claim a locked vault it has not seen.
+      expect(find.text('The Hobbit'), findsOneWidget);
+      expect(line(), findsNothing);
+      expect(find.text(sentence), findsNothing);
+    });
+
+    // Decision D89: no new golden picture. The three pictures of this
+    // screen are made with a harness that, like this one, does not replace
+    // the vault; they stay as they are only if no line shows then.
+    testWidgets('the harness of the golden pictures (the vault not '
+        'replaced): no line', (tester) async {
+      _usePhoneScreen(tester);
+      await tester.pumpWidget(_app(_FakeBookRepo(books)));
+      await tester.pumpAndSettle();
+
+      expect(find.text('The Hobbit'), findsOneWidget);
+      expect(line(), findsNothing);
+      expect(find.text(sentence), findsNothing);
+    });
+
+    testWidgets('a locked vault and an empty library: the line is there', (
+      tester,
+    ) async {
+      _usePhoneScreen(tester);
+      await tester.pumpWidget(
+        _app(
+          _FakeBookRepo(const []),
+          extraOverrides: [_vaultIn(const VaultLocked())],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Your library is empty'), findsOneWidget);
+      expect(find.text(sentence), findsOneWidget);
+      expect(unlockButton(), findsOneWidget);
+    });
+
+    for (final (name, theme) in [
+      ('light', null),
+      // The shipped dark theme, so that contrast is checked on real colours.
+      ('dark', AppTheme.dark),
+    ]) {
+      testWidgets('meets accessibility guidelines with the line ($name)', (
+        tester,
+      ) async {
+        _usePhoneScreen(tester);
+        await tester.pumpWidget(
+          _app(
+            _FakeBookRepo(books),
+            extraOverrides: [_vaultIn(const VaultLocked())],
+            theme: theme,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // First that it is there: the guidelines pass for a missing line.
+        expect(find.text(sentence), findsOneWidget);
+        await expectMeetsA11yGuidelines(tester);
+      });
+    }
+
+    testWidgets('twice the text size with the line: nothing overflows', (
+      tester,
+    ) async {
+      _usePhoneScreen(tester);
+      await tester.pumpWidget(
+        _app(
+          _FakeBookRepo(books),
+          extraOverrides: [_vaultIn(const VaultLocked())],
+          builder: (context, child) => MediaQuery(
+            data: MediaQuery.of(
+              context,
+            ).copyWith(textScaler: const TextScaler.linear(2)),
+            child: child!,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text(sentence), findsOneWidget);
+      expect(unlockButton(), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    // Rule 4 of the design as a CHANGE of state: the tests above look at
+    // each state standing still.
+    testWidgets('unlocking takes the line away and shows what is lent out; '
+        'locking brings it back', (tester) async {
+      _usePhoneScreen(tester);
+      late FixedVaultSession session;
+      await tester.pumpWidget(
+        _app(
+          _FakeBookRepo(books),
+          extraOverrides: [
+            vaultSessionControllerProvider.overrideWith(
+              () => session = FixedVaultSession(const VaultLocked()),
+            ),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text(sentence), findsOneWidget);
+      expect(find.text('Not available'), findsNothing);
+
+      session.show(const VaultUnlocked(lentOut));
+      await tester.pumpAndSettle();
+      expect(find.text(sentence), findsNothing);
+      expect(line(), findsNothing);
+      expect(find.text('Not available'), findsOneWidget);
+
+      session.show(const VaultLocked());
+      await tester.pumpAndSettle();
+      expect(find.text(sentence), findsOneWidget);
+      expect(find.text('Not available'), findsNothing);
+    });
   });
 
   testWidgets('typing a query filters the list (debounced)', (tester) async {
@@ -343,6 +773,115 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Your library is empty'), findsOneWidget);
+  });
+
+  // Review finding P4-M8, decision D132: the Library's "Scan to add" has no
+  // ISBN field underneath. When the scan page has no camera picture, its
+  // "Enter it by hand" leads to the sheet that adds an item by hand.
+  testWidgets('"Scan to add" without a camera: "Enter it by hand" closes '
+      'the scan page and opens the "Add to library" sheet', (tester) async {
+    await tester.pumpWidget(
+      _app(
+        _FakeBookRepo(books),
+        extraOverrides: [
+          deviceCamerasProvider.overrideWithValue(
+            FakeDeviceCameras(answer: DeviceCameraAnswer.noCamera),
+          ),
+          appSettingsOpenerProvider.overrideWithValue(FakeAppSettingsOpener()),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Scan to add'));
+    await tester.pumpAndSettle();
+    expect(find.text('Scan ISBN barcode'), findsOneWidget);
+    expect(find.text(scanNoCameraSentence), findsOneWidget);
+    // The sheet's entries are not on the screen yet.
+    expect(find.text('Add book'), findsNothing);
+
+    await tester.tap(find.text(enterByHandLabel));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Scan ISBN barcode'), findsNothing);
+    expect(find.text('Add book'), findsOneWidget);
+    expect(find.text('Add other item'), findsOneWidget);
+    // No item was added and no form opened by itself.
+    expect(find.text('The Hobbit'), findsOneWidget);
+  });
+
+  testWidgets('"Scan to add" without a camera: Back from the scan page '
+      'opens no sheet', (tester) async {
+    await tester.pumpWidget(
+      _app(
+        _FakeBookRepo(books),
+        extraOverrides: [
+          deviceCamerasProvider.overrideWithValue(
+            FakeDeviceCameras(answer: DeviceCameraAnswer.noCamera),
+          ),
+          appSettingsOpenerProvider.overrideWithValue(FakeAppSettingsOpener()),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Scan to add'));
+    await tester.pumpAndSettle();
+    expect(find.text('Scan ISBN barcode'), findsOneWidget);
+
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+
+    expect(find.text('Scan ISBN barcode'), findsNothing);
+    expect(find.text('Add book'), findsNothing);
+  });
+
+  testWidgets('"Enter it by hand" when the Library screen itself is gone '
+      'by then opens nothing and throws nothing', (tester) async {
+    // The scan page lies over the app's first page. Should that first page
+    // be another one by the time of the tap, its old state must not be
+    // used.
+    final showLibrary = ValueNotifier<bool>(true);
+    addTearDown(showLibrary.dispose);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          deviceCamerasProvider.overrideWithValue(
+            FakeDeviceCameras(answer: DeviceCameraAnswer.noCamera),
+          ),
+          appSettingsOpenerProvider.overrideWithValue(FakeAppSettingsOpener()),
+          catalogueItemRepositoryProvider.overrideWith(
+            (ref) async => _FakeBookRepo(books),
+          ),
+          periodicalRepositoryProvider.overrideWith(
+            (ref) async => _NoPeriodicals(),
+          ),
+          nowTickProvider.overrideWith((ref) => 0),
+        ],
+        child: MaterialApp(
+          home: ValueListenableBuilder<bool>(
+            valueListenable: showLibrary,
+            builder: (_, show, _) => show
+                ? const LibraryPage()
+                : const Scaffold(body: Text('another first page')),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Scan to add'));
+    await tester.pumpAndSettle();
+    expect(find.text(enterByHandLabel), findsOneWidget);
+
+    showLibrary.value = false;
+    await tester.pumpAndSettle();
+    expect(find.byType(LibraryPage, skipOffstage: false), findsNothing);
+
+    await tester.tap(find.text(enterByHandLabel));
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('another first page'), findsOneWidget);
+    expect(find.text('Add book'), findsNothing);
   });
 
   testWidgets('the app-bar map button sits left of scan and opens the '
@@ -585,6 +1124,24 @@ Finder _bookList() => find.descendant(
   of: find.byType(CustomScrollView),
   matching: find.byType(Scrollable),
 );
+
+/// Fake whose page reads wait on [gate] until it is completed, so the screen
+/// can be looked at before the list has loaded.
+class _GatedRepo extends _FakeBookRepo {
+  _GatedRepo(super.all);
+  Completer<void>? gate;
+
+  @override
+  Future<Either<Failure, CatalogueItemPage>> page(
+    LibraryQuery query, {
+    required int limit,
+    int offset = 0,
+  }) async {
+    final waitFor = gate;
+    if (waitFor != null && !waitFor.isCompleted) await waitFor.future;
+    return super.page(query, limit: limit, offset: offset);
+  }
+}
 
 /// Fake whose SECOND page read waits on [gate], so the in-flight footer can
 /// be observed.

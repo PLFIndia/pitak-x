@@ -136,6 +136,34 @@ final activeLoanCountsProvider = AutoDisposeProvider<Map<int, int>?>.internal(
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef ActiveLoanCountsRef = AutoDisposeProviderRef<Map<int, int>?>;
+String _$loanStatusHiddenHash() => r'9b34dc8fe1f8f706fb7daa9ea52989d75d5983e0';
+
+/// True while a vault EXISTS and is LOCKED: the one state in which loans
+/// may exist and the library list cannot show them ([activeLoanCounts] is
+/// null). The Library screen then says so (review finding P4-M4, decision
+/// D84).
+///
+/// A function of the session state alone, never of loans (which cannot be
+/// read while locked): the line it drives is the same for every locked
+/// vault and so never tells whether a loan exists. False while the state is
+/// not known (loading, error): the app does not claim a locked vault it has
+/// not seen.
+///
+/// Copied from [loanStatusHidden].
+@ProviderFor(loanStatusHidden)
+final loanStatusHiddenProvider = AutoDisposeProvider<bool>.internal(
+  loanStatusHidden,
+  name: r'loanStatusHiddenProvider',
+  debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+      ? null
+      : _$loanStatusHiddenHash,
+  dependencies: null,
+  allTransitiveDependencies: null,
+);
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef LoanStatusHiddenRef = AutoDisposeProviderRef<bool>;
 String _$bookTitleHash() => r'33d89cdb3238dad5a0e5d8d62d59238c8aa7e0a2';
 
 /// Copied from Dart SDK
@@ -601,28 +629,5 @@ final screenCaptureProtectedProvider = AutoDisposeProvider<bool>.internal(
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef ScreenCaptureProtectedRef = AutoDisposeProviderRef<bool>;
-String _$openVaultFromArchiveHash() =>
-    r'7334e4b18b46429af479f790753432f8036db7d0';
-
-/// Read-only opener that unlocks + reads a vault from a `.pitabak` archive
-/// (writes nothing; stages the DB in a scratch dir under the app docs dir).
-///
-/// Copied from [openVaultFromArchive].
-@ProviderFor(openVaultFromArchive)
-final openVaultFromArchiveProvider =
-    AutoDisposeFutureProvider<OpenVaultFromArchive>.internal(
-      openVaultFromArchive,
-      name: r'openVaultFromArchiveProvider',
-      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
-          ? null
-          : _$openVaultFromArchiveHash,
-      dependencies: null,
-      allTransitiveDependencies: null,
-    );
-
-@Deprecated('Will be removed in 3.0. Use Ref instead')
-// ignore: unused_element
-typedef OpenVaultFromArchiveRef =
-    AutoDisposeFutureProviderRef<OpenVaultFromArchive>;
 // ignore_for_file: type=lint
 // ignore_for_file: subtype_of_sealed_class, invalid_use_of_internal_member, invalid_use_of_visible_for_testing_member, deprecated_member_use_from_same_package

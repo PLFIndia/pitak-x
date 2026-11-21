@@ -518,7 +518,9 @@ plain form, except the vault.
 **Make a backup**
 
 1. **☰ → Settings → Data → Create backup**.
-2. Tap **Create backup** and choose where to save the file.
+2. Tap **Create backup**. Pitak says how much storage and memory the backup
+   needs, and how much this phone has.
+3. Tap **Go on** and choose where to save the file.
 
 **Restore on a new phone**
 
@@ -526,6 +528,8 @@ plain form, except the vault.
 2. Tap **Choose .pitabak file** and pick it. Pitak shows what the file
    contains.
 3. If it contains a vault, enter that vault's passphrase. Tap **Restore**.
+4. Pitak says how much storage and memory the restore needs, and how much
+   this phone has. Tap **Restore** again to start.
 
 Restoring **replaces** this phone's books, wishlist, covers, identity and
 saved libraries with the backup's. It is all-or-nothing: if anything goes
@@ -573,8 +577,10 @@ without opening the vault.
 
 **Returns and reminders**
 
-- **☰ → Borrowers vault**, tap the borrower, then **Return** next to the
-  item.
+- When an item comes back, tap **Mark returned** next to the item in
+  **☰ → Borrowed Items**. The same button is on the item's page and on the
+  borrower's page. Tapped the wrong one? Tap **Undo** right away, or later
+  open the borrower's page and tap **Not returned** under **History**.
 - **☰ → Borrowed Items** lists every active loan; filter **Overdue**,
   **Due soon (72 hours)** or **No due date**. In the Library list, items
   missing details are marked **Needs info**.
@@ -724,7 +730,7 @@ have no books of its own.
 | Passphrase ≥ 8 chars, never stored, no reset | `VaultSessionController.minPassphraseLength`; vault page copy |
 | Biometric unlock is opt-in; app-lock is a screen cover, not encryption | `settings_page.dart` Security section; ADR 0006 |
 | No auto-lock | ADR 0006 |
-| Lend: existing/new borrower, optional due date; Return on the borrower's profile page (and on Edit); overdue / due soon live in Borrowed Items, missing metadata = **Needs info** badge in the Library list (Pending page retired, PR #26) | `lend_book_page.dart`, `borrower_profile_page.dart`, `borrowed_items_page.dart`, `catalogue_item_row.dart` |
+| Lend: existing/new borrower, optional due date; **Mark returned** on the Borrowed Items card, on the item's page and on the borrower's profile page (not on Edit any more), with **Undo** for six seconds and **Not returned** under History on the profile (2026-11-20, ADR 0029); overdue / due soon live in Borrowed Items, missing metadata = **Needs info** badge in the Library list (Pending page retired, PR #26) | `lend_book_page.dart`, `loan_return_action.dart`, `borrowed_loan_shared.dart`, `item_active_loans.dart`, `borrower_profile_page.dart`, `borrowed_items_page.dart`, `catalogue_item_row.dart` |
 | Lending rules = expandable card on the unlocked vault: limit per borrower, Warn / Refuse, header shows the rule in force; reminder templates = expandable **Reminder message** card on Borrowed Items | `lending_rules_card.dart`, `reminder_template_card.dart` |
 | Call / WhatsApp / Email buttons from phone/email fields | `borrower_profile_page.dart` |
 | Borrowed Items = one card per active loan, shared urgency/date rules, owner-less covers, strict reads, per-loan busy state and lock aborts | `borrowed_items_page.dart`; `BuildBorrowedItemsSnapshot`; `loan_status.dart`; ADR 0022 |

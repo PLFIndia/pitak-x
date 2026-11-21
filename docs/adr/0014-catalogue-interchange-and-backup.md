@@ -4,6 +4,9 @@
   (W5, the website publishing record — publish plan S11)
 - **Date:** 2026-10-21 (original magazines implementation plan, revision 5;
   decisions W1–W4)
+- **Read first:** since 2026-11-18 nothing of the retired Kotlin app is
+  honoured (ADR 0025). Where the text below names Kotlin-era archives, read
+  it as history: the formats stay, for Pitak's own released versions.
 
 ## Context
 

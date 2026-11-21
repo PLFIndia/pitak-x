@@ -21,10 +21,12 @@ library;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pitaka/core/di/providers.dart';
+import 'package:pitaka/core/widgets/discard_changes_guard.dart';
 import 'package:pitaka/features/library/domain/catalogue_rules.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/value_objects/item_details.dart';
 import 'package:pitaka/features/library/presentation/catalogue_save_messages.dart';
+import 'package:pitaka/features/library/presentation/maintainer_stamp.dart';
 import 'package:pitaka/features/library/presentation/widgets/form_cover_field.dart';
 import 'package:pitaka/features/periodicals/application/add_issue_controller.dart';
 import 'package:pitaka/features/periodicals/application/periodicals_controller.dart';
@@ -33,7 +35,6 @@ import 'package:pitaka/features/periodicals/domain/issue_cadence.dart';
 import 'package:pitaka/features/periodicals/presentation/widgets/add_issue_form_sections.dart';
 import 'package:pitaka/features/periodicals/presentation/widgets/form_rows.dart';
 import 'package:pitaka/features/periodicals/presentation/widgets/series_picker_field.dart';
-import 'package:pitaka/features/settings/application/settings_controller.dart';
 
 /// Form screen to add a new issue (or bound volume) to a series, or edit an
 /// existing one.
@@ -97,6 +98,36 @@ class _AddIssuePageState extends ConsumerState<AddIssuePage> {
 
   bool get _isEdit => widget.issue != null;
 
+  /// What the form held when it opened, plus what the app suggested by
+  /// itself since: Back asks before anything else is lost (ADR 0028).
+  late final OpenedValues _opened;
+
+  /// Every text controller: disposed together and read together.
+  List<TextEditingController> get _texts => [
+    _volume,
+    _issueNumber,
+    _label,
+    _copies,
+    _pages,
+    _location,
+    _notes,
+  ];
+
+  /// The "to" date as Save stores it: none unless this is a bound volume.
+  int? get _savedBoundUntil => _bound ? _boundUntil : null;
+
+  /// Everything Save would store, and whether a cover was taken or removed
+  /// on purpose or is still being stored.
+  List<Object?> _values() => [
+    for (final c in _texts) c.text,
+    _selectedUid,
+    _bound,
+    _issueDate,
+    _savedBoundUntil,
+    _coverDirty,
+    _coverPending,
+  ];
+
   @override
   void initState() {
     super.initState();
@@ -117,19 +148,12 @@ class _AddIssuePageState extends ConsumerState<AddIssuePage> {
     _selectedUid = issue?.periodicalUid ?? widget.periodical?.periodicalUid;
     // Add mode with a preselected series: prefill once the page settles.
     _prefillArmed = widget.issue != null;
+    _opened = OpenedValues(_values);
   }
 
   @override
   void dispose() {
-    for (final c in [
-      _volume,
-      _issueNumber,
-      _label,
-      _copies,
-      _pages,
-      _location,
-      _notes,
-    ]) {
+    for (final c in _texts) {
       c.dispose();
     }
     super.dispose();
@@ -153,7 +177,7 @@ class _AddIssuePageState extends ConsumerState<AddIssuePage> {
       volume: _parseCount(_volume),
       issueNumber: _parseCount(_issueNumber),
       issueDate: _issueDate,
-      boundUntil: _bound ? _boundUntil : null,
+      boundUntil: _savedBoundUntil,
       label: _trimToNull(_label),
     );
   }
@@ -177,7 +201,10 @@ class _AddIssuePageState extends ConsumerState<AddIssuePage> {
       latest: latest?.issue,
       frequency: periodical.frequency,
     );
-    setState(() {
+    // The suggestion goes into EMPTY fields only. It is not the user's input:
+    // `absorb` takes what it fills in as "opened", so Back does not ask
+    // about a form nobody touched.
+    void fill() {
       if (_volume.text.trim().isEmpty && suggestion.volume != null) {
         _volume.text = suggestion.volume.toString();
       }
@@ -199,7 +226,9 @@ class _AddIssuePageState extends ConsumerState<AddIssuePage> {
           lastCopies > 1) {
         _copies.text = lastCopies.toString();
       }
-    });
+    }
+
+    _opened.absorb(() => setState(fill));
   }
 
   /// A late response is valid only for the exact selection that requested it.
@@ -235,16 +264,6 @@ class _AddIssuePageState extends ConsumerState<AddIssuePage> {
     );
   }
 
-  /// The maintainer name from settings, or null when unset/blank (same rule
-  /// as the book form: attribute newly-added rows only).
-  String? _maintainerStamp() {
-    final name = ref
-        .read(settingsControllerProvider)
-        .maybeWhen(data: (s) => s.maintainerName, orElse: () => '')
-        .trim();
-    return name.isEmpty ? null : name;
-  }
-
   /// The form's own boundary checks (the use case re-checks everything —
   /// these messages just save a round trip). Returns the error text, or null
   /// when the input is complete enough to send.
@@ -273,7 +292,7 @@ class _AddIssuePageState extends ConsumerState<AddIssuePage> {
       return;
     }
     final controller = ref.read(addIssueControllerProvider.notifier);
-    final stamp = _maintainerStamp();
+    final stamp = maintainerStampOf(ref);
     final editing = widget.issue;
     if (editing == null) {
       await controller.save(_buildIssue(null, maintainerStamp: stamp));
@@ -339,7 +358,7 @@ class _AddIssuePageState extends ConsumerState<AddIssuePage> {
       }
     }
 
-    return Scaffold(
+    final page = Scaffold(
       appBar: AppBar(
         title: Text(_isEdit ? 'Edit issue' : 'Add magazine issue'),
       ),
@@ -462,6 +481,11 @@ class _AddIssuePageState extends ConsumerState<AddIssuePage> {
           ],
         ],
       ),
+    );
+    return DiscardChangesGuard(
+      hasChanges: () => _opened.changed,
+      saving: saving,
+      child: page,
     );
   }
 

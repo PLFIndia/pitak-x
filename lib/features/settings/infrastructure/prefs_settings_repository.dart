@@ -1,7 +1,6 @@
 /// `shared_preferences`-backed settings (infrastructure, AGENTS.md §3.3).
 ///
-/// Stores non-secret preferences only. Keys mirror Kotlin `AppPreferences`
-/// where practical so intent is obvious; values are stored as the enum name or
+/// Stores non-secret preferences only. Values are stored as the enum name or
 /// raw string. Reads fall back to defaults; nothing here is sensitive.
 library;
 
@@ -163,7 +162,7 @@ class PrefsSettingsRepository
   }
 
   /// Mints a 32-char lowercase-hex ID from 16 CSPRNG bytes (§6.4: never the
-  /// non-secure `Random()`). Matches the Kotlin shape accepted by `LibraryId`.
+  /// non-secure `Random()`). Matches the shape accepted by `LibraryId`.
   static String _mintLibraryId() {
     final rng = Random.secure();
     final buf = StringBuffer();

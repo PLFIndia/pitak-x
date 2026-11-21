@@ -65,7 +65,7 @@ extension JoinedCatalogueRowMapper on TypedResult {
 /// Translation from [CatalogueItem] to a Drift insert/update companion.
 extension CatalogueItemCompanionMapper on CatalogueItem {
   /// Domain entity → Drift companion. Computes the Unicode-aware sort shadows
-  /// (lowercase) the same way the Kotlin `BookMapper` does — NOT SQLite
+  /// (lowercase) in Dart — NOT with SQLite
   /// `LOWER()`, so non-ASCII scripts fold correctly.
   BooksCompanion toCompanion() => BooksCompanion(
     id: id == CatalogueItem.emptyId ? const Value.absent() : Value(id),

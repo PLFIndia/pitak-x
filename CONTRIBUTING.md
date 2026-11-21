@@ -34,6 +34,7 @@ fvm flutter analyze lib test integration_test                  # zero issues
 fvm dart format --set-exit-if-changed lib test integration_test
 fvm flutter test --coverage --exclude-tags golden              # green; produces lcov.info
 ( cd rust && cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo deny check && cargo test --release )
+( cd android && ./gradlew :app:testFdroidDebugUnitTest :app:testPlayDebugUnitTest )   # Android unit tests (JUnit); needs the network, `--offline` fails
 ```
 
 CI additionally checks the coverage floor, Fastlane files, both host

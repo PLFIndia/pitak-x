@@ -19,6 +19,7 @@ import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/core/images/image_downscaler.dart';
+import 'package:pitaka/features/library/domain/photo_cover_recipe.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 part 'form_cover_controller.g.dart';
@@ -37,7 +38,14 @@ class FormCoverController extends _$FormCoverController {
   Future<Either<Failure, String>> storeCapture(Uint8List rawBytes) async {
     // Worker isolate (N10-a): a fresh camera capture is a multi-megapixel
     // decode + resize; on the UI isolate that froze the form.
-    final jpeg = await ImageDownscaler.downscaleJpegAsync(rawBytes);
+    // The size and quality come from the one photo-cover recipe, shared with
+    // `BookCoverController`, so both capture paths store the same picture.
+    final jpeg = await ImageDownscaler.downscaleJpegAsync(
+      rawBytes,
+      maxW: PhotoCoverRecipe.maxWidth,
+      maxH: PhotoCoverRecipe.maxHeight,
+      quality: PhotoCoverRecipe.jpegQuality,
+    );
     if (jpeg == null) {
       return left(const ValidationFailure('image could not be decoded'));
     }

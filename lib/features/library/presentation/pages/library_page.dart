@@ -1,9 +1,9 @@
 /// Library list + search screen (presentation layer, AGENTS.md §3.1).
 ///
 /// Pure presentation: reads [LibraryController] state and forwards user input
-/// to it. No business logic, no direct repository/DB access. Mirrors the Kotlin
-/// `LibraryScreen` (search field, sort/filter controls, row list with covers,
-/// empty state).
+/// to it. No business logic, no direct repository/DB access. It has a
+/// search field, sort/filter controls, a row list with covers and an
+/// empty state.
 ///
 /// N10-d part 2: the list renders the controller's [LibraryWindow] — the rows
 /// loaded so far — and asks for the next window as the user nears the end
@@ -14,6 +14,8 @@
 /// the quick-add scan now routes through [RouteScannedBarcodeUseCase] (ADR
 /// 0013 D11) — the page only switches on the sealed [ScanRoute].
 library;
+
+import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -37,6 +39,7 @@ import 'package:pitaka/features/library/presentation/widgets/catalogue_item_row.
 import 'package:pitaka/features/library/presentation/widgets/empty_library_state.dart';
 import 'package:pitaka/features/library/presentation/widgets/library_controls_row.dart';
 import 'package:pitaka/features/library/presentation/widgets/library_menu_button.dart';
+import 'package:pitaka/features/library/presentation/widgets/loan_status_hidden_banner.dart';
 import 'package:pitaka/features/library/presentation/widgets/network_map_icon.dart';
 import 'package:pitaka/features/lookup/presentation/pages/scanner_page.dart';
 import 'package:pitaka/features/network/presentation/pages/network_page.dart';
@@ -90,10 +93,18 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
     final route = await ref.read(routeScannedBarcodeUseCaseProvider.future);
     if (!mounted) return;
     final scanned = await Navigator.of(context).push<String>(
-      MaterialPageRoute<String>(builder: (_) => const ScannerPage()),
+      MaterialPageRoute<String>(
+        // No ISBN field lies under this scan: "Enter it by hand" leads to
+        // the sheet that adds an item by hand (review finding P4-M8, D132).
+        builder: (_) => ScannerPage(afterEnterByHand: _addByHand),
+      ),
     );
     if (scanned == null || !mounted) return;
     await routeScannedBarcode(context, route, scanned);
+  }
+
+  void _addByHand() {
+    if (mounted) unawaited(showAddSheet(context));
   }
 
   @override
@@ -119,7 +130,18 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
     // keepAlive provider makes this a genuine one-shot; `listen` (not watch)
     // so the sweep's completion never rebuilds the page.
     if (booksAsync.hasValue) {
-      ref.listen(orphanCoverSweepProvider, (_, _) {});
+      ref
+        ..listen(orphanCoverSweepProvider, (_, _) {})
+        // Same one-shot pattern (backup rework BR4): remove what a backup
+        // left in the app's temporary folder when the app was killed in
+        // the middle of it. That file is a plain copy of the whole library.
+        ..listen(staleBackupWorkSweepProvider, (_, _) {})
+        // And the same for a restore (backup rework BR6): the private copy
+        // of a chosen backup file, and the databases unpacked from it.
+        ..listen(staleRestoreFilesSweepProvider, (_, _) {})
+        // Once after the update that removed the old file picker (decision
+        // D33): the copies of chosen files it left in the cache folder.
+        ..listen(legacyPickerCopiesSweepProvider, (_, _) {});
     }
 
     return Scaffold(
@@ -185,6 +207,9 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
             ),
           ),
           const LibraryControlsRow(),
+          // P4-M4: one line while a vault exists and is locked, because the
+          // rows cannot mark what is lent out then. Zero-height otherwise.
+          const LoanStatusHiddenBanner(),
           Expanded(
             child: booksAsync.when(
               loading: () =>

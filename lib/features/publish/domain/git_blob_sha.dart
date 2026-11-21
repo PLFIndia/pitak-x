@@ -1,6 +1,6 @@
 /// Local git blob SHA-1 (pure domain, AGENTS.md §3.1, #32).
 ///
-/// Port of Kotlin `GitBlobSha`. Git names a blob object by
+/// Git names a blob object by
 /// `sha1("blob " + <byteLength> + "\u0000" + <bytes>)` — exactly the `sha`
 /// GitHub's Git Data / Trees API reports for a file. Computing it locally lets a
 /// repeat publish decide "this file is unchanged, skip it" with zero network.

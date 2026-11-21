@@ -3,9 +3,13 @@
 /// Replaces the settings-specific `ScanLibraryQrPage`: every scan flow in the
 /// app (pairing with a maintainer, a hub adding a member by library card)
 /// needs the SAME camera plumbing with a DIFFERENT payload rule, so the rule
-/// is injected as [QrScanPage.accept] instead of hard-wired. Backed by
-/// flutter_zxing (zxing-cpp, FOSS — no MLKit); we only read codes, no frames
-/// are stored or transmitted.
+/// is injected as [QrScanPage.accept] instead of hard-wired. We only read
+/// codes, no frames are stored or transmitted.
+///
+/// The camera itself is the shared [CameraScanView] (review finding P4-M8):
+/// it owns the scanner package, and it says so when there is no camera
+/// picture (refused, no camera, did not start). A QR code cannot be typed,
+/// so this page offers no "Enter it by hand".
 ///
 /// The decision logic ([QrScanPage.decide]) is a pure static so the "which
 /// payloads does this screen take, and what does it say to the others" policy
@@ -14,7 +18,7 @@
 library;
 
 import 'package:flutter/material.dart';
-import 'package:flutter_zxing/flutter_zxing.dart';
+import 'package:pitaka/core/widgets/camera_scan_view.dart';
 
 /// What one scanned payload means for a [QrScanPage]. Sealed so the widget
 /// (and the tests) handle every case explicitly (AGENTS.md §5 style).
@@ -61,7 +65,7 @@ class QrScanPage<T> extends StatefulWidget {
   ///
   /// [buildScanner] replaces the camera widget — a test seam, the same
   /// injectable-seam style as `BoundedHttpFetcher(client:)`. Production code
-  /// leaves it null and gets the flutter_zxing [ReaderWidget].
+  /// leaves it null and gets the shared [CameraScanView].
   const QrScanPage({
     required this.title,
     required this.accept,
@@ -86,7 +90,8 @@ class QrScanPage<T> extends StatefulWidget {
   final bool Function(String raw)? isKnownOtherPayload;
 
   /// Test seam: builds the scanning surface, forwarding each decoded payload
-  /// string to the given callback. Null → the real camera [ReaderWidget].
+  /// string to the given callback. Null → the real camera
+  /// ([CameraScanView]).
   final Widget Function(void Function(String raw) onText)? buildScanner;
 
   /// The pure scan decision: accept → pop value; known-other → hint; anything
@@ -140,19 +145,10 @@ class _QrScanPageState<T> extends State<QrScanPage<T>> {
     }
   }
 
-  /// The production scanner: flutter_zxing's camera reader, restricted to QR
-  /// codes, forwarding only VALID decoded text (mirrors the old
-  /// `ScanLibraryQrPage` exactly).
-  Widget _defaultScanner(void Function(String raw) onText) => ReaderWidget(
-    codeFormat: Format.qrCode,
-    onScan: (code) {
-      final raw = code.text;
-      if (raw == null || !code.isValid) return;
-      onText(raw);
-    },
-    showGallery: false,
-    scanDelaySuccess: const Duration(milliseconds: 500),
-  );
+  /// The production scanner: the shared camera view, restricted to QR
+  /// codes. It forwards only VALID decoded text.
+  Widget _defaultScanner(void Function(String raw) onText) =>
+      CameraScanView(codes: CameraScanCodes.qrCode, onText: onText);
 
   @override
   Widget build(BuildContext context) {

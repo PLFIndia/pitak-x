@@ -1,8 +1,6 @@
 /// Open Library [IsbnLookupService] (infrastructure, AGENTS.md §3.3).
 ///
-/// Adapted from the Kotlin Pitak app's `OpenLibraryApi` +
-/// `OpenLibraryLookupService` (same author, retired codebase). Public, no-auth
-/// REST:
+/// Public, no-auth REST:
 ///  - ISBN: GET /api/books?bibkeys=ISBN:{isbn}&format=json&jscmd=data
 ///  - title: GET /search.json?title={q}&limit={n}
 ///

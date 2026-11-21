@@ -3,7 +3,7 @@
 /// Reads the library + wishlist and renders an export in the chosen
 /// [ExportScope] and [ExportFormat]. JSON is canonical + round-trippable (read
 /// by `PitakaJsonImporter`); CSV is a flat, spreadsheet-friendly library dump;
-/// PDF is a paginated, printable book-list catalogue (Kotlin parity, always the
+/// PDF is a paginated, printable book-list catalogue (always the
 /// LIBRARY list regardless of scope). Bundle (covers zip) is deferred —
 /// PLAN #24.
 ///
@@ -216,7 +216,7 @@ class ExportLibraryUseCase {
         );
       case ExportFormat.pdf:
         // The PDF is ALWAYS the library list (a "book list" is the catalogue),
-        // regardless of scope — mirrors Kotlin ExportUseCase.
+        // regardless of scope.
         final selection = pdfColumns ?? PdfColumn.defaultSelection;
         final columns = resolvePrintColumns(selection, defaultPdfLabels());
         final bytes = await _pdf.render(
@@ -357,16 +357,15 @@ class ExportLibraryUseCase {
   }
 }
 
-/// The Pitak attribution line drawn on every PDF page footer. Verbatim parity
-/// with the Kotlin `pdf_footer_attribution` string.
+/// The Pitak attribution line drawn on every PDF page footer.
 const String kPdfFooterAttribution =
     'Book records are generated using Pitak, a free personal and community '
     'library software developed by Parallel Line Foundation';
 
 /// Default English [PdfColumnLabels] for the PDF export.
 ///
-/// Header labels mirror Kotlin `pdf_col_*`; enum labels reuse the app's
-/// existing source-type / age-group wording; the date format matches Kotlin's
+/// Enum labels reuse the app's existing source-type / age-group wording;
+/// the date format is
 /// `d MMM yyyy` ("5 Jun 2026"). Kept here (application layer) so the pure
 /// domain plan + infrastructure renderer stay locale-agnostic.
 PdfColumnLabels defaultPdfLabels() => const PdfColumnLabels(
@@ -464,7 +463,7 @@ const List<String> _monthAbbr = [
   'Dec',
 ];
 
-/// `d MMM yyyy` (e.g. "5 Jun 2026"), matching Kotlin's PDF date format. A zero
+/// `d MMM yyyy` (e.g. "5 Jun 2026"), the PDF's date format. A zero
 /// epoch (no added-date recorded) renders blank. M15: an out-of-range value
 /// from a pre-M15 row also renders blank instead of throwing mid-export.
 String _formatDate(int epochMillis) {

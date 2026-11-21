@@ -1,7 +1,7 @@
 /// Read-only book detail screen (presentation layer).
 ///
-/// Parity with Kotlin `BookDetailScreen`: title + transliteration + author
-/// header, a "Removed" badge, then the labeled detail rows in the same order
+/// Shows: title + transliteration + author
+/// header, a "Removed" badge, then the labeled detail rows in this order
 /// (ISBN, publisher, published, genre, language, pages, shelf, quantity,
 /// source, source detail, age group, added date, added by) and a notes block.
 /// Edit + Remove/Restore actions.
@@ -39,6 +39,7 @@ import 'package:pitaka/features/library/domain/catalogue_rules.dart';
 import 'package:pitaka/features/library/domain/cover_owner.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/presentation/widgets/catalogue_item_actions.dart';
+import 'package:pitaka/features/library/presentation/widgets/cover_camera_message.dart';
 import 'package:pitaka/features/library/presentation/widgets/detail_row.dart';
 import 'package:pitaka/features/library/presentation/widgets/item_details_section.dart';
 import 'package:pitaka/features/periodicals/domain/issue_cover.dart';
@@ -211,7 +212,7 @@ class _ItemDetailBody extends ConsumerWidget {
             LendSection(book: book, session: session!),
           ],
           const SizedBox(height: 24),
-          // Labeled rows in the exact order of the Kotlin detail screen.
+          // Labeled rows, in a fixed order.
           DetailRow(label: 'ISBN', value: book.isbn),
           DetailRow(label: 'Publisher', value: book.publisher),
           DetailRow(label: 'Published', value: book.publishedYear?.toString()),
@@ -354,9 +355,10 @@ class _EditableCoverState extends ConsumerState<_EditableCover> {
         // above us re-renders with the new reference — nothing to keep here.
         (_) => _snack('Cover updated.'),
       );
-    } on Exception {
+    } on Exception catch (e) {
       // Plugin (camera/crop) failure only — pipeline errors are typed above.
-      _snack('Could not capture a photo.');
+      // A refused camera and a phone without one get their own sentence.
+      if (mounted) showCoverCameraFailure(context, ref, e);
     } finally {
       if (mounted) setState(() => _busy = false);
     }

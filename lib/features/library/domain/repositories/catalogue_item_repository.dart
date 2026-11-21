@@ -81,15 +81,15 @@ abstract interface class CatalogueItemRepository {
   Future<Either<Failure, CatalogueItem>> update(CatalogueItem book);
 
   /// Soft-deletes a book: sets `removed = true` and `removed_at = [at]`. The
-  /// row stays (visible-but-inert), mirroring Kotlin `markRemoved`. NOT a hard
+  /// row stays (visible-but-inert). NOT a hard
   /// delete — hard delete must purge vault loans (a vault-write op), so it is
   /// deferred to the vault-write tier.
   Future<Either<Failure, Unit>> markRemoved(int id, int at);
 
-  /// Clears the soft-delete flag on a book (Kotlin `restore`).
+  /// Clears the soft-delete flag on a book.
   Future<Either<Failure, Unit>> restoreRemoved(int id);
 
-  /// Permanently deletes the book row (Kotlin `delete`). The caller is
+  /// Permanently deletes the book row. The caller is
   /// responsible for purging the book's vault loans FIRST (a vault-write op);
   /// this only removes the Drift row. Idempotent: deleting a missing id is ok.
   Future<Either<Failure, Unit>> delete(int id);

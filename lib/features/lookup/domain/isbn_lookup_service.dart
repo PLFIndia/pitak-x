@@ -1,6 +1,6 @@
 /// Contract for an ISBN lookup provider (pure domain, AGENTS.md §3.1/§3.3).
 ///
-/// Mirror of Kotlin `IsbnLookupService`. Implementations live in
+/// Implementations live in
 /// `infrastructure/` (Open Library, Google Books) with a chained composer that
 /// runs them in fallback order over a cache. Every method degrades gracefully:
 /// network failure → `*NetworkError`, upstream shape mismatch → `NotFound` /

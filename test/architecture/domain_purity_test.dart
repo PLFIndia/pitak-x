@@ -56,15 +56,19 @@ void main() {
     /// Third-party packages verified PURE (no IO, no platform channels) and
     /// therefore acceptable in domain:
     ///  - `fpdart` — functional result types;
-    ///  - `crypto` — hashing (the Git blob SHA-1 is domain protocol logic);
-    ///  - `archive` — pure-Dart zip codec used by `bounded_zip_extractor`,
-    ///    whose decode LIMITS (byte caps, entry counts) are the domain's
-    ///    defensive policy. M05 kept it here on purpose: the extractor uses
-    ///    the package's pure-Dart `Inflate.stream` (not the `dart:io` native
-    ///    inflater) so the budgeted decode stays platform-free.
+    ///  - `crypto` — hashing (the Git blob SHA-1 is domain protocol logic).
     /// Rendering engines (`pdf`), path contexts (`path`), plugins and
     /// frameworks are all forbidden here (N14).
-    const allowedPackages = {'fpdart', 'crypto', 'archive'};
+    ///
+    /// `archive` was on this list until backup rework BR7, for the ZIP
+    /// reader that held an archive in memory. That reader is gone. The
+    /// domain reads a ZIP's structure with its own code
+    /// (`zip_container.dart`) and judges it with plain rules
+    /// (`zip_entry_rules.dart`); the inflater is called from infrastructure
+    /// (ADR 0009, amendment of 2026-11-13). Since `archive` 4 the package's
+    /// main library also exports `dart:io` classes, so it must not come
+    /// back here without that ADR being read again.
+    const allowedPackages = {'fpdart', 'crypto'};
 
     /// pitaka imports allowed from domain: other features' domain layers and
     /// the few pure cross-cutting core files domain code actually needs

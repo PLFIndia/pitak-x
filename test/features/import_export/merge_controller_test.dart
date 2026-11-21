@@ -7,14 +7,18 @@ library;
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/core/platform/document_picker.dart';
 import 'package:pitaka/features/import_export/application/merge_controller.dart';
 import 'package:pitaka/features/import_export/application/merge_library_use_case.dart';
+import 'package:pitaka/features/import_export/application/picked_text_file.dart';
+import 'package:pitaka/features/import_export/domain/import_limits.dart';
 import 'package:pitaka/features/import_export/infrastructure/pitaka_json_importer.dart';
 import 'package:pitaka/features/library/application/library_controller.dart';
 import 'package:pitaka/features/library/domain/catalogue_item_page.dart';
@@ -26,6 +30,7 @@ import 'package:pitaka/features/settings/application/settings_controller.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
 import 'package:pitaka/features/settings/domain/settings_repository.dart';
 
+import '../../support/fake_document_picker.dart';
 import '../library/replacement_test_guard.dart';
 import '../periodicals/application/periodical_fakes.dart';
 
@@ -39,6 +44,10 @@ class _FakeBooks implements CatalogueItemRepository {
 
   /// Test-only failure injection for [insertAll].
   Failure? insertAllFailure;
+
+  /// When set, [insertAll] parks until completed (a Join that is being
+  /// written).
+  Completer<void>? insertAllGate;
 
   /// Test-only failure injection for [update] (N07: a failed row resolution).
   Failure? updateFailure;
@@ -78,6 +87,8 @@ class _FakeBooks implements CatalogueItemRepository {
 
   @override
   Future<Either<Failure, int>> insertAll(List<CatalogueItem> books) async {
+    final gate = insertAllGate;
+    if (gate != null) await gate.future;
     final failure = insertAllFailure;
     if (failure != null) return left(failure);
     for (final b in books) {
@@ -191,6 +202,21 @@ class _FakeSettings implements SettingsRepository {
 void main() {
   const matchingId = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 
+  // The system's picker and the copy it makes, played by a fake that
+  // writes real files (decision D24). The copy is read by the REAL reader:
+  // these tests run on the real clock.
+  late Directory tmp;
+  late FakeDocumentPicker picker;
+
+  setUp(() {
+    tmp = Directory.systemTemp.createTempSync('merge_controller_test');
+    picker = FakeDocumentPicker(Directory('${tmp.path}/picked_documents'));
+  });
+
+  tearDown(() {
+    if (tmp.existsSync()) tmp.deleteSync(recursive: true);
+  });
+
   String exportJson({
     required String libraryId,
     List<Map<String, Object?>> books = const [],
@@ -206,7 +232,8 @@ void main() {
   /// page does). The merge use case is built over [books]/[guard] and the
   /// container's REAL `SettingsController` (over [settings]) as its
   /// `LibraryNamespace` — exactly the production wiring. The use case can be
-  /// parked on [gate], or replaced wholesale via [useCaseOverride].
+  /// parked on [gate], or replaced wholesale via [useCaseOverride]. With
+  /// [listen] false nobody listens, as after the Merge page was left.
   ProviderContainer makeContainer({
     _FakeBooks? books,
     _FakeSettings? settings,
@@ -214,6 +241,7 @@ void main() {
     FakeReplacementGuard? guard,
     Completer<void>? gate,
     Future<MergeLibraryUseCase> Function()? useCaseOverride,
+    bool listen = true,
   }) {
     final repo = settings ?? _FakeSettings(libraryId: matchingId);
     final sharedPeriodicals = periodicals ?? FakePeriodicals();
@@ -241,11 +269,14 @@ void main() {
         ),
         settingsRepositoryProvider.overrideWith((ref) async => repo),
         nowTickProvider.overrideWith((ref) => 0),
+        documentPickerProvider.overrideWith((ref) async => picker),
       ],
     );
     addTearDown(container.dispose);
-    final sub = container.listen(mergeControllerProvider, (_, __) {});
-    addTearDown(sub.close);
+    if (listen) {
+      final sub = container.listen(mergeControllerProvider, (_, __) {});
+      addTearDown(sub.close);
+    }
     return container;
   }
 
@@ -853,7 +884,8 @@ void main() {
       expect(done.review.single.status, isA<ReviewPending>());
     });
 
-    test('mergeText is refused while a resolution is in flight', () async {
+    test('a new merge is refused while a resolution is in flight, from a '
+        'text and from a file', () async {
       final books = localWithGodaan();
       final gate = Completer<void>();
       books.updateGate = gate;
@@ -864,14 +896,25 @@ void main() {
           .read(mergeControllerProvider.notifier)
           .resolve(0, MergeResolution.takeTheirs);
       await pumpEventQueue();
+      final whileResolving = container.read(mergeControllerProvider);
 
       await container
           .read(mergeControllerProvider.notifier)
           .mergeText(conflictingFile());
+      picker.willPick(utf8.encode(conflictingFile()));
+      final problem = await container
+          .read(mergeControllerProvider.notifier)
+          .mergeFile();
+
+      expect(problem, isNull);
+      expect(picker.caps, isEmpty, reason: 'the picker did not even open');
+      // `same`, not only "a MergeDone": a merge that was NOT refused would
+      // also end in a MergeDone, a new one. (Until 2026-11 this test asked
+      // for the type only, and passed with the guard switched off.)
       expect(
         container.read(mergeControllerProvider),
-        isA<MergeDone>(),
-        reason: 'the new pick was refused; still the same MergeDone',
+        same(whileResolving),
+        reason: 'the new merge was refused; still the same MergeDone',
       );
 
       gate.complete();
@@ -1007,6 +1050,308 @@ void main() {
       final done = container.read(mergeControllerProvider) as MergeDone;
       expect(done.review.single.status, isA<ReviewResolved>());
       expect(books.books.single.genre, 'Classic');
+    });
+  });
+
+  // Decision D24: what the CONTROLLER does between the tap on "Choose a
+  // library file" and the merge. The file's own way (pick, read, remove
+  // the copy) is tested in `picked_text_file_test.dart`.
+  group('a chosen file (D24)', () {
+    List<int> file(String text) => utf8.encode(text);
+
+    /// A file of THIS library with one new book: it merges at once.
+    String sameLibrary() => exportJson(
+      libraryId: matchingId,
+      books: [
+        {'bookUid': 'u2', 'title': '1984'},
+      ],
+    );
+
+    /// A file of ANOTHER library: the page has to ask Join or Replace.
+    String otherLibrary() => exportJson(
+      libraryId: 'b' * 32,
+      books: [
+        {'bookUid': 'u9', 'title': 'Their book'},
+      ],
+    );
+
+    test('mergeFile reads the picked file under the text cap, merges it and '
+        'removes the copy', () async {
+      final books = _FakeBooks([]);
+      final container = makeContainer(books: books);
+      picker.willPick(file(sameLibrary()));
+
+      final problem = await container
+          .read(mergeControllerProvider.notifier)
+          .mergeFile();
+
+      expect(problem, isNull);
+      expect(container.read(mergeControllerProvider), isA<MergeDone>());
+      expect(books.books.single.title, '1984');
+      // The picker was asked once, with the cap the parser has for a text.
+      expect(picker.caps, [ImportLimits.defaults.maxTextChars]);
+      expect(picker.caps.single, 64 * 1024 * 1024);
+      // The copy was a plain duplicate of the user's file: it is gone.
+      expect(picker.discarded, hasLength(1));
+      expect(picker.copiesOnDisk(), isEmpty);
+    });
+
+    const answers = <(DocumentPickResult, PickedFileProblem)>[
+      (DocumentPickTooLarge(), PickedFileProblem.tooLarge),
+      (DocumentPickUnreadable(), PickedFileProblem.unreadable),
+      (DocumentPickNotSaved(), PickedFileProblem.notSaved),
+      (DocumentPickUnavailable(), PickedFileProblem.unavailable),
+      (DocumentPickFailed(), PickedFileProblem.failed),
+    ];
+    for (final (answer, expected) in answers) {
+      test('${answer.runtimeType}: the page is told "${expected.name}", '
+          'nothing is merged, and the state is what it was', () async {
+        final books = _FakeBooks([]);
+        var useCasesAsked = 0;
+        final container = makeContainer(
+          books: books,
+          useCaseOverride: () {
+            useCasesAsked++;
+            throw StateError('no merge may start');
+          },
+        );
+        picker.willAnswer(answer);
+
+        final problem = await container
+            .read(mergeControllerProvider.notifier)
+            .mergeFile();
+
+        expect(problem, expected);
+        expect(container.read(mergeControllerProvider), isA<MergeIdle>());
+        expect(useCasesAsked, 0);
+        expect(books.books, isEmpty);
+      });
+    }
+
+    test('closing the picker says nothing and keeps a pending choice: Join '
+        'still works afterwards', () async {
+      final settings = _FakeSettings(libraryId: matchingId);
+      final books = _FakeBooks([]);
+      final container = makeContainer(books: books, settings: settings);
+      final controller = container.read(mergeControllerProvider.notifier);
+      await controller.mergeText(otherLibrary());
+      final pending = container.read(mergeControllerProvider);
+      expect(pending, isA<MergeNeedsDecision>());
+
+      // Nothing is scripted: the fake picker answers "cancelled".
+      expect(await controller.mergeFile(), isNull);
+
+      expect(picker.caps, hasLength(1), reason: 'the picker did open');
+      expect(container.read(mergeControllerProvider), same(pending));
+      await controller.applyJoin();
+      expect(container.read(mergeControllerProvider), isA<MergeDone>());
+      expect(books.books.single.title, 'Their book');
+    });
+
+    test('a file that is not taken keeps the review rows of the merge '
+        'before', () async {
+      final books = _FakeBooks([
+        const CatalogueItem(
+          id: 1,
+          itemUid: 'u1',
+          title: 'Godaan',
+          genre: 'Fiction',
+          addedDate: 1,
+        ),
+      ]);
+      final container = makeContainer(books: books);
+      final controller = container.read(mergeControllerProvider.notifier);
+      await controller.mergeText(
+        exportJson(
+          libraryId: matchingId,
+          books: [
+            {'bookUid': 'u1', 'title': 'Godaan', 'genre': 'Classic'},
+          ],
+        ),
+      );
+      final done = container.read(mergeControllerProvider);
+      expect((done as MergeDone).review, hasLength(1));
+
+      picker.willAnswer(const DocumentPickTooLarge());
+      expect(await controller.mergeFile(), PickedFileProblem.tooLarge);
+
+      expect(container.read(mergeControllerProvider), same(done));
+      // And the row can still be resolved.
+      await controller.resolve(0, MergeResolution.takeTheirs);
+      expect(books.books.single.genre, 'Classic');
+    });
+
+    test('"running" from the tap on; while the picker is open a second tap, '
+        'a text, a Join and a Replace are all refused', () async {
+      final books = _FakeBooks([]);
+      final container = makeContainer(books: books);
+      final controller = container.read(mergeControllerProvider.notifier);
+      await controller.mergeText(otherLibrary());
+      final pending = container.read(mergeControllerProvider);
+      expect(pending, isA<MergeNeedsDecision>());
+
+      final pickerOpen = Completer<void>();
+      picker.holdNextPick = pickerOpen;
+      final running = controller.mergeFile();
+      await pumpEventQueue();
+      expect(picker.caps, hasLength(1), reason: 'the picker is open');
+      expect(container.read(mergeControllerProvider), isA<MergeRunning>());
+
+      // Each returns at once and changes nothing. One that was NOT refused
+      // would open a second picker or write the catalogue.
+      expect(await controller.mergeFile(), isNull);
+      await controller.mergeText(sameLibrary());
+      await controller.applyJoin();
+      await controller.applyOverwrite();
+      expect(picker.caps, hasLength(1));
+      expect(books.books, isEmpty);
+      expect(container.read(mergeControllerProvider), isA<MergeRunning>());
+
+      // The picker is closed without a choice: the pending choice is back.
+      pickerOpen.complete();
+      expect(await running, isNull);
+      expect(container.read(mergeControllerProvider), same(pending));
+    });
+
+    // T10: until this stage a file could be chosen and merged while a Join
+    // or a Replace was still being written.
+    test('no merge starts while a Join is being written, from a file or '
+        'from a text', () async {
+      final settings = _FakeSettings(libraryId: matchingId);
+      final books = _FakeBooks([]);
+      final container = makeContainer(books: books, settings: settings);
+      final controller = container.read(mergeControllerProvider.notifier);
+      await controller.mergeText(otherLibrary());
+
+      final writing = Completer<void>();
+      books.insertAllGate = writing;
+      final joining = controller.applyJoin();
+      await pumpEventQueue();
+      final applying = container.read(mergeControllerProvider);
+      expect((applying as MergeNeedsDecision).applying, isTrue);
+
+      picker.willPick(file(sameLibrary()));
+      expect(await controller.mergeFile(), isNull);
+      await controller.mergeText(sameLibrary());
+
+      expect(picker.caps, isEmpty, reason: 'the picker did not even open');
+      expect(container.read(mergeControllerProvider), same(applying));
+      expect(books.books, isEmpty, reason: 'only the Join may write');
+
+      writing.complete();
+      await joining;
+      final done = container.read(mergeControllerProvider);
+      expect(done, isA<MergeDone>());
+      // The Join's own result, not one of a second merge.
+      expect(books.books.single.title, 'Their book');
+      expect(settings.libraryId, 'b' * 32);
+    });
+
+    test('the run survives its page while the picker is open: nobody '
+        'listens, and the file is still merged', () async {
+      final books = _FakeBooks([]);
+      final container = makeContainer(books: books, listen: false);
+      final pickerOpen = Completer<void>();
+      picker
+        ..holdNextPick = pickerOpen
+        ..willPick(file(sameLibrary()));
+
+      final running = container
+          .read(mergeControllerProvider.notifier)
+          .mergeFile();
+      await pumpEventQueue();
+      await container.pump();
+      expect(container.exists(mergeControllerProvider), isTrue);
+
+      pickerOpen.complete();
+      expect(await running, isNull);
+      expect(books.books.single.title, '1984');
+      expect(picker.copiesOnDisk(), isEmpty);
+    });
+
+    test('a teardown while the picker is open: the copy is still removed, '
+        'nothing is merged, and nothing throws', () async {
+      final books = _FakeBooks([]);
+      var useCasesAsked = 0;
+      final container = ProviderContainer(
+        overrides: [
+          mergeLibraryUseCaseProvider.overrideWith((ref) async {
+            useCasesAsked++;
+            throw StateError('no merge may start');
+          }),
+          documentPickerProvider.overrideWith((ref) async => picker),
+        ],
+      );
+      final pickerOpen = Completer<void>();
+      picker
+        ..holdNextPick = pickerOpen
+        ..willPick(file(sameLibrary()));
+
+      final running = container
+          .read(mergeControllerProvider.notifier)
+          .mergeFile();
+      await pumpEventQueue();
+      expect(picker.caps, hasLength(1), reason: 'the picker is open');
+
+      container.dispose();
+      pickerOpen.complete();
+      // Reading a provider, or setting state, on a disposed controller
+      // throws. The run must end without either reaching the caller.
+      expect(await running, isNull);
+
+      expect(picker.discarded, hasLength(1));
+      expect(picker.copiesOnDisk(), isEmpty);
+      expect(useCasesAsked, 0);
+      expect(books.books, isEmpty);
+    });
+
+    test('a picker that cannot be set up is a pick that failed, without '
+        'the private text of the error', () async {
+      final container = ProviderContainer(
+        overrides: [
+          documentPickerProvider.overrideWith(
+            (ref) => throw StateError('private path /data/user/0/secret'),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      final sub = container.listen(mergeControllerProvider, (_, _) {});
+      addTearDown(sub.close);
+
+      final problem = await container
+          .read(mergeControllerProvider.notifier)
+          .mergeFile();
+
+      expect(problem, PickedFileProblem.failed);
+      expect(container.read(mergeControllerProvider), isA<MergeIdle>());
+    });
+
+    test('bytes that are not UTF-8 reach the parser, which refuses them in '
+        "Merge's own words", () async {
+      final container = makeContainer();
+      picker.willPick([0xFF, 0xFE, 0xFD, 0x00, 0x01]);
+
+      final problem = await container
+          .read(mergeControllerProvider.notifier)
+          .mergeFile();
+
+      expect(problem, isNull, reason: 'the file was taken');
+      final state = container.read(mergeControllerProvider);
+      expect(state, isA<MergeFailed>());
+      expect((state as MergeFailed).failure, isA<ValidationFailure>());
+    });
+
+    test('a ZIP is handed to the parser like any other file: Merge has no '
+        'ZIP rule of its own', () async {
+      final container = makeContainer();
+      picker.willPick([0x50, 0x4B, 0x03, 0x04, 0, 0, 0, 0]);
+
+      final problem = await container
+          .read(mergeControllerProvider.notifier)
+          .mergeFile();
+
+      expect(problem, isNull);
+      expect(container.read(mergeControllerProvider), isA<MergeFailed>());
     });
   });
 }

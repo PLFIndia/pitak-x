@@ -66,39 +66,42 @@ void main() {
       expect(b.coverUrl, 'https://covers.openlibrary.org/b/id/1.jpg');
     });
 
-    test('drops LOCAL cover refs in plain JSON import', () {
+    test('drops LOCAL cover refs', () {
       final json = jsonEncode({
-        'schemaVersion': 3,
+        'schemaVersion': 4,
         'exportedAt': 0,
+        'periodicals': [
+          {
+            'periodicalUid': 'p1',
+            'title': 'Frontline',
+            'coverUrl': 'covers/series.jpg',
+          },
+        ],
         'books': [
           {'title': 'A', 'coverUrl': 'covers/uuid-1.jpg'},
           {'title': 'B', 'coverUrl': 'file:///data/app/covers/x.jpg'},
           {'title': 'C', 'coverUrl': 'https://covers.openlibrary.org/c.jpg'},
+          // Local-shaped and pointing out of the folder: dropped like any
+          // other local ref. The row itself is kept (BR7: the importer has
+          // no mode any more in which a local ref is carried on).
+          {'title': 'D', 'coverUrl': 'covers/../escape.jpg'},
         ],
         'wishlist': <dynamic>[],
       });
 
-      final books = importer.parse(json).items;
+      final payload = importer.parse(json);
+      final books = payload.items;
+      expect(books, hasLength(4));
       expect(books[0].coverUrl, isNull); // relative local dropped
       expect(books[1].coverUrl, isNull); // legacy file:// dropped
       // Allow-listed remote kept (M15: non-allow-listed https is rejected).
       expect(books[2].coverUrl, 'https://covers.openlibrary.org/c.jpg');
-    });
-
-    test('keepLocalCovers preserves local refs (bundle path)', () {
-      const bundleImporter = PitakaJsonImporter(keepLocalCovers: true);
-      final json = jsonEncode({
-        'schemaVersion': 3,
-        'exportedAt': 0,
-        'books': [
-          {'title': 'A', 'coverUrl': 'covers/uuid-1.jpg'},
-        ],
-        'wishlist': <dynamic>[],
-      });
-      expect(
-        bundleImporter.parse(json).items.single.coverUrl,
-        'covers/uuid-1.jpg',
-      );
+      expect(books[3].coverUrl, isNull);
+      expect(payload.periodicals.single.coverUrl, isNull);
+      // Dropping a local ref is not an error and not worth a warning: every
+      // export of a library with photographed covers holds them.
+      expect(payload.parseErrors, isEmpty);
+      expect(payload.warnings, isEmpty);
     });
 
     test('out-of-range numbers (1e400) never throw', () {
@@ -332,34 +335,16 @@ void main() {
         },
       );
 
-      test(
-        'wishlist local cover refs are dropped in plain JSON (like books)',
-        () {
-          final payload = importer.parse(
-            jsonWith(
-              wishlist: [
-                {'title': 'Local ref', 'coverUrl': 'covers/uuid-9.jpg'},
-              ],
-            ),
-          );
-          expect(payload.wishlist.single.coverUrl, isNull);
-        },
-      );
-
-      test(
-        'keepLocalCovers still preserves wishlist local refs (bundle path)',
-        () {
-          const bundleImporter = PitakaJsonImporter(keepLocalCovers: true);
-          final payload = bundleImporter.parse(
-            jsonWith(
-              wishlist: [
-                {'title': 'Local ref', 'coverUrl': 'covers/uuid-9.jpg'},
-              ],
-            ),
-          );
-          expect(payload.wishlist.single.coverUrl, 'covers/uuid-9.jpg');
-        },
-      );
+      test('wishlist local cover refs are dropped (like books)', () {
+        final payload = importer.parse(
+          jsonWith(
+            wishlist: [
+              {'title': 'Local ref', 'coverUrl': 'covers/uuid-9.jpg'},
+            ],
+          ),
+        );
+        expect(payload.wishlist.single.coverUrl, isNull);
+      });
 
       test('a fully valid file still imports with no errors', () {
         final payload = importer.parse(

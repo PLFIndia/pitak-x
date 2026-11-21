@@ -1,12 +1,11 @@
 /// Pure encode/parse for the library-pairing QR payload (PLAN-merge.md D40).
-/// Faithful port of the payload half of Kotlin
-/// `dev.khoj.pitaka.ui.common.QrEncoder` (bitmap rendering lives in the UI).
+/// The bitmap rendering lives in the UI.
 ///
 /// The QR carries this device's [LibraryId] so another maintainer can adopt it
-/// in person (no server, §1.1-clean). The `pitaka-lib:` prefix is a CROSS-APP
-/// wire contract — it MUST match the Kotlin app byte-for-byte so a Flutter
-/// device and a Kotlin device can pair with each other. It is NOT renamed
-/// to "pitak-lib:" for the same reason the Kotlin repo's other interchange
+/// in person (no server, §1.1-clean). The `pitaka-lib:` prefix is a WIRE
+/// CONTRACT — it must not change: released versions of Pitak show and scan
+/// it, and two devices pair only when both use it (ADR 0025). It is NOT
+/// renamed to "pitak-lib:" for the same reason the other interchange
 /// contracts (schema const, git commit message) were left as-is.
 ///
 /// Pure Dart: no Flutter/IO/Riverpod (AGENTS.md §3.1).
@@ -17,8 +16,8 @@ import 'package:pitaka/features/library/domain/value_objects/library_id.dart';
 /// Encode/parse helpers for the `pitaka-lib:<id>` QR payload.
 abstract final class LibraryQrPayload {
   /// The QR payload scheme prefix. Lets the scanner distinguish a library-
-  /// pairing QR from an arbitrary QR the camera might see. CROSS-APP CONTRACT —
-  /// do not rename (must equal the Kotlin app's `LIBRARY_ID_PREFIX`).
+  /// pairing QR from an arbitrary QR the camera might see. WIRE CONTRACT —
+  /// do not rename (released versions of Pitak scan for it; ADR 0025).
   static const String prefix = 'pitaka-lib:';
 
   /// Builds the QR content string for [libraryId]. The caller is responsible

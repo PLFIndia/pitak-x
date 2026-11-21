@@ -21,11 +21,14 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/text/display_date.dart';
+import 'package:pitaka/core/widgets/discard_changes_guard.dart';
 import 'package:pitaka/features/library/application/add_book_controller.dart';
 import 'package:pitaka/features/library/application/library_controller.dart';
 import 'package:pitaka/features/library/domain/catalogue_rules.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/presentation/catalogue_save_messages.dart';
+import 'package:pitaka/features/library/presentation/maintainer_stamp.dart';
+import 'package:pitaka/features/library/presentation/widgets/catalogue_choice_labels.dart';
 import 'package:pitaka/features/library/presentation/widgets/language_field.dart';
 import 'package:pitaka/features/lookup/domain/entities/book_metadata.dart';
 import 'package:pitaka/features/lookup/domain/isbn_format.dart';
@@ -33,7 +36,6 @@ import 'package:pitaka/features/lookup/domain/lookup_result.dart';
 import 'package:pitaka/features/lookup/presentation/pages/scanner_page.dart';
 import 'package:pitaka/features/lookup/presentation/widgets/isbn_lookup_field.dart';
 import 'package:pitaka/features/publish/domain/cover_url_allow_list.dart';
-import 'package:pitaka/features/settings/application/settings_controller.dart';
 
 /// Form screen to add a new book or edit an existing one.
 class AddBookPage extends ConsumerStatefulWidget {
@@ -94,6 +96,38 @@ class _AddBookPageState extends ConsumerState<AddBookPage> {
   /// A manual lookup also consumes this one-shot home quick-add request.
   late bool _initialLookupPending;
 
+  /// What the form held when it opened, so that Back can ask before unsaved
+  /// input is lost (the "Discard changes?" guard, ADR 0028).
+  late final OpenedValues _opened;
+
+  /// Every text controller of the form: disposed together, and read
+  /// together by [_values], so a field cannot be in one and not the other.
+  List<TextEditingController> get _texts => [
+    _title,
+    _transliteration,
+    _author,
+    _isbn,
+    _publisher,
+    _year,
+    _genre,
+    _language,
+    _pages,
+    _notes,
+    _location,
+    _quantity,
+    _sourceDetail,
+  ];
+
+  /// Everything Save would store, as one list for [_opened].
+  List<Object?> _values() => [
+    for (final c in _texts) c.text,
+    _sourceType,
+    _ageGroup,
+    _addedDate,
+    _needsMetadata,
+    _lookupCoverUrl,
+  ];
+
   @override
   void initState() {
     super.initState();
@@ -116,6 +150,9 @@ class _AddBookPageState extends ConsumerState<AddBookPage> {
     _addedDate = b?.addedDate ?? DateTime.now().millisecondsSinceEpoch;
     _needsMetadata = b?.needsMetadata ?? false;
     _initialLookupPending = !_isEdit && widget.initialIsbn != null;
+    // Taken here: a scanned ISBN the form opens with is no change, what a
+    // lookup fills in afterwards is.
+    _opened = OpenedValues(_values);
     // Home quick-add supplies the ISBN before this form opens. Honour the
     // same opt-in as an in-form scan, after the first frame has built.
     WidgetsBinding.instance.addPostFrameCallback((_) async {
@@ -128,21 +165,7 @@ class _AddBookPageState extends ConsumerState<AddBookPage> {
 
   @override
   void dispose() {
-    for (final c in [
-      _title,
-      _transliteration,
-      _author,
-      _isbn,
-      _publisher,
-      _year,
-      _genre,
-      _language,
-      _pages,
-      _notes,
-      _location,
-      _quantity,
-      _sourceDetail,
-    ]) {
+    for (final c in _texts) {
       c.dispose();
     }
     super.dispose();
@@ -268,20 +291,10 @@ class _AddBookPageState extends ConsumerState<AddBookPage> {
       needsMetadata: _needsMetadata,
       removed: base?.removed ?? false,
       removedAt: base?.removedAt,
-      // Stamp the maintainer name onto a NEW book that has none yet (mirrors
-      // Kotlin AddBookUseCase's attribution); edits keep the existing value.
+      // Stamp the maintainer name onto a NEW book that has none yet;
+      // edits keep the existing value.
       addedBy: base?.addedBy ?? maintainerStamp,
     );
-  }
-
-  /// The maintainer name from settings, or null when unset/blank. Only used to
-  /// attribute newly-added books.
-  String? _maintainerStamp() {
-    final name = ref
-        .read(settingsControllerProvider)
-        .maybeWhen(data: (s) => s.maintainerName, orElse: () => '')
-        .trim();
-    return name.isEmpty ? null : name;
   }
 
   Future<void> _save() async {
@@ -290,7 +303,7 @@ class _AddBookPageState extends ConsumerState<AddBookPage> {
       return;
     }
     final controller = ref.read(addBookControllerProvider.notifier);
-    final stamp = _maintainerStamp();
+    final stamp = maintainerStampOf(ref);
     final editing = widget.book;
     if (editing == null) {
       await controller.save(_buildBook(null, maintainerStamp: stamp));
@@ -305,6 +318,8 @@ class _AddBookPageState extends ConsumerState<AddBookPage> {
     final state = ref.read(addBookControllerProvider);
     if (!mounted) return;
     if (state.hasValue && state.value != null) {
+      // Saved: from here on Back must not ask, also while the list reloads.
+      _opened.markSaved();
       await ref.read(libraryControllerProvider.notifier).refresh();
       if (mounted) Navigator.of(context).pop();
     }
@@ -338,7 +353,7 @@ class _AddBookPageState extends ConsumerState<AddBookPage> {
     final saving = state.isLoading;
     final dateLabel = _formatDate(_addedDate);
 
-    return Scaffold(
+    final page = Scaffold(
       appBar: AppBar(title: Text(_isEdit ? 'Edit book' : 'Add book')),
       body: ListView(
         padding: const EdgeInsets.all(16),
@@ -397,7 +412,7 @@ class _AddBookPageState extends ConsumerState<AddBookPage> {
             items: [
               const DropdownMenuItem(child: Text('Not set')),
               for (final t in ItemSourceType.values)
-                DropdownMenuItem(value: t, child: Text(_sourceLabel(t))),
+                DropdownMenuItem(value: t, child: Text(itemSourceLabel(t))),
             ],
             onChanged: (v) => setState(() => _sourceType = v),
           ),
@@ -412,7 +427,7 @@ class _AddBookPageState extends ConsumerState<AddBookPage> {
             items: [
               const DropdownMenuItem(child: Text('Not set')),
               for (final g in AgeGroup.values)
-                DropdownMenuItem(value: g, child: Text(_ageGroupLabel(g))),
+                DropdownMenuItem(value: g, child: Text(ageGroupLabel(g))),
             ],
             onChanged: (v) => setState(() => _ageGroup = v),
           ),
@@ -464,6 +479,11 @@ class _AddBookPageState extends ConsumerState<AddBookPage> {
         ],
       ),
     );
+    return DiscardChangesGuard(
+      hasChanges: () => _opened.changed,
+      saving: saving,
+      child: page,
+    );
   }
 
   Widget _field(
@@ -491,22 +511,6 @@ class _AddBookPageState extends ConsumerState<AddBookPage> {
       ),
     );
   }
-
-  static String _sourceLabel(ItemSourceType t) => switch (t) {
-    ItemSourceType.purchased => 'Purchased',
-    ItemSourceType.gift => 'Gift',
-    ItemSourceType.donated => 'Donated',
-    ItemSourceType.inherited => 'Inherited',
-    ItemSourceType.other => 'Other',
-  };
-
-  static String _ageGroupLabel(AgeGroup g) => switch (g) {
-    AgeGroup.above3 => 'Ages 3+',
-    AgeGroup.above6 => 'Ages 6+',
-    AgeGroup.above10 => 'Ages 10+',
-    AgeGroup.above15 => 'Ages 15+',
-    AgeGroup.advanced => 'Advanced',
-  };
 
   static String _formatDate(int epochMillis) {
     // Keep the catalogue's `0` sentinel and legacy-date rules out of the

@@ -5,8 +5,7 @@
 /// network, no platform views — just a black-on-white drawing. Used to display
 /// this device's library-pairing payload for another maintainer to scan.
 ///
-/// Error-correction level M mirrors the Kotlin app's `QrEncoder` so both apps
-/// produce equivalent codes for the same payload.
+/// The code is drawn with error-correction level M.
 library;
 
 import 'package:flutter/material.dart';

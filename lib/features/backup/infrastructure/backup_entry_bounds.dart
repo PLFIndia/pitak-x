@@ -1,5 +1,5 @@
 /// Writer-side mirror of the restore reader's entry bounds (backup
-/// infrastructure; magazine remediation S5, finding L5).
+/// infrastructure; magazine remediation S5, finding L5; extended in BR3).
 ///
 /// WHY THIS FILE EXISTS (beginner note): a `.pitabak` archive is written by
 /// this app and read back by the same app, but the READER is deliberately
@@ -10,52 +10,161 @@
 /// as books, issue links detach. That is a backup which looks fine and loses
 /// data on restore, so the writer refuses up front instead.
 ///
+/// BR3 adds the size cap of EVERY entry, by entry name ([backupEntryCap]).
+/// The writer checks against it. Since BR5 the reader that works from a
+/// file takes its rule for each entry from the same table
+/// ([backupEntryRule]), so the two sides cannot drift apart.
+///
 /// The bounds live here, not inside the writer class, so the check is one
-/// small reviewed unit and the writer file stays readable.
+/// small reviewed unit and the writer file stays readable. They sit in
+/// infrastructure, not in the domain, because one of the caps
+/// ([ItemDetailsArchiveCodec.maxBytes]) is an infrastructure constant and the
+/// domain may not import infrastructure.
 library;
 
 import 'dart:convert';
 
+import 'package:pitaka/features/backup/domain/backup_identity.dart';
+import 'package:pitaka/features/backup/domain/backup_limits.dart';
+import 'package:pitaka/features/backup/domain/backup_overflow.dart';
+import 'package:pitaka/features/backup/infrastructure/backup_extras_reader.dart'
+    show
+        identityEntryName,
+        manifestEntryName,
+        networkEntryName,
+        publishStateEntryName;
 import 'package:pitaka/features/backup/infrastructure/item_details_archive_codec.dart';
+import 'package:pitaka/features/backup/infrastructure/restore_covers_builder.dart'
+    show coverEntryPrefix;
+import 'package:pitaka/features/backup/infrastructure/restore_legacy_read.dart'
+    show booksDbEntryName, wishlistDbEntryName;
+import 'package:pitaka/features/import_export/domain/zip_entry_rules.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/value_objects/item_details.dart';
 import 'package:pitaka/features/library/domain/value_objects/item_kind.dart';
+import 'package:pitaka/features/network/domain/network_archive_codec.dart';
 import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
+import 'package:pitaka/features/publish/domain/publish_state_backup_codec.dart';
 
-/// Which W2 entry did not fit, and why.
+/// ZIP entry name of the encrypted vault database.
+const String borrowersDbEntryName = 'borrowers.db';
+
+/// ZIP entry name of the vault's wrapped key record (ciphertext).
+const String backupBlobEntryName = 'backup_blob';
+
+/// The largest size, in bytes, the entry called [name] may have, or null for
+/// a name this app does not write (the reader ignores such an entry, see
+/// [backupEntryRule]).
 ///
-/// A plain enum ON PURPOSE: only plain data crosses the backup worker-isolate
-/// boundary, so the worker returns one of these codes (never a `Failure`
-/// object) and the calling isolate maps it to user-facing copy.
-enum BackupEntryOverflow {
-  /// `item_kinds.json` is longer than the reader's 4 MiB entry cap.
-  itemKindsTooLarge,
-
-  /// `item_kinds.json` carries more rows than the reader keeps.
-  itemKindsTooManyRows,
-
-  /// `periodicals.json` is longer than the reader's 4 MiB entry cap.
-  periodicalsTooLarge,
-
-  /// `periodicals.json` carries more rows in one of its lists than the
-  /// reader keeps.
-  periodicalsTooManyRows,
+/// The table of decision D9. Where an entry has a decoder with its own cap,
+/// that constant is used directly, so the writer and the reader cannot drift
+/// apart; an entry exactly AT its cap is fine, as it is for the decoders.
+///
+///  - `cover_<name>`: [BackupLimits.maxCoverBytes];
+///  - `books.db`, `wishlist.db`, `borrowers.db`:
+///    [BackupLimits.maxDatabaseBytes];
+///  - `identity.json`: [BackupIdentity.maxBytes];
+///  - `network.json`: [NetworkArchiveCodec.maxBytes];
+///  - `item_kinds.json`, `periodicals.json`:
+///    [ItemDetailsArchiveCodec.maxBytes];
+///  - `publish_state.json`: [PublishStateBackupCodec.maxBytes];
+///  - `manifest.json`, `backup_blob`: [BackupLimits.maxTextEntryBytes].
+int? backupEntryCap(String name, BackupLimits limits) {
+  if (name.startsWith(coverEntryPrefix)) return limits.maxCoverBytes;
+  return switch (name) {
+    booksDbEntryName ||
+    wishlistDbEntryName ||
+    borrowersDbEntryName => limits.maxDatabaseBytes,
+    identityEntryName => BackupIdentity.maxBytes,
+    networkEntryName => NetworkArchiveCodec.maxBytes,
+    itemKindsEntryName ||
+    periodicalsEntryName => ItemDetailsArchiveCodec.maxBytes,
+    publishStateEntryName => PublishStateBackupCodec.maxBytes,
+    manifestEntryName || backupBlobEntryName => limits.maxTextEntryBytes,
+    _ => null,
+  };
 }
 
-/// The overflow code for one encoded entry, or null when it fits the reader.
+/// What the restore reader does with the entry called [name] of a backup
+/// (backup rework BR5; decisions D9 and D18). Hand it to `BoundedZipFile`
+/// as `policy: (name) => backupEntryRule(name, limits)`.
+///
+/// The cap of every entry is [backupEntryCap], the number the writer
+/// checks against. What happens ABOVE the cap depends on what the restore
+/// can do without:
+///
+///  - a cover picture (`cover_<name>`) is LEFT OUT, and the rest of the
+///    backup is restored (D18: one bad picture should not cost the whole
+///    library). It is never unpacked;
+///  - `identity.json`, `network.json`, `item_kinds.json`,
+///    `periodicals.json` and `publish_state.json` are LEFT OUT as well.
+///    They are additive: restore goes on and reports the entry as
+///    unreadable, as it did before, only now without unpacking it first;
+///  - everything else with a cap (`manifest.json`, the three databases,
+///    `backup_blob`) REFUSES the backup: nothing can be restored without
+///    it. This is also what a name added to [backupEntryCap] later gets
+///    until someone decides otherwise here (fail closed);
+///  - a name the app does not write is IGNORED: counted as an entry and
+///    never unpacked. A later version of Pitak may add an entry; a backup
+///    from it must not fail here for that alone.
+ZipEntryRule backupEntryRule(String name, BackupLimits limits) {
+  final cap = backupEntryCap(name, limits);
+  if (cap == null) return const ZipEntryRule.ignore();
+  final restoreCanDoWithoutIt =
+      name.startsWith(coverEntryPrefix) ||
+      switch (name) {
+        identityEntryName ||
+        networkEntryName ||
+        itemKindsEntryName ||
+        periodicalsEntryName ||
+        publishStateEntryName => true,
+        _ => false,
+      };
+  return ZipEntryRule.take(
+    maxBytes: cap,
+    tooLarge: restoreCanDoWithoutIt
+        ? ZipTooLarge.leaveOut
+        : ZipTooLarge.refuseArchive,
+  );
+}
+
+/// The code the writer refuses with when the entry called [name] is larger
+/// than its cap. The parts a user knows by name get their own code, so the
+/// page can say which part it was; every other entry shares one code.
+BackupOverflow backupEntryOverflow(String name) => switch (name) {
+  booksDbEntryName => BackupOverflow.catalogueTooLarge,
+  wishlistDbEntryName => BackupOverflow.wishlistTooLarge,
+  borrowersDbEntryName => BackupOverflow.vaultTooLarge,
+  itemKindsEntryName => BackupOverflow.itemKindsTooLarge,
+  periodicalsEntryName => BackupOverflow.periodicalsTooLarge,
+  _ => BackupOverflow.entryTooLarge,
+};
+
+/// The refusal for one encoded W2 entry, or null when it fits the reader.
 ///
 /// The byte comparison mirrors the reader exactly: an entry is refused only
 /// when it is LARGER than the cap, because the reader accepts equality.
-BackupEntryOverflow? overflowOf({
+BackupRefusal? overflowOf({
   required String json,
   required int rows,
-  required BackupEntryOverflow tooLarge,
-  required BackupEntryOverflow tooManyRows,
+  required BackupOverflow tooLarge,
+  required BackupOverflow tooManyRows,
 }) {
-  if (utf8.encode(json).length > ItemDetailsArchiveCodec.maxBytes) {
-    return tooLarge;
+  final bytes = utf8.encode(json).length;
+  if (bytes > ItemDetailsArchiveCodec.maxBytes) {
+    return (
+      code: tooLarge,
+      actual: bytes,
+      limit: ItemDetailsArchiveCodec.maxBytes,
+    );
   }
-  if (rows > ItemDetailsArchiveCodec.maxRows) return tooManyRows;
+  if (rows > ItemDetailsArchiveCodec.maxRows) {
+    return (
+      code: tooManyRows,
+      actual: rows,
+      limit: ItemDetailsArchiveCodec.maxRows,
+    );
+  }
   return null;
 }
 

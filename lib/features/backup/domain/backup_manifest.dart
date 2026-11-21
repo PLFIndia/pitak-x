@@ -1,5 +1,4 @@
-/// On-disk manifest for a Pitaka backup archive. Pure Dart port of Kotlin
-/// `BackupManifest` (source app).
+/// On-disk manifest for a Pitaka backup archive. Pure Dart.
 ///
 /// `schemaVersion` is read FIRST; restore refuses cleanly on
 /// `schemaVersion > knownSchemaVersion`. The `hasX` booleans are forward-compat
@@ -28,8 +27,7 @@ class BackupManifest {
     this.backupHint,
   });
 
-  /// Highest archive schema this build can restore (Kotlin
-  /// `KNOWN_SCHEMA_VERSION = 1`).
+  /// Highest archive schema this build can restore.
   static const int knownSchemaVersion = 1;
 
   /// Archive schema version. Refuse restore when greater than
@@ -55,7 +53,7 @@ class BackupManifest {
   final bool hasCovers;
 
   /// Whether the archive contains `identity.json` (docs/ARCHITECTURE.md §5.5).
-  /// Default false: Kotlin-era and pre-network archives lack the entry, and
+  /// Default false: archives made before the library network lack it, and
   /// the flag being absent must read as "not there", never "corrupt".
   final bool hasIdentity;
 
@@ -66,8 +64,8 @@ class BackupManifest {
 
   /// Whether the archive contains `item_kinds.json` (ADR 0014 W2): the
   /// explicit kind token of every non-book catalogue row. Same default-false
-  /// forward-compat rule as [hasIdentity] — a flag-less (Kotlin-era or
-  /// pre-v5) archive restores every row as a book, exactly as before.
+  /// forward-compat rule as [hasIdentity] — a flag-less (pre-v5) archive
+  /// restores every row as a book, exactly as before.
   final bool hasItemKinds;
 
   /// Whether the archive contains `periodicals.json` (ADR 0014 W2): the
@@ -117,10 +115,9 @@ class BackupManifest {
     );
   }
 
-  /// Serializes this manifest to the canonical JSON shape (matches the Kotlin
-  /// `BackupManifest` field names so the original app can read our backups).
-  /// `backupHint` is omitted when null. Pretty-printed with a 2-space indent,
-  /// mirroring the Kotlin writer.
+  /// Serializes this manifest to the canonical JSON shape. The field names
+  /// are the archive's format and do not change (ADR 0025).
+  /// `backupHint` is omitted when null. Pretty-printed with a 2-space indent.
   String toJson() {
     final map = <String, Object?>{
       'schemaVersion': schemaVersion,

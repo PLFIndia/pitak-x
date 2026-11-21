@@ -11,6 +11,7 @@ library;
 
 import 'package:pitaka/features/backup/domain/backup_identity.dart';
 import 'package:pitaka/features/backup/domain/backup_manifest.dart';
+import 'package:pitaka/features/backup/domain/resource_notice.dart';
 import 'package:pitaka/features/publish/domain/publish_state_backup.dart';
 
 /// Bounded, read-only look inside a `.pitabak` archive.
@@ -20,7 +21,10 @@ final class ArchiveInspection {
     required this.manifest,
     this.identity,
     this.publishState,
-  });
+    this.coverBytes = 0,
+    this.databaseBytes = 0,
+  }) : assert(coverBytes >= 0, 'coverBytes must not be negative'),
+       assert(databaseBytes >= 0, 'databaseBytes must not be negative');
 
   /// The parsed manifest (what the archive declares).
   final BackupManifest manifest;
@@ -34,4 +38,22 @@ final class ArchiveInspection {
   /// carries a USABLE one, so the page can name its site — null when absent
   /// OR unreadable (the page then keys off `manifest.hasPublishState`).
   final PublishStateBackup? publishState;
+
+  /// How many bytes a restore writes for the cover pictures of this
+  /// archive, as its directory declares them (backup rework BR9). The
+  /// reader has already held every one of them to the limits of a backup.
+  final int coverBytes;
+
+  /// The same for the databases a restore unpacks (books, wishlist, and
+  /// the borrowers vault when the archive carries one).
+  final int databaseBytes;
+
+  /// What the notice before a restore needs to know about this archive
+  /// (see `restoreStorageNeedBytes`).
+  RestoreArchiveSizes get sizes => (
+    takenBytes: coverBytes + databaseBytes,
+    databaseBytes: databaseBytes,
+    hasCovers: manifest.hasCovers,
+    hasVault: manifest.hasBackupBlob,
+  );
 }

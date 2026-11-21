@@ -2,7 +2,7 @@
 ///
 /// Thin adapter over the official `local_auth` plugin. It is purely a GATE: a
 /// successful prompt is the capability that authorizes releasing the stored
-/// secret S (the Kotlin F-06 software-gate model). It never sees the vault key
+/// secret S (the F-06 software-gate model). It never sees the vault key
 /// or S. All plugin exceptions degrade to a safe negative result — failing
 /// closed (no authentication) rather than throwing into the vault flow.
 library;

@@ -1,9 +1,8 @@
 /// Chained ISBN lookup composer (application layer, AGENTS.md §4).
 ///
-/// Adapted from the Kotlin Pitak app's `ChainedIsbnLookup` (same author,
-/// retired codebase): runs an
+/// Runs an
 /// ISBN lookup against a cache, then a primary, then a fallback provider in
-/// order, and a title search against primary→fallback. Mirrors the source
+/// order, and a title search against primary→fallback. The
 /// behaviour:
 ///  - cache hit within TTL → return Found from cache;
 ///  - a cached NotFound sentinel (shorter TTL) short-circuits to NotFound;

@@ -26,6 +26,7 @@ import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/library/application/delete_catalogue_item_use_case.dart';
 import 'package:pitaka/features/library/domain/catalogue_replacement_guard.dart';
+import 'package:pitaka/features/vault/application/change_loan_return.dart';
 import 'package:pitaka/features/vault/application/insert_loan_with_policy.dart';
 import 'package:pitaka/features/vault/application/lend_book_use_case.dart';
 import 'package:pitaka/features/vault/application/vault_secret_keeper.dart';
@@ -35,6 +36,7 @@ import 'package:pitaka/features/vault/domain/entities/borrower.dart';
 import 'package:pitaka/features/vault/domain/entities/vault_session_state.dart';
 import 'package:pitaka/features/vault/domain/repositories/vault_repository.dart';
 import 'package:pitaka/features/vault/domain/vault_artifacts_store.dart';
+import 'package:pitaka/features/vault/domain/vault_idle_gate.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 part 'vault_session_controller.g.dart';
@@ -53,7 +55,11 @@ part 'vault_session_controller.g.dart';
 /// auto-lock timeout is the accepted future hardening, not a bug fix.
 @Riverpod(keepAlive: true)
 class VaultSessionController extends _$VaultSessionController
-    implements VaultLoanPurger, VaultLender, CatalogueReplacementGuard {
+    implements
+        VaultLoanPurger,
+        VaultLender,
+        CatalogueReplacementGuard,
+        VaultIdleGate {
   /// Secret lifetime (held passphrase/S, active blob, pending secrets,
   /// generation/lifetime fences) lives in this plain-Dart collaborator so
   /// the wipe invariants are unit-testable without vault IO. See
@@ -219,8 +225,7 @@ class VaultSessionController extends _$VaultSessionController
     return _holdAndLoad(passphrase, store, blob: blob, generation: generation);
   }, incoming: passphrase);
 
-  /// Minimum new-passphrase length in UTF-8 bytes (mirrors Kotlin
-  /// `SetBackupPassphraseUseCase.MIN_PASSPHRASE_LEN`).
+  /// Minimum new-passphrase length in UTF-8 bytes.
   static const int minPassphraseLength = 8;
 
   /// Changes the vault passphrase (#28A). Requires the vault to be UNLOCKED so
@@ -554,28 +559,26 @@ class VaultSessionController extends _$VaultSessionController
     );
   });
 
-  /// Updates a loan, then re-reads the vault. Vault must be unlocked.
-  Future<Either<Failure, Unit>> updateLoan(Loan loan) =>
-      _mutate((p, store, blob) async {
-        final r = await _vault.updateLoan(
+  /// Marks loan [id] returned at [returnedAt] (epoch millis) or, when that
+  /// is null, takes the return back ("Undo"); then re-reads the vault. The
+  /// rules and their reasons: change_loan_return.dart (finding P4-M3).
+  Future<Either<Failure, Unit>> setLoanReturned(int id, int? returnedAt) =>
+      _mutate((p, store, blob) {
+        final generation = _keeper.generation;
+        return changeLoanReturn(
+          vault: _vault,
+          loadItem: (itemId) async => (await ref.read(
+            catalogueItemRepositoryProvider.future,
+          )).getById(itemId),
+          currentLoans: () => currentLoans ?? const [],
+          isCurrent: () => _keeper.isCurrent(generation),
+          cancelled: _cancelled,
           passphrase: p,
           blob: blob,
           dbPath: store.dbPath,
-          loan: loan,
+          loanId: id,
+          returnedAt: returnedAt,
         );
-        return r.map((_) => unit);
-      });
-
-  /// Deletes a loan by id, then re-reads the vault. Vault must be unlocked.
-  Future<Either<Failure, Unit>> deleteLoan(int id) =>
-      _mutate((p, store, blob) async {
-        final r = await _vault.deleteLoan(
-          passphrase: p,
-          blob: blob,
-          dbPath: store.dbPath,
-          id: id,
-        );
-        return r.map((_) => unit);
       });
 
   /// Whether the unlocked vault has any loan referencing [bookId]. Returns
@@ -681,6 +684,11 @@ class VaultSessionController extends _$VaultSessionController
       if (replacingVault || endsSession) await lock();
     }
   });
+
+  /// Runs [action] while no vault operation runs; see [VaultIdleGate].
+  @override
+  Future<T> whileVaultIdle<T>(Future<T> Function() action) =>
+      _queue.enqueue(action);
 
   // --- internals ----------------------------------------------------------
 

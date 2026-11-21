@@ -3,6 +3,9 @@
 - **Status:** Accepted
 - **Date:** 2026-10-21 (decisions resolved with the maintainer on the
   original magazines implementation plan, revision 5)
+- **Read first:** since 2026-11-18 nothing of the retired Kotlin app is
+  honoured (ADR 0025). "A Kotlin-compatible layout" below is history: the
+  layout stays, for Pitak's own vaults.
 
 ## Context
 
