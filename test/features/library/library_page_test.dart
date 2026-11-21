@@ -7,8 +7,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/core/platform/device_cameras.dart';
 import 'package:pitaka/core/storage/run_folders.dart';
 import 'package:pitaka/core/theme/app_theme.dart';
+import 'package:pitaka/core/widgets/camera_scan_messages.dart';
 import 'package:pitaka/features/app_update/domain/app_update_policy.dart';
 import 'package:pitaka/features/backup/domain/backup_work_area.dart';
 import 'package:pitaka/features/library/domain/catalogue_item_page.dart';
@@ -29,6 +31,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../support/a11y.dart';
 import '../../support/fake_document_picker.dart';
+import '../../support/fake_scan_camera.dart';
 import '../../support/fake_vault_session.dart';
 import '../app_update/fake_app_update_service.dart';
 
@@ -770,6 +773,115 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Your library is empty'), findsOneWidget);
+  });
+
+  // Review finding P4-M8, decision D132: the Library's "Scan to add" has no
+  // ISBN field underneath. When the scan page has no camera picture, its
+  // "Enter it by hand" leads to the sheet that adds an item by hand.
+  testWidgets('"Scan to add" without a camera: "Enter it by hand" closes '
+      'the scan page and opens the "Add to library" sheet', (tester) async {
+    await tester.pumpWidget(
+      _app(
+        _FakeBookRepo(books),
+        extraOverrides: [
+          deviceCamerasProvider.overrideWithValue(
+            FakeDeviceCameras(answer: DeviceCameraAnswer.noCamera),
+          ),
+          appSettingsOpenerProvider.overrideWithValue(FakeAppSettingsOpener()),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Scan to add'));
+    await tester.pumpAndSettle();
+    expect(find.text('Scan ISBN barcode'), findsOneWidget);
+    expect(find.text(scanNoCameraSentence), findsOneWidget);
+    // The sheet's entries are not on the screen yet.
+    expect(find.text('Add book'), findsNothing);
+
+    await tester.tap(find.text(enterByHandLabel));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Scan ISBN barcode'), findsNothing);
+    expect(find.text('Add book'), findsOneWidget);
+    expect(find.text('Add other item'), findsOneWidget);
+    // No item was added and no form opened by itself.
+    expect(find.text('The Hobbit'), findsOneWidget);
+  });
+
+  testWidgets('"Scan to add" without a camera: Back from the scan page '
+      'opens no sheet', (tester) async {
+    await tester.pumpWidget(
+      _app(
+        _FakeBookRepo(books),
+        extraOverrides: [
+          deviceCamerasProvider.overrideWithValue(
+            FakeDeviceCameras(answer: DeviceCameraAnswer.noCamera),
+          ),
+          appSettingsOpenerProvider.overrideWithValue(FakeAppSettingsOpener()),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Scan to add'));
+    await tester.pumpAndSettle();
+    expect(find.text('Scan ISBN barcode'), findsOneWidget);
+
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+
+    expect(find.text('Scan ISBN barcode'), findsNothing);
+    expect(find.text('Add book'), findsNothing);
+  });
+
+  testWidgets('"Enter it by hand" when the Library screen itself is gone '
+      'by then opens nothing and throws nothing', (tester) async {
+    // The scan page lies over the app's first page. Should that first page
+    // be another one by the time of the tap, its old state must not be
+    // used.
+    final showLibrary = ValueNotifier<bool>(true);
+    addTearDown(showLibrary.dispose);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          deviceCamerasProvider.overrideWithValue(
+            FakeDeviceCameras(answer: DeviceCameraAnswer.noCamera),
+          ),
+          appSettingsOpenerProvider.overrideWithValue(FakeAppSettingsOpener()),
+          catalogueItemRepositoryProvider.overrideWith(
+            (ref) async => _FakeBookRepo(books),
+          ),
+          periodicalRepositoryProvider.overrideWith(
+            (ref) async => _NoPeriodicals(),
+          ),
+          nowTickProvider.overrideWith((ref) => 0),
+        ],
+        child: MaterialApp(
+          home: ValueListenableBuilder<bool>(
+            valueListenable: showLibrary,
+            builder: (_, show, _) => show
+                ? const LibraryPage()
+                : const Scaffold(body: Text('another first page')),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Scan to add'));
+    await tester.pumpAndSettle();
+    expect(find.text(enterByHandLabel), findsOneWidget);
+
+    showLibrary.value = false;
+    await tester.pumpAndSettle();
+    expect(find.byType(LibraryPage, skipOffstage: false), findsNothing);
+
+    await tester.tap(find.text(enterByHandLabel));
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('another first page'), findsOneWidget);
+    expect(find.text('Add book'), findsNothing);
   });
 
   testWidgets('the app-bar map button sits left of scan and opens the '

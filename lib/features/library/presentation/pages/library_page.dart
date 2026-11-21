@@ -15,6 +15,8 @@
 /// 0013 D11) — the page only switches on the sealed [ScanRoute].
 library;
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pitaka/core/di/providers.dart';
@@ -91,10 +93,18 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
     final route = await ref.read(routeScannedBarcodeUseCaseProvider.future);
     if (!mounted) return;
     final scanned = await Navigator.of(context).push<String>(
-      MaterialPageRoute<String>(builder: (_) => const ScannerPage()),
+      MaterialPageRoute<String>(
+        // No ISBN field lies under this scan: "Enter it by hand" leads to
+        // the sheet that adds an item by hand (review finding P4-M8, D132).
+        builder: (_) => ScannerPage(afterEnterByHand: _addByHand),
+      ),
     );
     if (scanned == null || !mounted) return;
     await routeScannedBarcode(context, route, scanned);
+  }
+
+  void _addByHand() {
+    if (mounted) unawaited(showAddSheet(context));
   }
 
   @override

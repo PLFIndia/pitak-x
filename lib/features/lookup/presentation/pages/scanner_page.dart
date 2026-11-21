@@ -4,11 +4,16 @@
 /// structurally valid ISBN back to the caller (the add-book ISBN field). The
 /// camera permission is requested by the scanner when the view starts; the
 /// user can decline and back out. We only read barcodes — no frames are stored
-/// or transmitted. Backed by flutter_zxing (zxing-cpp, FOSS — no MLKit).
+/// or transmitted.
+///
+/// The camera itself is the shared [CameraScanView] (review finding P4-M8):
+/// it owns the scanner package, and it says so when there is no camera
+/// picture (refused, no camera, did not start). In those states this page
+/// also offers "Enter it by hand", because an ISBN can be typed.
 library;
 
 import 'package:flutter/material.dart';
-import 'package:flutter_zxing/flutter_zxing.dart';
+import 'package:pitaka/core/widgets/camera_scan_view.dart';
 import 'package:pitaka/features/lookup/domain/isbn_format.dart';
 
 /// Replaces the camera widget in tests, using the same injectable-seam style
@@ -18,10 +23,19 @@ typedef IsbnScannerBuilder = Widget Function(void Function(String raw) onText);
 /// Full-screen barcode scanner. Pops a normalised ISBN string on success.
 class ScannerPage extends StatefulWidget {
   /// Creates the scanner page.
-  const ScannerPage({this.buildScanner, super.key});
+  ///
+  /// [afterEnterByHand] is what the caller wants done once "Enter it by
+  /// hand" has closed this page (decision D132). A form passes nothing: its
+  /// ISBN field is on the page underneath. The Library screen, which has no
+  /// field underneath, opens its "Add to library" sheet. Passed in by the
+  /// caller so that this page knows no page of another feature.
+  const ScannerPage({this.buildScanner, this.afterEnterByHand, super.key});
 
   /// Optional camera replacement used by widget tests.
   final IsbnScannerBuilder? buildScanner;
+
+  /// Runs after "Enter it by hand" closed this page. Null: closing is all.
+  final VoidCallback? afterEnterByHand;
 
   @override
   State<ScannerPage> createState() => _ScannerPageState();
@@ -39,10 +53,14 @@ class _ScannerPageState extends State<ScannerPage> {
     }
   }
 
-  void _onScan(Code code) {
-    final raw = code.text;
-    if (raw == null || !code.isValid) return;
-    _onRaw(raw);
+  /// "Enter it by hand": closes the page WITHOUT a value, exactly as Back
+  /// does (fail closed: a page without a camera picture never hands a code
+  /// to its caller), then lets the caller lead on.
+  void _enterByHand() {
+    // Taken before the pop: afterwards this page is on its way out.
+    final after = widget.afterEnterByHand;
+    Navigator.of(context).pop();
+    after?.call();
   }
 
   @override
@@ -52,29 +70,10 @@ class _ScannerPageState extends State<ScannerPage> {
       appBar: AppBar(title: const Text('Scan ISBN barcode')),
       body: scanner != null
           ? scanner(_onRaw)
-          : ReaderWidget(
-              // ISBN barcodes are EAN-13 (with EAN-8 as a fallback).
-              codeFormat: Format.ean13 | Format.ean8,
-              onScan: _onScan,
-              showGallery: false,
-              scanDelaySuccess: const Duration(milliseconds: 500),
-              // Detection tuning. flutter_zxing decodes only a centred
-              // SQUARE crop of the camera frame (side = min(w,h) *
-              // cropPercent; default 0.5). An EAN-13 book barcode is wide
-              // and short, so at the default it must be framed almost
-              // perfectly to land inside the crop — on-device this made
-              // detection rare (Pixel 8a, 2026-07-09). Widen the crop to 90%
-              // and enable zxing-cpp's robustness passes (tryHarder = slower
-              // but thorough scan, tryInverted = light-on-dark barcodes,
-              // tryDownscale = extra pyramid pass for blurry/high-res
-              // frames). A 300ms retry cadence (default 1000ms) makes the
-              // scanner feel responsive. Mirrors the upstream guidance in
-              // khoren93/flutter_zxing issues #185/#197.
-              cropPercent: 0.9,
-              tryHarder: true,
-              tryInverted: true,
-              tryDownscale: true,
-              scanDelay: const Duration(milliseconds: 300),
+          : CameraScanView(
+              codes: CameraScanCodes.isbnBarcode,
+              onText: _onRaw,
+              onEnterByHand: _enterByHand,
             ),
     );
   }
