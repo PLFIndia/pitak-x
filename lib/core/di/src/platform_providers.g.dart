@@ -214,6 +214,54 @@ final deviceResourcesProvider = AutoDisposeProvider<DeviceResources>.internal(
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef DeviceResourcesRef = AutoDisposeProviderRef<DeviceResources>;
+String _$deviceCamerasHash() => r'e692139852c2b83e182c9c10473591baf0d32e02';
+
+/// Whether this phone has a camera (review finding P4-M8): the question a
+/// scan page asks before it shows the scanner, so that a phone without a
+/// camera gets a sentence instead of an empty page. Backed by the camera
+/// plugin; where that is missing the answer is "could not be read".
+/// Overridden in tests with a fake.
+///
+/// Copied from [deviceCameras].
+@ProviderFor(deviceCameras)
+final deviceCamerasProvider = AutoDisposeProvider<DeviceCameras>.internal(
+  deviceCameras,
+  name: r'deviceCamerasProvider',
+  debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+      ? null
+      : _$deviceCamerasHash,
+  dependencies: null,
+  allTransitiveDependencies: null,
+);
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef DeviceCamerasRef = AutoDisposeProviderRef<DeviceCameras>;
+String _$appSettingsOpenerHash() => r'5158eff7a61db53776bede090b802e54ff34ce2a';
+
+/// The way to Pitak's own page of the phone's settings (review finding
+/// P4-M8), for the "Open settings" button a scan page and the cover camera
+/// show when the camera is refused. A narrow platform channel without
+/// arguments. "Not available" wherever the app does not really run on
+/// Android ([runsOnAndroid]): the button is then not built. Overridden in
+/// tests with a fake.
+///
+/// Copied from [appSettingsOpener].
+@ProviderFor(appSettingsOpener)
+final appSettingsOpenerProvider =
+    AutoDisposeProvider<AppSettingsOpener>.internal(
+      appSettingsOpener,
+      name: r'appSettingsOpenerProvider',
+      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+          ? null
+          : _$appSettingsOpenerHash,
+      dependencies: null,
+      allTransitiveDependencies: null,
+    );
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef AppSettingsOpenerRef = AutoDisposeProviderRef<AppSettingsOpener>;
 String _$documentPickerHash() => r'9b3b7b966893793152339777d4fa3513c0080695';
 
 /// The app's own document picker (backup rework BR5b): lets the user choose

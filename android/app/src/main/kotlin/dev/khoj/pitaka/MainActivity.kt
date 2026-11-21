@@ -34,6 +34,10 @@ import io.flutter.plugin.common.MethodChannel
  *    argument that answers how much free storage and available memory the
  *    device has, for the notice before a backup and before a restore. No
  *    permission is involved, and nothing is stored or sent.
+ *  - [AppSettingsChannel] — review finding P4-M8: ONE method without an
+ *    argument that opens Pitak's own page of the phone's settings, for
+ *    the "Open settings" button a scan page shows when the camera is
+ *    refused. No permission is involved, and nothing leaves the phone.
  *
  * No other native surface is exposed.
  */
@@ -54,11 +58,15 @@ class MainActivity : FlutterFragmentActivity() {
     // touches the activity only when a call comes in.
     private val deviceResourcesChannel = DeviceResourcesChannel(this)
 
+    // The same shape: it touches the activity only when a call comes in.
+    private val appSettingsChannel = AppSettingsChannel(this)
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         appUpdateChannel.attach(flutterEngine)
         pickedDocumentChannel.attach(flutterEngine)
         deviceResourcesChannel.attach(flutterEngine)
+        appSettingsChannel.attach(flutterEngine)
         MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
             BiometricSecretVault.CHANNEL,
@@ -98,6 +106,7 @@ class MainActivity : FlutterFragmentActivity() {
         appUpdateChannel.detach()
         pickedDocumentChannel.detach()
         deviceResourcesChannel.detach()
+        appSettingsChannel.detach()
         super.cleanUpFlutterEngine(flutterEngine)
     }
 

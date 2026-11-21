@@ -95,6 +95,14 @@ dependencies:
   # the Kotlin app's ZXing choice. Requested just-in-time; used only on the
   # scan screens.
   flutter_zxing: ^2.3.0
+  # The camera plugin the scanner above is built on. Named here because the
+  # app asks it ONE question itself, before a scan page shows the scanner:
+  # which cameras this phone has (`core/platform/device_cameras.dart`,
+  # review finding P4-M8). The scanner package shows an empty page without
+  # a word on a phone that has none. Already in the tree through
+  # flutter_zxing, at this version: naming it downloads nothing and adds no
+  # native code.
+  camera: ^0.12.0+1
   # QR rendering for in-person library pairing (D40). Pure-Dart QR matrix
   # encoder; we paint it with a CustomPainter (core/widgets/qr_view.dart). No
   # native code, no network. Already in the tree transitively via `pdf`/`barcode`

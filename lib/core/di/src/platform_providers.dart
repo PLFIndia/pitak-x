@@ -14,7 +14,9 @@ import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:pitaka/core/network/lookup_http_client.dart';
 import 'package:pitaka/core/network/timeout_http_client.dart';
+import 'package:pitaka/core/platform/app_settings_opener.dart';
 import 'package:pitaka/core/platform/channel_document_picker.dart';
+import 'package:pitaka/core/platform/device_cameras.dart';
 import 'package:pitaka/core/platform/device_resources.dart';
 import 'package:pitaka/core/platform/document_picker.dart';
 import 'package:pitaka/core/platform/file_picked_document_reader.dart';
@@ -122,6 +124,25 @@ ScreenSecurity screenSecurity(ScreenSecurityRef ref) =>
 @riverpod
 DeviceResources deviceResources(DeviceResourcesRef ref) =>
     const MethodChannelDeviceResources();
+
+/// Whether this phone has a camera (review finding P4-M8): the question a
+/// scan page asks before it shows the scanner, so that a phone without a
+/// camera gets a sentence instead of an empty page. Backed by the camera
+/// plugin; where that is missing the answer is "could not be read".
+/// Overridden in tests with a fake.
+@riverpod
+DeviceCameras deviceCameras(DeviceCamerasRef ref) =>
+    const PluginDeviceCameras();
+
+/// The way to Pitak's own page of the phone's settings (review finding
+/// P4-M8), for the "Open settings" button a scan page and the cover camera
+/// show when the camera is refused. A narrow platform channel without
+/// arguments. "Not available" wherever the app does not really run on
+/// Android ([runsOnAndroid]): the button is then not built. Overridden in
+/// tests with a fake.
+@riverpod
+AppSettingsOpener appSettingsOpener(AppSettingsOpenerRef ref) =>
+    MethodChannelAppSettingsOpener(onAndroid: ref.watch(runsOnAndroidProvider));
 
 /// The app's own document picker (backup rework BR5b): lets the user choose
 /// one document and keeps a private copy of it that is never larger than a
