@@ -32,6 +32,30 @@ Two known limits, measured in that run on a fast phone and accepted
   screen can stand still for about a second.
 
 ### Changed
+- **The Library list keeps its rows and its place while it is read again
+  (review findings P4-M2, P3-M4 and P4-m13; `PLAN.md`, D148 to D157;
+  ADR 0031).** After saving an edited item, after Remove or Restore, and
+  at every search, chip or sort change, the list turned into a spinner
+  and came back at the top. Now the rows stay. After a change to the
+  same list they change in place and the list stays where it was, also
+  beyond row 500 (a deep list is read again in pieces of 500 rows). A
+  new search, chip or sort keeps the old rows until the new ones are
+  there, and the new list starts at the top. The spinner is left for
+  the first load. The language chips no longer blink while they are
+  read again. A form closes as soon as its save is done, without
+  waiting for the list; Remove and Restore on an item's page do the
+  same. Underneath, "catalogue data changed" is a signal of its own:
+  the item pages, the chips, the Magazines list and the availability
+  updater no longer read again when the list is only scrolled or
+  searched (with the borrowers vault unlocked, each page of 60 rows and
+  each typed letter used to read the whole catalogue twice). A test
+  keeps the list from being used as that signal again. Known limits are
+  in ADR 0031. Looked at in an emulator of API 36 by the agent and, in a
+  release build with 10,000 made-up items, on a phone with Android 14 by
+  the maintainer: the list stayed in place after an edit, also about
+  2,000 rows deep and with the borrowers vault unlocked, and searching
+  showed no spinner and no blinking chips. A slow phone has not been
+  tried.
 - **A scan page says why it has no camera picture, and offers a way on
   (review finding P4-M8; `PLAN.md`, D128 to D141; ADR 0030).** With the
   camera refused, "Scan ISBN barcode", "Scan a library QR" and "Scan a

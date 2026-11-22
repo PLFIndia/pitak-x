@@ -58,6 +58,9 @@ The decisions were taken one at a time (`PLAN.md`, D93 to D101).
    ever hung, Back would stay dead on that page until the app is left
    through Home. Every save of the nine forms is local (the catalogue,
    the vault, the settings), with no network in it.
+   (2026-11-22: since ADR 0031 the book form and the other-item form no
+   longer reload a list and no longer call `markSaved()`; the wishlist's
+   form does.)
 
 4. **The guard always answers "ask me first" and decides when Back comes**
    (D97): `canPop` is always false, and an unchanged form is left by the

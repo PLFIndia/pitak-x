@@ -158,6 +158,7 @@ These fail the build; change them deliberately, never to "make it pass".
 | `test/architecture/form_discard_guard_test.dart` | a form asks before Back throws away unsaved input: every file under `lib/` that creates a text controller either uses `DiscardChangesGuard` or is listed in the test with the reason why it is not a form; a passphrase is never given to the guard (review finding P4-M1, ADR 0028) |
 | `test/architecture/package_zip_reader_test.dart` | the app reads a ZIP container with its own reader only: no code line under `lib/` names a ZIP reader of `package:archive` (`ZipDecoder`, the three classes it is made of, `extractFileToDisk`); the inflater and the checksum are all the reader takes from the package (ADR 0009, review finding M05) |
 | `test/architecture/camera_scanner_gate_test.dart` | a camera that reads codes is shown through `CameraScanView` only: no other file under `lib/` imports the scanner package (`flutter_zxing`), so that a scan page cannot be built without the sentence for a refused camera, a phone without a camera, or a camera that did not start (review finding P4-M8, ADR 0030) |
+| `test/architecture/catalogue_change_signal_test.dart` | the Library list's state is nobody's signal: outside the Library screen's own files (listed in the test, each with its reason) no code line under `lib/` names `libraryControllerProvider`, so nothing can watch, listen to or invalidate the list in order to hear or to say "catalogue data changed"; that is `catalogueChangesProvider` (review findings P3-M4 and P4-M2, ADR 0031) |
 
 ---
 
@@ -1235,8 +1236,10 @@ loan never rebuilds the catalogue or reads a cover.
   write and deletes a newly stored file on a mismatch, read failure, or failed
   update instead of overwriting newer data. Forms track deliberate cover edits
   and pending work so Save cannot resurrect a stale cover.
-- **Magazine summaries react to the shared library mutation signal.** Import,
-  merge, restore and issue hard-delete refresh a live Magazines list without a
+- **Magazine summaries react to the app's "catalogue changed" signal**
+  (`catalogueChangesProvider`, ADR 0031; until November 2026 the Library
+  list's own state was that signal). Import, merge, restore and issue
+  hard-delete say it, and a live Magazines list reads again without a
   route rebuild; the minute tick exists only for time-derived subscription
   badges. Filtered-empty and genuinely empty libraries are different states,
   and generic item flows use kind-neutral Item wording.
