@@ -25,7 +25,7 @@ findings of the review".
   | Decisions, the open part of the plan, ONE handoff, short results | this file |
   | The findings of the four review passes with their boxes, and the items T1 to T17, open and closed | private: `review-tracker.md` |
   | Every design ("in detail"), result, safety check and older handoff, word for word | private: `plan-archive-2026-11-13.md` |
-  | The design of the stage that is being built | private: a file of its own (`<stage>-in-detail.md`), until its fix is pushed; then it goes into the archive. Today: `br10-in-detail.md`, for the device runs, and no stage is being built (the design of stage 7 of the plan for the next findings, `p4-m2-in-detail.md`, is in the archive since 2026-11-22). The designs of stages 1 to 6 of the plan for the next findings (`p1-m2-in-detail.md`, `p2-m4-in-detail.md`, `p4-m4-in-detail.md`, `p4-m1-in-detail.md`, `p4-m3-in-detail.md`, `p4-m8-in-detail.md`) are in the archive since 2026-11-18, 2026-11-19 (the second and the third), 2026-11-20 (the fourth and the fifth) and 2026-11-21 (the sixth), each with its build log (the designs of the stage of D24, of BR8 and of BR9 are in the archive, since 2026-11-16 and 2026-11-17) |
+  | The design of the stage that is being built | private: a file of its own (`<stage>-in-detail.md`), until its fix is pushed; then it goes into the archive. Today: `br10-in-detail.md`, for the device runs, and, since 2026-11-22, `p4-m6-in-detail.md`, for stage 8 of the plan for the next findings, which is designed, has its go-ahead (D175) and is not built yet; no stage is being built (the design of stage 7 of the plan for the next findings, `p4-m2-in-detail.md`, is in the archive since 2026-11-22). The designs of stages 1 to 6 of the plan for the next findings (`p1-m2-in-detail.md`, `p2-m4-in-detail.md`, `p4-m4-in-detail.md`, `p4-m1-in-detail.md`, `p4-m3-in-detail.md`, `p4-m8-in-detail.md`) are in the archive since 2026-11-18, 2026-11-19 (the second and the third), 2026-11-20 (the fourth and the fifth) and 2026-11-21 (the sixth), each with its build log (the designs of the stage of D24, of BR8 and of BR9 are in the archive, since 2026-11-16 and 2026-11-17) |
   | The four review reports, their prompts and the summary | private: `codeReviewReport1.md` to `4.md`, `codeReviewPrompt1.md` to `4.md`, `codeReviewSummary.md` |
   | A bird's-eye view of what is fixed and what is open (D147) | this file, its last section: fixed issues in plain words, open ones by id and area only. The full one, with every open issue in plain words too: private, the first section of `review-tracker.md` |
 
@@ -252,6 +252,18 @@ under "D<number>". All are of November 2026.
 | D161 | 22 | Stage 7, its review stop, the second point: the four things that were seen and are not of the stage go into the private tracker: one as the open half of P3-M4 (its box is ticked "in part" after the push), three as T18, T19 and T20, with no stage yet. While T19 was written the agent found that one sentence about it, said at the review stop and standing in ADR 0031's known limits as accepted, was wrong (concluded from one file without reading the other); it was said first, the tracker's entry names it, and the ADR's bullet is put right in the words that were shown. Not chosen: only the one that is written nowhere else; none; the bullet taken out of the ADR | answered 2026-11-22 |
 | D162 | 22 | Stage 7, its review stop, the third point: the stage is accepted as built (steps 1 to 6 of the design, the additions of D160, the texts of D158 and D159 with the bullet put right under D161, the looks of D159). Named with it as not proven: a slow phone, a library beyond 10,000 items, the error screen on a device, and the golden pictures, which CI judges after the push. Three commits follow, each with its own yes to the exact command (the code with its tests and generated files as one; the documents with the gate test; this file), then the push. Not chosen: accepted with no commit that day; a change first | accepted 2026-11-22; committed as `08995df` and `bcb3b63`; pushed, CI green at the second attempt of one job |
 | D163 | 22 | What comes next, said by the maintainer at the end of the session that built stage 7: P4-M6 (how a file leaves the app), as stage 8 of the plan for the next findings. D61 holds for it: a row under "Stages" by id only, a private design file of its own (to be `p4-m6-in-detail.md`; its line in `.git/info/exclude` needs its own yes), decisions from D164. A planning session first (D21): no code before a go-ahead. The review itself asks for a look at the phones before anything is designed (its decision point 5 of pass 4); that look is the planning session's first decision point. A handoff was asked for and written: here by id and area ("The next session", point 9), and in full in the private tracker, its last section | chosen 2026-11-22; nothing read, nothing designed |
+| D164 | 22 | Stage 8, its first decision point: the look at today's behaviour on the phone, before anything is designed, is made by the agent, who drives the phone's play install (made-up data) and reads what the system's window shows; no question to the phone's package manager. The maintainer's first answer could be read three ways, and the agent asked once more instead of choosing. Not chosen: the maintainer's hand and eye, with or without that question; no look | made the same hour (2026-11-22, 13:45 to 13:55). What was seen is in the private notes; its record, the helper and two trees without any text are in `~/pitak-device-runs/stage8-p4m6/`. One file of made-up data was left in the phone's Download folder and removed the same afternoon, with its yes |
+| D165 | 22 | Stage 8, its second decision point, how far the stage goes: the second of three ways, as proposed. Two of the four kinds of file the finding is about are in the stage, and two pages change; the other two kinds stay as they are. Which kinds and which pages is in the private design file (D30). Not chosen: one kind only; all four | in force |
+| D166 | 22 | Stage 8, its third decision point: what the stage adds stands BESIDE what the two pages of D165 do today, on both, and nothing that works today is taken away. The first of three ways, as proposed; an open-source app of the same licence was read for it first (the private design file names it and the commit). Not chosen: in its place on one of the two pages; in its place on both | in force |
+| D167 | 22 | Stage 8, its fourth decision point, which came out of the third: the order in which the new way runs on a page. The first of three ways, as proposed: the user says what is wanted, the file is made whole, and only then is the system asked; the file lives for that one call, as today, and neither page gets a new state. Not chosen: the file made first and shown as ready; the system asked before the file is made | in force |
+| D168 | 22 | Stage 8, its fifth decision point: the Android half of the stage is the app's own code, built as the mirror of `PickedDocumentChannel.kt` (D8, D19, D24): one new channel class with its unit tests, one Dart port with its implementation and tests. No new package. The first of three ways, as proposed; the packages that could do it were read first (the private design file names them, their versions and what was found). Not chosen: a package behind a port of the app's own; a package now and the app's own code later | in force |
+| D169 | 22 | The backup's file name, asked for by the maintainer while stage 8 was planned: `pitak-backup-<DDMonYYYY>-<HHMMSS>.pitabak`, for example `pitak-backup-02Nov2026-134659.pitabak`. Small letters; the month as three English letters from a fixed list, whatever the phone's language; the time stays behind the date, so that two backups of one day do not share a name. Today it is `Pitak-backup-<YYYYMMDD>-<HHMMSS>.pitabak`, made in one place (`backupFileName`); nothing in the app reads the name back. A decision of stage 8, built with it. The names of the exports were not asked for and stay. Not chosen: the date alone, as the wish first read | in force; not built |
+| D170 | 22 | Stage 8, its sixth decision point, the words on the two pages of D165: the labels of the buttons, one note under them on each page, and one sentence for each way a run can end, as they were shown, the first of three ways. Three small things about behaviour go with them (one of them is the detail D167 had left open). The text itself is in the private design file until the fix is pushed (D30). Not chosen: the labels the review proposed; other changes | in force |
+| D171 | 22 | Stage 8, its seventh decision point: D19 and D34 hold for what the stage adds too. Where the app's Android code is missing (another platform, a desktop run), the two pages look the same, and what the stage adds answers "not available" with the sentence of D170; what the pages do today works as today. No second way through a package. The first of three ways, as proposed. Not chosen: asking first, before the file is made; a page that differs by platform | in force |
+| D172 | 22 | Stage 8, its eighth decision point, how much of the open items T2 and T12 the stage takes: the second of four ways, as proposed. Of T2 the part that falls out of the stage's own design, on one of the two pages; the rest of T2 stays open, and T12 is left. Which part, and why the rest needs a piece of work of its own, is in the private design file (D30); the tracker's two rows get a sentence each when the stage is pushed. Not chosen: both left; a larger part of T2; T12 too | in force |
+| D173 | 22 | Stage 8, its ninth decision point, what keeps it in place: as listed, the first of three ways. Unit tests on both sides of the channel of D168, written first; the two pages' tests, one for each sentence of D170; a gate under `test/architecture/` with its row in `docs/ARCHITECTURE.md` §2.1, which is the first test here that reads a Kotlin source (it holds the names both sides must agree on to one text); the guide's test; ADR 0032; `docs/ARCHITECTURE.md`, `PRIVACY.md`, `SECURITY.md` where a sentence falls behind, `CHANGELOG.md`; the in-app guide with its approved copy; the comments that fall behind. Each text is shown before it is written. Not chosen: an amendment of ADR 0026 instead of an ADR of its own; other changes | in force |
+| D174 | 22 | Stage 8, its tenth decision point, the look after the build: the widest of three ways, as proposed. The emulator of API 36 by the agent, for everything that can be staged there (a file of 1 GiB, a place that fails, the app ended in the middle among it); the phone's play install with a debug build, driven by the agent as in D164, and the maintainer's own look at the two pages; on the phone's F-Droid install a release build, for the file of 1 GiB on a real phone (three covers are removed there first, by the maintainer); and one OLDER Android in a second emulator image, which is a download. Each build, each install, each start of an emulator and the download keep their own yes at that time. Not chosen: without the release build on the phone and without the older Android; without the older Android | in force |
+| D175 | 22 | Stage 8, its eleventh decision point, the go-ahead: the whole build through to the review stop, in new sessions, without a stop after each step: a pause only where the design names one (four things it rests on that are read and not tried, a new decision, and the texts that are shown first). One small thing the design added to the words of D170 is approved with it. Every commit, the push, each build, each install, each start of an emulator and the download keep their own yes; nothing is committed before the review stop. Not chosen: a stop after each of the ten steps; not yet | in force; nothing is built |
 
 Decision points of the plan that are still open: 7 (see
 "The plan").
@@ -449,7 +461,7 @@ workflow after a push.
 ## Handoff
 
 For an agent or a person who starts with no memory of the earlier
-sessions. Brought up to date on 2026-11-21. Everything here was true
+sessions. Brought up to date on 2026-11-22. Everything here was true
 when it was written; check the repository before relying on it.
 
 ### Read in this order
@@ -528,7 +540,12 @@ when it was written; check the repository before relying on it.
    8 of "The next session". Since the end of that session stage 8 is
    CHOSEN (P4-M6, D163) and nothing of it is read: its planning is
    point 9 of "The next session", with a private half in the
-   tracker's last section.
+   tracker's last section. Since the second session of 2026-11-22
+   stage 8 is DESIGNED and has its go-ahead (D164 to D175; the
+   private `p4-m6-in-detail.md`, which has the look on the phone,
+   every decision in full, what was read and tried, and the design
+   with the order of the build); nothing of it is built. Its build
+   begins in a new session: point 10 of "The next session".
 
 ### State of the repository
 
@@ -2482,6 +2499,49 @@ stage 5)**
   the system's accessibility menu). What one would be given is in
   the tree; whether it is read out cannot be tried here.
 
+**The phone, the emulator and reading, learned on 2026-11-22 (the
+planning of stage 8)**
+
+- A window of the system that shows the maintainer's own things
+  (the share sheet, a file manager, the document picker) is read in
+  two passes: first its tree WITHOUT any text (class, id, bounds,
+  the length of each text), to learn which ids hold what; then only
+  the nodes that are needed, by id or by class. The helper of that
+  day has `shape`, `under`, `field`, `same` and `buttons` for it
+  (`~/pitak-device-runs/stage8-p4m6/p.py`).
+- **An id is not enough.** In the system's document picker the rows
+  of the file list carry the same resource id (`title`) as the
+  field that holds a name: "print the nodes with id `title`" prints
+  the user's file names. Ask for the class (`EditText`) as well.
+  This was found in the emulator, where the rows were the trial's
+  own files: a new command of a helper is tried there before it is
+  pointed at the phone.
+- On this phone the share sheet is `com.android.intentresolver` in
+  the maker's layout: the apps are the `resolver_item_layout` nodes
+  of a pager with several pages (swipe it; the dots say how many),
+  and the row above them holds people. The emulator's and the
+  phone's document pickers are two packages
+  (`com.android.documentsui`, `com.google.android.documentsui`)
+  with the same ids.
+- Whether a picker stands in a given folder can be asked as yes or
+  no (the breadcrumb's text compared with the name that is
+  expected), without printing where it stands.
+- The phone dropped off USB for some seconds in the middle of a
+  look (it had on 2026-11-19 too). The tap that was sent had gone
+  through; the reading after it failed. Read the state again
+  before the next step; do not send the step again.
+- Android's own source can be read without a sign-in as one file
+  (`…/+/refs/heads/main/<path>?format=TEXT`, base64); its history
+  pages ask for a sign-in. A large page of the reference came whole
+  only with `curl --compressed`; without it one stopped after 15 KB.
+- `gh run view <id> --log` gives one line per log line with the
+  job's and the step's name in front; the suite's count is the line
+  that says "tests passed".
+- A decision point that is written down is not thereby shown. The
+  agent wrote "put to the maintainer" into this file before its
+  answer had gone out, and the maintainer's next message crossed
+  it. Write "put" after the message is sent, not before.
+
 ### Open items kept in the private tracker
 
 Fifteen things that are not fixed and are therefore not described
@@ -3056,6 +3116,21 @@ shows it. `~/pitak-device-runs/stage7-p4m2/emulator/` (kept) holds
 what the emulator's screen said at each point of the look, as text
 (16 readings, the two helpers, a `README.txt`): made-up data only.
 
+Since the second session of 2026-11-22: `/tmp/pitak_p4m6/` holds the
+planning of stage 8 of the next findings, as far as it has come: the
+logs of the baseline and of CI run 44999701988 (`logs/`), three
+pages of Android's documentation as they were fetched, with their
+text (`docs/`), the helper that drove the phone for the look of D164
+(`device/`), what was read of other people's code (two files of an
+open-source app, the archives of three packages, one file of
+Android's source and one compiled class: `upstream/`, `docs/`), the
+parts the private design file was joined from
+(`design/`), and copies of the private files, of
+this file and of the two git settings files from before the
+session's first write (`before/`, with checksums). Nothing of the
+maintainer's own is in it but those copies; it is left to the
+system.
+
 ## Log
 
 | Date | What |
@@ -3078,6 +3153,7 @@ what the emulator's screen said at each point of the look, as text
 | 2026-11-21 | The twelfth session of the plan for the next findings: the build of stage 6 (P4-M8, the scanner) begun (D139). The state confirmed (one commit of this file ahead of `origin/reviewFixes`; the private files there); the private design file read in full; copies first; the baseline, Kotlin with it: unchanged (7,784 tests). Steps 1 to 6 of the design's eight built, tests first: the tests of the two pages and of the two cover places written against the code as it was and seen red for the right reason; 110 trials by hand, of which four were not seen at once and none was left as a note (one test made to see it, two guards that were redundant removed, one change without a different behaviour). The one line of `pubspec.yaml` of D130 with `flutter pub get --offline`: one word of the lock file, nothing fetched. One test file runs the scanner package's real widget over a stand-in camera (D136). Checks on the tree: 7,935 tests, format 0 changed of 1,510 files, analyze 47, Kotlin 70 in each flavour offline, the merged manifest "OK" for both flavours with its permissions as before, Rust 45 passed and 2 ignored. Nothing committed. Paused before the look of D138: the documents of step 7 are drafted outside git and not shown yet. The private design file has the build log (its section 16), with the slips and with what the build added beyond the design. Then, with the maintainer's yes, the debug build (looked into) and the look in the emulator of API 36, once as it is and once without a camera: as designed for the most part, and D133's condition does not come up; two things did not hold (one under D135, one of the design's own list), each with what was read and tried in the private design file's section 17, and the build stops for them. Both were put: D140 (built, tests first, seen red on the tree as it was; a second look in the emulator) and D141 (as built). The texts shown and written (D142). In the evening the phone: the build installed with the maintainer's yes, a real barcode and the torch by the maintainer's hand, the rest through `adb` while the maintainer watched, then the maintainer's own look (D143). The review stop: D144, D145 (T17 into the private tracker, after it was put), the acceptance (D146). Four commits, each with its own yes: `a1cc905`, `9034c24`, `09ae13d`, `7803e63`, and `8404526` for this file. The push (`3ed731c..8404526`), and CI run 44909495333 green in all four jobs at its first attempt, "Update goldens" with it: 7,939 tests on Linux, the golden pictures as they were. The bookkeeping: P4-M8 ticked in the private tracker (84 findings with an open box, 13 ticked); the stage described here; its design file into the private archive, word for word, with an entry for each of D128 to D146. With stage 6 the six stages of D62 and D63 are done. The bookkeeping committed and pushed (`5e1a6af`); its CI run was not looked at, at the maintainer's word. Then a bird's-eye view of what is fixed and what is open (D147): the full one into the private tracker, a public-safe one as this file's last section |
 | 2026-11-21 | The thirteenth session of the plan for the next findings: stage 7 (P4-M2 with P3-M4, and P4-m13) planned, from the question what comes next to the go-ahead. The state confirmed (level with `origin/reviewFixes` at `e81d187`; the working tree clean but for the untracked files the handoff names; the private files there; the CI runs of `5e1a6af` and `e81d187`, which change this file only, were not looked at). What comes next asked first, as the handoff says: D148. Copies of the private files first; one line in `.git/info/exclude` for the new private file, with the maintainer's yes. The baseline, unchanged: `build_runner` no diff, format 0 changed of 1,510 files, analyze 47, 7,939 tests (6:21); Rust and Kotlin not run. Read: the three findings in the tracker, the two reports and the summary; the code they name and what watches and writes around it; Riverpod 2.6.1 and Drift 2.28.2 in the pub cache. The findings confirmed in today's code, every place; one thing the review has differently, and one word of this plan ("one cause") put right, both said to the maintainer. Five trials outside git, 18 tests: today's screen; today's reads; a second way for D151, not chosen; what a read costs; the mechanics of the design. The look at today's behaviour on the phone's F-Droid install, the maintainer's hand and eye (D149). Nine decision points put one at a time, each answered as proposed: D149 to D157. The design in the private `p4-m2-in-detail.md` (its section 22), shown with the go-ahead. Four slips, each said where it happened: a count that was one short in the first summary; a trial that did not compile, written from an example and not from the code; an edit of this file that stopped because its anchor matched two rows (nothing was written; done again); a trial's check that looked one frame too early. No code written, nothing committed: this file is changed and not committed |
 | 2026-11-22 | The fourteenth session of the plan for the next findings: the BUILD of stage 7 (P4-M2 with P3-M4, and P4-m13) begun. The state confirmed (one commit of this file ahead of `origin/reviewFixes`, `5457687`; the private files there); the private design file read in full; copies first; the baseline unchanged (7,939 tests, format 0 changed of 1,510 files, analyze 47, `build_runner` no diff). Steps 1 to 5 of seven and the test of step 6 built, tests first: step 1 (3 tests; 2 trials by hand), step 2 (18 new tests and 2 rewritten, 12 red on the code as it was; 20 trials, two of them seen only after a test was written for code older than the stage), step 3 (11 new tests, 9 red on the code as it was; 11 trials, every one seen), step 4 (14 red on the code as it was; 17 trials, two of which no test saw: their line was read, found to guard nothing any more, and removed), step 5 (7 red on the code as it was; 11 trials, one seen only after a test was sharpened), the test of step 6 (4 tests; 5 trials, every one seen). The whole checks after each step: 7,942, 7,960, 7,971, 7,974, 7,979 and 7,983 tests; format 0 changed of 1,517 files; analyze 47. The four texts of step 6 drafted outside git, shown to the maintainer (D155) and, after the answer, written as shown, with one dated line in ADR 0028 (D158). Rust (45 passed, 2 ignored) and Kotlin (70 in each flavour, offline) run once. With the maintainer's yes for each: a debug build of the play flavour (looked into), and the look in the emulator of API 36 with 10,000 made-up items and a made-up vault: as designed at every point that was looked at; one thing seen that is older than the stage. A slip: the agent removed one scratch file of its own under `/tmp` with `rm` without asking. Then, each with its yes: a release build of the F-Droid flavour after `flutter clean` (189 s of Gradle; looked into), and its install over the phone's F-Droid install, whose state was read before and after (the same certificate, the same version). The maintainer's look there, seven steps: everything as designed, and the three things seen on 2026-11-21 gone (D159); the sentences about the looks shown and written. The review stop, its points one at a time: D160 (twelve additions stay), D161 (four things not of the stage into the private tracker, T18 to T20 among them; with it a wrong sentence of the agent's about one of them, said first and put right in the tracker and, with the maintainer's word, in ADR 0031), D162 (accepted). The whole suite once more after the clean build: 7,983 tests. Two commits, each with its yes, what was staged compared with the saved tree first: `08995df` (68 files), `bcb3b63` (6 files); then this file (`d87b8cb`). The push of four commits (`e81d187..d87b8cb`), with the maintainer's yes. CI run 44993054071 at `d87b8cb`, watched to its end at the maintainer's word after a pause: three jobs green (7,983 tests on Linux, the 10 golden tests with the pictures as they were, Rust, the OSV scan), and the F-Droid job RED at its first Gradle step, where Gradle could not find Kotlin's artifacts at the plugin portal; the steps after it, the Android unit tests among them, did not run. "Update goldens" 44993053858 green, no new commit. Read as not of the push (no file of the job's inputs changed); not known then whether it lasts. Asked for the tracker's bird's-eye view in between, the agent showed it as it stood, stage 7 not ticked. With the maintainer's yes the failed job was run again (`gh run rerun 44993054071 --failed`): green at its second attempt, every step, the merged manifest "OK" for both flavours and the Android unit tests among them. Then the bookkeeping: P4-M2 and P4-m13 ticked in the private tracker and P3-M4 written down as met in part (82 findings with an open box, 15 ticked, seven fixed in part); the rows of the bird's-eye view here and there; the stage described here ("Stage 7: what it was and what was built"); the design file, with its build log and its review stop, into the private archive word for word, with its line in the list of titles and an entry for each of D148 to D162. This file committed (`67ce4b5`) and pushed (`d87b8cb..67ce4b5`) with the maintainer's yes; its CI run 44999701988 was running and was NOT seen to its end. Asked what comes next, the maintainer chose P4-M6 (D163) and asked for a handoff: written here by id and area ("The next session", point 9) and in full as the last section of the private tracker. Nothing of P4-M6 was read in the code or designed One prediction of the session was wrong and one thing was found by a red test and not predicted; both are said in the build log (the private design file's section 26), with eight things built beyond the design for the review stop. Slips: a test and the code it tests written in one block. Nothing committed; no push; no device touched |
+| 2026-11-22 | The fifteenth session of the plan for the next findings: the PLANNING of stage 8 (P4-M6, how a file leaves the app) begun. The state confirmed (one commit of this file ahead of `origin/reviewFixes`, `4ed1e2d`; the working tree clean but for the untracked files the handoff names; the private files there). CI run 44999701988 at `67ce4b5`, which the session before had not seen to its end: green in all four jobs at the first attempt (7,983 tests, the 10 golden tests with the pictures as they were), and "Update goldens" 44999701701 with it. Copies of the private files, of this file and of the two git settings files first. The baseline, unchanged: `build_runner` no diff, format 0 changed of 1,517 files, analyze 47, 7,983 tests (3:48, in the foreground under `caffeinate -dis`; it was started about one minute after analyze, where the handoff asks for some minutes, and passed); Rust and Kotlin not run. Read: the private handoff in the tracker's last section; the finding in the tracker, the report and the summary; the code it names and every caller of it, in today's code: confirmed. Read with it: the share plugin's two packages in the versions of `pubspec.lock` (the pub cache); three pages of Android's documentation, fetched read-only, which answer what the private handoff had from memory (quoted in the private notes); what the device runs of 2026-11-16 and 2026-11-17 had already seen; one offline Gradle call that lists dependencies. On the phone, read-only: that it is attached, its Android version, and one help text; nothing of the maintainer's. The first notes of the design are written OUTSIDE git (`/tmp/pitak_p4m6/design/`, eight parts): the private `p4-m6-in-detail.md` is not made yet, because its line in `.git/info/exclude` needs a yes. The first decision point (the look on the phone before anything is designed) put to the maintainer; the first answer could be read three ways and was asked once more; answered: D164, the agent drives the phone and reads what the system's window shows, with no question to the phone's package manager. The look made at once on the phone's play install (the debug build of stage 6, made-up data), ten minutes: a helper adapted from the one of D128, which reads and taps only while an allowed window is in front, takes no picture, leaves no file on the phone, and of the system's window reads the file's name and the grid of apps only (its tree was read without any text first, to find them; the row of people above the grid, and the rows of the file manager's list, were never read); every point of the look's list but two, which are named in the private notes. The phone dropped off USB once for some seconds. Left on the phone: one file of made-up data in its Download folder (its removal is a yes). Then, with the maintainer's yes for the exact command, one line in `.git/info/exclude` for the private design file (`.git/config` unchanged), and the private `p4-m6-in-detail.md` joined from its parts in one command and compared. The second decision point (how far the stage goes) put and answered as proposed: D165. Read for the third, read-only on GitHub: two files of an open-source app of the same licence, at a named commit. The third decision point put and answered as proposed: D166. Read for the fourth: three more pages of Android's documentation (one fetch stopped short and was made again). The fourth decision point, which the draft list did not have, put and answered as proposed: D167. Read for the fifth, read-only: pub.dev's list of five packages and the newest archive of three of them (under `/tmp`, not into the pub cache; nothing was added to `pubspec.yaml`). The fifth decision point put and answered as proposed: D168. Read after it, read-only: one file of Android's own source (its history page asked for a sign-in, so its commit is not known; the file's checksum is in the private notes). A trial on the emulator and on the phone put to the maintainer and made with the yes for both, to its end: the request the app would send was sent from the command line, four made-up names, and what the system's window proposed and what the file was then called was read (the emulator `pitak_s11_api36`, read-only, started for it and stopped after it; on the phone four empty files in its Download folder, to be removed with the file of the look, one yes for five exact names). A slip, found in the emulator and put right before the phone was touched: one command of the helper printed the rows of the system window's list as well, which in the emulator were the trial's own files; the helper was changed, and no row of the phone's list was printed. The five files removed from the phone's Download folder with the maintainer's yes for the exact command, and each name asked for again: gone. The sixth decision point (the words on the two pages) written down for the maintainer. Before it was shown, the maintainer asked for another form of the backup's file name; what depends on the name was read (one function, its tests, two documents; nothing reads the name back), and one question about the wish was put and answered: D169. A slip: this row said for a while that the words had been shown; they were shown after D169. The sixth decision point put to the maintainer, every sentence shown, and answered as shown: D170. The seventh decision point (a platform without the app's Android code) put and answered as proposed: D171. The eighth (how much of T2 and T12 the stage takes) put and answered as proposed: D172. The ninth (what keeps it in place) put and answered as proposed: D173. The tenth (the look after the build) put and answered as proposed: D174. Read for the design: one compiled class of a library the build already has, the export's file names, the keeper of the run folders and its wiring, the sizes of the files that grow, the golden pictures (none shows either page). The design written in its final form (the private design file's section 41), with one small thing added while it was written, and the go-ahead put and given: D175, the whole build through to the review stop, in new sessions. A handoff for that build ("The next session", point 10; the private design file's sections 44 and 45, with the session's slips and with three things seen while reading that are not of the stage and wait for the review stop). No file of the app changed; nothing is built; this file not committed when the row was written |
 
 ## Device runs: handoff for the next session
 
@@ -3799,7 +3875,7 @@ In this order (D62, D63). The sizes are guesses. (For one hour of 2026-11-20 an 
 | 5 | P4-M3; of P4-m5 the part the review's direction for P4-M3 names (D108) | lending | about a day; read against the code: two build sessions | **designed 2026-11-20, with its go-ahead** (D103 to D113; the private `p4-m3-in-detail.md`): confirmed in today's code, all ten decision points answered, each as proposed. **Built through its seven steps, accepted at its review stop (D124), committed and pushed** (the same session and the next). The build stopped once, before step 3, because D106 did not hold as it was put; D114 answered it. The look in the emulator and the look on the phone are made (D111), the points of the review stop are answered (D115 to D123, with D125), and it is **committed, pushed and green in CI**: `9a30de9`, `b97eda4`, `1c69d6c`, `e39e00c`, `ca03b62`; CI run 44766273946 at `7ba6837`. **Done 2026-11-20**: ticked in the private tracker (P4-m5 in part, its box stays open); described below; its design file in the private archive |
 | 6 | P4-M8 | the scanner | about a day; read against the code and the packages: two build sessions | **designed 2026-11-21, with its go-ahead** (D128 to D139; the private `p4-m8-in-detail.md`): read again in today's code and confirmed, every place; looked at on the phone before the design was final (D128); all twelve decision points answered, each as proposed. **In building 2026-11-21** (the second session of that day): steps 1 to 6 of eight built and green on the Mac, nothing committed; left are the documents (drafted, each shown first), the look on the devices (D138) and the review stop. The private design file's section 16 is its build log. **Finished the same day:** the look in the emulator, where two things did not hold (D140, built; D141, as built), the texts (D142), the look on the phone (D143), the review stop (D144, D145) and the acceptance (D146). **Done 2026-11-21:** `a1cc905`, `9034c24`, `09ae13d`, `7803e63`; pushed, CI run 44909495333 at `8404526` green; ticked in the private tracker; described below; its design file in the private archive |
 | 7 | P4-M2 with P3-M4, and P4-m13 (D150) | the library list | "medium" in the review's summary; read against the code: two build sessions, as a guess | **designed 2026-11-21, with its go-ahead** (D148 to D157; the private `p4-m2-in-detail.md`), in one session: the findings read again in today's code and confirmed, every place, with one thing the review has differently; today's behaviour looked at on the phone by the maintainer before the design was final (D149); five trials outside git (18 tests); all nine decision points answered, each as proposed. Nothing was built that day (D157). **In building 2026-11-22** (a new session): steps 1 to 5 of the design's seven and the test of step 6 built, tests first, and green on the Mac; nothing committed; the four texts of step 6 shown and written as shown, with one line in ADR 0028 (D158); the debug build and the look in the emulator of API 36 made, each with its yes, and everything looked at was as designed; left are the release build and the phone (D156), the sentences about the looks, and the review stop. **Finished the same day:** the release build of the F-Droid flavour over the phone's F-Droid install and the maintainer's look there (D159), the review stop (D160, D161) and the acceptance (D162). **Committed 2026-11-22:** `08995df`, `bcb3b63`, with this file as the third (`d87b8cb`). **Pushed the same day** (`e81d187..d87b8cb`). Its CI run, 44993054071 at `d87b8cb`, was red in one job at its first attempt (a download the F-Droid job's Gradle could not make, before any test) and is green in all four since that job was run again. **Done 2026-11-22:** ticked in the private tracker (P3-M4 in part, its box stays open); described below; its design file in the private archive The private design file's sections 26 and 27 are its build log and its review stop |
-| 8 | P4-M6 | how a file leaves the app | not guessed; "a planned piece of work" in D62 | **chosen 2026-11-22** (D163). Not read, not designed: its planning begins in a new session ("The next session", point 9) |
+| 8 | P4-M6 | how a file leaves the app | not guessed; "a planned piece of work" in D62 | **chosen 2026-11-22** (D163). **Planned the same day**, in one session (D164 to D174, and D169 for the backup's file name; the private `p4-m6-in-detail.md`): the finding read again in today's code and confirmed; today's behaviour looked at on the phone before anything was designed (D164); Android's documentation and source read and quoted; a trial of the system's window on the emulator and on the phone; ten decision points answered, each as proposed, and the maintainer's own wish for the file name (D169); the design written in its final form. **It has its go-ahead (D175):** the whole build through to the review stop, in new sessions ("The next session", point 10). Nothing is built |
 | later, each with a plan of its own | P2-M2; the rest of P2-M3 | two packages | a planned piece of work each | not read |
 
 Every "where" of the review reports is of 2026-11-10. Each place is
@@ -4089,8 +4165,35 @@ finding is confirmed or struck.
   sentence and the row of `docs/ARCHITECTURE.md`, the changelog:
   each shown first, D155), step 7 (the emulator, the release build,
   the phone: each with its own yes, D156), then the review stop.
+- **Stage 8 (P4-M6, how a file leaves the app) is PLANNED and has
+  its go-ahead (D175)** (2026-11-22, the fifteenth session, in one
+  sitting): the state, CI run 44999701988 (green) and the baseline
+  first (unchanged: 7,983 tests, format 0 changed of 1,517 files,
+  analyze 47, `build_runner` no diff; Rust and Kotlin not run); the
+  finding read again in today's code and confirmed; the look on the
+  phone before anything was designed (D164); Android's
+  documentation and one file of its source read and quoted; the
+  packages that could do the job read (D168 chose the app's own
+  code); a trial of the system's window on the emulator and on the
+  phone, with a yes for both; eleven decision points answered, each
+  as proposed (D164 to D168, D170 to D175, the last being the
+  go-ahead), and the maintainer's own wish for the backup's file
+  name (D169). The design is in the
+  private `p4-m6-in-detail.md`, section 41. Nothing is built; no
+  file of the app changed; this file is changed and not committed.
+  The phone is as it was before the session (the five files the
+  look and the trial left in its Download folder were removed with
+  a yes); the emulator was started once, read-only, and stopped.
 
 ### The next session
+
+**Stage 8 of this plan (P4-M6, how a file leaves the app) is PLANNED
+and has its go-ahead** (2026-11-22, D164 to D175; the private
+`p4-m6-in-detail.md`). Nothing of it is built. Points 1 to 9 below
+are history, kept as they were written. **What a next session does
+is point 10** (the build of stage 8).
+
+(The paragraphs that stood here before:)
 
 **Stage 7 of this plan (P4-M2 with P3-M4, and P4-m13) is DONE**
 (2026-11-22): built, accepted (D162), pushed, green in CI (run
@@ -4503,6 +4606,124 @@ below, its design file in the private archive; the fourth session of
      `docs/RELEASING.md` §2 first;
    - the session ends with a design and a go-ahead, or without one;
      the build is a session of its own, as for stages 2 to 7.
+   **Where the planning stands (2026-11-22, the fifteenth session):**
+   the state, the CI run (44999701988 at `67ce4b5`: green), the
+   copies and the baseline (unchanged) are done; the finding is read
+   again in today's code and CONFIRMED; Android's documentation is
+   read and quoted for what a design may rest on, and what is not
+   said there and has to be tried first is listed. All of that is in
+   the private `p4-m6-in-detail.md`, its sections 1 to 10 (the file
+   exists since the maintainer's yes for its line in
+   `.git/info/exclude`, the 24th line of that file; `.git/config` is
+   unchanged; it was joined from parts that were written under
+   `/tmp/pitak_p4m6/design/` and compared with them). **The first
+   decision point is ANSWERED (D164) and the look on the phone is
+   MADE** (13:45 to 13:55; section 11 of the design file has what
+   was seen and what it says and does not say;
+   `~/pitak-device-runs/stage8-p4m6/` has its record, the helper
+   and two trees without text). The look left one file of made-up
+   data in the phone's Download folder (removed since, see below);
+   the play install is still the debug
+   build of stage 6. **The second decision point, how far the stage
+   goes, is ANSWERED (D165;** sections 12 and 13 of the design
+   file). Read for the third, read-only on GitHub: how a respected
+   open-source app of the same licence does it (section 14, with
+   the commit that was read). **The third decision point is
+   ANSWERED (D166;** sections 15 and 16). Read for the fourth: two
+   more pages of Android's reference and one of its guides, quoted
+   in section 17. **The fourth decision point is ANSWERED (D167;**
+   sections 18 and 19; it is a point the draft list did not have,
+   so the list's points 4 to 8 follow it as 5 to 9). Read for the
+   fifth, read-only: pub.dev's list of five packages, and the
+   newest archive of three of them, fetched under `/tmp` and not
+   into the pub cache, compared with pub.dev's checksums (section
+   20). **The fifth decision point is ANSWERED (D168;** sections 21
+   and 22). Read after it, read-only: one file of Android's own
+   source, for two of the things section 4 lists as "to be tried"
+   (section 23). **A trial on the emulator and on the phone is MADE**,
+   with the maintainer's yes for both, to its end (16:39 to 16:43;
+   section 24 has it as it was put, section 25 what it settled and
+   what is still not tried; the record and the script are in
+   `~/pitak-device-runs/stage8-p4m6/`). The emulator
+   (`pitak_s11_api36`, read-only) was started for it and stopped
+   after it; nothing of it is kept. The four EMPTY files of the
+   trial and the one file of the look were REMOVED from the phone's
+   Download folder with the maintainer's yes for the exact command
+   (16:46; five exact names, each asked for again afterwards: gone;
+   section 26). What the look left in the play install's own cache
+   is still there (made-up). **Before the sixth decision point was
+   shown, the maintainer asked for another form of the backup's file
+   name.** The agent read what depends on the name, said back how it
+   reads the wish, and put one question about it: **answered, D169**
+   (sections 28 and 29 of the design file). **The sixth decision
+   point, the words on the two pages, is ANSWERED (D170;** section
+   27 has the labels and every sentence, with three small things
+   about behaviour that go with them, section 30 the answer; it was
+   shown to the maintainer after D169 and not before, although this
+   file said so for a while: a slip of the agent's, section 29).
+   **The seventh decision point, a platform without the app's
+   Android code, is ANSWERED (D171;** sections 31 and 32). **The
+   eighth, how much of T2 and T12 the stage takes, is ANSWERED
+   (D172;** sections 33 and 34). **The ninth, what keeps it in
+   place (the tests, a gate, an ADR, the documents, the guide), is
+   ANSWERED (D173;** sections 35 to 37). **The tenth, the look
+   after the build, is ANSWERED (D174;** sections 38 and 39).
+   **The design is written in its FINAL form** (section 41 of the
+   design file: what the user gets, the Android half, its Dart
+   side, the two pages, what keeps it in place, the order of the
+   build in ten steps, what is seen and what is only read, where
+   the build pauses, the known limits, what is not part of the
+   stage, and one small thing added while it was written, 41.12;
+   section 40 has what was read for it). **The eleventh decision
+   point, the go-ahead, is ANSWERED (D175;** sections 42 and 43):
+   the whole build through to the review stop, in new sessions.
+   THE PLANNING IS DONE. Nothing is built: what a next session does
+   is point 10.
+10. **The BUILD of stage 8 (P4-M6), in new sessions** (D175; as for
+   stages 2 to 7). The stage is designed and has its go-ahead since
+   2026-11-22. How a build session goes:
+   - the state, as in point 9 (this file may be changed and not
+     committed, or committed and not pushed); the private
+     `p4-m6-in-detail.md` is there too and is read IN FULL first
+     (an agent that cannot see it stops and asks). Its section 41
+     is the design: what the user gets, what is new file by file,
+     the order of the build in ten steps, what is seen on a device
+     and what is only read, where the build pauses, the known
+     limits, what is not part of the stage. Its section 27 has
+     every word a user reads (D170), section 29 the backup's file
+     name (D169), sections 38 and 39 the looks (D174), section 44
+     how the build takes over, section 45 three things seen while
+     reading that are not of the stage and wait for the review
+     stop. Sections 7 and 8 are the first draft and are superseded
+     where they differ;
+   - copies of the private files, of this file and of the two git
+     settings files before the first write; the baseline: 7,983
+     tests; format 0 changed of 1,517 files; analyze 47;
+     `build_runner` no change (run on 2026-11-22: unchanged).
+     Kotlin IS touched by this stage (70 tests in each flavour when
+     last run): `build/` was emptied by a `flutter clean` on
+     2026-11-22, so the offline Gradle run of the Android unit
+     tests may need one run with the network first (a yes). Rust
+     is not touched (45 passed, 2 ignored);
+   - the ten steps, tests first in each and seen red where they
+     can be, every guard switched off once by hand, a patch saved
+     outside git after each step. No stop after each step (D175):
+     a pause only when one of the things the design rests on does
+     not hold (its section 41.8) or a new decision comes up, and
+     for the texts that are shown first (D173);
+   - every commit, the push, each build, each install, each start
+     of an emulator and the download of a second emulator image
+     keep their own yes (D174); nothing is committed before the
+     review stop. Before any install the agent reads that the
+     build is signed as the installed one is and is not a lower
+     version;
+   - the helper and the script of the planning's look and trial
+     are kept in `~/pitak-device-runs/stage8-p4m6/` (a
+     `README.txt` and two records); the traps of that day are
+     under "Traps" ("learned on 2026-11-22");
+   - the guess is three build sessions. A session stops after a
+     whole step and hands over, in the design file and here (as
+     stage 4 did, D100).
 
 ### Stage 1: what it was and what was built
 
@@ -5545,6 +5766,14 @@ private tracker (D161).
   three times, once without a camera; two Gradle runs through the
   `flutter` tool, not watched for the network.) Of the later ones
   P4-M6 and the rest of P2-M3: the phone.
+- Stage 8 (P4-M6), planned on 2026-11-22: the phone for the look
+  before its design (D164), and the emulator and the phone for a
+  trial, each with its yes. For its build (D174): the emulator of
+  API 36; the phone's two installs, the F-Droid one with a release
+  build; a second emulator image with an older Android, which is a
+  download; Gradle runs through the `flutter` tool, and one with
+  the network if the offline run of the Android unit tests asks
+  for it after the `flutter clean` of 2026-11-22.
 
 ### Definition of done for this plan
 
@@ -5619,7 +5848,7 @@ the private tracker.
 | [ ] | P3-B3, the rest | restore | in no stage |
 | [ ] | P2-M2 | a package (the catalogue's database) | later, a plan of its own (D62) |
 | [ ] | P2-M3, the rest | a package (secure storage) | later, a plan of its own (D62) |
-| [ ] | P4-M6 | how a file leaves the app | stage 8: chosen (D163); not read, not designed |
+| [ ] | P4-M6 | how a file leaves the app | stage 8: planned, with its go-ahead (D164 to D175); not built |
 | [ ] | P3-M2 | import | in no stage |
 | [ ] | P3-M3 | saving in the vault | in no stage: the wait was found acceptable in a release build (D125) |
 | [ ] | P3-M5 | the published viewer | in no stage |
