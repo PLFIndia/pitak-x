@@ -9,7 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
-import 'package:pitaka/features/library/application/library_controller.dart';
+import 'package:pitaka/features/library/application/catalogue_changes.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/value_objects/calendar_date.dart';
 import 'package:pitaka/features/library/domain/value_objects/item_details.dart';
@@ -144,7 +144,7 @@ void main() {
     },
   );
 
-  test('S9: the shared library signal refreshes title, count and latest date '
+  test('S9: "catalogue changed" refreshes title, count and latest date '
       'without a tick or route recreation', () async {
     final series = periodicals.seed(const Periodical(title: 'Frontline'));
     periodicals.issues[series.periodicalUid!] = [
@@ -161,7 +161,6 @@ void main() {
     final container = makeContainer();
     final before = await load(container);
     final notifier = container.read(periodicalsControllerProvider.notifier);
-    await container.read(libraryControllerProvider.future);
     await container.pump();
     expect(before.single.periodical.title, 'Frontline');
     expect(before.single.issueCount, 1);
@@ -183,8 +182,7 @@ void main() {
         ),
       ),
     ];
-    container.invalidate(libraryControllerProvider);
-    await container.read(libraryControllerProvider.future);
+    container.read(catalogueChangesProvider.notifier).changed();
     await container.pump();
 
     final after = await container.read(periodicalsControllerProvider.future);
@@ -242,7 +240,6 @@ void main() {
       periodicals.markRemovedFailure = const StorageFailure('disk full');
       final container = makeContainer();
       await load(container);
-      await container.read(libraryControllerProvider.future);
       await container.pump();
       final readsBefore = periodicals.calls.where((c) => c == 'listAll').length;
 

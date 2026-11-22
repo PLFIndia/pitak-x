@@ -38,7 +38,7 @@ import 'package:pitaka/features/import_export/application/merge_library_use_case
 import 'package:pitaka/features/import_export/application/merge_ui_state.dart';
 import 'package:pitaka/features/import_export/application/picked_text_file.dart';
 import 'package:pitaka/features/import_export/domain/import_limits.dart';
-import 'package:pitaka/features/library/application/library_controller.dart';
+import 'package:pitaka/features/library/application/catalogue_changes.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 // The states this controller shows live in a file of their own; exported
@@ -271,7 +271,7 @@ class MergeController extends _$MergeController {
         result.match(ReviewFailed.new, (_) => ReviewResolved(resolution)),
       );
       if (result.isRight() && resolution != MergeResolution.keepMine) {
-        ref.invalidate(libraryControllerProvider);
+        ref.read(catalogueChangesProvider.notifier).changed();
       }
     } on Object {
       _publishRowStatus(
@@ -294,10 +294,10 @@ class MergeController extends _$MergeController {
   }
 
   /// Terminal state for a successful apply: the catalogue changed, so
-  /// refresh the library list from HERE (N11) — a popped Merge page cannot
-  /// leave the list underneath stale.
+  /// say so from HERE (N11; ADR 0031) — a popped Merge page cannot leave
+  /// the lists underneath stale.
   MergeUiState _merged(MergeResult result) {
-    ref.invalidate(libraryControllerProvider);
+    ref.read(catalogueChangesProvider.notifier).changed();
     return MergeDone(result);
   }
 }

@@ -15,8 +15,8 @@ import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/core/widgets/item_cover.dart';
+import 'package:pitaka/features/library/application/catalogue_changes.dart';
 import 'package:pitaka/features/library/application/form_cover_controller.dart';
-import 'package:pitaka/features/library/application/library_controller.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/value_objects/item_details.dart';
 import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
@@ -500,7 +500,7 @@ void main() {
     items.rows[existing.id] = existing.copyWith(coverUrl: 'covers/new.jpg');
     ProviderScope.containerOf(
       tester.element(find.byType(AddIssuePage)),
-    ).invalidate(libraryControllerProvider);
+    ).read(catalogueChangesProvider.notifier).changed();
     await tester.pumpAndSettle();
 
     expect(
@@ -532,7 +532,7 @@ void main() {
     items.rows[existing.id] = existing.copyWith(coverUrl: 'covers/new.jpg');
     ProviderScope.containerOf(
       tester.element(find.byType(AddIssuePage)),
-    ).invalidate(libraryControllerProvider);
+    ).read(catalogueChangesProvider.notifier).changed();
     await tester.pumpAndSettle();
 
     expect(tester.widget<ItemCover>(find.byType(ItemCover)).coverUrl, isNull);
@@ -939,7 +939,7 @@ void main() {
         items.rows[existing.id] = existing.copyWith(coverUrl: 'covers/new.jpg');
         ProviderScope.containerOf(
           tester.element(page),
-        ).invalidate(libraryControllerProvider);
+        ).read(catalogueChangesProvider.notifier).changed();
         await tester.pumpAndSettle();
         expect(
           tester.widget<ItemCover>(find.byType(ItemCover)).coverUrl,

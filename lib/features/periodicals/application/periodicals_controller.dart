@@ -17,21 +17,22 @@
 /// LEFT JOIN query per minute while the page is open — the same trade-off
 /// `borrowedItemsSnapshot` makes for overdue loans).
 ///
-/// S9 adds the shared catalogue-mutation signal: [libraryControllerProvider]
-/// is watched alongside the tick because imports, merges, restores and issue
-/// deletion can change a series title or its issue summary while this page is
-/// open. The minute tick remains only for the time-derived badges above.
+/// S9 adds the shared "catalogue changed" signal: `catalogueChangesProvider`
+/// (ADR 0031) is watched alongside the tick because imports, merges,
+/// restores and issue deletion can change a series title or its issue
+/// summary while this page is open. The minute tick remains only for the
+/// time-derived badges above.
 ///
 /// Mutation signal: this provider IS the "periodicals changed" signal the
 /// read providers (`periodicalById`, `periodicalByUid`) and the form
-/// controllers key on, exactly as `libraryControllerProvider` is for items
+/// controllers key on, as `catalogueChangesProvider` is for items
 /// (N03). Every series write path refreshes or invalidates it.
 library;
 
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
-import 'package:pitaka/features/library/application/library_controller.dart';
+import 'package:pitaka/features/library/application/catalogue_changes.dart';
 import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
 import 'package:pitaka/features/periodicals/domain/repositories/periodical_repository.dart';
 import 'package:pitaka/features/periodicals/domain/subscription_status.dart';
@@ -69,13 +70,13 @@ final class PeriodicalListEntry {
 class PeriodicalsController extends _$PeriodicalsController {
   @override
   FutureOr<List<PeriodicalListEntry>> build() {
-    // S9/L1: imports, merges, restores and issue deletion already signal the
-    // library. Watch that SAME signal so an open Magazines route re-reads its
-    // title/count/latest summaries without a second mutation convention.
+    // S9/L1: imports, merges, restores and issue deletion already say
+    // "catalogue changed". Watch that SAME signal so an open Magazines route
+    // re-reads its title/count/latest summaries without a second convention.
     // N04: the tick remains only for time-derived subscription badges, not
     // mutations. Its VALUE is irrelevant; watching it rolls badges over.
     ref
-      ..watch(libraryControllerProvider)
+      ..watch(catalogueChangesProvider)
       ..watch(nowTickProvider);
     return _load();
   }

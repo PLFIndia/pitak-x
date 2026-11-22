@@ -17,6 +17,7 @@ library;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pitaka/core/di/providers.dart';
+import 'package:pitaka/features/library/application/catalogue_changes.dart';
 import 'package:pitaka/features/library/application/delete_catalogue_item_use_case.dart';
 import 'package:pitaka/features/library/application/library_controller.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
@@ -262,7 +263,8 @@ class _DeleteForeverButtonState extends ConsumerState<DeleteForeverButton> {
     result.match((_) => _snack('Could not delete this item.'), (outcome) {
       switch (outcome) {
         case DeleteBookOutcome.deleted:
-          ref.invalidate(libraryControllerProvider);
+          // The row is gone for good: say "catalogue changed" (ADR 0031).
+          ref.read(catalogueChangesProvider.notifier).changed();
           Navigator.of(context).pop();
         case DeleteBookOutcome.requiresVaultUnlock:
           _snack('Unlock the borrowers vault first, then try deleting again.');

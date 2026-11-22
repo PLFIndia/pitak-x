@@ -8,9 +8,11 @@ import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/async/serial_op_queue.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/features/library/application/catalogue_changes.dart';
 import 'package:pitaka/features/library/application/library_controller.dart';
 import 'package:pitaka/features/library/application/library_window.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
+import 'package:pitaka/features/library/domain/library_query.dart';
 import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
 import 'package:pitaka/features/publish/application/availability/availability_auto_publisher.dart';
 import 'package:pitaka/features/publish/application/availability/availability_lane_repository.dart';
@@ -242,10 +244,37 @@ void main() {
         CatalogueItem(id: 1, title: 'One copy'),
         CatalogueItem(id: 2, title: 'Just added'),
       ];
-      c.invalidate(libraryControllerProvider);
+      c.read(catalogueChangesProvider.notifier).changed();
       fake.elapse(const Duration(seconds: 21));
 
       expect((sent.last as AvailabilityWrite).snapshot.keys, hasLength(1));
+    });
+  });
+
+  // Review finding P3-M4 (ADR 0031): the lane used to listen to the Library
+  // list's state, which changes with every page that is loaded and every
+  // letter that is typed. With the vault unlocked each such change read the
+  // WHOLE catalogue again. It listens to "catalogue changed" now.
+  test('the Library list changing its state reads no catalogue; "changed" '
+      'said once reads it once', () {
+    fakeAsync((fake) {
+      final c = container(fake, activated: true)
+        ..listen(availabilityAutoPublisherProvider, (_, _) {})
+        ..listen(libraryControllerProvider, (_, _) {});
+      c.read(_counts.notifier).state = {1: 1}; // the vault is unlocked
+      fake.elapse(const Duration(seconds: 21));
+      expect(catalogueReads, 1);
+
+      final list = c.read(libraryControllerProvider.notifier) as _Library;
+      for (var i = 0; i < 3; i++) {
+        list.scrolled();
+        fake.elapse(const Duration(seconds: 1));
+      }
+      expect(catalogueReads, 1, reason: 'nothing was written');
+
+      c.read(catalogueChangesProvider.notifier).changed();
+      fake.elapse(const Duration(seconds: 1));
+      expect(catalogueReads, 2);
     });
   });
 
@@ -257,7 +286,7 @@ void main() {
       fake.elapse(const Duration(minutes: 1));
       // App start with the vault locked, then a catalogue edit: no set can
       // be computed, so no row is read.
-      c.invalidate(libraryControllerProvider);
+      c.read(catalogueChangesProvider.notifier).changed();
       fake.elapse(const Duration(minutes: 1));
       expect(catalogueReads, 0);
 
@@ -270,7 +299,7 @@ void main() {
       c.read(_counts.notifier).state = {};
       fake.elapse(const Duration(seconds: 21));
       expect(catalogueReads, 1);
-      c.invalidate(libraryControllerProvider);
+      c.read(catalogueChangesProvider.notifier).changed();
       fake.elapse(Duration.zero);
       expect(catalogueReads, 2);
     });
@@ -410,10 +439,19 @@ final class _Catalogue implements CatalogueItemRepository {
       throw UnimplementedError(invocation.memberName.toString());
 }
 
+/// A Library list that reads nothing. [scrolled] changes its state the way
+/// loading a page or typing a letter does: with nothing written.
 class _Library extends LibraryController {
   @override
-  FutureOr<LibraryWindow> build() =>
-      const LibraryWindow(books: [], hasMore: false);
+  FutureOr<LibraryWindow> build() => _window();
+
+  void scrolled() => state = AsyncData(_window());
+
+  LibraryWindow _window() => LibraryWindow(
+    books: const [],
+    hasMore: false,
+    query: LibraryQuery(sort: LibrarySort.recentlyAdded),
+  );
 }
 
 class _PublishResults extends PublishController {

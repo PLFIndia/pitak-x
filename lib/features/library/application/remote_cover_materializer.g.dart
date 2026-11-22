@@ -7,7 +7,7 @@ part of 'remote_cover_materializer.dart';
 // **************************************************************************
 
 String _$remoteCoverMaterializerHash() =>
-    r'3252e33b3a3ee470580723af72fa348a10db3c20';
+    r'572fa59b45c3a79badc686b7874d0618e05094de';
 
 /// Schedules at-most-once, serialised remote-cover downloads for the session.
 ///

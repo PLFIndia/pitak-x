@@ -13,11 +13,15 @@ import 'package:pitaka/core/theme/app_theme.dart';
 import 'package:pitaka/core/widgets/camera_scan_messages.dart';
 import 'package:pitaka/features/app_update/domain/app_update_policy.dart';
 import 'package:pitaka/features/backup/domain/backup_work_area.dart';
+import 'package:pitaka/features/library/application/catalogue_changes.dart';
+import 'package:pitaka/features/library/application/library_controller.dart';
+import 'package:pitaka/features/library/application/library_window.dart';
 import 'package:pitaka/features/library/domain/catalogue_item_page.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/library_query.dart';
 import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
 import 'package:pitaka/features/library/presentation/pages/library_page.dart';
+import 'package:pitaka/features/library/presentation/widgets/catalogue_item_grid_card.dart';
 import 'package:pitaka/features/library/presentation/widgets/catalogue_item_row.dart';
 import 'package:pitaka/features/library/presentation/widgets/library_controls_row.dart';
 import 'package:pitaka/features/library/presentation/widgets/loan_status_hidden_banner.dart';
@@ -1026,6 +1030,329 @@ void main() {
     });
   });
 
+  // Review findings P4-M2 and P4-m13 (ADR 0031; decision D152). While the
+  // list is read again the rows stay on the screen: the same list keeps its
+  // place, another list starts at the top, and the spinner is left for the
+  // very first load.
+  group('P4-M2: the rows stay while the list is read again', () {
+    List<CatalogueItem> many(int n, {String word = 'Book'}) => [
+      for (var i = 1; i <= n; i++)
+        CatalogueItem(id: i, title: '$word number $i', addedDate: n - i),
+    ];
+
+    ProviderContainer containerOf(WidgetTester tester) =>
+        ProviderScope.containerOf(tester.element(find.byType(LibraryPage)));
+    AsyncValue<LibraryWindow> listState(WidgetTester tester) =>
+        containerOf(tester).read(libraryControllerProvider);
+    int loadedRows(WidgetTester tester) =>
+        listState(tester).value!.books.length;
+    double offsetOf(WidgetTester tester) =>
+        tester.state<ScrollableState>(_bookList()).position.pixels;
+    int spinners() => find.byType(CircularProgressIndicator).evaluate().length;
+    void sayChanged(WidgetTester tester) =>
+        containerOf(tester).read(catalogueChangesProvider.notifier).changed();
+
+    /// Scrolls until [rows] rows are loaded, then rests inside them.
+    Future<void> scrollDeep(WidgetTester tester, int rows) async {
+      for (var i = 0; i < 300 && loadedRows(tester) < rows; i++) {
+        await tester.drag(_bookList(), const Offset(0, -600));
+        await tester.pumpAndSettle();
+      }
+      expect(loadedRows(tester), greaterThanOrEqualTo(rows));
+    }
+
+    /// Two frames: Riverpod starts the read in the first one after a change.
+    Future<void> letTheReadStart(WidgetTester tester) async {
+      await tester.pump();
+      await tester.pump();
+      expect(listState(tester).isLoading, isTrue, reason: 'a read is running');
+    }
+
+    testWidgets('the very first load shows the spinner', (tester) async {
+      final repo = _HeldRepo(many(5))..hold = Completer<void>();
+      await tester.pumpWidget(_app(repo));
+      await tester.pump();
+      expect(spinners(), 1);
+      expect(find.byType(CustomScrollView), findsNothing);
+
+      repo.release();
+      await tester.pumpAndSettle();
+      expect(spinners(), 0);
+      expect(find.text('Book number 1'), findsOneWidget);
+    });
+
+    testWidgets('a change is said while the list stands deep: no spinner, '
+        'the rows stay and then change in place, the place is kept', (
+      tester,
+    ) async {
+      _usePhoneScreen(tester);
+      final repo = _HeldRepo(many(300));
+      await tester.pumpWidget(_app(repo));
+      await tester.pumpAndSettle();
+      await scrollDeep(tester, 180);
+      final before = offsetOf(tester);
+      final depth = loadedRows(tester);
+      expect(before, greaterThan(3000), reason: 'well below the first rows');
+      // What a write elsewhere did: every title is another one now.
+      repo.rows
+        ..clear()
+        ..addAll(many(300, word: 'Changed'));
+
+      repo.hold = Completer<void>();
+      sayChanged(tester);
+      await letTheReadStart(tester);
+      expect(spinners(), 0);
+      expect(find.byType(CustomScrollView), findsOneWidget);
+      expect(offsetOf(tester), before);
+      expect(find.textContaining('Book number'), findsWidgets);
+      expect(find.textContaining('Changed number'), findsNothing);
+
+      repo.release();
+      await tester.pumpAndSettle();
+      expect(offsetOf(tester), before);
+      expect(loadedRows(tester), depth);
+      expect(find.textContaining('Changed number'), findsWidgets);
+      expect(find.textContaining('Book number'), findsNothing);
+    });
+
+    testWidgets('a letter is typed: the old rows stay where they stand until '
+        'the new ones are there; the new list starts at the top', (
+      tester,
+    ) async {
+      _usePhoneScreen(tester);
+      final repo = _HeldRepo(many(300));
+      await tester.pumpWidget(_app(repo));
+      await tester.pumpAndSettle();
+      await scrollDeep(tester, 180);
+      final before = offsetOf(tester);
+
+      repo.hold = Completer<void>();
+      await tester.enterText(find.byType(TextField), 'number 2');
+      await tester.pump(const Duration(milliseconds: 130));
+      await letTheReadStart(tester);
+      expect(spinners(), 0);
+      expect(offsetOf(tester), before);
+      expect(find.text('Book number 1'), findsNothing, reason: 'still deep');
+
+      repo.release();
+      await tester.pumpAndSettle();
+      expect(offsetOf(tester), 0);
+      expect(find.text('Book number 2'), findsOneWidget);
+      expect(find.text('Book number 1'), findsNothing);
+    });
+
+    testWidgets('a chip is tapped: the old rows stay until the new list is '
+        'there, which starts at the top', (tester) async {
+      _usePhoneScreen(tester);
+      final repo = _HeldRepo(many(300));
+      await tester.pumpWidget(_app(repo));
+      await tester.pumpAndSettle();
+      await scrollDeep(tester, 180);
+      final before = offsetOf(tester);
+
+      repo.hold = Completer<void>();
+      await tester.tap(find.widgetWithText(FilterChip, 'Books'));
+      await letTheReadStart(tester);
+      expect(spinners(), 0);
+      expect(offsetOf(tester), before);
+
+      repo.release();
+      await tester.pumpAndSettle();
+      expect(offsetOf(tester), 0);
+      expect(find.text('Book number 1'), findsOneWidget);
+    });
+
+    testWidgets('the grid of a wide screen does the same: the place is kept '
+        'after a change, and another list starts at the top', (tester) async {
+      // 800 dp wide, the default of a widget test: the grid.
+      final repo = _HeldRepo(many(300));
+      await tester.pumpWidget(_app(repo));
+      await tester.pumpAndSettle();
+      expect(find.byType(CatalogueItemGridCard), findsWidgets);
+      await scrollDeep(tester, 180);
+      final before = offsetOf(tester);
+      expect(before, greaterThan(1000));
+
+      repo.hold = Completer<void>();
+      sayChanged(tester);
+      await letTheReadStart(tester);
+      expect(spinners(), 0);
+      expect(offsetOf(tester), before);
+      repo.release();
+      await tester.pumpAndSettle();
+      expect(offsetOf(tester), before);
+
+      repo.hold = Completer<void>();
+      await tester.tap(find.widgetWithText(FilterChip, 'Books'));
+      await letTheReadStart(tester);
+      expect(spinners(), 0);
+      expect(offsetOf(tester), before);
+      repo.release();
+      await tester.pumpAndSettle();
+      expect(offsetOf(tester), 0);
+    });
+
+    testWidgets('the pause before a search is 120 ms: nothing is read '
+        'before it has passed', (tester) async {
+      final repo = _FakeBookRepo(books);
+      await tester.pumpWidget(_app(repo));
+      await tester.pumpAndSettle();
+      final reads = repo.pagesSeen.length;
+
+      await tester.enterText(find.byType(TextField), 'dune');
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.pump();
+      expect(repo.pagesSeen, hasLength(reads), reason: 'inside the pause');
+
+      await tester.pump(const Duration(milliseconds: 30));
+      await tester.pump();
+      expect(repo.pagesSeen, hasLength(reads + 1));
+      await tester.pumpAndSettle();
+      expect(find.text('Dune'), findsOneWidget);
+      expect(find.text('The Hobbit'), findsNothing);
+    });
+
+    testWidgets('a reload that fails shows the error screen; while Retry '
+        'runs the screen stays and Retry is greyed out; then the rows', (
+      tester,
+    ) async {
+      final repo = _HeldRepo([...books]);
+      await tester.pumpWidget(_app(repo));
+      await tester.pumpAndSettle();
+      Finder retry() => find.widgetWithText(TextButton, 'Retry');
+
+      repo.failWith = const StorageFailure('boom');
+      sayChanged(tester);
+      await tester.pumpAndSettle();
+      expect(find.textContaining("Couldn't load your library"), findsOneWidget);
+      expect(find.textContaining('boom'), findsNothing);
+      expect(tester.widget<TextButton>(retry()).onPressed, isNotNull);
+
+      repo
+        ..failWith = null
+        ..hold = Completer<void>();
+      await tester.tap(retry());
+      await letTheReadStart(tester);
+      expect(spinners(), 0);
+      expect(find.textContaining("Couldn't load your library"), findsOneWidget);
+      expect(tester.widget<TextButton>(retry()).onPressed, isNull);
+      await expectMeetsA11yGuidelines(tester);
+
+      repo.release();
+      await tester.pumpAndSettle();
+      expect(find.text('The Hobbit'), findsOneWidget);
+      expect(retry(), findsNothing);
+    });
+
+    testWidgets('an empty answer keeps its own words while the next list '
+        'is read: cleared filters do not say "Your library is empty"', (
+      tester,
+    ) async {
+      final repo = _HeldRepo([...books]);
+      await tester.pumpWidget(_app(repo));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Magazines'));
+      await tester.pumpAndSettle();
+      expect(find.text('No items match these filters.'), findsOneWidget);
+
+      repo.hold = Completer<void>();
+      await tester.tap(find.text('Clear filters'));
+      await letTheReadStart(tester);
+      expect(spinners(), 0);
+      expect(find.text('No items match these filters.'), findsOneWidget);
+      expect(find.text('Your library is empty'), findsNothing);
+      expect(find.text('Add a book'), findsNothing);
+
+      repo.release();
+      await tester.pumpAndSettle();
+      expect(find.text('The Hobbit'), findsOneWidget);
+    });
+
+    testWidgets('an empty library keeps its own words while a search is '
+        'read: no "No items match" before the answer', (tester) async {
+      final repo = _HeldRepo([]);
+      await tester.pumpWidget(_app(repo));
+      await tester.pumpAndSettle();
+      expect(find.text('Your library is empty'), findsOneWidget);
+
+      repo.hold = Completer<void>();
+      await tester.enterText(find.byType(TextField), 'zzzz');
+      await tester.pump(const Duration(milliseconds: 130));
+      await letTheReadStart(tester);
+      expect(spinners(), 0);
+      expect(find.text('Your library is empty'), findsOneWidget);
+      expect(find.text('No items match these filters.'), findsNothing);
+
+      repo.release();
+      await tester.pumpAndSettle();
+      expect(find.text('No items match these filters.'), findsOneWidget);
+      expect(find.text('Clear search'), findsOneWidget);
+    });
+
+    // Review finding P4-m13: the chips were empty for as long as the
+    // languages were read again, which showed as a blink.
+    testWidgets('P4-m13: the language chips stay while the languages are '
+        'read again', (tester) async {
+      final repo = _HeldRepo(const [
+        CatalogueItem(id: 1, title: 'Dune', language: 'English'),
+        CatalogueItem(id: 2, title: 'Godaan', language: 'Hindi'),
+      ]);
+      await tester.pumpWidget(_app(repo));
+      await tester.pumpAndSettle();
+      expect(find.widgetWithText(FilterChip, 'English'), findsOneWidget);
+      expect(find.widgetWithText(FilterChip, 'Hindi'), findsOneWidget);
+      final reads = repo.languageReads;
+
+      repo.holdLanguages = Completer<void>();
+      sayChanged(tester);
+      await tester.pump();
+      await tester.pump();
+      await tester.pump();
+      expect(
+        repo.languageReads,
+        reads + 1,
+        reason: 'they are being read again, once for one change (P3-M4)',
+      );
+      expect(find.widgetWithText(FilterChip, 'English'), findsOneWidget);
+      expect(find.widgetWithText(FilterChip, 'Hindi'), findsOneWidget);
+
+      repo.release();
+      await tester.pumpAndSettle();
+      expect(find.widgetWithText(FilterChip, 'English'), findsOneWidget);
+      expect(find.widgetWithText(FilterChip, 'Hindi'), findsOneWidget);
+    });
+
+    testWidgets('while the list is read again: meets the accessibility '
+        'guidelines, and twice the text size overflows nothing', (
+      tester,
+    ) async {
+      _usePhoneScreen(tester);
+      final repo = _HeldRepo([...books]);
+      await tester.pumpWidget(
+        _app(
+          repo,
+          builder: (context, child) => MediaQuery(
+            data: MediaQuery.of(
+              context,
+            ).copyWith(textScaler: const TextScaler.linear(2)),
+            child: child!,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      repo.hold = Completer<void>();
+      sayChanged(tester);
+      await letTheReadStart(tester);
+      expect(find.text('The Hobbit'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await expectMeetsA11yGuidelines(tester);
+
+      repo.release();
+      await tester.pumpAndSettle();
+    });
+  });
+
   // S35: the flexible-update banner is wired atop the library page. With the
   // REAL service it renders nothing in tests (non-Android gate); the fake
   // proves the wiring and the auto-started background download.
@@ -1140,6 +1467,53 @@ class _GatedRepo extends _FakeBookRepo {
     final waitFor = gate;
     if (waitFor != null && !waitFor.isCompleted) await waitFor.future;
     return super.page(query, limit: limit, offset: offset);
+  }
+}
+
+/// Fake whose reads wait for as long as a hold is set, so the screen can be
+/// looked at WHILE the list (or the languages) is read again (P4-M2).
+class _HeldRepo extends _FakeBookRepo {
+  _HeldRepo(super.all);
+
+  /// While set, every page read waits on it.
+  Completer<void>? hold;
+
+  /// While set, every read of the languages waits on it.
+  Completer<void>? holdLanguages;
+
+  /// How often the languages were asked for.
+  int languageReads = 0;
+
+  /// The rows the store holds now; a test changes them in place.
+  List<CatalogueItem> get rows => _all;
+
+  /// Lets everything that is held go on.
+  void release() {
+    final pages = hold;
+    final languages = holdLanguages;
+    hold = null;
+    holdLanguages = null;
+    pages?.complete();
+    languages?.complete();
+  }
+
+  @override
+  Future<Either<Failure, CatalogueItemPage>> page(
+    LibraryQuery query, {
+    required int limit,
+    int offset = 0,
+  }) async {
+    final waitFor = hold;
+    if (waitFor != null) await waitFor.future;
+    return super.page(query, limit: limit, offset: offset);
+  }
+
+  @override
+  Future<Either<Failure, List<String>>> distinctLanguages() async {
+    languageReads++;
+    final waitFor = holdLanguages;
+    if (waitFor != null) await waitFor.future;
+    return super.distinctLanguages();
   }
 }
 

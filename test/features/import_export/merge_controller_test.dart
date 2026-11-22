@@ -20,6 +20,7 @@ import 'package:pitaka/features/import_export/application/merge_library_use_case
 import 'package:pitaka/features/import_export/application/picked_text_file.dart';
 import 'package:pitaka/features/import_export/domain/import_limits.dart';
 import 'package:pitaka/features/import_export/infrastructure/pitaka_json_importer.dart';
+import 'package:pitaka/features/library/application/catalogue_changes.dart';
 import 'package:pitaka/features/library/application/library_controller.dart';
 import 'package:pitaka/features/library/domain/catalogue_item_page.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
@@ -307,7 +308,9 @@ void main() {
 
       expect(container.read(mergeControllerProvider), isA<MergeDone>());
       expect(books.books.single.title, '1984');
-      await container.pump(); // flush the invalidation into a rebuild
+      // The merge says "changed" once (D151), from the controller ...
+      expect(container.read(catalogueChangesProvider), 1);
+      await container.pump(); // ... and the list, a listener, reads again
       expect(libraryBuilds, greaterThan(baseline));
     },
   );
@@ -697,6 +700,7 @@ void main() {
       await container.pump();
       await container.read(libraryControllerProvider.future);
       final baseline = libraryBuilds;
+      final said = container.read(catalogueChangesProvider);
 
       await container
           .read(mergeControllerProvider.notifier)
@@ -709,6 +713,7 @@ void main() {
       expect(done.openCount, 0);
       expect(books.books.single.genre, 'Classic');
       expect(books.books.single.id, 1, reason: 'in place');
+      expect(container.read(catalogueChangesProvider), said + 1);
       await container.pump();
       expect(libraryBuilds, greaterThan(baseline));
     });
@@ -728,6 +733,7 @@ void main() {
       await container.pump();
       await container.read(libraryControllerProvider.future);
       final baseline = libraryBuilds;
+      final said = container.read(catalogueChangesProvider);
 
       await container
           .read(mergeControllerProvider.notifier)
@@ -737,6 +743,7 @@ void main() {
       expect(done.review.single.status, isA<ReviewResolved>());
       expect(books.updateCalls, 0);
       expect(books.books.single.genre, 'Fiction');
+      expect(container.read(catalogueChangesProvider), said);
       await container.pump();
       expect(libraryBuilds, baseline, reason: 'nothing changed on disk');
     });

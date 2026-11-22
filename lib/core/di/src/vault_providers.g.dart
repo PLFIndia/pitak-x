@@ -164,7 +164,7 @@ final loanStatusHiddenProvider = AutoDisposeProvider<bool>.internal(
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef LoanStatusHiddenRef = AutoDisposeProviderRef<bool>;
-String _$bookTitleHash() => r'33d89cdb3238dad5a0e5d8d62d59238c8aa7e0a2';
+String _$bookTitleHash() => r'd55d107d18a4bda1f8fc266aef3d00352fc95bcf';
 
 /// Copied from Dart SDK
 class _SystemHash {
@@ -191,8 +191,9 @@ class _SystemHash {
 /// so borrower screens show the book's name instead of the internal row id.
 /// Null when the book no longer exists (the UI falls back to "Book #id").
 ///
-/// N04: watches [libraryControllerProvider] as the mutation signal (same
-/// pattern as [catalogueItemById]) so a rename reaches open borrower screens.
+/// N04: watches the "catalogue changed" signal ([catalogueChangesProvider],
+/// ADR 0031; same pattern as [catalogueItemById]) so a rename reaches open
+/// borrower screens.
 ///
 /// Copied from [bookTitle].
 @ProviderFor(bookTitle)
@@ -202,8 +203,9 @@ const bookTitleProvider = BookTitleFamily();
 /// so borrower screens show the book's name instead of the internal row id.
 /// Null when the book no longer exists (the UI falls back to "Book #id").
 ///
-/// N04: watches [libraryControllerProvider] as the mutation signal (same
-/// pattern as [catalogueItemById]) so a rename reaches open borrower screens.
+/// N04: watches the "catalogue changed" signal ([catalogueChangesProvider],
+/// ADR 0031; same pattern as [catalogueItemById]) so a rename reaches open
+/// borrower screens.
 ///
 /// Copied from [bookTitle].
 class BookTitleFamily extends Family<AsyncValue<String?>> {
@@ -211,8 +213,9 @@ class BookTitleFamily extends Family<AsyncValue<String?>> {
   /// so borrower screens show the book's name instead of the internal row id.
   /// Null when the book no longer exists (the UI falls back to "Book #id").
   ///
-  /// N04: watches [libraryControllerProvider] as the mutation signal (same
-  /// pattern as [catalogueItemById]) so a rename reaches open borrower screens.
+  /// N04: watches the "catalogue changed" signal ([catalogueChangesProvider],
+  /// ADR 0031; same pattern as [catalogueItemById]) so a rename reaches open
+  /// borrower screens.
   ///
   /// Copied from [bookTitle].
   const BookTitleFamily();
@@ -221,8 +224,9 @@ class BookTitleFamily extends Family<AsyncValue<String?>> {
   /// so borrower screens show the book's name instead of the internal row id.
   /// Null when the book no longer exists (the UI falls back to "Book #id").
   ///
-  /// N04: watches [libraryControllerProvider] as the mutation signal (same
-  /// pattern as [catalogueItemById]) so a rename reaches open borrower screens.
+  /// N04: watches the "catalogue changed" signal ([catalogueChangesProvider],
+  /// ADR 0031; same pattern as [catalogueItemById]) so a rename reaches open
+  /// borrower screens.
   ///
   /// Copied from [bookTitle].
   BookTitleProvider call({required int bookId}) {
@@ -253,8 +257,9 @@ class BookTitleFamily extends Family<AsyncValue<String?>> {
 /// so borrower screens show the book's name instead of the internal row id.
 /// Null when the book no longer exists (the UI falls back to "Book #id").
 ///
-/// N04: watches [libraryControllerProvider] as the mutation signal (same
-/// pattern as [catalogueItemById]) so a rename reaches open borrower screens.
+/// N04: watches the "catalogue changed" signal ([catalogueChangesProvider],
+/// ADR 0031; same pattern as [catalogueItemById]) so a rename reaches open
+/// borrower screens.
 ///
 /// Copied from [bookTitle].
 class BookTitleProvider extends AutoDisposeFutureProvider<String?> {
@@ -262,8 +267,9 @@ class BookTitleProvider extends AutoDisposeFutureProvider<String?> {
   /// so borrower screens show the book's name instead of the internal row id.
   /// Null when the book no longer exists (the UI falls back to "Book #id").
   ///
-  /// N04: watches [libraryControllerProvider] as the mutation signal (same
-  /// pattern as [catalogueItemById]) so a rename reaches open borrower screens.
+  /// N04: watches the "catalogue changed" signal ([catalogueChangesProvider],
+  /// ADR 0031; same pattern as [catalogueItemById]) so a rename reaches open
+  /// borrower screens.
   ///
   /// Copied from [bookTitle].
   BookTitleProvider({required int bookId})
@@ -583,7 +589,7 @@ final prepareLoanReminderUseCaseProvider =
 typedef PrepareLoanReminderUseCaseRef =
     AutoDisposeFutureProviderRef<PrepareLoanReminderUseCase>;
 String _$borrowedItemsSnapshotHash() =>
-    r'db586d9d6f8548a506923f6a87d52aa84c399fdf';
+    r'b7e09ce5a35500fc250313adbdb49e8da12b8e6d';
 
 /// Borrowed Items is null while locked/uninitialized. Repository failures stay
 /// AsyncError; they are never converted to an empty list or missing covers.

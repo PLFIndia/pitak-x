@@ -7,7 +7,7 @@ part of 'wishlist_controller.dart';
 // **************************************************************************
 
 String _$wishlistControllerHash() =>
-    r'98ae9a32e19070bce7d7f93a6828fa5457154abd';
+    r'c124a3cfe2e7f8a2f306fe5956d42d42368cd2f8';
 
 /// Loads and mutates the wishlist for the presentation layer.
 ///

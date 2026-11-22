@@ -16,7 +16,7 @@ import 'package:pitaka/core/di/src/library_providers.dart';
 import 'package:pitaka/core/di/src/platform_providers.dart';
 import 'package:pitaka/core/platform/screen_security.dart';
 import 'package:pitaka/core/storage/active_data_generation.dart';
-import 'package:pitaka/features/library/application/library_controller.dart';
+import 'package:pitaka/features/library/application/catalogue_changes.dart';
 import 'package:pitaka/features/library/infrastructure/local_cover_reader.dart';
 import 'package:pitaka/features/periodicals/application/periodicals_controller.dart';
 import 'package:pitaka/features/vault/application/build_borrowed_items_snapshot.dart';
@@ -112,11 +112,12 @@ bool loanStatusHidden(LoanStatusHiddenRef ref) =>
 /// so borrower screens show the book's name instead of the internal row id.
 /// Null when the book no longer exists (the UI falls back to "Book #id").
 ///
-/// N04: watches [libraryControllerProvider] as the mutation signal (same
-/// pattern as [catalogueItemById]) so a rename reaches open borrower screens.
+/// N04: watches the "catalogue changed" signal ([catalogueChangesProvider],
+/// ADR 0031; same pattern as [catalogueItemById]) so a rename reaches open
+/// borrower screens.
 @riverpod
 Future<String?> bookTitle(BookTitleRef ref, {required int bookId}) async {
-  ref.watch(libraryControllerProvider);
+  ref.watch(catalogueChangesProvider);
   final repo = await ref.watch(catalogueItemRepositoryProvider.future);
   final book = (await repo.getById(bookId)).toNullable();
   return book?.title;
@@ -197,8 +198,10 @@ Future<BorrowedItemsSnapshot?> borrowedItemsSnapshot(
   if (session.data.loans.every((loan) => loan.isReturned)) {
     return BorrowedItemsSnapshot.empty;
   }
+  // The items' titles and covers: "catalogue changed" (ADR 0031). The
+  // series' covers: the Magazines list. The clock: overdue rolls over.
   ref
-    ..watch(libraryControllerProvider)
+    ..watch(catalogueChangesProvider)
     ..watch(periodicalsControllerProvider)
     ..watch(nowTickProvider);
   final useCase = await ref.watch(buildBorrowedItemsSnapshotProvider.future);

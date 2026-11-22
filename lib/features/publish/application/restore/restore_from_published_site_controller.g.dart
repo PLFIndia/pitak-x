@@ -7,7 +7,7 @@ part of 'restore_from_published_site_controller.dart';
 // **************************************************************************
 
 String _$restoreFromPublishedSiteControllerHash() =>
-    r'27ec49a3dd12fe4a2f3f24fed776a04205b475c1';
+    r'27a5f7f0fa28fda52eaefac9f147adf828ae3c71';
 
 /// Owns one restore at a time and retains its terminal state.
 ///

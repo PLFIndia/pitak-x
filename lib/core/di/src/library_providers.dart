@@ -14,9 +14,9 @@ library;
 import 'package:pitaka/core/di/src/database_providers.dart';
 import 'package:pitaka/core/di/src/settings_providers.dart';
 import 'package:pitaka/features/library/application/add_catalogue_item_use_case.dart';
+import 'package:pitaka/features/library/application/catalogue_changes.dart';
 import 'package:pitaka/features/library/application/cover_file_janitor.dart';
 import 'package:pitaka/features/library/application/delete_catalogue_item_use_case.dart';
-import 'package:pitaka/features/library/application/library_controller.dart';
 import 'package:pitaka/features/library/application/route_scanned_barcode_use_case.dart';
 import 'package:pitaka/features/library/application/update_catalogue_item_use_case.dart';
 import 'package:pitaka/features/library/domain/cover_file_coordinator.dart';
@@ -91,12 +91,13 @@ Future<int> orphanCoverSweep(OrphanCoverSweepRef ref) async {
 
 /// Distinct non-blank languages present in the library (filter-chip facets).
 ///
-/// N04: watches [libraryControllerProvider] as the mutation signal (same
-/// pattern as [catalogueItemById]) — watching only the repository OBJECT never
-/// fires, so without this an add/edit/import/restore left the chips stale.
+/// N04: watches the app's "catalogue changed" signal
+/// ([catalogueChangesProvider], ADR 0031; same pattern as
+/// [catalogueItemById]) — watching only the repository OBJECT never fires, so
+/// without this an add/edit/import/restore left the chips stale.
 @riverpod
 Future<List<String>> libraryLanguages(LibraryLanguagesRef ref) async {
-  ref.watch(libraryControllerProvider);
+  ref.watch(catalogueChangesProvider);
   final repo = await ref.watch(catalogueItemRepositoryProvider.future);
   final result = await repo.distinctLanguages();
   return result.getOrElse((_) => const []);
@@ -106,7 +107,7 @@ Future<List<String>> libraryLanguages(LibraryLanguagesRef ref) async {
 /// one [ItemSourceType] — the Export screen's "source detail" picker values.
 ///
 /// Same freshness rule as [libraryLanguages]: watches
-/// [libraryControllerProvider] as the mutation signal so an edit that renames
+/// [catalogueChangesProvider] so an edit that renames
 /// a donor is reflected the next time the picker opens. A repository failure
 /// degrades to an empty list — the picker then offers "Any", and the export
 /// itself still runs; nothing here is worth blocking the screen for.
@@ -115,7 +116,7 @@ Future<List<String>> librarySourceDetails(
   LibrarySourceDetailsRef ref,
   ItemSourceType type,
 ) async {
-  ref.watch(libraryControllerProvider);
+  ref.watch(catalogueChangesProvider);
   final repo = await ref.watch(catalogueItemRepositoryProvider.future);
   final result = await repo.distinctSourceDetails(type);
   return result.getOrElse((_) => const []);
@@ -178,12 +179,14 @@ Future<DeleteCatalogueItemUseCase> deleteCatalogueItemUseCase(
 /// fresh row (a cover file the janitor had already deleted came back as the
 /// row's cover).
 ///
-/// Freshness signal: every mutation path in the app already invalidates or
-/// refreshes [libraryControllerProvider] (cover replace, materializer, edit
-/// save, remove/restore, import, restore, wishlist move). Watching it here —
-/// value ignored — makes this provider re-read the row on the same signal,
-/// with no new plumbing. The repository has no row streams (N04); when it
-/// gains one this dependency is the single line to swap.
+/// Freshness signal: every mutation path in the app says "catalogue
+/// changed" to [catalogueChangesProvider] (cover replace, materializer, edit
+/// save, remove/restore, import, restore, wishlist move; ADR 0031). Watching
+/// it here — value ignored — makes this provider re-read the row on that
+/// signal. Until November 2026 the signal was the Library list's own state,
+/// which also changed when the user only scrolled or typed (review finding
+/// P3-M4). The repository has no row streams (N04); when it gains one this
+/// dependency is the single line to swap.
 ///
 /// `null` = the row no longer exists. A repository `Left` is thrown so the
 /// screen sees `AsyncError` (same idiom as `LibraryController._load`).
@@ -192,7 +195,7 @@ Future<CatalogueItem?> catalogueItemById(
   CatalogueItemByIdRef ref,
   int bookId,
 ) async {
-  ref.watch(libraryControllerProvider);
+  ref.watch(catalogueChangesProvider);
   final repo = await ref.watch(catalogueItemRepositoryProvider.future);
   final result = await repo.getById(bookId);
   return result.fold(

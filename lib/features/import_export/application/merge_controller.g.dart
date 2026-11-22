@@ -6,7 +6,7 @@ part of 'merge_controller.dart';
 // RiverpodGenerator
 // **************************************************************************
 
-String _$mergeControllerHash() => r'1da00bfffee018b48769cfc7edfc682c3ea68a9f';
+String _$mergeControllerHash() => r'abff41ad7fccfcc53a89f5ea28e4d032bc88d7d5';
 
 /// Runs merges for the Merge screen; idle until [mergeFile] is called.
 ///

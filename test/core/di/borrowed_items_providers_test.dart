@@ -2,8 +2,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/features/library/application/catalogue_changes.dart';
 import 'package:pitaka/features/library/application/library_controller.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
+import 'package:pitaka/features/periodicals/application/periodicals_controller.dart';
 import 'package:pitaka/features/vault/application/vault_session_controller.dart';
 import 'package:pitaka/features/vault/domain/entities/borrower.dart';
 import 'package:pitaka/features/vault/domain/entities/vault_data.dart';
@@ -11,6 +13,7 @@ import 'package:pitaka/features/vault/domain/entities/vault_session_state.dart';
 import 'package:pitaka/features/vault/domain/loan_status.dart';
 
 import '../../features/periodicals/application/periodical_fakes.dart';
+import '../../support/quiet_series_list.dart';
 
 class _Session extends VaultSessionController {
   _Session(this._initial);
@@ -40,6 +43,7 @@ ProviderContainer _container({
   required FakeItems items,
   FakePeriodicals? periodicals,
   int Function()? clock,
+  List<Override> extraOverrides = const [],
 }) {
   final container = ProviderContainer(
     overrides: [
@@ -51,6 +55,7 @@ ProviderContainer _container({
       settingsRepositoryProvider.overrideWith((ref) async => FakeSettings()),
       if (clock != null) clockProvider.overrideWithValue(clock),
       if (clock != null) nowTickProvider.overrideWith((ref) => clock()),
+      ...extraOverrides,
     ],
   );
   final sub = container.listen(borrowedItemsSnapshotProvider, (_, _) {});
@@ -115,6 +120,58 @@ void main() {
     },
   );
 
+  // Review finding P3-M4 (ADR 0031): the snapshot used to be made again
+  // whenever the Library list changed its state, also by scrolling.
+  test('the Library list loading a page and a search do not make the '
+      'snapshot again; "catalogue changed" does', () async {
+    final items = FakeItems();
+    final stored = items.seed(const CatalogueItem(title: 'Old title'));
+    for (var i = 2; i <= 150; i++) {
+      items.seed(CatalogueItem(title: 'Book $i'));
+    }
+    final session = _Session(
+      VaultUnlocked(
+        VaultData(
+          borrowers: const [Borrower(id: 1, name: 'Asha')],
+          loans: [Loan(id: 9, itemId: stored.id, borrowerId: 1, lentDate: 0)],
+        ),
+      ),
+    );
+    final container = _container(
+      session: session,
+      items: items,
+      // A Magazines list that hears nothing: the snapshot listens to that
+      // list too, and would otherwise hear "changed" through it.
+      extraOverrides: [
+        periodicalsControllerProvider.overrideWith(QuietSeriesList.new),
+      ],
+    );
+    final list = container.listen(libraryControllerProvider, (_, _) {});
+    addTearDown(list.close);
+    await container.read(libraryControllerProvider.future);
+    await container.read(borrowedItemsSnapshotProvider.future);
+    await container.pump();
+    final callsBefore = items.calls.length;
+
+    final notifier = container.read(libraryControllerProvider.notifier);
+    await notifier.loadMore();
+    notifier.onQueryChanged('Book 1');
+    await Future<void>.delayed(const Duration(milliseconds: 150));
+    await container.read(libraryControllerProvider.future);
+    await container.pump();
+    await container.read(borrowedItemsSnapshotProvider.future);
+    expect(
+      items.calls.sublist(callsBefore),
+      ['page', 'page'],
+      reason: "the list's own two reads, and no read for the snapshot",
+    );
+
+    items.rows[stored.id] = stored.copyWith(title: 'New title');
+    container.read(catalogueChangesProvider.notifier).changed();
+    final after = await container.read(borrowedItemsSnapshotProvider.future);
+    expect(after!.entries.single.item.title, 'New title');
+  });
+
   test(
     'minute ticks, catalogue signals and returned loans refresh the snapshot',
     () async {
@@ -153,7 +210,7 @@ void main() {
       expect(second!.entries.single.urgency, LoanUrgency.overdue);
 
       items.rows[stored.id] = stored.copyWith(title: 'New title');
-      container.invalidate(libraryControllerProvider);
+      container.read(catalogueChangesProvider.notifier).changed();
       final third = await container.read(borrowedItemsSnapshotProvider.future);
       expect(third!.entries.single.item.title, 'New title');
 

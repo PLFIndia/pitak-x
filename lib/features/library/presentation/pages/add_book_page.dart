@@ -23,7 +23,7 @@ import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/text/display_date.dart';
 import 'package:pitaka/core/widgets/discard_changes_guard.dart';
 import 'package:pitaka/features/library/application/add_book_controller.dart';
-import 'package:pitaka/features/library/application/library_controller.dart';
+import 'package:pitaka/features/library/application/catalogue_changes.dart';
 import 'package:pitaka/features/library/domain/catalogue_rules.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/presentation/catalogue_save_messages.dart';
@@ -318,9 +318,12 @@ class _AddBookPageState extends ConsumerState<AddBookPage> {
     final state = ref.read(addBookControllerProvider);
     if (!mounted) return;
     if (state.hasValue && state.value != null) {
-      // Saved: from here on Back must not ask, also while the list reloads.
-      _opened.markSaved();
-      await ref.read(libraryControllerProvider.notifier).refresh();
+      // Saved: say "catalogue changed" and leave (ADR 0031, D154). The
+      // form does not wait for the library list, which reads again
+      // underneath like everything else that shows the item. So there is
+      // no moment between the save and leaving in which Back could ask;
+      // `markSaved()`, which covered that moment, is not needed here.
+      ref.read(catalogueChangesProvider.notifier).changed();
       if (mounted) Navigator.of(context).pop();
     }
   }

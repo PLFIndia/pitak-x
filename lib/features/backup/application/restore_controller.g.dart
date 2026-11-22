@@ -32,7 +32,7 @@ final restoreProgressProvider =
     );
 
 typedef _$RestoreProgress = Notifier<BackupProgress?>;
-String _$restoreControllerHash() => r'52bd6d61a6b84ca17ed6b313400d951c7abd386c';
+String _$restoreControllerHash() => r'4cfd4d36128bd94dd1bd5fca7a7a3f92057b8ba3';
 
 /// Drives a one-shot restore and surfaces its [RestoreSummary].
 ///

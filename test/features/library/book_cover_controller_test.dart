@@ -9,6 +9,7 @@ import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/core/images/image_downscaler.dart';
 import 'package:pitaka/features/library/application/book_cover_controller.dart';
+import 'package:pitaka/features/library/application/catalogue_changes.dart';
 import 'package:pitaka/features/library/application/cover_file_janitor.dart';
 import 'package:pitaka/features/library/domain/catalogue_item_page.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
@@ -153,6 +154,9 @@ void main() {
     // The file exists on disk.
     final leaf = coverRef.split('/').last;
     expect(File('${tmp.path}/$leaf').existsSync(), isTrue);
+    // D151: a new cover says "catalogue changed" once, so the row in the
+    // list and the item's page show it.
+    expect(container.read(catalogueChangesProvider), 1);
   });
 
   // Decision of 2026-11-10: a photographed cover is stored at most 240×360
@@ -306,6 +310,7 @@ void main() {
       (f) => expect(f, isA<StorageFailure>()),
       (_) => fail('expected a failure'),
     );
+    expect(container.read(catalogueChangesProvider), 0);
   });
 }
 

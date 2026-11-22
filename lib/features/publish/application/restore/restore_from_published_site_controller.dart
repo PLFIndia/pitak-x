@@ -7,7 +7,7 @@ import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/core/platform/app_log.dart';
-import 'package:pitaka/features/library/application/library_controller.dart';
+import 'package:pitaka/features/library/application/catalogue_changes.dart';
 import 'package:pitaka/features/periodicals/application/periodicals_controller.dart';
 import 'package:pitaka/features/publish/application/restore/recover_published_identity.dart';
 import 'package:pitaka/features/publish/application/restore/restore_from_published_site_progress.dart';
@@ -89,9 +89,10 @@ class RestoreFromPublishedSiteController
                 status: RestoreFromPublishedSiteStatus.success,
                 summary: summary,
               );
-              ref
-                ..invalidate(libraryControllerProvider)
-                ..invalidate(periodicalsControllerProvider);
+              // Items were added: "catalogue changed" (ADR 0031); the
+              // series list is told directly.
+              ref.read(catalogueChangesProvider.notifier).changed();
+              ref.invalidate(periodicalsControllerProvider);
           }
         },
       );

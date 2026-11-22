@@ -16,6 +16,7 @@ import 'package:pitaka/core/storage/active_data_generation.dart';
 import 'package:pitaka/features/backup/application/restore_controller.dart';
 import 'package:pitaka/features/backup/domain/backup_limits.dart';
 import 'package:pitaka/features/backup/domain/backup_progress.dart';
+import 'package:pitaka/features/library/application/catalogue_changes.dart';
 import 'package:pitaka/features/library/application/library_controller.dart';
 import 'package:pitaka/features/network/application/network_controller.dart';
 import 'package:pitaka/features/network/application/network_refresh_controller.dart';
@@ -317,6 +318,7 @@ void main() {
     expect(container.read(restoreControllerProvider).hasError, isTrue);
     // No invalidation on failure: nothing on disk changed, so no rebuild.
     expect(rebuilds, baseline);
+    expect(container.read(catalogueChangesProvider), 0);
     expect(
       await container.read(vaultSessionControllerProvider.future),
       isA<VaultUninitialized>(),
@@ -798,6 +800,8 @@ void main() {
             passphrase: SecretBytes(Uint8List.fromList([1, 2, 3])),
           );
       expect(container.read(restoreControllerProvider).hasValue, isTrue);
+      // D151: the restore says "catalogue changed" once, at its end.
+      expect(container.read(catalogueChangesProvider), 1);
       await container.pump(); // flush the invalidations into rebuilds
       await container.read(periodicalsControllerProvider.future);
 

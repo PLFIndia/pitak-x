@@ -4,9 +4,10 @@
 /// injectable clock so overdue/due-soon state rolls over while a screen stays
 /// mounted.
 ///
-/// The mutation signal is the list controller (N03 precedent): every mutation
-/// path in the app already invalidates or refreshes `libraryControllerProvider`
-/// / `wishlistControllerProvider`.
+/// The mutation signal for catalogue rows is `catalogueChangesProvider`
+/// (ADR 0031): every write path says "changed" to it. Until November 2026
+/// it was the Library list's own state. The wishlist's signal is still its
+/// list controller, `wishlistControllerProvider`.
 ///
 /// Every test keeps the derived provider ALIVE with an active listener — a
 /// bare `container.read` would dispose the autoDispose provider after use and
@@ -18,7 +19,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
-import 'package:pitaka/features/library/application/library_controller.dart';
+import 'package:pitaka/features/library/application/catalogue_changes.dart';
 import 'package:pitaka/features/library/domain/catalogue_item_page.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/library_query.dart';
@@ -226,13 +227,12 @@ void main() {
       final container = makeContainer(repo);
       final sub = container.listen(libraryLanguagesProvider, (_, __) {});
       addTearDown(sub.close);
-      await container.read(libraryControllerProvider.future);
       expect(await container.read(libraryLanguagesProvider.future), ['Hindi']);
 
       repo.books.add(
         const CatalogueItem(id: 2, title: 'Dune', language: 'English'),
       );
-      await container.read(libraryControllerProvider.notifier).refresh();
+      container.read(catalogueChangesProvider.notifier).changed();
 
       expect(
         await container.read(libraryLanguagesProvider.future),
@@ -247,14 +247,13 @@ void main() {
       final container = makeContainer(repo);
       final sub = container.listen(bookTitleProvider(bookId: 1), (_, __) {});
       addTearDown(sub.close);
-      await container.read(libraryControllerProvider.future);
       expect(
         await container.read(bookTitleProvider(bookId: 1).future),
         'Old title',
       );
 
       repo.books[0] = const CatalogueItem(id: 1, title: 'New title');
-      await container.read(libraryControllerProvider.notifier).refresh();
+      container.read(catalogueChangesProvider.notifier).changed();
 
       expect(
         await container.read(bookTitleProvider(bookId: 1).future),

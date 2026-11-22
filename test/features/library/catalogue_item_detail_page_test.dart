@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -10,6 +11,7 @@ import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/core/widgets/camera_scan_messages.dart';
 import 'package:pitaka/core/widgets/item_cover.dart';
+import 'package:pitaka/features/library/application/catalogue_changes.dart';
 import 'package:pitaka/features/library/application/library_controller.dart';
 import 'package:pitaka/features/library/domain/catalogue_item_page.dart';
 import 'package:pitaka/features/library/domain/cover_owner.dart';
@@ -40,8 +42,8 @@ import '../vault/vault_repository_write_stub.dart';
 ///
 /// The repository is an in-memory fake whose rows a test can mutate behind
 /// the page's back, the way `BookCoverController` / the remote-cover
-/// materializer do in production (write the row, then invalidate
-/// `libraryControllerProvider`).
+/// materializer do in production (write the row, then say "catalogue
+/// changed").
 class _MemBookRepo implements CatalogueItemRepository {
   _MemBookRepo(List<CatalogueItem> seed) : books = List.of(seed);
 
@@ -80,12 +82,22 @@ class _MemBookRepo implements CatalogueItemRepository {
   @override
   Future<Either<Failure, List<CatalogueItem>>> getAllForInterchange() async =>
       right(books);
+
+  /// While set, every page read of the library list waits on it.
+  Completer<void>? holdPage;
+
+  /// The ids `markRemoved` and `restoreRemoved` were asked for, in order.
+  final List<int> removed = [];
+  final List<int> restored = [];
+
   @override
   Future<Either<Failure, CatalogueItemPage>> page(
     LibraryQuery query, {
     required int limit,
     int offset = 0,
   }) async {
+    final waitFor = holdPage;
+    if (waitFor != null) await waitFor.future;
     final rows = query.isSearch ? const <CatalogueItem>[] : books;
     final start = offset.clamp(0, rows.length);
     final end = (start + limit).clamp(start, rows.length);
@@ -111,10 +123,17 @@ class _MemBookRepo implements CatalogueItemRepository {
   Future<Either<Failure, CatalogueItem?>> findByUid(String itemUid) async =>
       right(null);
   @override
-  Future<Either<Failure, Unit>> markRemoved(int id, int at) async =>
-      right(unit);
+  Future<Either<Failure, Unit>> markRemoved(int id, int at) async {
+    removed.add(id);
+    return right(unit);
+  }
+
   @override
-  Future<Either<Failure, Unit>> restoreRemoved(int id) async => right(unit);
+  Future<Either<Failure, Unit>> restoreRemoved(int id) async {
+    restored.add(id);
+    return right(unit);
+  }
+
   @override
   Future<Either<Failure, Unit>> delete(int id) async => right(unit);
   @override
@@ -214,11 +233,11 @@ Future<void> _tapSave(WidgetTester tester) async {
 }
 
 /// Simulates what every mutation path in the application layer does after
-/// writing a row: signal the library that something changed.
+/// writing a row: say "catalogue changed" (ADR 0031).
 void _signalLibraryChanged(WidgetTester tester) {
   ProviderScope.containerOf(
     tester.element(find.byType(CatalogueItemDetailPage)),
-  ).invalidate(libraryControllerProvider);
+  ).read(catalogueChangesProvider.notifier).changed();
 }
 
 /// A 1×1 PNG so `Image.file` really decodes something.
@@ -1035,6 +1054,90 @@ void main() {
       expect(find.text(openSettingsLabel), findsNothing);
       expect(find.textContaining('secret'), findsNothing);
       await tester.pump(const Duration(seconds: 5));
+    });
+  });
+
+  // D154 (review finding P4-M2): Remove and Restore say "catalogue changed"
+  // and the item's page closes. It does not wait for the library list,
+  // which is read again underneath.
+  group('P4-M2: Remove and Restore do not wait for the list', () {
+    /// Opens the page over a Library list that is loaded and listened to,
+    /// as it is in the app, and hands back the container.
+    Future<ProviderContainer> openOverLoadedList(
+      WidgetTester tester,
+      _MemBookRepo repo,
+      CatalogueItem row,
+    ) async {
+      await tester.pumpWidget(_host(repo, tmp.path, initialBook: row));
+      final container = ProviderScope.containerOf(
+        tester.element(find.text('open detail')),
+      );
+      final subscription = container.listen(
+        libraryControllerProvider,
+        (_, _) {},
+      );
+      addTearDown(subscription.close);
+      await _openDetail(tester);
+      return container;
+    }
+
+    /// Frames for the write, the signal and the page's way out; never
+    /// "until the screen rests", because the list's read is held.
+    Future<void> letThePageLeave(WidgetTester tester) async {
+      await tester.pump();
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pump(const Duration(seconds: 1));
+    }
+
+    void expectClosedWhileTheListReads(ProviderContainer container) {
+      expect(container.read(catalogueChangesProvider), 1);
+      expect(
+        container.read(libraryControllerProvider).isLoading,
+        isTrue,
+        reason: 'the list is being read again, and its read is held',
+      );
+      expect(find.byType(CatalogueItemDetailPage), findsNothing);
+      expect(find.text('open detail'), findsOneWidget);
+    }
+
+    testWidgets('Remove, confirmed: the row is marked, "changed" is said '
+        'once, and the page closes while the list is still read', (
+      tester,
+    ) async {
+      final repo = _MemBookRepo([_seed]);
+      final container = await openOverLoadedList(tester, repo, _seed);
+
+      repo.holdPage = Completer<void>();
+      await tester.tap(find.byTooltip('Remove from library'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Remove'));
+      await letThePageLeave(tester);
+
+      expect(repo.removed, [_seed.id]);
+      expectClosedWhileTheListReads(container);
+
+      repo.holdPage!.complete();
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('Restore: the row is restored, "changed" is said once, and '
+        'the page closes while the list is still read', (tester) async {
+      final removedRow = _seed.copyWith(removed: true);
+      final repo = _MemBookRepo([removedRow]);
+      final container = await openOverLoadedList(tester, repo, removedRow);
+
+      repo.holdPage = Completer<void>();
+      await tester.tap(find.byTooltip('Restore to library'));
+      await letThePageLeave(tester);
+
+      expect(repo.restored, [_seed.id]);
+      expectClosedWhileTheListReads(container);
+
+      repo.holdPage!.complete();
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
     });
   });
 

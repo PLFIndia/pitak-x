@@ -29,7 +29,7 @@ library;
 import 'dart:async';
 
 import 'package:pitaka/core/di/providers.dart';
-import 'package:pitaka/features/library/application/library_controller.dart';
+import 'package:pitaka/features/library/application/catalogue_changes.dart';
 import 'package:pitaka/features/library/domain/cover_owner.dart';
 import 'package:pitaka/features/periodicals/application/periodicals_controller.dart';
 import 'package:pitaka/features/settings/application/settings_controller.dart';
@@ -88,7 +88,8 @@ class RemoteCoverMaterializer extends _$RemoteCoverMaterializer {
     // stays in `_seen` so this session does not hammer the host. Nothing to
     // show the user: a missing thumbnail is not an error they can act on.
     if (result.isRight()) {
-      ref.invalidate(libraryControllerProvider);
+      // A row now points at a local file: "catalogue changed" (ADR 0031).
+      ref.read(catalogueChangesProvider.notifier).changed();
       if (owner.kind == CoverOwnerKind.periodical) {
         // Series fallback rows depend on BOTH signals: the item list shows
         // inherited covers and the magazine list/detail shows the series.

@@ -24,7 +24,7 @@ import 'package:pitaka/core/platform/picked_document_reader.dart';
 import 'package:pitaka/features/import_export/application/import_library_use_case.dart';
 import 'package:pitaka/features/import_export/application/picked_text_file.dart';
 import 'package:pitaka/features/import_export/domain/import_limits.dart';
-import 'package:pitaka/features/library/application/library_controller.dart';
+import 'package:pitaka/features/library/application/catalogue_changes.dart';
 import 'package:pitaka/features/wishlist/application/wishlist_controller.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
@@ -132,13 +132,13 @@ class ImportController extends _$ImportController {
             : result.match(
                 (failure) => AsyncError(failure, StackTrace.current),
                 (summary) {
-                  // N11: the import ADDS rows to both lists — refresh them
+                  // N11: the import ADDS rows to both lists — say
+                  // "catalogue changed" (ADR 0031) and refresh the wishlist
                   // from HERE so a popped Import page cannot leave the
                   // lists underneath stale (this used to be the page's job,
                   // lost with its `ref`).
-                  ref
-                    ..invalidate(libraryControllerProvider)
-                    ..invalidate(wishlistControllerProvider);
+                  ref.read(catalogueChangesProvider.notifier).changed();
+                  ref.invalidate(wishlistControllerProvider);
                   return AsyncData(summary);
                 },
               );

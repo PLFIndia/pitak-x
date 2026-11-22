@@ -16,7 +16,7 @@ library;
 
 import 'package:pitaka/core/di/src/database_providers.dart';
 import 'package:pitaka/core/di/src/library_providers.dart';
-import 'package:pitaka/features/library/application/library_controller.dart';
+import 'package:pitaka/features/library/application/catalogue_changes.dart';
 import 'package:pitaka/features/periodicals/application/add_issue_use_case.dart';
 import 'package:pitaka/features/periodicals/application/add_periodical_use_case.dart';
 import 'package:pitaka/features/periodicals/application/delete_periodical_use_case.dart';
@@ -85,10 +85,10 @@ Future<UpdateIssueUseCase> updateIssueUseCase(UpdateIssueUseCaseRef ref) async {
 ///
 /// Freshness signals (N04): BOTH mutation signals are watched, value
 /// ignored. `periodicalsControllerProvider` fires on every series write
-/// (form save, remove/restore, delete); `libraryControllerProvider` fires on
-/// every item write — including import, merge and restore, which rewrite
-/// periodicals without going through the series controller. Watching only
-/// the repository OBJECT would never fire.
+/// (form save, remove/restore, delete); `catalogueChangesProvider` (ADR
+/// 0031) fires on every item write — including import, merge and restore,
+/// which rewrite periodicals without going through the series controller.
+/// Watching only the repository OBJECT would never fire.
 ///
 /// `null` = the row no longer exists. A repository `Left` is thrown so the
 /// screen sees `AsyncError`.
@@ -96,7 +96,7 @@ Future<UpdateIssueUseCase> updateIssueUseCase(UpdateIssueUseCaseRef ref) async {
 Future<Periodical?> periodicalById(PeriodicalByIdRef ref, int id) async {
   ref
     ..watch(periodicalsControllerProvider)
-    ..watch(libraryControllerProvider);
+    ..watch(catalogueChangesProvider);
   final repo = await ref.watch(periodicalRepositoryProvider.future);
   final result = await repo.getById(id);
   return result.fold(
@@ -119,7 +119,7 @@ Future<Periodical?> periodicalByUid(
 ) async {
   ref
     ..watch(periodicalsControllerProvider)
-    ..watch(libraryControllerProvider);
+    ..watch(catalogueChangesProvider);
   final repo = await ref.watch(periodicalRepositoryProvider.future);
   final result = await repo.findByUid(periodicalUid);
   return result.fold(
@@ -144,7 +144,7 @@ Future<Periodical?> periodicalByUid(
 Future<Map<String, String>> periodicalCovers(PeriodicalCoversRef ref) async {
   ref
     ..watch(periodicalsControllerProvider)
-    ..watch(libraryControllerProvider);
+    ..watch(catalogueChangesProvider);
   final repo = await ref.watch(periodicalRepositoryProvider.future);
   final result = await repo.listAll();
   return result.fold((_) => const {}, (summaries) {

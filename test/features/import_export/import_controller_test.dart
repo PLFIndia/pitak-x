@@ -16,6 +16,7 @@ import 'package:pitaka/features/import_export/application/picked_text_file.dart'
 import 'package:pitaka/features/import_export/domain/import_format_sniffer.dart';
 import 'package:pitaka/features/import_export/domain/import_limits.dart';
 import 'package:pitaka/features/import_export/infrastructure/pitaka_json_importer.dart';
+import 'package:pitaka/features/library/application/catalogue_changes.dart';
 import 'package:pitaka/features/library/application/library_controller.dart';
 import 'package:pitaka/features/library/domain/catalogue_item_page.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
@@ -199,6 +200,9 @@ void main() {
     expect(state.hasValue, isTrue);
     expect(state.value!.format, ImportFormat.pitakaJson);
     expect(state.value!.booksAdded, 1);
+    // N11, D151: the import says "catalogue changed" once, from the
+    // controller, so the lists under a page that is gone read again.
+    expect(container.read(catalogueChangesProvider), 1);
   });
 
   test(
@@ -510,6 +514,7 @@ void main() {
       expect(error, isA<UnexpectedFailure>());
       expect((error! as UnexpectedFailure).debugReason, 'Import failed.');
       expect('$error', isNot(contains('private path')));
+      expect(c.read(catalogueChangesProvider), 0, reason: 'nothing written');
     });
   });
 
@@ -597,8 +602,10 @@ void main() {
       expect(earlier!.booksAdded, 1);
 
       // Nothing is scripted: the fake picker answers "cancelled".
+      final said = c.read(catalogueChangesProvider);
       expect(await controller.importFile(), isNull);
 
+      expect(c.read(catalogueChangesProvider), said, reason: 'no import');
       expect(picker.caps, hasLength(1), reason: 'the picker did open');
       expect(c.read(importControllerProvider).value, same(earlier));
       expect(books.stored, hasLength(1));

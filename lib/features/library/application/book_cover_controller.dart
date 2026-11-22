@@ -14,7 +14,7 @@ import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/core/images/image_downscaler.dart';
-import 'package:pitaka/features/library/application/library_controller.dart';
+import 'package:pitaka/features/library/application/catalogue_changes.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/photo_cover_recipe.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
@@ -73,7 +73,8 @@ class BookCoverController extends _$BookCoverController {
     // another row or the logo shares it — the janitor checks). Decision Q12.
     final janitor = await ref.read(coverFileJanitorProvider.future);
     await janitor.releaseReference(book.coverUrl);
-    ref.invalidate(libraryControllerProvider);
+    // The row has a new cover: say "catalogue changed" (ADR 0031).
+    ref.read(catalogueChangesProvider.notifier).changed();
     return right(coverRef);
   }
 }

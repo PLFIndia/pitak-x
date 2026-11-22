@@ -42,7 +42,7 @@ import 'package:pitaka/features/backup/domain/backup_limits.dart';
 import 'package:pitaka/features/backup/domain/backup_progress.dart';
 import 'package:pitaka/features/backup/domain/restore_summary.dart';
 import 'package:pitaka/features/import_export/domain/cover_paths.dart';
-import 'package:pitaka/features/library/application/library_controller.dart';
+import 'package:pitaka/features/library/application/catalogue_changes.dart';
 import 'package:pitaka/features/network/application/network_controller.dart';
 import 'package:pitaka/features/publish/application/site/publish_site_status_controller.dart';
 import 'package:pitaka/features/publish/domain/publish_state_adoption.dart';
@@ -242,21 +242,24 @@ class RestoreController extends _$RestoreController {
         state = effective.match(
           (failure) => AsyncError(failure, StackTrace.current),
           (summary) {
+            // Restore switched the app onto a new data generation (M02): the
+            // vault-store provider has already been republished, and the
+            // session controller WATCHES it, so it rebuilds on its own
+            // (wiping any held secret via ref.onDispose). The explicit
+            // invalidation is kept as belt-and-braces for the keepAlive
+            // session: it costs one rebuild and guarantees the vault page
+            // never shows a stale "Create vault"/"Unlock" state, even if a
+            // future provider change breaks the watch chain.
+            ref.invalidate(vaultSessionControllerProvider);
+            // N11: restore replaces books AND the wishlist (M15). Say
+            // "catalogue changed" (ADR 0031) and refresh the wishlist from
+            // HERE so a popped Restore page cannot leave the lists
+            // underneath stale (this used to be the page's job, lost with
+            // its `ref`). At the place where the library list used to be
+            // invalidated: after the switch, and after the identity and the
+            // saved libraries were taken over.
+            ref.read(catalogueChangesProvider.notifier).changed();
             ref
-              // Restore switched the app onto a new data generation (M02): the
-              // vault-store provider has already been republished, and the
-              // session controller WATCHES it, so it rebuilds on its own
-              // (wiping any held secret via ref.onDispose). The explicit
-              // invalidation is kept as belt-and-braces for the keepAlive
-              // session: it costs one rebuild and guarantees the vault page
-              // never shows a stale "Create vault"/"Unlock" state, even if a
-              // future provider change breaks the watch chain.
-              ..invalidate(vaultSessionControllerProvider)
-              // N11: restore replaces books AND the wishlist (M15) — refresh
-              // both lists from HERE so a popped Restore page cannot leave the
-              // lists underneath stale (this used to be the page's job, lost
-              // with its `ref`).
-              ..invalidate(libraryControllerProvider)
               ..invalidate(wishlistControllerProvider)
               // §5.10: the saved-libraries list was replaced above. The
               // network window ALSO rebuilds on its own (its build() watches

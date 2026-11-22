@@ -9,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/features/library/application/catalogue_changes.dart';
 import 'package:pitaka/features/library/application/library_controller.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/value_objects/item_details.dart';
@@ -95,6 +96,7 @@ void main() {
       expect(saved.title, 'Frontline — No 1', reason: 'projected (D3)');
       expect(saved.publisher, 'The Hindu');
       expect(items.inserted, hasLength(1));
+      expect(container.read(catalogueChangesProvider), 1);
 
       await container.read(libraryControllerProvider.future);
       await container.read(periodicalsControllerProvider.future);
@@ -120,6 +122,7 @@ void main() {
       final state = container.read(addIssueControllerProvider);
       expect(state.error, isA<ValidationFailure>());
       expect(items.inserted, isEmpty);
+      expect(container.read(catalogueChangesProvider), 0);
       await container.pump();
       expect(libraryReads(), libraryBefore);
       expect(seriesReads(), seriesBefore);

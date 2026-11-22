@@ -156,7 +156,13 @@ void main() {
     });
 
     test('LibraryWindow.copyWith replaces only the given fields', () {
-      const w = LibraryWindow(books: [dune], hasMore: true);
+      final asked = LibraryQuery(sort: LibrarySort.recentlyAdded, text: 'dune');
+      final w = LibraryWindow(
+        books: const [dune],
+        hasMore: true,
+        query: asked,
+        listSerial: 4,
+      );
       expect(w.isLoadingMore, isFalse);
       final loading = w.copyWith(isLoadingMore: true);
       expect(loading.books, [dune]);
@@ -167,6 +173,10 @@ void main() {
       expect(done.hasMore, isFalse);
       expect(done.isLoadingMore, isTrue, reason: 'untouched field kept');
       expect(done.toString(), contains('hasMore: false'));
+      // A copy is the SAME list (P4-M2): its question and its serial number
+      // are kept, so the screen keeps its place.
+      expect(done.query, same(asked));
+      expect(done.listSerial, 4);
     });
   });
 }

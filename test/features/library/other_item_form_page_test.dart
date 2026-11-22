@@ -15,6 +15,7 @@ import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/core/widgets/item_cover.dart';
+import 'package:pitaka/features/library/application/catalogue_changes.dart';
 import 'package:pitaka/features/library/application/form_cover_controller.dart';
 import 'package:pitaka/features/library/application/library_controller.dart';
 import 'package:pitaka/features/library/domain/catalogue_item_page.dart';
@@ -221,7 +222,7 @@ void main() {
     items.rows[existing.id] = existing.copyWith(coverUrl: 'covers/new.jpg');
     ProviderScope.containerOf(
       tester.element(find.byType(OtherItemFormPage)),
-    ).invalidate(libraryControllerProvider);
+    ).read(catalogueChangesProvider.notifier).changed();
     await tester.pumpAndSettle();
 
     expect(
@@ -254,7 +255,7 @@ void main() {
     items.rows[existing.id] = existing.copyWith(coverUrl: 'covers/new.jpg');
     ProviderScope.containerOf(
       tester.element(find.byType(OtherItemFormPage)),
-    ).invalidate(libraryControllerProvider);
+    ).read(catalogueChangesProvider.notifier).changed();
     await tester.pumpAndSettle();
 
     expect(tester.widget<ItemCover>(find.byType(ItemCover)).coverUrl, isNull);
@@ -648,7 +649,7 @@ void main() {
         items.rows[existing.id] = existing.copyWith(coverUrl: 'covers/new.jpg');
         ProviderScope.containerOf(
           tester.element(page),
-        ).invalidate(libraryControllerProvider);
+        ).read(catalogueChangesProvider.notifier).changed();
         await tester.pumpAndSettle();
         await pressSystemBack(tester);
 
@@ -688,48 +689,39 @@ void main() {
       expectAsked();
     });
 
-    // The form reloads the library list between its save and leaving the
-    // screen. In that moment the item IS saved.
-    testWidgets('Back in the moment of the list reload after a good save: '
-        'the form leaves, no question, and the item is there once', (
+    // D154 (review finding P4-M2): the form no longer waits for the library
+    // list between its save and leaving. A good save says "catalogue
+    // changed" once and the form leaves; the list, one listener of that
+    // signal, catches up underneath. (Two tests stood here for "the moment
+    // of the list reload"; that moment is gone.)
+    testWidgets('a good save says "changed" once and the form leaves at '
+        'once, while the list underneath is still being read again', (
       tester,
     ) async {
       await openForm(tester);
       await keepLibraryListLoaded(tester);
+      final container = ProviderScope.containerOf(tester.element(page));
       await tester.enterText(title, 'Chess set');
       items.holdPage = Completer<void>();
       await tapSaveAndHold(tester);
       expect(items.inserted, hasLength(1), reason: 'the save is through');
-      expect(page, findsOneWidget, reason: 'the reload is held open');
+      expect(container.read(catalogueChangesProvider), 1);
+      expect(
+        container.read(libraryControllerProvider).isLoading,
+        isTrue,
+        reason: 'the list is being read again, and its read is held',
+      );
 
-      await pressSystemBack(tester);
+      // No Back, no wait for the list: the form goes by itself.
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pump(const Duration(seconds: 1));
       expectGoneWithoutQuestion();
 
       items.holdPage!.complete();
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
-      expectGoneWithoutQuestion();
       expect(items.inserted, hasLength(1));
-    });
-
-    testWidgets('a letter typed in the moment of the list reload, then '
-        'Back: still no question (the item is saved)', (tester) async {
-      await openForm(tester);
-      await keepLibraryListLoaded(tester);
-      await tester.enterText(title, 'Chess set');
-      items.holdPage = Completer<void>();
-      await tapSaveAndHold(tester);
-      expect(items.inserted, hasLength(1), reason: 'the save is through');
-
-      await tester.enterText(title, 'Chess set, and more');
-      await pressSystemBack(tester);
-      expectGoneWithoutQuestion();
-
-      items.holdPage!.complete();
-      await tester.pumpAndSettle();
-      expect(tester.takeException(), isNull);
-      expectGoneWithoutQuestion();
-      expect(items.inserted, hasLength(1));
+      expect(container.read(catalogueChangesProvider), 1);
     });
   });
 }

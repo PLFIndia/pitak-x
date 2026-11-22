@@ -7,7 +7,7 @@ part of 'periodical_form_controller.dart';
 // **************************************************************************
 
 String _$periodicalFormControllerHash() =>
-    r'b4f919fad1903421aabef7f8911d1987da6efbac';
+    r'53ec693fb26b8e6df0333cf30f4a0a762901d0f4';
 
 /// Drives a one-shot add or edit of a magazine title and surfaces the saved
 /// row.

@@ -25,7 +25,7 @@ import 'dart:async';
 import 'package:pitaka/core/async/serial_op_queue.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/platform/app_log.dart';
-import 'package:pitaka/features/library/application/library_controller.dart';
+import 'package:pitaka/features/library/application/catalogue_changes.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/publish/application/availability/availability_lane.dart';
 import 'package:pitaka/features/publish/application/availability/availability_lane_status.dart';
@@ -71,9 +71,11 @@ class AvailabilityAutoPublisher extends _$AvailabilityAutoPublisher {
         (_, _) => _forward(),
       )
       ..listen(activeLoanCountsProvider, (_, _) => _forward())
-      // The library list's controller is the catalogue mutation signal (the
-      // same signal the vault read models use, N04).
-      ..listen(libraryControllerProvider, (_, _) {
+      // The app's "catalogue changed" signal (the same one the vault read
+      // models use, N04). NOT the Library list's state, which also changes
+      // when the user only scrolls or types: each of those used to read the
+      // whole catalogue here (review finding P3-M4, ADR 0031).
+      ..listen(catalogueChangesProvider, (_, _) {
         _itemsStale = true;
         _forward();
       })
