@@ -1,6 +1,7 @@
 package dev.khoj.pitaka
 
 import android.content.ActivityNotFoundException
+import android.content.ContentResolver
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -338,6 +339,34 @@ class PickedDocumentChannel internal constructor(
 internal data class DocumentFacts(val name: String?, val sizeBytes: Long?)
 
 /**
+ * Asks the app a document comes from for its name and its size.
+ *
+ * One function for both directions: [PickedDocumentChannel] asks before it
+ * copies a document in, [SavedDocumentChannel] before and after it copies a
+ * file out. May throw: the other app is foreign code.
+ */
+internal fun queryDocumentFacts(resolver: ContentResolver, document: Uri): DocumentFacts {
+    var name: String? = null
+    var size: Long? = null
+    val columns = arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE)
+    resolver.query(document, columns, null, null, null)?.use { cursor ->
+        if (cursor.moveToFirst()) {
+            val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+            if (nameIndex >= 0 && !cursor.isNull(nameIndex)) {
+                name = cursor.getString(nameIndex)
+            }
+            // "If the size is unknown, the value stored is null"
+            // (Android documentation). A Long: a backup may pass 2 GiB.
+            val sizeIndex = cursor.getColumnIndex(OpenableColumns.SIZE)
+            if (sizeIndex >= 0 && !cursor.isNull(sizeIndex)) {
+                size = cursor.getLong(sizeIndex)
+            }
+        }
+    }
+    return DocumentFacts(name, size)
+}
+
+/**
  * Everything [PickedDocumentChannel] needs from Android, behind one
  * interface.
  *
@@ -406,26 +435,8 @@ private class AndroidDocumentPickPlatform(
         }
     }
 
-    override fun describe(document: Uri): DocumentFacts {
-        var name: String? = null
-        var size: Long? = null
-        val columns = arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE)
-        activity.contentResolver.query(document, columns, null, null, null)?.use { cursor ->
-            if (cursor.moveToFirst()) {
-                val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                if (nameIndex >= 0 && !cursor.isNull(nameIndex)) {
-                    name = cursor.getString(nameIndex)
-                }
-                // "If the size is unknown, the value stored is null"
-                // (Android documentation). A Long: a backup may pass 2 GiB.
-                val sizeIndex = cursor.getColumnIndex(OpenableColumns.SIZE)
-                if (sizeIndex >= 0 && !cursor.isNull(sizeIndex)) {
-                    size = cursor.getLong(sizeIndex)
-                }
-            }
-        }
-        return DocumentFacts(name, size)
-    }
+    override fun describe(document: Uri): DocumentFacts =
+        queryDocumentFacts(activity.contentResolver, document)
 
     override fun open(document: Uri): InputStream? =
         activity.contentResolver.openInputStream(document)

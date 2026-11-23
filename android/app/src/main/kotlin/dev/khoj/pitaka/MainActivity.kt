@@ -30,6 +30,11 @@ import io.flutter.plugin.common.MethodChannel
  *    document picker and copies the chosen document, under a size cap, into
  *    the app's private cache folder. Dart sends the cap and nothing else;
  *    no permission is involved. See that class for the trust boundary.
+ *  - [SavedDocumentChannel] — review finding P4-M6: ONE method that opens
+ *    the system's save window and copies ONE finished file from the app's
+ *    own working folders into the new, empty document. Dart sends the
+ *    file's path and nothing else; no permission is involved. See that
+ *    class for the trust boundary.
  *  - [DeviceResourcesChannel] — BR9: ONE read-only method without an
  *    argument that answers how much free storage and available memory the
  *    device has, for the notice before a backup and before a restore. No
@@ -54,6 +59,9 @@ class MainActivity : FlutterFragmentActivity() {
     // A field for the same reason: it registers the document picker.
     private val pickedDocumentChannel = PickedDocumentChannel(this)
 
+    // A field for the same reason: it registers the system's save window.
+    private val savedDocumentChannel = SavedDocumentChannel(this)
+
     // A field like the two above, for one shape. It registers nothing: it
     // touches the activity only when a call comes in.
     private val deviceResourcesChannel = DeviceResourcesChannel(this)
@@ -65,6 +73,7 @@ class MainActivity : FlutterFragmentActivity() {
         super.configureFlutterEngine(flutterEngine)
         appUpdateChannel.attach(flutterEngine)
         pickedDocumentChannel.attach(flutterEngine)
+        savedDocumentChannel.attach(flutterEngine)
         deviceResourcesChannel.attach(flutterEngine)
         appSettingsChannel.attach(flutterEngine)
         MethodChannel(
@@ -105,6 +114,7 @@ class MainActivity : FlutterFragmentActivity() {
     override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
         appUpdateChannel.detach()
         pickedDocumentChannel.detach()
+        savedDocumentChannel.detach()
         deviceResourcesChannel.detach()
         appSettingsChannel.detach()
         super.cleanUpFlutterEngine(flutterEngine)
