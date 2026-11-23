@@ -74,9 +74,13 @@ const Guide backupGuide = Guide(
       title: 'Make a backup',
       steps: [
         '**☰ → Settings → Data → Create backup**.',
-        'Tap **Create backup**. Pitak says how much storage and memory the '
-            'backup needs, and how much this phone has.',
-        'Tap **Go on** and choose where to save the file.',
+        'Tap **Save backup** to keep the file where you choose (this phone, '
+            'a memory card, a drive), or **Share backup** to hand it to '
+            'another app. Pitak says how much storage and memory the backup '
+            'needs, and how much this phone has.',
+        'Tap **Go on**. After **Save backup**, choose the place in the '
+            'window that opens; Pitak then says "Backup saved as …" with '
+            "the file's name. After **Share backup**, choose an app.",
       ],
     ),
     GuideSteps(

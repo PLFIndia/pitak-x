@@ -189,11 +189,12 @@ class CreateBackupUseCase {
 
   /// Removes the finished backup of [result] from the app's private folder.
   ///
-  /// Call it when the file is no longer needed: after the share sheet has
-  /// returned, whatever the user did there, or at once when nobody is left
-  /// to share it. Never throws and may be called twice. If the file cannot
-  /// be removed now, the next sweep removes it ([BackupWorkArea.sweep]);
-  /// there is nothing the caller could do about it, so no result is given.
+  /// Call it when the file is no longer needed: after the save window or
+  /// the share sheet has returned, whatever the user did there, or at once
+  /// when nobody is left to take it. Never throws and may be called twice.
+  /// If the file cannot be removed now, the next sweep removes it
+  /// ([BackupWorkArea.sweep]); there is nothing the caller could do about
+  /// it, so no result is given.
   Future<void> discard(CreateBackupResult result) async {
     await workArea.discard(result.path);
   }

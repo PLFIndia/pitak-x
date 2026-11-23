@@ -34,7 +34,7 @@ final class CreateBackupResult {
   });
 
   /// Absolute path of the finished `.pitabak` file. Its file name is the
-  /// name the user sees in the share sheet.
+  /// name the save window proposes and the share sheet shows.
   final String path;
 
   /// Size of that file in bytes.

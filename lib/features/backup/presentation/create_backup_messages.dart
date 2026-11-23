@@ -171,3 +171,72 @@ String? coversLeftOutMoreMessage(int count) {
   final more = count - coversLeftOutTitlesShown;
   return more > 0 ? 'and ${formatCount(more)} more' : null;
 }
+
+// --- The two ways a finished backup leaves the app (review finding P4-M6) ---
+//
+// WHY THESE ARE HERE (beginner note): the page has two buttons, "Save
+// backup" and "Share backup". Their labels, the note under them and one
+// sentence for each way a run can end were approved word for word
+// (decisions D170 and D176), and the tests of the page spell each of them
+// out. The three sentences that are the same on the Export page live in
+// `core/platform/document_save_messages.dart`.
+
+/// The first button: the backup is copied to a place the user chooses in
+/// the system's save window, and the app knows whether it arrived.
+const String saveBackupLabel = 'Save backup';
+
+/// The second button: the backup is handed to the system's share sheet.
+const String shareBackupLabel = 'Share backup';
+
+/// The tapped button while the backup is being built.
+const String backupCreatingLabel = 'Creating…';
+
+/// The "Save backup" button once the backup is built and is being saved:
+/// the system's save window is open, or the copy runs.
+const String backupSavingLabel = 'Saving…';
+
+/// The note under the two buttons. A saved backup lies where other apps
+/// and people may reach it, and a backup that stays on the phone is lost
+/// with the phone, which is what a backup is for.
+const String backupIsAnOrdinaryFileNote =
+    'The backup is an ordinary file: whoever can open the place you put it '
+    'can read your library from it. Only the borrowers vault inside stays '
+    'encrypted. A copy kept only on this phone is lost with the phone.';
+
+/// The backup is saved: every byte is at the place the user chose.
+///
+/// [name] is what the place calls the file now. It is foreign text, cleaned
+/// by the saver, and it can be empty: the sentence then ends after "saved".
+String backupSavedMessage(String name) =>
+    name.isEmpty ? 'Backup saved.' : 'Backup saved as $name.';
+
+/// The place could not take the backup, and the unfinished file was removed.
+const String backupNotSavedMessage =
+    'The backup could not be saved there. Nothing was left behind. Check '
+    'the free storage of that place, or choose another, and try again.';
+
+/// The place could not take the backup, and the unfinished file could NOT
+/// be removed. The user has to know: it looks like a backup and is none.
+const String backupSaveLeftBehindMessage =
+    'The backup could not be saved there. An unfinished file with the '
+    "backup's name may be left at that place: it is not a backup, so "
+    'delete it. Then try again.';
+
+/// The share sheet took the backup. A hand-over only: the app cannot know
+/// what the other app did with it.
+const String backupHandedOverMessage =
+    'Backup handed to the selected app; confirm it was saved or sent.';
+
+/// The share sheet was left without a choice. Until P4-M6 the page said
+/// nothing here, which is also all a user saw on a phone whose sheet had no
+/// app for the file.
+const String backupNothingSharedMessage =
+    'Nothing was shared. If no app on that list could take the file, use '
+    'Save backup.';
+
+/// This device has no share sheet for the app.
+const String backupSharingUnavailableMessage =
+    'Sharing is unavailable on this device.';
+
+/// The run failed for a reason the user cannot act on.
+const String backupFailedMessage = 'Something went wrong creating the backup.';

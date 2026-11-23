@@ -11,8 +11,8 @@
 ///
 /// The three moments a run is removed:
 ///  1. the build failed: the use case discards it at once;
-///  2. the backup was handed to the share sheet (or the page was left):
-///     the page discards it;
+///  2. the backup was saved or handed to the share sheet (or the page was
+///     left): the page discards it;
 ///  3. the app was killed in between: `sweep` removes it at the next start
 ///     and before the next backup.
 library;

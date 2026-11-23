@@ -3,6 +3,7 @@
 library;
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:pitaka/features/backup/presentation/create_backup_messages.dart';
 import 'package:pitaka/features/backup/presentation/resource_notice_messages.dart';
 import 'package:pitaka/features/guides/domain/guide.dart';
 import 'package:pitaka/features/guides/domain/guide_catalog.dart';
@@ -262,6 +263,28 @@ void main() {
       stepsOf('Restore on a new phone').steps.last,
       contains('**$restoreLabel**'),
     );
+  });
+
+  test('the backup guide names the two buttons of the Create backup page by '
+      'their on-screen labels', () {
+    // Review finding P4-M6 (decision D173): the page has two buttons where
+    // "Create backup" stood, and the guide tells the reader which to tap.
+    // Those words must be the page's own, or the reader looks for a button
+    // that is not there. ("Create backup" stays the name of the row in
+    // Settings and of the page: step 1 leads there.)
+    final steps = guideById(GuideId.backup).sections
+        .whereType<GuideSteps>()
+        .singleWhere((section) => section.title == 'Make a backup')
+        .steps;
+
+    expect(steps, hasLength(3));
+    for (final label in [saveBackupLabel, shareBackupLabel]) {
+      expect(steps[1], contains('**$label**'), reason: label);
+      expect(steps[2], contains('**$label**'), reason: label);
+    }
+    expect(steps.join('\n'), isNot(contains('Tap **Create backup**')));
+    // What the page says after a save, so that the reader knows it worked.
+    expect(steps[2], contains('Backup saved as'));
   });
 
   test('the vault guide says where an item is marked returned, with the '

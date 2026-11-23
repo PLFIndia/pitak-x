@@ -14,17 +14,21 @@ import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/core/platform/device_resources.dart';
+import 'package:pitaka/core/platform/document_saver.dart';
 import 'package:pitaka/core/platform/file_share.dart';
 import 'package:pitaka/features/backup/application/create_backup_use_case.dart';
 import 'package:pitaka/features/backup/domain/backup_progress.dart';
 import 'package:pitaka/features/backup/domain/create_backup_result.dart';
 import 'package:pitaka/features/backup/presentation/pages/create_backup_page.dart';
 import 'package:pitaka/features/backup/presentation/resource_notice_messages.dart';
+import 'package:pitaka/features/backup/presentation/widgets/backup_run_result.dart';
 import 'package:pitaka/features/backup/presentation/widgets/resource_notice_dialog.dart';
 
 import '../../support/a11y.dart';
 import '../../support/fake_device_resources.dart';
+import '../../support/fake_document_saver.dart';
 import '../../support/fake_library_footprint_source.dart';
+import '../../support/live_regions.dart';
 
 /// Where the fake use case says the finished backup is. No file is written:
 /// the share sheet is a fake too.
@@ -177,6 +181,16 @@ void main() {
   setUp(() {
     device = FakeDeviceResources();
     library = FakeLibraryFootprintSource();
+    // A tall screen for every test of this file. The page is a lazy list,
+    // and since it has two buttons and a note under them (P4-M6) the
+    // sentence of a run lies below what a default test screen builds. What
+    // a SHORT screen shows of the page is a question for a phone, not for
+    // these tests.
+    final view =
+        TestWidgetsFlutterBinding.instance.platformDispatcher.implicitView!
+          ..physicalSize = const Size(800, 2400)
+          ..devicePixelRatio = 1;
+    addTearDown(view.reset);
   });
 
   /// The two sources of the notice, faked.
@@ -185,28 +199,46 @@ void main() {
     libraryFootprintSourceProvider.overrideWithValue(library),
   ];
 
-  Widget page({CreateBackupUseCase? useCase, _FakeShare? share}) =>
-      ProviderScope(
-        overrides: [
-          if (useCase != null)
-            createBackupUseCaseProvider.overrideWith((ref) async => useCase),
-          fileShareServiceProvider.overrideWithValue(share ?? _FakeShare()),
-          ...noticeSources(),
-        ],
-        child: const MaterialApp(home: CreateBackupPage()),
-      );
+  Widget page({
+    CreateBackupUseCase? useCase,
+    _FakeShare? share,
+    FakeDocumentSaver? saver,
+  }) => ProviderScope(
+    overrides: [
+      if (useCase != null)
+        createBackupUseCaseProvider.overrideWith((ref) async => useCase),
+      fileShareServiceProvider.overrideWithValue(share ?? _FakeShare()),
+      documentSaverProvider.overrideWithValue(saver ?? FakeDocumentSaver()),
+      ...noticeSources(),
+    ],
+    child: const MaterialApp(home: CreateBackupPage()),
+  );
 
-  Finder createButton() => find.widgetWithText(FilledButton, 'Create backup');
+  // Until review finding P4-M6 the page had ONE button, "Create backup", and
+  // it ended in the share sheet. It has two now. The tests from before go
+  // the Share way, through [shareButton]; the Save way has a group of its
+  // own at the end of this file.
+  Finder shareButton() => find.widgetWithText(OutlinedButton, 'Share backup');
+  Finder saveButton() => find.widgetWithText(FilledButton, 'Save backup');
+
+  /// Whether the two buttons are on. The page locks BOTH while it works and
+  /// frees both afterwards; null when they differ, which no test expects.
+  bool? buttonsEnabled(WidgetTester tester) {
+    final save = tester.widget<FilledButton>(find.byType(FilledButton));
+    final share = tester.widget<OutlinedButton>(find.byType(OutlinedButton));
+    return save.enabled == share.enabled ? save.enabled : null;
+  }
+
   Finder noticeConfirm() => find.byKey(ResourceNoticeDialog.confirmKey);
   Finder noticeCancel() => find.byKey(ResourceNoticeDialog.cancelKey);
 
-  /// Taps "Create backup" and lets the notice open (BR9).
+  /// Taps "Share backup" and lets the notice open (BR9).
   Future<void> openNotice(WidgetTester tester) async {
-    await tester.tap(createButton());
+    await tester.tap(shareButton());
     await tester.pumpAndSettle();
   }
 
-  /// Taps "Create backup" and says "Go on" to the notice: the build starts.
+  /// Taps "Share backup" and says "Go on" to the notice: the build starts.
   ///
   /// The two pumps at the end let the dialog go (half a second on the
   /// test's clock) without waiting for the page to come to rest: a build
@@ -264,7 +296,7 @@ void main() {
       find.textContaining('may not open in an older version'),
     );
     final button = tester.getTopLeft(
-      find.widgetWithText(FilledButton, 'Create backup'),
+      find.widgetWithText(FilledButton, 'Save backup'),
     );
     expect(sentence.dy, lessThan(button.dy));
   });
@@ -325,7 +357,8 @@ void main() {
     expect(find.text('Sharing is unavailable on this device.'), findsOneWidget);
   });
 
-  testWidgets('dismissed sharing shows no hand-off or error', (tester) async {
+  testWidgets('a share sheet that is left gets a sentence, and it is not an '
+      'error (D170)', (tester) async {
     await tester.pumpWidget(
       page(
         useCase: _FakeCreateBackup(right(Uint8List.fromList([1]))),
@@ -341,10 +374,16 @@ void main() {
       findsNothing,
     );
     expect(find.text('Sharing is unavailable on this device.'), findsNothing);
+    // Until P4-M6 the page said NOTHING here, which is also all a user saw
+    // on a phone whose sheet had no app for the file.
     expect(
-      tester.widget<FilledButton>(find.byType(FilledButton)).enabled,
-      isTrue,
+      find.text(
+        'Nothing was shared. If no app on that list could take the file, '
+        'use Save backup.',
+      ),
+      findsOneWidget,
     );
+    expect(buttonsEnabled(tester), isTrue);
   });
 
   // S5 (L5): a catalogue too large for the format gets its OWN sentence —
@@ -404,10 +443,7 @@ void main() {
       ),
       findsNothing,
     );
-    expect(
-      tester.widget<FilledButton>(find.byType(FilledButton)).enabled,
-      isTrue,
-    );
+    expect(buttonsEnabled(tester), isTrue);
   });
 
   group('BR3 (D10): cover pictures that were left out', () {
@@ -670,7 +706,7 @@ void main() {
       findsOneWidget,
     );
     expect(
-      tester.widget<FilledButton>(find.byType(FilledButton)).enabled,
+      buttonsEnabled(tester),
       isTrue,
       reason: 'the busy flag must reset on an unexpected failure',
     );
@@ -698,10 +734,7 @@ void main() {
       find.text('Something went wrong creating the backup.'),
       findsOneWidget,
     );
-    expect(
-      tester.widget<FilledButton>(find.byType(FilledButton)).enabled,
-      isTrue,
-    );
+    expect(buttonsEnabled(tester), isTrue);
     expect(tester.takeException(), isNull);
   });
 
@@ -709,7 +742,7 @@ void main() {
   // what the phone has. The dialog itself is proven in
   // `resource_notice_dialog_test.dart`; here: what the PAGE does with it.
   group('the notice before a backup', () {
-    testWidgets('"Create backup" opens the notice, and nothing is built '
+    testWidgets('"Share backup" opens the notice, and nothing is built '
         'until "Go on" is tapped', (tester) async {
       final useCase = _FakeCreateBackup(right(Uint8List.fromList([1, 2, 3])));
       await tester.pumpWidget(page(useCase: useCase));
@@ -754,7 +787,7 @@ void main() {
 
       expect(useCase.calls, 0);
       expect(share.files, isEmpty);
-      expect(tester.widget<FilledButton>(createButton()).enabled, isTrue);
+      expect(buttonsEnabled(tester), isTrue);
       expect(find.text('Creating…'), findsNothing);
       expect(find.textContaining('Backup handed'), findsNothing);
     });
@@ -1030,8 +1063,7 @@ void main() {
     const handedOver =
         'Backup handed to the selected app; confirm it was saved or sent.';
 
-    bool buttonEnabled(WidgetTester tester) =>
-        tester.widget<FilledButton>(find.byType(FilledButton)).enabled;
+    bool? buttonEnabled(WidgetTester tester) => buttonsEnabled(tester);
 
     /// Shows the page with [useCase] and taps the button. The build then
     /// waits at the use case's gate.
@@ -1079,7 +1111,9 @@ void main() {
       await tester.pump();
 
       expect(tester.widget<Text>(line).data, 'Cover 1,234 of 9,000');
-      final buttonBottom = tester.getBottomLeft(find.byType(FilledButton)).dy;
+      // Under BOTH buttons: the lower one is "Share backup", which reads
+      // "Creating…" just now, so it is found by its kind.
+      final buttonBottom = tester.getBottomLeft(find.byType(OutlinedButton)).dy;
       expect(tester.getTopLeft(line).dy, greaterThan(buttonBottom));
       // The spinner stays, and the button stays locked: still one backup.
       expect(find.byType(CircularProgressIndicator), findsOneWidget);
@@ -1207,6 +1241,719 @@ void main() {
 
       gate.complete();
       await tester.pumpAndSettle();
+    });
+  });
+
+  // Review finding P4-M6 (decisions D165 to D170, and D176): the page has a
+  // second way out. "Save backup" builds the backup exactly as "Share
+  // backup" does and then hands the finished FILE to the app's own saver,
+  // which opens the system's save window and copies the file. The saver is
+  // a fake here; its real half has its own tests.
+  group('P4-M6: Save backup', () {
+    const savedAs = 'Backup saved as pitak-backup-02Nov2026-134659.pitabak.';
+    const handedOver =
+        'Backup handed to the selected app; confirm it was saved or sent.';
+    const failedRun = 'Something went wrong creating the backup.';
+
+    _FakeCreateBackup builds({
+      _Events? events,
+      Completer<void>? gate,
+      bool vaultLeftOut = false,
+      bool includesIdentity = true,
+    }) => _FakeCreateBackup(
+      right(Uint8List.fromList([1, 2, 3])),
+      events: events,
+      gate: gate,
+      vaultLeftOut: vaultLeftOut,
+      includesIdentity: includesIdentity,
+    );
+
+    /// Taps "Save backup" and says "Go on" to the notice: the build starts.
+    /// (The two pumps at the end are those of [tapCreateBackup].)
+    Future<void> tapSaveBackup(WidgetTester tester) async {
+      await tester.tap(saveButton());
+      await tester.pumpAndSettle();
+      await tester.tap(noticeConfirm());
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+    }
+
+    testWidgets('two buttons, Save first, and under them a note that says '
+        'what kind of file a backup is', (tester) async {
+      await tester.pumpWidget(page(useCase: builds()));
+
+      expect(saveButton(), findsOneWidget);
+      expect(shareButton(), findsOneWidget);
+      // The old label is the page's title only.
+      expect(find.text('Create backup'), findsOneWidget);
+      expect(
+        tester.getTopLeft(saveButton()).dy,
+        lessThan(tester.getTopLeft(shareButton()).dy),
+      );
+      final note = find.text(
+        'The backup is an ordinary file: whoever can open the place you put '
+        'it can read your library from it. Only the borrowers vault inside '
+        'stays encrypted. A copy kept only on this phone is lost with the '
+        'phone.',
+      );
+      expect(note, findsOneWidget);
+      expect(
+        tester.getTopLeft(note).dy,
+        greaterThan(tester.getBottomLeft(shareButton()).dy),
+      );
+    });
+
+    testWidgets('Save asks first, builds, saves the FILE that was built, and '
+        'says under which name', (tester) async {
+      final events = <String>[];
+      final useCase = builds(events: events);
+      final saver = FakeDocumentSaver(events: events);
+      final share = _FakeShare(events: events);
+      await tester.pumpWidget(
+        page(useCase: useCase, share: share, saver: saver),
+      );
+
+      await tester.tap(saveButton());
+      await tester.pumpAndSettle();
+      // The notice of BR9 is open, and nothing is built before "Go on".
+      expect(noticeConfirm(), findsOneWidget);
+      expect(useCase.calls, 0);
+
+      await tester.tap(noticeConfirm());
+      await tester.pumpAndSettle();
+
+      expect(useCase.calls, 1);
+      expect(saver.paths, [_fakeBackupPath]);
+      expect(share.files, isEmpty);
+      expect(find.text(savedAs), findsOneWidget);
+      expect(find.text(handedOver), findsNothing);
+      // The file is given back AFTER the save has ended, not before.
+      expect(events, ['save', 'discard']);
+      expect(useCase.discarded, hasLength(1));
+      expect(buttonsEnabled(tester), isTrue);
+    });
+
+    testWidgets('the name is the one the place gave; without a name the '
+        'sentence ends after "saved"', (tester) async {
+      final saver = FakeDocumentSaver(
+        result: FakeDocumentSaver.saved(
+          name: 'pitak-backup-02Nov2026-134659 (1).pitabak',
+        ),
+      );
+      await tester.pumpWidget(page(useCase: builds(), saver: saver));
+
+      await tapSaveBackup(tester);
+      await tester.pumpAndSettle();
+      expect(
+        find.text('Backup saved as pitak-backup-02Nov2026-134659 (1).pitabak.'),
+        findsOneWidget,
+      );
+
+      saver.result = FakeDocumentSaver.saved(name: '');
+      await tapSaveBackup(tester);
+      await tester.pumpAndSettle();
+      expect(find.text('Backup saved.'), findsOneWidget);
+      expect(find.textContaining('Backup saved as'), findsNothing);
+    });
+
+    testWidgets('what the backup does not carry is said under "saved" as it '
+        'is under "handed"', (tester) async {
+      await tester.pumpWidget(
+        page(useCase: builds(vaultLeftOut: true, includesIdentity: false)),
+      );
+
+      await tapSaveBackup(tester);
+      await tester.pumpAndSettle();
+
+      expect(find.text(savedAs), findsOneWidget);
+      expect(find.byKey(const Key('backup-vault-left-out')), findsOneWidget);
+      expect(
+        find.textContaining('does not carry your library identity'),
+        findsOneWidget,
+      );
+    });
+
+    // One test for each way a save can end WITHOUT a saved file. Every one:
+    // its sentence and no other, no note about what "the backup" carries
+    // (there is none), the file given back, both buttons free again.
+    const endings = <String, (DocumentSaveResult, String)>{
+      'the save window was left': (
+        DocumentSaveCancelled(),
+        'No place was chosen, so nothing was saved.',
+      ),
+      'the place could not take the file, and nothing was left behind': (
+        DocumentSaveNotSaved(),
+        'The backup could not be saved there. Nothing was left behind. '
+            'Check the free storage of that place, or choose another, and '
+            'try again.',
+      ),
+      'an unfinished file could not be taken back': (
+        DocumentSaveLeftBehind(),
+        'The backup could not be saved there. An unfinished file with the '
+            "backup's name may be left at that place: it is not a backup, "
+            'so delete it. Then try again.',
+      ),
+      'the file chosen already has something in it (D176)': (
+        DocumentSaveNotEmpty(),
+        'That file already has something in it, so it was left as it is. '
+            'Choose a new name in the save window and try again.',
+      ),
+      'the place cannot confirm that the file is stored (D183)': (
+        DocumentSaveUnconfirmed(),
+        'That place cannot confirm that a file is stored, so nothing was '
+            'saved there. Choose a place on this phone or on a memory card, '
+            'or use Share instead.',
+      ),
+      'this device has no save window (D171)': (
+        DocumentSaveUnavailable(),
+        'Saving to a file is not available on this device.',
+      ),
+      'the built file was gone before it could be copied': (
+        DocumentSaveSourceGone(),
+        failedRun,
+      ),
+      'a mistake in code on either side of the channel': (
+        DocumentSaveFailed(),
+        failedRun,
+      ),
+    };
+    for (final MapEntry(key: title, value: (result, sentence))
+        in endings.entries) {
+      testWidgets('not saved: $title', (tester) async {
+        final events = <String>[];
+        final useCase = builds(events: events, vaultLeftOut: true);
+        final share = _FakeShare(events: events);
+        await tester.pumpWidget(
+          page(
+            useCase: useCase,
+            share: share,
+            saver: FakeDocumentSaver(result: result, events: events),
+          ),
+        );
+
+        await tapSaveBackup(tester);
+        await tester.pumpAndSettle();
+
+        expect(find.text(sentence), findsOneWidget);
+        expect(find.textContaining('Backup saved'), findsNothing);
+        expect(find.text(handedOver), findsNothing);
+        expect(find.byKey(const Key('backup-vault-left-out')), findsNothing);
+        expect(events, ['save', 'discard']);
+        expect(useCase.discarded, hasLength(1));
+        expect(buttonsEnabled(tester), isTrue);
+      });
+    }
+
+    testWidgets('a saver that throws ends in the sentence for a failed run, '
+        'and the file is given back', (tester) async {
+      final useCase = builds();
+      await tester.pumpWidget(
+        page(
+          useCase: useCase,
+          saver: FakeDocumentSaver(error: StateError('channel exploded')),
+        ),
+      );
+
+      await tapSaveBackup(tester);
+      await tester.pumpAndSettle();
+
+      expect(find.text(failedRun), findsOneWidget);
+      expect(find.textContaining('channel exploded'), findsNothing);
+      expect(useCase.discarded, hasLength(1));
+      expect(buttonsEnabled(tester), isTrue);
+    });
+
+    testWidgets('the tapped button says what is going on, "Creating…" and '
+        'then "Saving…", and both buttons are off meanwhile', (tester) async {
+      final buildGate = Completer<void>();
+      final saveGate = Completer<void>();
+      await tester.pumpWidget(
+        page(
+          useCase: builds(gate: buildGate),
+          saver: FakeDocumentSaver(gate: saveGate),
+        ),
+      );
+
+      await tapSaveBackup(tester);
+      await tester.pump();
+      expect(find.widgetWithText(FilledButton, 'Creating…'), findsOneWidget);
+      // The other button keeps its words.
+      expect(shareButton(), findsOneWidget);
+      expect(buttonsEnabled(tester), isFalse);
+
+      // The file is made: from here on it is being saved (the system's
+      // window is open, or the copy runs).
+      buildGate.complete();
+      await tester.pump();
+      await tester.pump();
+      expect(find.widgetWithText(FilledButton, 'Saving…'), findsOneWidget);
+      expect(find.text('Creating…'), findsNothing);
+      expect(buttonsEnabled(tester), isFalse);
+
+      saveGate.complete();
+      await tester.pumpAndSettle();
+      expect(saveButton(), findsOneWidget);
+      expect(find.text(savedAs), findsOneWidget);
+      expect(buttonsEnabled(tester), isTrue);
+    });
+
+    testWidgets('on the Share way the tapped button reads "Creating…" to the '
+        'end, never "Saving…"', (tester) async {
+      final buildGate = Completer<void>();
+      final shareGate = Completer<void>();
+      await tester.pumpWidget(
+        page(
+          useCase: builds(gate: buildGate),
+          share: _FakeShare(gate: shareGate),
+        ),
+      );
+
+      await tapCreateBackup(tester);
+      await tester.pump();
+      expect(find.widgetWithText(OutlinedButton, 'Creating…'), findsOneWidget);
+      expect(saveButton(), findsOneWidget);
+
+      buildGate.complete();
+      await tester.pump();
+      await tester.pump();
+      expect(find.widgetWithText(OutlinedButton, 'Creating…'), findsOneWidget);
+      expect(find.text('Saving…'), findsNothing);
+      expect(buttonsEnabled(tester), isFalse);
+
+      shareGate.complete();
+      await tester.pumpAndSettle();
+      expect(find.text(handedOver), findsOneWidget);
+    });
+
+    testWidgets('a page that is left while the save window is open still '
+        'gives the file back', (tester) async {
+      final saveGate = Completer<void>();
+      final useCase = builds();
+      await tester.pumpWidget(
+        page(
+          useCase: useCase,
+          saver: FakeDocumentSaver(gate: saveGate),
+        ),
+      );
+      await tapSaveBackup(tester);
+      await tester.pump();
+      expect(useCase.discarded, isEmpty);
+
+      // The page goes away; the system's window is still open above it.
+      await tester.pumpWidget(const SizedBox());
+      saveGate.complete();
+      await tester.pumpAndSettle();
+
+      expect(useCase.discarded, hasLength(1));
+    });
+
+    testWidgets('a second run takes the sentence of the first away as soon '
+        'as it starts', (tester) async {
+      // The second build waits at a gate, so the test can look at the page
+      // WHILE it runs: what the first run ended with must be gone by then,
+      // not only replaced at the end.
+      final gate = Completer<void>();
+      final useCase = _FakeCreateBackup(
+        right(Uint8List.fromList([1, 2, 3])),
+        gate: gate,
+        gateFromCall: 2,
+      );
+      await tester.pumpWidget(page(useCase: useCase));
+
+      await tapSaveBackup(tester);
+      await tester.pumpAndSettle();
+      expect(find.text(savedAs), findsOneWidget);
+
+      await tapSaveBackup(tester);
+      await tester.pump();
+      expect(find.text(savedAs), findsNothing);
+
+      gate.complete();
+      await tester.pumpAndSettle();
+      expect(find.text(savedAs), findsOneWidget);
+    });
+
+    testWidgets('the page with two buttons, the note and a sentence meets '
+        'the accessibility guidelines', (tester) async {
+      await tester.pumpWidget(page(useCase: builds()));
+      await expectMeetsA11yGuidelines(tester);
+
+      await tapSaveBackup(tester);
+      await tester.pumpAndSettle();
+      expect(find.text(savedAs), findsOneWidget);
+      await expectMeetsA11yGuidelines(tester);
+    });
+  });
+
+  // Decision D177 (after the first look on a device): the sentence of a
+  // finished run could lie below the screen, and after a save the system's
+  // window is gone and the page is all the user has. The page brings the
+  // sentence into view by itself.
+  group('D177: the sentence of a finished run is brought into view', () {
+    /// Whether the widget of [finder] lies on the screen, below the bar at
+    /// the top, with all of its height.
+    bool onScreen(WidgetTester tester, Finder finder) {
+      if (finder.evaluate().isEmpty) return false;
+      final rect = tester.getRect(finder);
+      final height =
+          tester.view.physicalSize.height / tester.view.devicePixelRatio;
+      return rect.top >= kToolbarHeight && rect.bottom <= height;
+    }
+
+    /// Starts a run from [button] and stops the clock at the moment that
+    /// matters: the run is held at [gate], and the screen is cut off just
+    /// under the tapped button, so that everything below it (the other
+    /// button, the note, and the sentence to come) lies BELOW the screen.
+    /// Then the run is let go.
+    ///
+    /// Why not simply a short screen from the start: the notice of BR9
+    /// needs room, and how long the page is depends on the test's font. So
+    /// the button's place is measured, not guessed.
+    Future<void> finishRunWithTheButtonAtTheBottomEdge(
+      WidgetTester tester,
+      Finder button,
+      Type buttonType,
+      Completer<void> gate, {
+      double? screenHeight,
+    }) async {
+      tester.view
+        ..physicalSize = const Size(400, 2400)
+        ..devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pump();
+      await tester.tap(button);
+      await tester.pumpAndSettle();
+      await tester.tap(noticeConfirm());
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+
+      // The run waits at the gate. (The tapped button reads "Creating…" or
+      // "Saving…" now, so it is found by its kind.)
+      final bottom = tester.getRect(find.byType(buttonType)).bottom;
+      // Without [screenHeight] the screen ends 4 pixels under the button.
+      // With it the screen is shorter still (for a test that needs the
+      // RESULT to be taller than the screen), and the list is moved so
+      // that the button sits at the bottom edge all the same.
+      final height = screenHeight ?? bottom + 4;
+      tester.view.physicalSize = Size(400, height);
+      await tester.pump();
+      if (screenHeight != null) {
+        tester
+            .state<ScrollableState>(find.byType(Scrollable).first)
+            .position
+            .jumpTo(bottom + 4 - height);
+        await tester.pump();
+      }
+      expect(tester.getRect(find.byType(buttonType)).bottom, height - 4);
+
+      gate.complete();
+      await tester.pumpAndSettle();
+    }
+
+    _FakeCreateBackup built({Completer<void>? gate}) =>
+        _FakeCreateBackup(right(Uint8List.fromList([1, 2, 3])), gate: gate);
+
+    testWidgets('after a save, "Backup saved as …" is on the screen', (
+      tester,
+    ) async {
+      final gate = Completer<void>();
+      await tester.pumpWidget(
+        page(
+          useCase: built(),
+          saver: FakeDocumentSaver(gate: gate),
+        ),
+      );
+
+      await finishRunWithTheButtonAtTheBottomEdge(
+        tester,
+        saveButton(),
+        FilledButton,
+        gate,
+      );
+
+      expect(onScreen(tester, find.textContaining('Backup saved as')), isTrue);
+    });
+
+    testWidgets('a save window that was left: its sentence is on the '
+        'screen', (tester) async {
+      final gate = Completer<void>();
+      await tester.pumpWidget(
+        page(
+          useCase: built(),
+          saver: FakeDocumentSaver(
+            result: const DocumentSaveCancelled(),
+            gate: gate,
+          ),
+        ),
+      );
+
+      await finishRunWithTheButtonAtTheBottomEdge(
+        tester,
+        saveButton(),
+        FilledButton,
+        gate,
+      );
+
+      expect(
+        onScreen(
+          tester,
+          find.text('No place was chosen, so nothing was saved.'),
+        ),
+        isTrue,
+      );
+    });
+
+    testWidgets('a share sheet that was left: its sentence is on the '
+        'screen', (tester) async {
+      final gate = Completer<void>();
+      await tester.pumpWidget(
+        page(
+          useCase: built(),
+          share: _FakeShare(outcome: ShareOutcome.dismissed, gate: gate),
+        ),
+      );
+
+      await finishRunWithTheButtonAtTheBottomEdge(
+        tester,
+        shareButton(),
+        OutlinedButton,
+        gate,
+      );
+
+      expect(
+        onScreen(tester, find.textContaining('Nothing was shared')),
+        isTrue,
+      );
+    });
+
+    testWidgets('a backup that could not be built: its sentence is on the '
+        'screen', (tester) async {
+      final gate = Completer<void>();
+      await tester.pumpWidget(
+        page(
+          useCase: _FakeCreateBackup(
+            left(const StorageFailure('disk')),
+            gate: gate,
+          ),
+        ),
+      );
+
+      await finishRunWithTheButtonAtTheBottomEdge(
+        tester,
+        saveButton(),
+        FilledButton,
+        gate,
+      );
+
+      expect(
+        onScreen(
+          tester,
+          find.text('Could not build the backup. Please try again.'),
+        ),
+        isTrue,
+      );
+    });
+
+    testWidgets('a run that throws: its sentence is on the screen', (
+      tester,
+    ) async {
+      final gate = Completer<void>();
+      await tester.pumpWidget(
+        page(
+          useCase: built(),
+          saver: FakeDocumentSaver(
+            error: StateError('channel exploded'),
+            gate: gate,
+          ),
+        ),
+      );
+
+      await finishRunWithTheButtonAtTheBottomEdge(
+        tester,
+        saveButton(),
+        FilledButton,
+        gate,
+      );
+
+      expect(
+        onScreen(
+          tester,
+          find.text('Something went wrong creating the backup.'),
+        ),
+        isTrue,
+      );
+    });
+
+    testWidgets('a result that is taller than the screen shows its first '
+        'line, the sentence', (tester) async {
+      final gate = Completer<void>();
+      await tester.pumpWidget(
+        page(
+          useCase: _FakeCreateBackup(
+            right(Uint8List.fromList([1, 2, 3])),
+            includesIdentity: false,
+            includesNetwork: false,
+            missingPublishState: true,
+            vaultLeftOut: true,
+            coversLeftOut: List.generate(
+              5,
+              (i) => 'A book with a rather long title, number $i',
+            ),
+          ),
+          saver: FakeDocumentSaver(gate: gate),
+        ),
+      );
+
+      // A screen of 300 pixels, 56 of them the bar at the top.
+      await finishRunWithTheButtonAtTheBottomEdge(
+        tester,
+        saveButton(),
+        FilledButton,
+        gate,
+        screenHeight: 300,
+      );
+
+      // Every note is under the sentence, and together they need more room
+      // than this screen has under its top bar (checked, so that the test
+      // cannot pass for a result that simply fits). The sentence is what
+      // must be read first.
+      expect(
+        tester.getSize(find.byType(BackupRunResult)).height,
+        greaterThan(300 - kToolbarHeight),
+      );
+      expect(onScreen(tester, find.textContaining('Backup saved as')), isTrue);
+    });
+  });
+
+  // Decision D190 (the review stop of P4-M6). After a save the system's
+  // window closes and the page's sentence is all the user has. A user who
+  // sees the screen gets it scrolled into view (D177); a user of a screen
+  // reader gets it read out: the result is a "live region". What is asked
+  // here is what a screen reader is GIVEN; that it speaks is its own side
+  // and is seen on a device only.
+  group('D190, for a screen reader: the result of a run is read out when '
+      'it appears', () {
+    const savedAs = 'Backup saved as pitak-backup-02Nov2026-134659.pitabak.';
+
+    _FakeCreateBackup builds({
+      Completer<void>? gate,
+      int gateFromCall = 1,
+      bool vaultLeftOut = false,
+    }) => _FakeCreateBackup(
+      right(Uint8List.fromList([1, 2, 3])),
+      gate: gate,
+      gateFromCall: gateFromCall,
+      vaultLeftOut: vaultLeftOut,
+    );
+
+    /// Taps "Save backup" and says "Go on" to the notice. The run then goes
+    /// as far as it can: to its end, or to a gate.
+    Future<void> tapSaveBackup(WidgetTester tester) async {
+      await tester.tap(saveButton());
+      await tester.pumpAndSettle();
+      await tester.tap(noticeConfirm());
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+    }
+
+    testWidgets('after a save, "Backup saved as …" is a live region of its '
+        'own: that sentence and nothing else of the page', (tester) async {
+      final handle = tester.ensureSemantics();
+      await tester.pumpWidget(page(useCase: builds()));
+      // Before a run there is no result, and nothing to read out.
+      expect(liveRegionLabels(tester), isEmpty);
+
+      await tapSaveBackup(tester);
+      await tester.pumpAndSettle();
+
+      // Exactly the sentence: the note under the buttons ("The backup is
+      // an ordinary file: …") stands just above it and is NOT part of it.
+      expect(liveRegionLabels(tester), [savedAs]);
+      handle.dispose();
+    });
+
+    testWidgets('what the backup does not carry is read out with "saved", '
+        'after it', (tester) async {
+      final handle = tester.ensureSemantics();
+      await tester.pumpWidget(page(useCase: builds(vaultLeftOut: true)));
+
+      await tapSaveBackup(tester);
+      await tester.pumpAndSettle();
+
+      final vaultNote = tester
+          .widget<Text>(find.byKey(const Key('backup-vault-left-out')))
+          .data;
+      expect(vaultNote, startsWith('Note: the borrowers vault is not inside'));
+      // A user who hears "saved" is also told what is missing.
+      expect(liveRegionLabels(tester), ['$savedAs\n$vaultNote']);
+      handle.dispose();
+    });
+
+    testWidgets('a save window that was left: its sentence is a live '
+        'region', (tester) async {
+      final handle = tester.ensureSemantics();
+      await tester.pumpWidget(
+        page(
+          useCase: builds(),
+          saver: FakeDocumentSaver(result: const DocumentSaveCancelled()),
+        ),
+      );
+
+      await tapSaveBackup(tester);
+      await tester.pumpAndSettle();
+
+      expect(liveRegionLabels(tester), [
+        'No place was chosen, so nothing was saved.',
+      ]);
+      handle.dispose();
+    });
+
+    testWidgets('a backup that could not be built: its sentence is a live '
+        'region', (tester) async {
+      final handle = tester.ensureSemantics();
+      await tester.pumpWidget(
+        page(useCase: _FakeCreateBackup(left(const StorageFailure('disk')))),
+      );
+
+      await tapSaveBackup(tester);
+      await tester.pumpAndSettle();
+
+      expect(liveRegionLabels(tester), [
+        'Could not build the backup. Please try again.',
+      ]);
+      handle.dispose();
+    });
+
+    testWidgets('while a run goes nothing is a live region: not the note, '
+        'not the progress line, and not the result of the run before', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      // The second build waits at a gate, so the test can look at the page
+      // WHILE it runs.
+      final gate = Completer<void>();
+      final useCase = builds(gate: gate, gateFromCall: 2);
+      await tester.pumpWidget(page(useCase: useCase));
+
+      await tapSaveBackup(tester);
+      await tester.pumpAndSettle();
+      expect(liveRegionLabels(tester), [savedAs]);
+
+      await tapSaveBackup(tester);
+      useCase.report(1, 2);
+      await tester.pump();
+
+      // The progress line is there and changes at every step. If it were
+      // part of a live region, a screen reader would be handed it (and the
+      // note above it) again and again.
+      expect(find.byKey(const Key('backup-progress')), findsOneWidget);
+      expect(liveRegionLabels(tester), isEmpty);
+
+      // The second run's result is a region again: built anew, read anew.
+      gate.complete();
+      await tester.pumpAndSettle();
+      expect(liveRegionLabels(tester), [savedAs]);
+      handle.dispose();
     });
   });
 }

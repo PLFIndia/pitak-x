@@ -130,7 +130,8 @@ ResourceVerdict memoryVerdict({
 /// before it opens. For a moment both exist. The library's size stands in
 /// for the size of the file to come, which is only known once it is built;
 /// it is a little high on purpose, because the databases shrink inside a
-/// backup.
+/// backup. A backup that is SAVED on this phone needs the same: the file in
+/// the app's folder and the copy at the place the user chose.
 int backupStorageNeedBytes(LibraryFootprint library) => 2 * library.totalBytes;
 
 /// The sizes a chosen backup declares, as far as the notice needs them.
