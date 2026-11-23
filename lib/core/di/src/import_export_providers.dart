@@ -12,13 +12,16 @@ import 'package:flutter/services.dart' show rootBundle;
 import 'package:pitaka/core/di/src/availability_providers.dart';
 import 'package:pitaka/core/di/src/database_providers.dart';
 import 'package:pitaka/core/di/src/library_providers.dart';
+import 'package:pitaka/core/di/src/platform_providers.dart';
 import 'package:pitaka/features/import_export/application/export_library_use_case.dart';
 import 'package:pitaka/features/import_export/application/import_library_use_case.dart';
 import 'package:pitaka/features/import_export/application/merge_library_use_case.dart';
 import 'package:pitaka/features/import_export/domain/bundle_cover_files.dart';
+import 'package:pitaka/features/import_export/domain/export_work_area.dart';
 import 'package:pitaka/features/import_export/domain/pdf_text_raster.dart';
 import 'package:pitaka/features/import_export/infrastructure/background_merge_planner.dart';
 import 'package:pitaka/features/import_export/infrastructure/file_bundle_cover_store.dart';
+import 'package:pitaka/features/import_export/infrastructure/file_export_work_area.dart';
 import 'package:pitaka/features/import_export/infrastructure/logo_file_reader.dart';
 import 'package:pitaka/features/import_export/infrastructure/pdf_library_renderer.dart';
 import 'package:pitaka/features/import_export/infrastructure/pdf_text_rasterizer.dart'
@@ -63,6 +66,34 @@ Future<Future<Uint8List?> Function(String)> exportLogoReader(
 ) async {
   final coversDir = await ref.watch(coversDirProvider.future);
   return logoFileReader(coversDir);
+}
+
+/// Where the file of ONE export lies while it is saved or shared (review
+/// finding P4-M6): a private folder per export under the app's temporary
+/// directory, and the one place that removes it again.
+///
+/// keepAlive (justified): this object remembers which folders are IN USE by
+/// an export of this app session, so that a sweep never deletes a file that
+/// is being saved or shared. An auto-disposed instance would forget that
+/// between two reads (the same reason as `backupWorkArea`).
+@Riverpod(keepAlive: true)
+Future<ExportWorkArea> exportWorkArea(ExportWorkAreaRef ref) async {
+  final temp = await ref.watch(appTempDirProvider.future);
+  return FileExportWorkArea(tempRoot: temp.path);
+}
+
+/// One-time clean-up per app start: removes what an export left behind when
+/// the app was killed while its file was being saved or shared (a plain
+/// copy of the library). Triggered next to the backup's sweep, by the
+/// Library screen's first build.
+///
+/// keepAlive (justified): "once per app session" is the whole point, as for
+/// `staleBackupWorkSweep`. The result is not shown anywhere: when something
+/// could not be removed, the next start (and the next export) tries again.
+@Riverpod(keepAlive: true)
+Future<void> staleExportWorkSweep(StaleExportWorkSweepRef ref) async {
+  final workArea = await ref.watch(exportWorkAreaProvider.future);
+  await workArea.sweep();
 }
 
 /// One-shot library/wishlist export use case.

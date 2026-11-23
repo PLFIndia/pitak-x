@@ -8,6 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/core/platform/document_saver.dart';
 import 'package:pitaka/core/platform/file_share.dart';
 import 'package:pitaka/features/import_export/application/export_controller.dart';
 import 'package:pitaka/features/import_export/application/export_library_use_case.dart';
@@ -25,25 +26,56 @@ import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
 import 'package:pitaka/features/wishlist/domain/repositories/wishlist_repository.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../support/fake_document_saver.dart';
+import '../../support/fake_export_work_area.dart';
 import '../periodicals/application/periodical_fakes.dart';
 
+/// Share-sheet fake. Since review finding P4-M6 (decision D172) an export
+/// is shared as a FILE of the app's own, by its path; the bytes and the
+/// name the tests look at are those of that file, read from the fake work
+/// area.
 class _FakeShare implements FileShareService {
-  // This screen never shares a file by path (only the backup does, BR4).
+  /// Set by `makeContainer`: where the controller puts the export's file.
+  FakeExportWorkArea? workArea;
+
+  Uint8List? bytes;
+  String? fileName;
+  String? path;
+  String? mimeType;
+  ShareOutcome outcome = ShareOutcome.success;
+
+  /// When given, the share sheet throws it instead of answering.
+  Object? error;
+
+  /// When given, the share sheet "stays open" until it completes.
+  Completer<void>? gate;
+
+  /// When given, `share` is added to it when the sheet is asked.
+  List<String>? events;
+
   @override
   Future<ShareOutcome> shareFile({
     required String path,
     required String mimeType,
     Rect? sharePositionOrigin,
-  }) => throw UnimplementedError();
+  }) async {
+    events?.add('share');
+    this.path = path;
+    this.mimeType = mimeType;
+    bytes = workArea!.files[path];
+    fileName = path.split('/').last;
+    await gate?.future;
+    final e = error;
+    if (e != null) Error.throwWithStackTrace(e, StackTrace.current);
+    return outcome;
+  }
 
   @override
   Future<ShareOutcome> shareText(String text, {Rect? sharePositionOrigin}) =>
       throw UnimplementedError();
 
-  Uint8List? bytes;
-  String? fileName;
-  ShareOutcome outcome = ShareOutcome.success;
-
+  // D172: sharing BYTES made the share plugin write a copy that nobody
+  // removes. The controller must never do it again.
   @override
   Future<ShareOutcome> shareBytes({
     required Uint8List bytes,
@@ -51,11 +83,7 @@ class _FakeShare implements FileShareService {
     required String mimeType,
     String? text,
     Rect? sharePositionOrigin,
-  }) async {
-    this.bytes = bytes;
-    this.fileName = fileName;
-    return outcome;
-  }
+  }) => throw UnimplementedError();
 }
 
 /// A renderer that reports one row at a time and waits at a gate the test
@@ -220,9 +248,15 @@ void main() {
     required CatalogueItemRepository books,
     required _FakeShare share,
     LibraryPdfRenderer pdfRenderer = const PdfLibraryRenderer(),
+    FakeExportWorkArea? workArea,
+    FakeDocumentSaver? saver,
   }) {
+    final area = workArea ?? FakeExportWorkArea();
+    share.workArea = area;
     final container = ProviderContainer(
       overrides: [
+        exportWorkAreaProvider.overrideWith((ref) async => area),
+        documentSaverProvider.overrideWithValue(saver ?? FakeDocumentSaver()),
         exportLibraryUseCaseProvider.overrideWith(
           (ref) async => ExportLibraryUseCase(
             jsonEncoder: const PitakaJsonExporter(),
@@ -259,7 +293,11 @@ void main() {
 
     final result = await container
         .read(exportControllerProvider.notifier)
-        .export(scope: ExportScope.both, format: ExportFormat.json);
+        .export(
+          destination: ExportDestination.share,
+          scope: ExportScope.both,
+          format: ExportFormat.json,
+        );
 
     expect(result.outcome, ExportOutcome.shared);
     expect(result.fileName, endsWith('.json'));
@@ -280,7 +318,11 @@ void main() {
 
       final result = await container
           .read(exportControllerProvider.notifier)
-          .export(scope: ExportScope.libraryOnly, format: ExportFormat.csv);
+          .export(
+            destination: ExportDestination.share,
+            scope: ExportScope.libraryOnly,
+            format: ExportFormat.csv,
+          );
 
       expect(result.outcome, ExportOutcome.failed);
       expect(share.bytes, isNull);
@@ -293,7 +335,11 @@ void main() {
 
     final result = await container
         .read(exportControllerProvider.notifier)
-        .export(scope: ExportScope.libraryOnly, format: ExportFormat.csv);
+        .export(
+          destination: ExportDestination.share,
+          scope: ExportScope.libraryOnly,
+          format: ExportFormat.csv,
+        );
 
     expect(result.outcome, ExportOutcome.dismissed);
   });
@@ -317,7 +363,11 @@ void main() {
 
       final run = container
           .read(exportControllerProvider.notifier)
-          .export(scope: ExportScope.libraryOnly, format: ExportFormat.pdf);
+          .export(
+            destination: ExportDestination.share,
+            scope: ExportScope.libraryOnly,
+            format: ExportFormat.pdf,
+          );
       await untilParked(renderer);
       expect(container.read(exportControllerProvider), isA<ExportRunning>());
       expect(container.read(exportControllerProvider.notifier).isRunning, true);
@@ -333,12 +383,20 @@ void main() {
 
       final running = states.whereType<ExportRunning>().toList();
       // Throttled: 60 rows publish the 0/25/50 marks and the final 60, not
-      // one state per row.
+      // one state per row. These are the states WHILE the file is made.
       final reported = running
+          .where((s) => !s.fileMade)
           .map((s) => s.progress?.rowsDone)
           .whereType<int>()
           .toList();
       expect(reported, [0, 25, 50, 60]);
+      // P4-M6: then ONE more running state, "the file is made", which keeps
+      // the renderer's last report (the page goes on showing its words
+      // while the share sheet is open).
+      final made = running.where((s) => s.fileMade).toList();
+      expect(made, hasLength(1));
+      expect(running.last, same(made.single));
+      expect(made.single.progress?.rowsDone, 60);
       for (var i = 1; i < reported.length; i++) {
         expect(reported[i], greaterThan(reported[i - 1]));
       }
@@ -361,6 +419,7 @@ void main() {
       );
       final notifier = container.read(exportControllerProvider.notifier);
       final run = notifier.export(
+        destination: ExportDestination.share,
         scope: ExportScope.libraryOnly,
         format: ExportFormat.pdf,
       );
@@ -394,6 +453,7 @@ void main() {
       );
       final notifier = container.read(exportControllerProvider.notifier);
       final run = notifier.export(
+        destination: ExportDestination.share,
         scope: ExportScope.libraryOnly,
         format: ExportFormat.pdf,
       );
@@ -417,11 +477,13 @@ void main() {
       );
       final notifier = container.read(exportControllerProvider.notifier);
       final first = notifier.export(
+        destination: ExportDestination.share,
         scope: ExportScope.libraryOnly,
         format: ExportFormat.pdf,
       );
       await untilParked(renderer);
       final second = notifier.export(
+        destination: ExportDestination.share,
         scope: ExportScope.both,
         format: ExportFormat.json, // ignored: the running PDF wins
       );
@@ -440,6 +502,7 @@ void main() {
 
       // Once finished, a new export starts a fresh run.
       final third = notifier.export(
+        destination: ExportDestination.share,
         scope: ExportScope.libraryOnly,
         format: ExportFormat.csv,
       );
@@ -464,7 +527,11 @@ void main() {
         );
         final run = container
             .read(exportControllerProvider.notifier)
-            .export(scope: ExportScope.libraryOnly, format: ExportFormat.pdf);
+            .export(
+              destination: ExportDestination.share,
+              scope: ExportScope.libraryOnly,
+              format: ExportFormat.pdf,
+            );
         await untilParked(renderer);
 
         // The page is popped: its listener goes away while rows are pending.
@@ -521,11 +588,254 @@ void main() {
         }
       });
       final result = await notifier.export(
+        destination: ExportDestination.share,
         scope: ExportScope.libraryOnly,
         format: ExportFormat.pdf,
       );
       expect(result.outcome, ExportOutcome.cancelled);
       expect(share.bytes, isNull);
+    });
+  });
+
+  // Review finding P4-M6 (decisions D165, D167 and D172): an export is told
+  // where it goes. Either way its bytes become ONE private file first, the
+  // saver or the share sheet gets that file by its path, and the file is
+  // given back on every way out.
+  group("P4-M6: one file of the app's own for Save and for Share", () {
+    final oneBook = _Books([const CatalogueItem(id: 1, title: 'Godaan')]);
+
+    Future<ExportRunResult> run(
+      ProviderContainer container,
+      ExportDestination destination, {
+      ExportFormat format = ExportFormat.csv,
+    }) => container
+        .read(exportControllerProvider.notifier)
+        .export(
+          destination: destination,
+          scope: ExportScope.libraryOnly,
+          format: format,
+        );
+
+    test('Share hands over the file that was put, by its path and with its '
+        'type, and gives it back afterwards', () async {
+      final events = <String>[];
+      final share = _FakeShare()..events = events;
+      final area = FakeExportWorkArea(events: events);
+      final saver = FakeDocumentSaver(events: events);
+      final container = makeContainer(
+        books: oneBook,
+        share: share,
+        workArea: area,
+        saver: saver,
+      );
+
+      final result = await run(container, ExportDestination.share);
+
+      expect(result.outcome, ExportOutcome.shared);
+      expect(share.path, area.lastPath);
+      expect(share.mimeType, 'text/csv');
+      expect(result.fileName, share.fileName);
+      expect(result.fileName, matches(RegExp(r'^pitak-library-\d{8}\.csv$')));
+      expect(events, ['put', 'share', 'discard']);
+      expect(area.discarded, [area.lastPath]);
+      expect(saver.paths, isEmpty);
+    });
+
+    test('Save hands the same kind of file to the saver, and the name in '
+        'the result is the one the place gave', () async {
+      final events = <String>[];
+      final share = _FakeShare()..events = events;
+      final area = FakeExportWorkArea(events: events);
+      final saver = FakeDocumentSaver(
+        result: FakeDocumentSaver.saved(name: 'pitak-library (1).csv'),
+        events: events,
+      );
+      final container = makeContainer(
+        books: oneBook,
+        share: share,
+        workArea: area,
+        saver: saver,
+      );
+
+      final result = await run(container, ExportDestination.save);
+
+      expect(result.outcome, ExportOutcome.saved);
+      expect(result.fileName, 'pitak-library (1).csv');
+      expect(saver.paths, [area.lastPath]);
+      expect(area.files[area.lastPath], isNotEmpty);
+      expect(events, ['put', 'save', 'discard']);
+      expect(share.path, isNull, reason: 'the share sheet is not asked');
+    });
+
+    test('each of the three formats is put under a name that may be '
+        'saved', () async {
+      for (final format in ExportFormat.values) {
+        final area = FakeExportWorkArea();
+        final container = makeContainer(
+          books: oneBook,
+          share: _FakeShare(),
+          workArea: area,
+        );
+
+        final result = await run(
+          container,
+          ExportDestination.save,
+          format: format,
+        );
+
+        expect(result.outcome, ExportOutcome.saved, reason: '$format');
+        expect(
+          isSavableFileName(area.lastPath!.split('/').last),
+          isTrue,
+          reason: '$format',
+        );
+      }
+    });
+
+    const answers = <String, (DocumentSaveResult, ExportOutcome)>{
+      'the save window was left': (
+        DocumentSaveCancelled(),
+        ExportOutcome.saveCancelled,
+      ),
+      'the place could not take it': (
+        DocumentSaveNotSaved(),
+        ExportOutcome.notSaved,
+      ),
+      'an unfinished file may be left': (
+        DocumentSaveLeftBehind(),
+        ExportOutcome.saveLeftBehind,
+      ),
+      'the chosen file has content (D176)': (
+        DocumentSaveNotEmpty(),
+        ExportOutcome.saveNotEmpty,
+      ),
+      'the place cannot confirm that the file is stored (D183)': (
+        DocumentSaveUnconfirmed(),
+        ExportOutcome.saveUnconfirmed,
+      ),
+      'no save window (D171)': (
+        DocumentSaveUnavailable(),
+        ExportOutcome.saveUnavailable,
+      ),
+      'the file was gone': (DocumentSaveSourceGone(), ExportOutcome.failed),
+      'a mistake in code': (DocumentSaveFailed(), ExportOutcome.failed),
+    };
+    for (final MapEntry(key: title, value: (answer, outcome))
+        in answers.entries) {
+      test('not saved, $title: its own outcome, and the file is given '
+          'back', () async {
+        final area = FakeExportWorkArea();
+        final container = makeContainer(
+          books: oneBook,
+          share: _FakeShare(),
+          workArea: area,
+          saver: FakeDocumentSaver(result: answer),
+        );
+
+        final result = await run(container, ExportDestination.save);
+
+        expect(result.outcome, outcome);
+        expect(result.fileName, isEmpty);
+        expect(area.discarded, [area.lastPath]);
+      });
+    }
+
+    test(
+      'a file that cannot be put is "failed", and nobody is asked',
+      () async {
+        final share = _FakeShare();
+        final saver = FakeDocumentSaver();
+        final area = FakeExportWorkArea(putFails: true);
+        for (final destination in ExportDestination.values) {
+          final container = makeContainer(
+            books: oneBook,
+            share: share,
+            workArea: area,
+            saver: saver,
+          );
+
+          expect(
+            (await run(container, destination)).outcome,
+            ExportOutcome.failed,
+          );
+        }
+        expect(share.path, isNull);
+        expect(saver.paths, isEmpty);
+        expect(
+          area.discarded,
+          isEmpty,
+          reason: 'there is nothing to give back',
+        );
+      },
+    );
+
+    test('a saver or a share sheet that throws is "failed", and the file is '
+        'still given back', () async {
+      final area = FakeExportWorkArea();
+      final container = makeContainer(
+        books: oneBook,
+        share: _FakeShare()..error = StateError('plugin exploded'),
+        workArea: area,
+        saver: FakeDocumentSaver(error: StateError('channel exploded')),
+      );
+
+      for (final destination in ExportDestination.values) {
+        expect(
+          (await run(container, destination)).outcome,
+          ExportOutcome.failed,
+        );
+        expect(area.discarded.last, area.lastPath);
+      }
+      expect(area.discarded, hasLength(2));
+    });
+
+    test('while the file is being saved the state says so, and Cancel '
+        'changes nothing any more', () async {
+      final gate = Completer<void>();
+      final container = makeContainer(
+        books: oneBook,
+        share: _FakeShare(),
+        saver: FakeDocumentSaver(gate: gate),
+      );
+      final states = <ExportUiState>[];
+      container.listen(exportControllerProvider, (_, next) => states.add(next));
+      final notifier = container.read(exportControllerProvider.notifier);
+
+      final running = run(container, ExportDestination.save);
+      // First: the file is being made, on the way to Save.
+      final first = container.read(exportControllerProvider) as ExportRunning;
+      expect(first.destination, ExportDestination.save);
+      expect(first.fileMade, isFalse);
+
+      // Let the export be made and the saver be asked.
+      await pumpEventQueue();
+      final waiting = container.read(exportControllerProvider) as ExportRunning;
+      expect(waiting.destination, ExportDestination.save);
+      expect(waiting.fileMade, isTrue);
+
+      // The cancel token is only looked at while the file is made.
+      notifier.cancel();
+      gate.complete();
+      expect((await running).outcome, ExportOutcome.saved);
+      expect(states.last, isA<ExportFinished>());
+    });
+
+    test('on the way to the share sheet the state says "share", and that '
+        'the file is made', () async {
+      final gate = Completer<void>();
+      final container = makeContainer(
+        books: oneBook,
+        share: _FakeShare()..gate = gate,
+      );
+
+      final running = run(container, ExportDestination.share);
+      await pumpEventQueue();
+      final waiting = container.read(exportControllerProvider) as ExportRunning;
+      expect(waiting.destination, ExportDestination.share);
+      expect(waiting.fileMade, isTrue);
+
+      gate.complete();
+      expect((await running).outcome, ExportOutcome.shared);
     });
   });
 }

@@ -2,9 +2,18 @@
 ///
 /// Owns everything the Export screen used to do inline: resolving the PDF
 /// inputs (library name, footer icon, library logo, shaped-text rasterizer),
-/// minting the library ID for JSON, invoking the use case, and handing the
-/// bytes to the share sheet. The page only collects the user's scope/format/
-/// column choices and renders the typed `ExportUiState`.
+/// minting the library ID for JSON, invoking the use case, and sending the
+/// finished file where the user said: to a place chosen in the system's
+/// save window, or to the share sheet. The page only collects the user's
+/// scope/format/column choices and renders the typed `ExportUiState`.
+///
+/// ONE FILE FOR BOTH WAYS (review finding P4-M6, decisions D167 and D172):
+/// the use case makes an export as bytes. Before they go anywhere they are
+/// put into a private file of this run (`ExportWorkArea`), under the name
+/// the user should see. The saver copies that file; the share sheet is
+/// handed the same file by its path. A `finally` gives the file back on
+/// every way out. Sharing BYTES is not done any more: it made the share
+/// plugin write a second plain copy that nobody removed.
 ///
 /// N10-e — a long PDF render is now an honest, interruptible wait:
 ///  - the state is a sealed [ExportUiState] the page WATCHES: idle, running
@@ -20,13 +29,15 @@
 ///    (decision D4-a) — one render, one result, nothing silently dropped.
 ///
 /// Side-effecting collaborators (asset loads, logo file read, rasterizer,
-/// share sheet) arrive via DI ports so this stays testable with overrides.
+/// the export's file, the saver, the share sheet) arrive via DI ports so
+/// this stays testable with overrides.
 library;
 
 import 'dart:typed_data';
 import 'dart:ui' show Rect;
 
 import 'package:pitaka/core/di/providers.dart';
+import 'package:pitaka/core/platform/document_saver.dart';
 import 'package:pitaka/core/platform/file_share.dart';
 import 'package:pitaka/features/import_export/application/export_library_use_case.dart';
 import 'package:pitaka/features/import_export/domain/cover_paths.dart';
@@ -38,12 +49,47 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 part 'export_controller.g.dart';
 
+/// Where a finished export goes (review finding P4-M6, decision D166).
+enum ExportDestination {
+  /// It is copied to a place the user chooses in the system's save window.
+  save,
+
+  /// It is handed to the system's share sheet.
+  share,
+}
+
 /// Terminal result of one export run, mapped to safe UI copy by the page.
 enum ExportOutcome {
+  /// The file was copied to the place the user chose, and the place said
+  /// that it is stored.
+  saved,
+
+  /// The user left the save window without choosing a place (not an
+  /// error; nothing was written).
+  saveCancelled,
+
+  /// The place could not take the file; the unfinished file was removed.
+  notSaved,
+
+  /// The place could not take the file, and an unfinished file may still
+  /// lie there.
+  saveLeftBehind,
+
+  /// The user chose a file that already holds something. The app never
+  /// replaces a file: it was left as it is (decision D176).
+  saveNotEmpty,
+
+  /// The place cannot tell whether a file is stored there, so nothing
+  /// counts as saved and the file was taken back (decision D183).
+  saveUnconfirmed,
+
+  /// This device has no save window, or the app's Android side is missing.
+  saveUnavailable,
+
   /// The file was built and handed to the share sheet successfully.
   shared,
 
-  /// The user dismissed the share sheet (not an error; show nothing).
+  /// The user left the share sheet without choosing an app (not an error).
   dismissed,
 
   /// The platform cannot share files.
@@ -57,6 +103,9 @@ enum ExportOutcome {
 }
 
 /// The outcome plus the file name for the success message.
+///
+/// FOR SHOWING ONLY: after a save, [fileName] is what the PLACE calls the
+/// file, which is foreign text (cleaned by the saver) and can be empty.
 class ExportRunResult {
   /// Creates a run result.
   const ExportRunResult(this.outcome, {this.fileName = ''});
@@ -64,7 +113,9 @@ class ExportRunResult {
   /// What happened.
   final ExportOutcome outcome;
 
-  /// The suggested file name (set when [outcome] is [ExportOutcome.shared]).
+  /// The file's name: the suggested one when [outcome] is
+  /// [ExportOutcome.shared], the one the place gave when it is
+  /// [ExportOutcome.saved]. Empty for every other outcome.
   final String fileName;
 }
 
@@ -84,7 +135,20 @@ final class ExportIdle extends ExportUiState {
 /// null before the first one (and for JSON/CSV, which do not report).
 final class ExportRunning extends ExportUiState {
   /// Creates the running state.
-  const ExportRunning({this.progress});
+  const ExportRunning({
+    required this.destination,
+    this.progress,
+    this.fileMade = false,
+  });
+
+  /// Where this run sends its file: the button that was tapped.
+  final ExportDestination destination;
+
+  /// True once the export's file is made and is being saved or handed to
+  /// the share sheet. Nothing can be cancelled any more then, so the page
+  /// shows no Cancel and no numbers. A flag of the running state, not a
+  /// state of its own (decision D167: no "a file is ready" state).
+  final bool fileMade;
 
   /// Latest renderer progress; null = indeterminate.
   final PdfRenderProgress? progress;
@@ -107,6 +171,11 @@ class ExportController extends _$ExportController {
   RenderCancelToken? _token;
   bool _disposed = false;
 
+  /// Where the in-flight run sends its file, and the renderer's latest
+  /// report that was published: both are needed to publish the next state.
+  ExportDestination _destination = ExportDestination.share;
+  PdfRenderProgress? _lastProgress;
+
   /// Rows between published progress states — a 10k-row render must not
   /// schedule 10k rebuilds. The last report is always published.
   static const int _publishEveryRows = 25;
@@ -121,13 +190,15 @@ class ExportController extends _$ExportController {
   bool get isRunning => _inFlight != null;
 
   /// Builds an export for [scope]/[format] (+[pdfColumns] for PDF,
-  /// [sourceFilter] for CSV/PDF) and hands it to the share sheet.
-  /// [sharePositionOrigin] anchors the iPad popover.
+  /// [sourceFilter] for CSV/PDF) and sends it to [destination]: the
+  /// system's save window, or the share sheet. [sharePositionOrigin]
+  /// anchors the iPad popover of the share sheet.
   ///
   /// While a run is in flight, another call returns that run's future
   /// (D4-a). All failures collapse to [ExportOutcome.failed] — no raw error
   /// text leaves this method (§5).
   Future<ExportRunResult> export({
+    required ExportDestination destination,
     required ExportScope scope,
     required ExportFormat format,
     ExportSourceFilter sourceFilter = const ExportSourceFilter.all(),
@@ -146,10 +217,13 @@ class ExportController extends _$ExportController {
     // disposes this autoDispose provider mid-render and the terminal state
     // (and the cancel token) would be lost.
     final link = ref.keepAlive();
-    state = const ExportRunning();
+    _destination = destination;
+    _lastProgress = null;
+    state = ExportRunning(destination: destination);
 
     final run =
         _run(
+              destination: destination,
               scope: scope,
               format: format,
               sourceFilter: sourceFilter,
@@ -174,6 +248,7 @@ class ExportController extends _$ExportController {
   void cancel() => _token?.cancel();
 
   Future<ExportRunResult> _run({
+    required ExportDestination destination,
     required ExportScope scope,
     required ExportFormat format,
     required ExportSourceFilter sourceFilter,
@@ -240,25 +315,40 @@ class ExportController extends _$ExportController {
         return const ExportRunResult(ExportOutcome.failed);
       }
 
-      final share = ref.read(fileShareServiceProvider);
-      final outcome = await share.shareBytes(
-        bytes: export.bytes,
+      // The bytes become ONE private file of this run, under the name the
+      // user should see (see the library doc).
+      final workArea = await ref.read(exportWorkAreaProvider.future);
+      final put = await workArea.put(
         fileName: export.suggestedFileName,
-        mimeType: export.mimeType,
-        sharePositionOrigin: sharePositionOrigin,
+        bytes: export.bytes,
       );
-      return switch (outcome) {
-        ShareOutcome.success => ExportRunResult(
-          ExportOutcome.shared,
-          fileName: export.suggestedFileName,
-        ),
-        ShareOutcome.dismissed => const ExportRunResult(
-          ExportOutcome.dismissed,
-        ),
-        ShareOutcome.unavailable => const ExportRunResult(
-          ExportOutcome.shareUnavailable,
-        ),
-      };
+      final path = put.toNullable();
+      if (path == null) return const ExportRunResult(ExportOutcome.failed);
+
+      // From here on this run owns a plain copy of the library on disk.
+      // `finally` gives it back on EVERY way out of this block.
+      try {
+        if (!_disposed) {
+          state = ExportRunning(
+            destination: destination,
+            progress: _lastProgress,
+            fileMade: true,
+          );
+        }
+        return switch (destination) {
+          ExportDestination.save => await _save(path),
+          ExportDestination.share => await _share(
+            path: path,
+            fileName: export.suggestedFileName,
+            mimeType: export.mimeType,
+            sharePositionOrigin: sharePositionOrigin,
+          ),
+        };
+      } finally {
+        // The saver has copied the file by now (or has given up), and the
+        // share plugin works on its own copy.
+        await workArea.discard(path);
+      }
     } on PdfRenderCancelled {
       // The user's own request (D3-a): not a failure, no file.
       return const ExportRunResult(ExportOutcome.cancelled);
@@ -268,13 +358,72 @@ class ExportController extends _$ExportController {
     }
   }
 
+  /// Copies the export's file to a place the user chooses. "Saved" is said
+  /// only for [DocumentSaved], which the saver gives only when every byte
+  /// was written and the place said that the bytes are stored. A file that
+  /// is gone, or a mistake in code, is a failed run.
+  Future<ExportRunResult> _save(String path) async {
+    final answer = await ref.read(documentSaverProvider).saveCopy(path: path);
+    return switch (answer) {
+      DocumentSaved(:final document) => ExportRunResult(
+        ExportOutcome.saved,
+        fileName: document.displayName,
+      ),
+      DocumentSaveCancelled() => const ExportRunResult(
+        ExportOutcome.saveCancelled,
+      ),
+      DocumentSaveNotSaved() => const ExportRunResult(ExportOutcome.notSaved),
+      DocumentSaveLeftBehind() => const ExportRunResult(
+        ExportOutcome.saveLeftBehind,
+      ),
+      DocumentSaveNotEmpty() => const ExportRunResult(
+        ExportOutcome.saveNotEmpty,
+      ),
+      DocumentSaveUnavailable() => const ExportRunResult(
+        ExportOutcome.saveUnavailable,
+      ),
+      DocumentSaveUnconfirmed() => const ExportRunResult(
+        ExportOutcome.saveUnconfirmed,
+      ),
+      DocumentSaveSourceGone() ||
+      DocumentSaveFailed() => const ExportRunResult(ExportOutcome.failed),
+    };
+  }
+
+  /// Hands the export's file to the share sheet, by its path.
+  Future<ExportRunResult> _share({
+    required String path,
+    required String fileName,
+    required String mimeType,
+    required Rect? sharePositionOrigin,
+  }) async {
+    final outcome = await ref
+        .read(fileShareServiceProvider)
+        .shareFile(
+          path: path,
+          mimeType: mimeType,
+          sharePositionOrigin: sharePositionOrigin,
+        );
+    return switch (outcome) {
+      ShareOutcome.success => ExportRunResult(
+        ExportOutcome.shared,
+        fileName: fileName,
+      ),
+      ShareOutcome.dismissed => const ExportRunResult(ExportOutcome.dismissed),
+      ShareOutcome.unavailable => const ExportRunResult(
+        ExportOutcome.shareUnavailable,
+      ),
+    };
+  }
+
   /// Publishes the renderer's progress into [state], throttled by row count
   /// so the screen rebuilds a few times a second, not once per row.
   void _publishProgress(PdfRenderProgress p) {
     if (_disposed) return;
     final isLast = p.rowsDone >= p.rowsTotal;
     if (p.rowsDone % _publishEveryRows != 0 && !isLast) return;
-    state = ExportRunning(progress: p);
+    _lastProgress = p;
+    state = ExportRunning(destination: _destination, progress: p);
   }
 
   /// Resolves the user's library logo to bytes for the PDF header, or null

@@ -313,6 +313,29 @@ final pickedDocumentReaderProvider =
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef PickedDocumentReaderRef = AutoDisposeProviderRef<PickedDocumentReader>;
+String _$documentSaverHash() => r'b53bb4facfb999e40a9ee0f55e635ea13dc9c59a';
+
+/// Saves a copy of one finished file of the app (a backup, an export) where
+/// the user says, through the system's own save window (review finding
+/// P4-M6). Overridden in widget tests with a fake that answers at once.
+///
+/// Auto-disposed: the saver keeps nothing between two calls.
+///
+/// Copied from [documentSaver].
+@ProviderFor(documentSaver)
+final documentSaverProvider = AutoDisposeProvider<DocumentSaver>.internal(
+  documentSaver,
+  name: r'documentSaverProvider',
+  debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+      ? null
+      : _$documentSaverHash,
+  dependencies: null,
+  allTransitiveDependencies: null,
+);
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef DocumentSaverRef = AutoDisposeProviderRef<DocumentSaver>;
 String _$fileShareServiceHash() => r'4caa4196352d292bcbf88099f9a02fb2e0deb5ba';
 
 /// Hands generated files (exports, backups) to the OS share sheet. Overridden

@@ -1,9 +1,11 @@
 /// Export screen (presentation layer, AGENTS.md §3.1).
 ///
 /// Choose a scope (library / wishlist / both) and a format (JSON / CSV / PDF),
-/// then save to a file via the platform share sheet. JSON round-trips through
-/// the import screen; CSV is a flat library dump; PDF is a printable catalogue
-/// of the library (always the library list, with user-selectable columns).
+/// then save the file where you say ("Save file") or hand it to the platform
+/// share sheet ("Share file"; review finding P4-M6, ADR 0032). JSON
+/// round-trips through the import screen; CSV is a flat library dump; PDF is
+/// a printable catalogue of the library (always the library list, with
+/// user-selectable columns).
 ///
 /// CSV and PDF can be narrowed by provenance ("Books to include"): a source
 /// type chip (Purchased / Gift / Donated / …) and, under it, a picker of the
@@ -12,8 +14,8 @@
 /// without typos, since the values come from the catalogue itself.
 ///
 /// Pure presentation: the whole export pipeline (input resolution, use-case
-/// invocation, share flow) lives in `ExportController`; this widget collects
-/// choices and maps the typed outcome to copy.
+/// invocation, the export's file, save and share) lives in `ExportController`;
+/// this widget collects choices and maps the typed outcome to copy.
 ///
 /// N10-e: while a run is in flight the page watches the controller's
 /// `ExportRunning` progress (a determinate bar + "page P · R of N books" for
@@ -25,10 +27,13 @@ library;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pitaka/core/di/providers.dart';
+import 'package:pitaka/core/widgets/bring_into_view.dart';
 import 'package:pitaka/features/import_export/application/export_controller.dart';
 import 'package:pitaka/features/import_export/application/export_library_use_case.dart';
 import 'package:pitaka/features/import_export/domain/export_source_filter.dart';
 import 'package:pitaka/features/import_export/domain/pdf_column.dart';
+import 'package:pitaka/features/import_export/presentation/export_messages.dart';
+import 'package:pitaka/features/import_export/presentation/widgets/export_status_line.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 
 /// Screen to export the library/wishlist to a file.
@@ -48,7 +53,13 @@ class _ExportPageState extends ConsumerState<ExportPage> {
   // Which books a CSV/PDF includes (JSON always exports everything).
   ExportSourceFilter _sourceFilter = const ExportSourceFilter.all();
 
-  void _export() {
+  /// The sentence of the last run, so that the page can scroll to it.
+  final GlobalKey _statusKey = GlobalKey();
+
+  /// Starts an export that goes the way of the button that was tapped
+  /// (review finding P4-M6): [ExportDestination.save] or
+  /// [ExportDestination.share].
+  void _export(ExportDestination destination) {
     final filtered = _format != ExportFormat.json;
     // Fire and forget: the controller owns the run and publishes its state;
     // the page reacts through `ref.watch` below, so nothing here needs to
@@ -56,6 +67,7 @@ class _ExportPageState extends ConsumerState<ExportPage> {
     ref
         .read(exportControllerProvider.notifier)
         .export(
+          destination: destination,
           scope: _scope,
           format: _format,
           sourceFilter: filtered
@@ -87,13 +99,19 @@ class _ExportPageState extends ConsumerState<ExportPage> {
 
   void _cancel() => ref.read(exportControllerProvider.notifier).cancel();
 
-  static String? _statusFor(ExportRunResult result) => switch (result.outcome) {
-    ExportOutcome.shared => 'Shared ${result.fileName}.',
-    ExportOutcome.dismissed => null,
-    ExportOutcome.shareUnavailable => 'Sharing is unavailable on this device.',
-    ExportOutcome.failed => 'Export failed.',
-    ExportOutcome.cancelled => 'Export cancelled.',
-  };
+  /// The icon of a button: a spinner on the one that was tapped while its
+  /// export runs, its own picture otherwise.
+  static Widget _buttonIcon(
+    ExportUiState runState,
+    ExportDestination destination,
+    IconData idle,
+  ) => runState is ExportRunning && runState.destination == destination
+      ? const SizedBox(
+          height: 18,
+          width: 18,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        )
+      : Icon(idle);
 
   /// The source rect for the iPad share popover (ignored on phones).
   Rect? _shareOrigin() {
@@ -110,11 +128,16 @@ class _ExportPageState extends ConsumerState<ExportPage> {
     final scopeLocked = csv || pdf; // both formats are library-only
 
     final runState = ref.watch(exportControllerProvider);
+    // Decision D177: the sentence of a finished run stands under the
+    // buttons and can lie below the screen (seen with PDF chosen). When a
+    // run ends the page scrolls it into view. `listen`, not `watch`: this
+    // is something to DO once, not something to draw.
+    ref.listen(exportControllerProvider, (_, next) {
+      if (next is ExportFinished) {
+        bringResultIntoView(result: _statusKey, firstLine: _statusKey);
+      }
+    });
     final running = runState is ExportRunning;
-    final status = switch (runState) {
-      ExportFinished(:final result) => _statusFor(result),
-      ExportIdle() || ExportRunning() => null,
-    };
 
     // Keep the chosen detail honest: if the catalogue changes underneath
     // (a donor renamed on the edit screen) and the picked value no longer
@@ -228,32 +251,63 @@ class _ExportPageState extends ConsumerState<ExportPage> {
             ),
           ],
           const SizedBox(height: 24),
-          FilledButton.icon(
-            onPressed: running ? null : _export,
-            icon: running
-                ? const SizedBox(
-                    height: 18,
-                    width: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.save_alt),
-            label: const Text('Export to file'),
+          // ONE item of the list from here to the end of the page (decision
+          // D177): a list builds only what is near the screen, and the page
+          // has to be able to scroll to the sentence of a finished run. As
+          // one item, the sentence is built whenever a button is on the
+          // screen.
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Review finding P4-M6 (decision D166): two ways out, Save
+              // first. Both are locked while one runs: one export at a time.
+              FilledButton.icon(
+                onPressed: running
+                    ? null
+                    : () => _export(ExportDestination.save),
+                icon: _buttonIcon(
+                  runState,
+                  ExportDestination.save,
+                  Icons.save_alt,
+                ),
+                label: const Text(saveExportLabel),
+              ),
+              const SizedBox(height: 8),
+              OutlinedButton.icon(
+                onPressed: running
+                    ? null
+                    : () => _export(ExportDestination.share),
+                icon: _buttonIcon(
+                  runState,
+                  ExportDestination.share,
+                  Icons.share,
+                ),
+                label: const Text(shareExportLabel),
+              ),
+              const SizedBox(height: 8),
+              Text(exportIsAnOrdinaryFileNote, style: textTheme.bodySmall),
+              if (runState is ExportRunning) ...[
+                const SizedBox(height: 16),
+                _ExportProgress(state: runState, onCancel: _cancel),
+              ],
+              // The sentence of a finished run: drawn by how it ended
+              // (D193), read out by a screen reader (D190), scrolled to
+              // (D177).
+              if (runState case ExportFinished(:final result)) ...[
+                const SizedBox(height: 16),
+                ExportStatusLine(result: result, sentenceKey: _statusKey),
+              ],
+            ],
           ),
-          if (runState is ExportRunning) ...[
-            const SizedBox(height: 16),
-            _ExportProgress(state: runState, onCancel: _cancel),
-          ],
-          if (status != null) ...[
-            const SizedBox(height: 16),
-            Text(status, style: textTheme.bodyMedium),
-          ],
         ],
       ),
     );
   }
 }
 
-/// Progress bar + counter + Cancel for an in-flight export (N10-e).
+/// Progress bar + counter + Cancel for an in-flight export (N10-e). While
+/// the finished file is being saved or shared: the bar without numbers, and
+/// no Cancel.
 class _ExportProgress extends StatelessWidget {
   const _ExportProgress({required this.state, required this.onCancel});
 
@@ -263,34 +317,35 @@ class _ExportProgress extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
-    final p = state.progress;
-    final label = p == null
-        ? 'Preparing export…'
-        : 'Rendering page ${p.pagesDone} · ${p.rowsDone} of ${p.rowsTotal} '
-              'books';
+    // Once the file is made nothing can be stopped or counted any more
+    // (review finding P4-M6): the bar loses its numbers and Cancel goes,
+    // instead of offering a button that would do nothing.
+    final fileMade = state.fileMade;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         LinearProgressIndicator(
           key: const Key('export-progress'),
-          // null = indeterminate (before the first report / non-PDF).
-          value: p?.fraction,
+          // null = indeterminate (before the first report / non-PDF, and
+          // once the file is made).
+          value: fileMade ? null : state.progress?.fraction,
         ),
         const SizedBox(height: 8),
         Row(
           children: [
             Expanded(
               child: Text(
-                label,
+                exportProgressLabel(state),
                 style: textTheme.bodySmall,
                 key: const Key('export-progress-label'),
               ),
             ),
-            OutlinedButton(
-              key: const Key('export-cancel'),
-              onPressed: onCancel,
-              child: const Text('Cancel'),
-            ),
+            if (!fileMade)
+              OutlinedButton(
+                key: const Key('export-cancel'),
+                onPressed: onCancel,
+                child: const Text('Cancel'),
+              ),
           ],
         ),
       ],

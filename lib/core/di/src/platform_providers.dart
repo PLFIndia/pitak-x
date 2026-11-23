@@ -16,9 +16,11 @@ import 'package:pitaka/core/network/lookup_http_client.dart';
 import 'package:pitaka/core/network/timeout_http_client.dart';
 import 'package:pitaka/core/platform/app_settings_opener.dart';
 import 'package:pitaka/core/platform/channel_document_picker.dart';
+import 'package:pitaka/core/platform/channel_document_saver.dart';
 import 'package:pitaka/core/platform/device_cameras.dart';
 import 'package:pitaka/core/platform/device_resources.dart';
 import 'package:pitaka/core/platform/document_picker.dart';
+import 'package:pitaka/core/platform/document_saver.dart';
 import 'package:pitaka/core/platform/file_picked_document_reader.dart';
 import 'package:pitaka/core/platform/file_share.dart';
 import 'package:pitaka/core/platform/picked_document_reader.dart';
@@ -166,6 +168,15 @@ Future<DocumentPicker> documentPicker(DocumentPickerRef ref) async {
 @riverpod
 PickedDocumentReader pickedDocumentReader(PickedDocumentReaderRef ref) =>
     const FilePickedDocumentReader();
+
+/// Saves a copy of one finished file of the app (a backup, an export) where
+/// the user says, through the system's own save window (review finding
+/// P4-M6). Overridden in widget tests with a fake that answers at once.
+///
+/// Auto-disposed: the saver keeps nothing between two calls.
+@riverpod
+DocumentSaver documentSaver(DocumentSaverRef ref) =>
+    const ChannelDocumentSaver();
 
 /// Hands generated files (exports, backups) to the OS share sheet. Overridden
 /// in widget tests with a fake to assert what would be shared.

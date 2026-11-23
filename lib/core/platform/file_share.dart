@@ -1,15 +1,16 @@
 /// Hands a generated file to the user via the OS share sheet
 /// (core/platform, AGENTS.md §3.1).
 ///
-/// Single source of truth for "let the user keep this file". On Android the
-/// share sheet includes "Save to Files" alongside WhatsApp/Drive/email, which
-/// suits an export (`ACTION_SEND`) and the merge "pass a file"
-/// workflow (PLAN-merge.md §C). `file_selector` is NOT usable for this on
-/// Android — it implements open dialogs only, no save — which is why the prior
-/// `getSaveLocation` path silently did nothing on the phone.
+/// The ONE place that shares a file. What the sheet offers is up to the
+/// apps on the phone: on Android it has no "save" entry of its own. A file
+/// that is to be KEPT goes through the app's own saver instead
+/// (`document_saver.dart`, ADR 0032); a backup and an export offer both
+/// ways.
 ///
-/// Wraps `share_plus` so the rest of the app depends on this thin seam, not the
-/// package directly (easier to test/override and to swap later).
+/// Wraps `share_plus` so the rest of the app depends on this thin seam, not
+/// the package directly (easier to test/override and to swap later). A test
+/// keeps every other file from importing the package
+/// (`test/architecture/document_saving_test.dart`).
 library;
 
 import 'dart:typed_data';

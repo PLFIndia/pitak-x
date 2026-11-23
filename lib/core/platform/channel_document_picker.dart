@@ -37,6 +37,7 @@ import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 import 'package:pitaka/core/platform/app_log.dart';
 import 'package:pitaka/core/platform/document_picker.dart';
+import 'package:pitaka/core/platform/foreign_display_name.dart';
 import 'package:pitaka/core/storage/run_folders.dart';
 
 /// See the library doc.
@@ -59,7 +60,7 @@ final class ChannelDocumentPicker implements DocumentPicker {
 
   /// Longest display name that is passed on, in UTF-16 units. The same
   /// number as `PickedDocumentChannel.MAX_NAME_CHARS` in Kotlin.
-  static const int maxNameLength = 255;
+  static const int maxNameLength = maxForeignDisplayNameLength;
 
   /// First part of the folder one copy lies in (`pick-<random>`).
   static const String _folderPrefix = 'pick';
@@ -208,25 +209,8 @@ final class ChannelDocumentPicker implements DocumentPicker {
   }
 
   /// A document's name as it may be shown: control characters removed and
-  /// cut at [maxNameLength]. Android cleans the name the same way; it is
-  /// done again here because what crosses the channel is not trusted.
-  ///
-  /// Other invisible characters stay: several scripts (Indic ones among
-  /// them) need joiner characters to be written correctly.
-  static String cleanDisplayName(String raw) {
-    final cleaned = StringBuffer();
-    // Runes are whole characters, so a two-part character (an emoji, a rare
-    // letter) is kept or dropped whole, never cut in half.
-    for (final rune in raw.runes) {
-      final isControl = rune < 0x20 || (rune >= 0x7f && rune <= 0x9f);
-      // Half of a two-part character on its own is not text, and drawing
-      // it can throw.
-      final isLoneHalf = rune >= 0xd800 && rune <= 0xdfff;
-      if (isControl || isLoneHalf) continue;
-      final units = rune > 0xffff ? 2 : 1;
-      if (cleaned.length + units > maxNameLength) break;
-      cleaned.writeCharCode(rune);
-    }
-    return cleaned.toString();
-  }
+  /// cut at [maxNameLength]. The cleaning itself is
+  /// [cleanForeignDisplayName], which the saver of a file uses too; this
+  /// name stays for the callers that know the picker.
+  static String cleanDisplayName(String raw) => cleanForeignDisplayName(raw);
 }

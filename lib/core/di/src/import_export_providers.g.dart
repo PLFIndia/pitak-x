@@ -70,6 +70,59 @@ final exportLogoReaderProvider =
 // ignore: unused_element
 typedef ExportLogoReaderRef =
     AutoDisposeFutureProviderRef<Future<Uint8List?> Function(String)>;
+String _$exportWorkAreaHash() => r'07ebdcdcd9920dce2c828aec1febe6d631e9af17';
+
+/// Where the file of ONE export lies while it is saved or shared (review
+/// finding P4-M6): a private folder per export under the app's temporary
+/// directory, and the one place that removes it again.
+///
+/// keepAlive (justified): this object remembers which folders are IN USE by
+/// an export of this app session, so that a sweep never deletes a file that
+/// is being saved or shared. An auto-disposed instance would forget that
+/// between two reads (the same reason as `backupWorkArea`).
+///
+/// Copied from [exportWorkArea].
+@ProviderFor(exportWorkArea)
+final exportWorkAreaProvider = FutureProvider<ExportWorkArea>.internal(
+  exportWorkArea,
+  name: r'exportWorkAreaProvider',
+  debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+      ? null
+      : _$exportWorkAreaHash,
+  dependencies: null,
+  allTransitiveDependencies: null,
+);
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef ExportWorkAreaRef = FutureProviderRef<ExportWorkArea>;
+String _$staleExportWorkSweepHash() =>
+    r'974c2a89f4f72e63a6cc1211c8b969a7f4e08a68';
+
+/// One-time clean-up per app start: removes what an export left behind when
+/// the app was killed while its file was being saved or shared (a plain
+/// copy of the library). Triggered next to the backup's sweep, by the
+/// Library screen's first build.
+///
+/// keepAlive (justified): "once per app session" is the whole point, as for
+/// `staleBackupWorkSweep`. The result is not shown anywhere: when something
+/// could not be removed, the next start (and the next export) tries again.
+///
+/// Copied from [staleExportWorkSweep].
+@ProviderFor(staleExportWorkSweep)
+final staleExportWorkSweepProvider = FutureProvider<void>.internal(
+  staleExportWorkSweep,
+  name: r'staleExportWorkSweepProvider',
+  debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+      ? null
+      : _$staleExportWorkSweepHash,
+  dependencies: null,
+  allTransitiveDependencies: null,
+);
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef StaleExportWorkSweepRef = FutureProviderRef<void>;
 String _$exportLibraryUseCaseHash() =>
     r'07c8a9a02aee0556a80374cade57fda5249954dc';
 

@@ -136,6 +136,9 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
         // left in the app's temporary folder when the app was killed in
         // the middle of it. That file is a plain copy of the whole library.
         ..listen(staleBackupWorkSweepProvider, (_, _) {})
+        // The same for an export (review finding P4-M6): the file that
+        // was being saved or shared, also a plain copy of the library.
+        ..listen(staleExportWorkSweepProvider, (_, _) {})
         // And the same for a restore (backup rework BR6): the private copy
         // of a chosen backup file, and the databases unpacked from it.
         ..listen(staleRestoreFilesSweepProvider, (_, _) {})
