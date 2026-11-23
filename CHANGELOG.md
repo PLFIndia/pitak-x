@@ -19,8 +19,10 @@ to BR9 in `PLAN.md`, with Import and Merge on the app's own picker
 between BR7 and BR8). Stage BR8 raises the limits of a backup; the run
 on a phone at the new limits was made on 2026-11-17 and has passed
 (`PLAN.md`, run E). Stage BR9 adds the notice before a backup and before
-a restore; it was seen on a phone on 2026-11-17 (a verdict other than
-"enough" has not been seen on a device).
+a restore; it was seen on a phone on 2026-11-17, with the verdict
+"enough". "Not enough" for storage was seen on 2026-11-23, in an
+emulator whose disk had been filled on purpose; no other verdict has
+been seen on a device.
 
 Two known limits, measured in that run on a fast phone and accepted
 (`PLAN.md`, D44 and D45; a slow phone has not been tried):
@@ -32,6 +34,83 @@ Two known limits, measured in that run on a fast phone and accepted
   screen can stand still for about a second.
 
 ### Changed
+- **A backup and an export can be saved where you choose (review
+  finding P4-M6; `PLAN.md`, D164 to D196; ADR 0032).** A backup and an
+  export could leave the app through the share sheet only. Whether one
+  could be kept on the phone was up to the apps installed there, and
+  after a sheet that was left the page said nothing. Now Create backup
+  has "Save backup" beside "Share backup", and Export has "Save file"
+  beside "Share file". Save makes the file, opens Android's own save
+  window with the file's name filled in, copies the file to the place
+  you confirm, and says "Backup saved as NAME." or "Saved as NAME."
+  only when the place itself has said that the file is stored.
+  - A save that did not work says what is true: no place was chosen;
+    the place failed and nothing was left behind; an unfinished file
+    may be left at the place and should be deleted; the place cannot
+    confirm that a file is stored, so nothing was saved there; saving
+    is not available on this device.
+  - On the Export page a failure now looks like one. The sentence of
+    a run is drawn by how it ended, as on Create backup: a success in
+    the theme's main colour, a window that was left in plain text, a
+    failure in the error colour. Until now every sentence there
+    looked the same.
+  - Pitak never replaces a file. If you tap a file that is already
+    there and answer the window's "overwrite?" with yes, the file is
+    left as it is and the page says to choose a new name.
+  - A share sheet that was left now gets a sentence too: "Nothing was
+    shared. If no app on that list could take the file, use Save
+    backup." (or "Save file").
+  - Under the buttons each page says that the file is an ordinary
+    file that whoever can open its place can read; for a backup, that
+    only the borrowers vault inside stays encrypted, and that a copy
+    kept only on this phone is lost with the phone.
+  - When a run ends the page scrolls its sentence into view. On a
+    small screen or with a large font it could lie below the screen.
+    A screen reader is given the sentence, and under a saved backup
+    its notes, to read out when it appears (`LiveRegion`); that it
+    speaks them has not been tried on a device.
+  - A backup is now called `pitak-backup-02Nov2026-134659.pitabak`
+    (before: `Pitak-backup-20261102-134659.pitabak`). Nothing reads
+    the name back; older backups restore as before.
+  - Underneath: one method of the app's own Android code
+    (`SavedDocumentChannel.kt`), which takes the path of a finished
+    file and nothing else, reads only a file in one of the app's two
+    working folders, writes only into a document that is empty, and
+    takes a document back when the copy did not end whole. Before it
+    answers "saved" it asks the system to write the bytes to the
+    place's storage (`fsync`): on a full disk a place was seen to take
+    every byte without an error and to keep a file with nothing in
+    it. An export is now one private file of the app's own, saved or
+    shared by its path and removed when the call returns; it is no
+    longer handed to the share plugin as bytes. A test holds the
+    Kotlin half and the Dart half of the channel to the same names,
+    and keeps save and pick plugins out of the app.
+  - Privacy: no new permission (the list in
+    `android/merged-permissions.txt` is unchanged) and no new package.
+    Your choice in the save window lets the app write that one file;
+    the access is not kept. No path, document address or error text
+    is shown or logged. `PRIVACY.md` item 7 says how a file leaves.
+  - The in-app guide's "Make a backup" names both buttons.
+  - Known limits: a save window that is left costs the making once
+    more; the copy has no Cancel and shows no progress; the library
+    card and a reminder are shared as before; on a full disk a save
+    into "Downloads" can end with Android's own "keeps stopping"
+    dialog, or with Pitak closed, and nothing saved or left behind
+    (ADR 0032).
+  - Seen on 2026-11-22 and 2026-11-23, with made-up data. In an
+    emulator with Android 16: saving a backup and each export, the
+    window left, a file that is already there, and a full disk before
+    and after the `fsync`. On a phone with Android 14: the same
+    without the full disk in a debug build, looked at and accepted by
+    the maintainer, and in a release build a backup of 1 GiB, saved
+    whole in about 3.5 seconds without a standstill; after the phone
+    was switched off and on, such a file read back from its disk
+    unchanged. In an emulator with Android 7.0, the lowest the app
+    supports: a backup saved and restored again. Not tried: a cloud
+    app's place, a memory card or a USB stick, a full disk on a real
+    phone, a weak phone, a screen reader. The live region and the
+    Export page's colours were built after these looks and have not
+    been on a device. ADR 0032 has the rest.
 - **The Library list keeps its rows and its place while it is read again
   (review findings P4-M2, P3-M4 and P4-m13; `PLAN.md`, D148 to D157;
   ADR 0031).** After saving an edited item, after Remove or Restore, and

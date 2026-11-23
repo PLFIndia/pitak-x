@@ -352,8 +352,15 @@ builds (item 8):
    you can change your mind later in Settings. The map never sends your list
    of libraries anywhere.
 7. **Exports and backups.** JSON/CSV/PDF exports and `.pitabak` backups are
-   files the app hands to your device's share sheet; you choose where they
-   go. Before it creates or restores a backup, the app asks Android how much
+   files. The app either saves one where you choose, in Android's own "save"
+   window (**Save backup**, **Save file**), or hands it to your device's share
+   sheet (**Share backup**, **Share file**); either way you choose where it
+   goes. Saving needs no permission: your choice in that window lets the app
+   write that one file, once, and the app keeps no access to the place
+   afterwards. The app never replaces a file that is already there. A saved
+   or shared file is an ordinary file: whoever can open the place you put it
+   can read it (in a backup, only the borrowers vault stays encrypted).
+   Before it creates or restores a backup, the app asks Android how much
    free storage and memory the phone has, to tell you whether the run will
    fit. This needs no permission; the figures are shown once and are not
    stored, logged or sent anywhere. Backups you restore are read locally and never transmitted. To
@@ -476,8 +483,9 @@ builds (item 8):
 - No access to your contacts, microphone, or device location sensors
 - No broad or shared-storage access: Pitak reads only files or images you
   explicitly choose (for example imports, merges, backup restores, event
-  posters and the library logo); exports and backups go through the OS share
-  sheet to a destination you choose
+  posters and the library logo); exports and backups are saved through
+  Android's own save window or handed to the OS share sheet, to a
+  destination you choose
 
 ## Children's privacy
 

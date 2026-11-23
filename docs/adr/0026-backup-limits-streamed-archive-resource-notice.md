@@ -125,8 +125,12 @@ The decisions below were taken one at a time during the rework
     that is too short would cut one off.
   - A full disk in the middle of a run gets no sentence of its own; the
     notice warns before the run (D52).
-  - A weak phone has not been tried, and a verdict of the notice other
-    than "enough" has not been seen on a device.
+  - A weak phone has not been tried. Of the notice's verdicts, two
+    have been seen on a device: "enough", and (2026-11-23, in an
+    emulator whose disk had been filled on purpose; ADR 0032) "not
+    enough" for storage. That notice was cancelled: a run that is
+    started after it has not been seen on a device, and no other
+    verdict has.
 - **Raising a limit** means changing `BackupLimits.current` and measuring
   on a phone first. The entry limit is derived from the cover limit, so
   the two cannot disagree. The writer counts covers and the reader counts
@@ -142,3 +146,5 @@ The decisions below were taken one at a time during the rework
 - **Not decided here:** the app's own way of sharing a backup, "Save to
   this phone", Cancel for a long run, and any change to the archive's
   format.
+  (2026-11-23: "Save to this phone" is decided since, as "Save backup"
+  beside "Share backup": ADR 0032.)

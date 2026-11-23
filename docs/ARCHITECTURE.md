@@ -159,6 +159,7 @@ These fail the build; change them deliberately, never to "make it pass".
 | `test/architecture/package_zip_reader_test.dart` | the app reads a ZIP container with its own reader only: no code line under `lib/` names a ZIP reader of `package:archive` (`ZipDecoder`, the three classes it is made of, `extractFileToDisk`); the inflater and the checksum are all the reader takes from the package (ADR 0009, review finding M05) |
 | `test/architecture/camera_scanner_gate_test.dart` | a camera that reads codes is shown through `CameraScanView` only: no other file under `lib/` imports the scanner package (`flutter_zxing`), so that a scan page cannot be built without the sentence for a refused camera, a phone without a camera, or a camera that did not start (review finding P4-M8, ADR 0030) |
 | `test/architecture/catalogue_change_signal_test.dart` | the Library list's state is nobody's signal: outside the Library screen's own files (listed in the test, each with its reason) no code line under `lib/` names `libraryControllerProvider`, so nothing can watch, listen to or invalidate the list in order to hear or to say "catalogue data changed"; that is `catalogueChangesProvider` (review findings P3-M4 and P4-M2, ADR 0031) |
+| `test/architecture/document_saving_test.dart` | a file the app made leaves it through the one share service or through the app's own saver only: the share plugin (`share_plus`) is imported by `core/platform/file_share.dart` alone; no file under `lib/`, `test/` or `integration_test/` imports a plugin that saves or picks files (`file_picker`, `flutter_file_dialog`, `file_saver`, `flutter_file_saver`, `saf_stream`), and `pubspec.yaml` names none; the export controller hands over a file, never bytes; and every name the Kotlin half and the Dart half of the save channel must agree on (the channel, its method, its keys, its codes, the two working folders, the name of a run, what a saved file may be called) is one text in both. The first of these tests that reads a Kotlin file (review finding P4-M6, ADR 0032) |
 
 ---
 
@@ -208,6 +209,16 @@ lib/
                           app_settings_opener.dart (port: opens Pitak's own
                           page of the phone's settings; Android side:
                           AppSettingsChannel.kt; elsewhere "not available"),
+                          document_saver.dart (port: save a copy of ONE
+                          finished file of the app where the user says)
+                          with channel_document_saver.dart (Android side:
+                          SavedDocumentChannel.kt; elsewhere "not
+                          available"; Create backup and Export save with
+                          it; ADR 0032), document_save_messages.dart (the
+                          sentences both saving pages share),
+                          foreign_display_name.dart (the ONE cleaning of a
+                          file name another app gives, for the way in and
+                          the way out),
                           camera_failures.dart (sorts a camera plugin's error
                           code into the reason the screen names)
     security/             hardened_secure_storage.dart — the ONE hardened
@@ -219,7 +230,9 @@ lib/
     widgets/              app_gate.dart (splash → lock → Library), qr_view/qr_scan_page,
                           camera_scan_view.dart (the ONE camera that reads
                           codes: both scan pages show it, and it says why
-                          when there is no camera picture; ADR 0030)
+                          when there is no camera picture; ADR 0030),
+                          bring_into_view.dart (a page scrolls what it has
+                          just said onto the screen; ADR 0032)
   features/
     library/              catalogue items (`CatalogueItem`, the base row of every
                           kind: books, magazine issues, others — ADR 0013);
@@ -248,7 +261,9 @@ lib/
                           viewers (ADR 0015/0016), consent-gated images/OSM map
     backup/               .pitabak writer (worker isolate) + all-or-nothing restore
                           (reads its file in worker isolates, one entry at a time)
-    import_export/        JSON/CSV/PDF export, Goodreads import, merge UI
+    import_export/        JSON/CSV/PDF export (one private file for a run,
+                          saved or shared by its path), Goodreads import,
+                          merge UI
     settings/             Appearance · Data · Security (SettingsPage.initialTab)
     app_update/           Play-only flexible updates; inert on F-Droid
     guides/               in-app "How Pitak works" guides (pure content model +
@@ -542,15 +557,17 @@ to false** (the `hasX` forward-compat pattern):
   which the reader accepts). The vault database is copied into the scratch
   folder first (`VaultArtifactsStore.snapshotDatabaseTo`), so every
   database is packed from a file nothing else can write. The ZIP gets its
-  final name, `Pitak-backup-<date>-<time>.pitabak` (`backupFileName`), only
+  final name, `pitak-backup-<DDMonYYYY>-<HHMMSS>.pitabak`
+  (`backupFileName`; the month as three English letters), only
   when it is complete and within the archive cap.
 - Where a backup is built and who removes it (`BackupWorkArea`, a domain
   port; `FileBackupWorkArea`): each build gets its own folder
   `<temp>/backup_work/run-<random>/` under the app's temporary directory.
   The writer removes its `scratch/` subfolder on every way out. The use
-  case discards the run when the build fails; after a build the page shares
-  the file by path (`FileShareService.shareFile`) and discards the run when
-  the share call has returned, whatever the outcome, or at once when the
+  case discards the run when the build fails; after a build the page saves
+  a copy of the file where the user says (`DocumentSaver.saveCopy`) or
+  shares it by path (`FileShareService.shareFile`), and discards the run
+  when that call has returned, whatever the outcome, or at once when the
   page is gone. A sweep before every build and once per app start
   (`staleBackupWorkSweep`) removes what a killed app left, including the
   `<Documents>/backup_create_work` folder of older versions. Only a real
@@ -560,6 +577,34 @@ to false** (the `hasX` forward-compat pattern):
   private work folder is removed by the same code. On Android the share
   plugin offers its own copy of the file, which it removes at the next
   share.
+- How a backup or an export leaves the app (review finding P4-M6,
+  ADR 0032). Two ways, side by side on Create backup and on Export:
+  Save and Share. Save goes through the app's own Android code
+  (`SavedDocumentChannel.kt`, behind the port `DocumentSaver`): one
+  method, one argument, the path of a finished file. The Android
+  side takes only a real file directly inside a run folder of
+  `backup_work` or `export_work` in the app's cache, called by
+  letters, digits and hyphens with one of four endings; it opens
+  Android's save window with that name, asks the document that comes
+  back for its size and goes on only when the place says 0 (the app
+  never replaces a file), copies on a background thread, counts the
+  bytes, and before it closes the document asks the system to write
+  them to the place's storage (`fsync`). It answers "saved" only
+  when the count is the file's length and that worked. A copy that
+  is not whole, or that the place does not confirm, takes the
+  document back, and the answer says when that failed; a place that
+  cannot be asked at all (a pipe) is taken back too, with an answer
+  of its own. No permission is involved, the
+  access to the document is not kept, and no path, document address
+  or error text is put into an answer or a log line; the name the
+  place gives the file is cleaned and shown, never used. Elsewhere
+  than on Android, Save answers "not available". An export is put
+  into ONE file of its own, `<temp>/export_work/run-<random>/<name>`
+  (`ExportWorkArea`, `FileExportWorkArea`, on `RunFolders`), saved
+  or shared by that path and removed in a `finally`; a sweep at the
+  app's start (`staleExportWorkSweep`) removes what a stopped app
+  left. When a run ends, both pages scroll its sentence onto the
+  screen (`bringResultIntoView`).
 - A restore reads its backup from a **file**, in worker isolates, one
   entry at a time (review finding P3-B3). The Restore page chooses the file
   through the app's own picker (`DocumentPicker`, `core/platform`), which
@@ -675,7 +720,9 @@ to false** (the `hasX` forward-compat pattern):
   source that stays connected and stops sending keeps the page waiting
   until the app is restarted; a full disk in the middle of a run gets no
   sentence of its own. Measured on one fast phone; a weak phone has not
-  been tried.
+  been tried. Saving a file has known limits of its own (ADR 0032): a
+  save window that is left costs the making once more, the copy has no
+  Cancel and no progress, and the app never replaces a file.
 - The copies the `file_selector` plugin left. Until 2026-11 a chosen
   file came through that plugin, which on Android also wrote a plain
   copy of it to `<cache>/<uuid>/<file name>` and never removed it. The
