@@ -171,7 +171,7 @@ void main() {
 
     expect(namesIn(work), [expectedName]);
     expect(built.path, '$work/$expectedName');
-    expect(expectedName, startsWith('Pitak-backup-'));
+    expect(expectedName, startsWith('pitak-backup-'));
     expect(expectedName, endsWith('.pitabak'));
     expect(built.sizeBytes, File(built.path).lengthSync());
     expect(built.sizeBytes, greaterThan(0));
