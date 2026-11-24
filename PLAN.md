@@ -58,10 +58,9 @@ was taken out.
 ## Handoff
 
 For an agent or a person who starts with no memory of the earlier
-sessions. Written on 2026-11-24, in the afternoon, after the change
-of D207 was pushed and green in CI and the planning of stage 9 had
-begun. Everything here was true when it was written; check the
-repository before relying on it.
+sessions. Written on 2026-11-24, in the evening, at the end of the
+session that planned stage 9. Everything here was true when it was
+written; check the repository before relying on it.
 
 Read "How to use this file", then this section, then the bird's-eye
 view. The sections after it are reference: the two plans, the device
@@ -74,12 +73,15 @@ runs, the open items and questions, the traps, the decisions.
   its "Definition of done", and publishing the private archive, which
   waits for the open items T2 to T9 (D30).
 - **The plan for the next findings**: stages 1 to 8 are done, pushed
-  and green in CI. **Stage 9 (P3-B2, PDF export) is being planned**
-  (D206): the finding was read again in today's code and stands, and
-  it was measured on the Mac, outside git; both are in its private
-  file, `p3b2-in-detail.md`. Nothing is designed, and no decision
-  point has been put. Left in the table besides: "later, each with a
-  plan of its own" (two findings about packages).
+  and green in CI. **Stage 9 (P3-B2, PDF export) is DESIGNED and has
+  its go-ahead** (D206, D208 to D210), and is NOT built: no file under
+  `lib/` or `test/` is changed for it. The finding was read again in
+  today's code and confirmed; it was measured on the Mac; today's
+  behaviour was looked at on the phone; the sources it rests on were
+  read and quoted; three trials were made outside git. All of it, the
+  design and the order of the build are in its private file,
+  `p3b2-in-detail.md` (sections 1 to 13). Left in the table besides:
+  "later, each with a plan of its own" (two findings about packages).
 - **The test that timed out now and then** (D201) is traced and
   changed (D207): `f6653ae`, test code only, pushed; CI run
   45379005173 green. In a whole run it took 18 to 29 of the 30
@@ -104,14 +106,14 @@ In this order:
    47, 8,129 Dart tests (run last on 2026-11-24, on `f6653ae`);
    Kotlin 144 in each flavour (offline); Rust 45 passed and 2
    ignored (CI).
-2. **Stage 9 (P3-B2), the planning** (D206; no code before its
-   go-ahead, D21). Reads `p3b2-in-detail.md` in full first: the
-   finding, today's code, the measurement, and what is left. Next, in
-   the order of "How a stage is planned and built": today's behaviour
-   on the phone, with a yes (its F-Droid install holds the made-up
-   library of 10,000 books); then the decision points, one at a time,
-   the first of them the review's own for this finding (the private
-   tracker, pass 3, decision point 2); the design; the go-ahead.
+2. **Stage 9 (P3-B2), the BUILD** (D210), as a session of its own.
+   Reads `p3b2-in-detail.md` in full first, then follows its section
+   13, step by step: tests first and seen red, the four checks after
+   each step. It pauses where that list names a pause: two sentences
+   of the app and the documents are shown before they are written;
+   the emulator, each build and each install on the phone keep their
+   own yes; one number of the design is found on a device before it
+   is set; nothing is committed before the review stop.
 
 ### State of the repository
 
@@ -158,6 +160,8 @@ In this order:
     made-up library of 10,000 books and 1 GiB and no vault;
   - neither has D190 or D193: the live region and the Export page's
     colours have not been on any device (D200);
+  - the F-Droid install was used as it is for the look of stage 9
+    (2026-11-24): nothing was installed, pushed or left there;
   - nothing of the runs is left in its Download folder.
 - `adb shell pm clear` is refused by this phone: the maintainer
   clears an install in the phone's Settings. A debug build cannot go
@@ -306,8 +310,8 @@ Names a later stage builds on (the full account is in ADR 0009, ADR
   their checksums, the result tables of those runs, the backups
   pulled back from the emulator and the phone, the helper scripts
   (`helpers/`, `run-CD/helpers/`), and one folder for each of stages
-  2 to 8 with the records of its looks (`stage2-p2m4/` to
-  `stage8-p4m6/`). One screenshot of run D under `run-CD/` shows a
+  2 to 9 with the records of its looks (`stage2-p2m4/` to
+  `stage9-p3b2/`). One screenshot of run D under `run-CD/` shows a
   shop's printed telephone number and e-mail address.
 - `~/pitak-old-notes/`: five notes of the maintainer's from before
   this work, moved out of the repository on 2026-11-24 (D204).
@@ -316,7 +320,8 @@ Names a later stage builds on (the full account is in ADR 0009, ADR
   (1.6 GB): they stay (D205).
 - Scratch folders under `/tmp` are left to the system, which empties
   `/tmp`. Of this work: `/tmp/pitak_d201/` (the trace and the trials
-  of D207) and `/tmp/pitak_p3b2/` (the measuring trial of stage 9).
+  of D207) and `/tmp/pitak_p3b2/` (stage 9: the trials, the sample
+  PDFs, the source files that were read; the design file names each).
 
 ### Could be done if the maintainer wants
 
@@ -387,7 +392,7 @@ the private tracker.
 | | Id | Area | Where it stands |
 |---|---|---|---|
 | [ ] | P4-B1 | the borrowers vault | in no stage |
-| [ ] | P3-B2 | PDF export | stage 9, being planned (D206) |
+| [ ] | P3-B2 | PDF export | stage 9: designed, go-ahead given (D210); not built |
 | [ ] | P3-B3, the rest | restore | in no stage |
 | [ ] | P2-M2 | a package (the catalogue's database) | later, a plan of its own (D62) |
 | [ ] | P2-M3, the rest | a package (secure storage) | later, a plan of its own (D62) |
@@ -505,7 +510,7 @@ and no code is written before its go-ahead (D21).
 | 6 | P4-M8 | the scanner | done 2026-11-21. D128 to D146. `a1cc905`, `9034c24`, `09ae13d`, `7803e63`. CI run 44909495333 at `8404526`, green |
 | 7 | P4-M2 with P3-M4, and P4-m13 (D150) | the library list | done 2026-11-22. D148 to D162. `08995df`, `bcb3b63`; pushed (`e81d187..d87b8cb`). CI run 44993054071 at `d87b8cb`, green at the second attempt of one job. P3-M4 in part, its box stays open |
 | 8 | P4-M6 | how a file leaves the app | done 2026-11-23. D163 to D203. `0d54038`, `cf07ad8`, `bfac8d5`, `93d5c91`, `bc1ef0f`; pushed (`67ce4b5..048246b`). CI run 45198289279 at `048246b`, green |
-| 9 | P3-B2 | PDF export | being planned since 2026-11-24 (D206): read again in today's code and confirmed; measured on the Mac, outside git; no design yet |
+| 9 | P3-B2 | PDF export | designed 2026-11-24, go-ahead given; NOT built. D206, D208 to D210. Read again in today's code and confirmed; measured on the Mac; today's behaviour looked at on the phone; three trials outside git |
 | later, each with a plan of its own | P2-M2; the rest of P2-M3 | two packages | not read |
 
 Every "where" of the review reports is of 2026-11-10. Each place is
@@ -809,6 +814,16 @@ again are kept; the stories behind them are in git history.
   loops do not show it (D207). A test that makes thousands of files is
   timed in a whole run: `--file-reporter json:<file>` has each test's
   start and end.
+- Under `flutter test` the `pdf` package runs `PdfDocument.save()` on
+  the calling isolate (it looks for `FLUTTER_TEST` in the
+  environment); the app's run goes to another isolate. What a test
+  measures of `save()` is not what the app does: plain Dart (`dart
+  --packages=.dart_tool/package_config.json <file>`) takes the app's
+  path.
+- The test engine takes only the FIRST font of a family that was
+  loaded with several (`FontLoader`); a phone falls back inside the
+  family. A picture of text in two scripts made in a test shows boxes
+  that a phone does not.
 **Widget tests**
 
 - A widget test's screen is 800 dp wide unless the test sets a size,
@@ -1036,6 +1051,11 @@ again are kept; the stories behind them are in git history.
   system window WITHOUT text first (`stage8-p4m6/p.py`); stop
   screenshots when another window comes to the front; write none of
   it down.
+- `uiautomator dump` gives no tree while something on the page moves
+  (a progress bar): a helper must not take "no tree" for "nothing
+  there". Such a page is read from a picture of the app's own part of
+  the screen, taken only while the app is in front and cut below the
+  status bar BEFORE it is written (`stage9-p3b2/run_with_shots.py`).
 - The phone refuses `adb shell pm clear`, `svc power stayon` and
   `settings put global`, and `screenrecord` crashes on it. It takes
   `adb shell cmd connectivity airplane-mode enable` (ask first).
@@ -1290,8 +1310,11 @@ and restore rework. ADRs and `CHANGELOG.md` cite these numbers.
 | D203 | 23 | One thing the planning of stage 8 had kept for its review stop was not put there; it is older than the stage and not traced. It becomes an item of its own in the private tracker | in force: T24 ("Sharing a file") |
 | D204 | 24 | Finished documents leave the working tree, and this file is cut down from 6,965 lines. Fourteen plan and review documents of work that is merged and released are removed from git (each in history, unchanged at tag `1.9.7`); the four design files that the private archive holds word for word are removed from the root; the maintainer's five old notes are moved to `~/pitak-old-notes/`; this file keeps ONE handoff, one line for each decision and the traps that still apply | done: the documents `cfef854`; this file's cut is the commit after it; the file of before is `git show fdec596:PLAN.md` |
 | D205 | 24 | The image of Android 7.0 and its virtual device stay on the Mac (4.7 GB). The maintainer left it to the agent's judgement: kept, because T21 was seen only in that image and is not traced, and nothing else here runs the oldest Android the app supports | in force |
-| D206 | 24 | Next comes P3-B2 (PDF export), as stage 9. D61 holds for it: a row under "Stages" by id only, a private design file of its own, decisions from D208. A planning session first (D21) | chosen; being planned |
+| D206 | 24 | Next comes P3-B2 (PDF export), as stage 9. D61 holds for it: a row under "Stages" by id only, a private design file of its own, decisions from D208. A planning session first (D21) | chosen; designed (D210), not built |
 | D207 | 24 | The change of D201: the test of a backup's largest count (`backup_writer_limits_test.dart`, "as many covers as a backup holds plus the ten other entries") takes each entry once, into memory, instead of twice through `readZipFile`, and checks that every cover comes back as its one byte; its time limit stays. Traced first: 3.5 s alone, 18 to 29 s in a whole run, because making files is slow while the test tool keeps the disk busy, and two thirds of its time was the helper's second pass, 20,000 files of its own | built, test code only; `f6653ae`; pushed; CI run 45379005173 green |
+| D208 | 24 | Stage 9, its first decision point, how far the stage goes: the second of four ways, as proposed, after the look at today's behaviour on the phone and a trial outside git. What the stage builds and what it leaves for a later decision is in the private design file (D30). Not chosen: the smallest way; a larger one in the same stage; another way altogether, as a stage of its own | in force |
+| D209 | 24 | Stage 9, its second decision point, what the app does in the one case the stage cannot take away: the first of three ways, as proposed, in line with what was decided earlier for Cancel. The case and the words are in the private design file (D30) | in force |
+| D210 | 24 | Stage 9, the go-ahead for the design as shown. The build is a session of its own and follows the design file's list of steps; every commit, the push, each build, each install and each start of an emulator keep their own yes; the texts are shown before they are written; nothing is committed before the review stop | given; not built |
 
 ## Where the earlier text went
 
