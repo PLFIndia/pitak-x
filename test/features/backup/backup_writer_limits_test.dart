@@ -14,6 +14,7 @@ import 'package:pitaka/features/backup/infrastructure/backup_archive_writer.dart
 import 'package:pitaka/features/backup/infrastructure/backup_entry_bounds.dart';
 import 'package:pitaka/features/backup/infrastructure/legacy_db_reader.dart';
 import 'package:pitaka/features/import_export/domain/zip_limits.dart';
+import 'package:pitaka/features/import_export/infrastructure/bounded_zip_file.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/value_objects/item_details.dart';
 import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
@@ -104,15 +105,10 @@ void main() {
         ]
       : const [];
 
-  /// The build succeeded AND the reader accepts the archive under the caps
-  /// derived from the same [limits]. Returns the unpacked entries.
-  Map<String, Uint8List> accepted(
-    ({Either<Failure, BuiltBackup> result, Directory work}) run,
-    BackupLimits limits,
-  ) {
+  /// The build succeeded and left exactly one thing in its work folder: the
+  /// finished backup, as large as the build says (BR4). Returns that file.
+  File finished(({Either<Failure, BuiltBackup> result, Directory work}) run) {
     final built = run.result.getOrElse((f) => fail('refused: $f'));
-    // BR4: the build hands back a FILE in its work folder, and leaves
-    // nothing else there.
     final file = File(built.path);
     expect(
       leftIn(run.work),
@@ -120,7 +116,37 @@ void main() {
       reason: 'only the finished backup may be left in the work folder',
     );
     expect(built.sizeBytes, file.lengthSync());
-    return readZipFile(file.path, limits: ZipLimits.forBackup(limits));
+    return file;
+  }
+
+  /// The build succeeded AND the reader accepts the archive under the caps
+  /// derived from the same [limits]. Returns the unpacked entries.
+  Map<String, Uint8List> accepted(
+    ({Either<Failure, BuiltBackup> result, Directory work}) run,
+    BackupLimits limits,
+  ) => readZipFile(finished(run).path, limits: ZipLimits.forBackup(limits));
+
+  /// Every entry of the backup at [path], by its name: the real reader
+  /// opens the file under [caps] and takes each entry ONCE, into memory.
+  ///
+  /// WHY NOT `readZipFile` (beginner note): that helper takes every entry
+  /// twice, the second time into a file of its own, and compares the two
+  /// ways. For the one test with as many covers as a backup holds, that is
+  /// 20,000 files made and removed, and they say nothing about a COUNT.
+  /// Making files is slow while the whole suite runs, because the test
+  /// tool keeps the disk busy: the test then took 18 to 29 of the 30
+  /// seconds a test has, and timed out now and then. The comparison of
+  /// the two ways stays in every other test of this file (`accepted`).
+  Map<String, Uint8List> takenOnce(String path, ZipLimits caps) {
+    final zip = BoundedZipFile.open(path, limits: caps);
+    try {
+      return {
+        for (final entry in zip.entries)
+          entry.name: zip.read(entry, maxBytes: caps.maxEntryBytes),
+      };
+    } finally {
+      zip.close();
+    }
   }
 
   /// The build was refused with [code] and the two numbers, returned no
@@ -547,15 +573,21 @@ void main() {
       for (var i = 0; i < limits.maxCovers; i++) {
         cover('c${i.toString().padLeft(4, '0')}.jpg', 1);
       }
-      // `accepted` unpacks with the caps built from `limits`; the second
-      // call below uses the reader's DEFAULT caps, which is what a restore
-      // does.
-      final run = await buildEverything();
-      final files = accepted(run, limits);
+      // The first read uses the caps built from `limits`; the second the
+      // reader's DEFAULT caps, which is what a restore does. Each entry is
+      // taken once (`takenOnce` says why).
+      final path = finished(await buildEverything()).path;
+      final files = takenOnce(path, ZipLimits.forBackup(limits));
       expect(files, hasLength(limits.maxEntries));
       expect(files, hasLength(ZipLimits.pitakaBackup.maxEntries));
+      // Every cover came back as the one byte it was written with.
+      expect(coverNames(files), hasLength(limits.maxCovers));
       expect(
-        readZipFile(run.result.toNullable()!.path),
+        coverNames(files).where((name) => files[name]!.length != 1),
+        isEmpty,
+      );
+      expect(
+        takenOnce(path, ZipLimits.pitakaBackup),
         hasLength(limits.maxEntries),
       );
 
