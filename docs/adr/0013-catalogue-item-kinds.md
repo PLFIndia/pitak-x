@@ -252,4 +252,4 @@ these implementation contracts. The interchange-side rules are in ADR 0014.
 | 5 | Rename now | F7 (plan sessions S1–S4) |
 | 6 | Kinds are app-defined; add a built-in "Others" kind | F3, O1–O4 |
 | 7 | Others have no type label — the description/notes field says what the item is, and notes become searchable | O1–O2, D10, explicit `item_kinds.json` (ADR 0014) |
-| 8 | Plan written as discrete, independently runnable sessions with a handoff file | Original magazines plan, revision 5, Parts B/C (retained in git history); `docs/plans/magazines-progress.md` |
+| 8 | Plan written as discrete, independently runnable sessions with a handoff file | Original magazines plan, revision 5, Parts B/C (retained in git history); `docs/plans/magazines-progress.md` (removed on 2026-11-24 as finished; in git history at tag `1.9.7`) |

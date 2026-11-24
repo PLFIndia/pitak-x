@@ -37,7 +37,8 @@ The naive options all fail:
 
 **A saved network row opens a read-only, native, memory-only view of that
 library's current published `books.json`.** Concretely (plan
-`appViewer_plan.md`, decisions V1–V18):
+`appViewer_plan.md`, decisions V1–V18; the plan file was removed on
+2026-11-24 as finished and is in git history at tag `1.9.7`):
 
 1. **Every** saved row is eligible (`bookmark`, `card`, `discovered`); the
    route is reachable only from the saved list, so the row *is* the proof of

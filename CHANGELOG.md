@@ -559,6 +559,22 @@ Two known limits, measured in that run on a fast phone and accepted
   and the page says so and what to do.
 
 ### Removed
+- **Fourteen finished plan and review documents** (2026-11-24; 8,422
+  lines), of work that is merged and released. They made the working
+  tree hard to read for a person and for a coding agent. From the root:
+  `appViewer_plan.md`, `appView_review.md`, `appView_review-plan.md`,
+  `cloudflare_plan-final.md` and `remote-import-plan.md`. From
+  `docs/plans/`: `cloudflare-review-2026-10-29.md`,
+  `cloudflare-fix-plan-2026-10-29.md` with its three parts,
+  `magazines-progress.md`, `otherDetails.md`, `release-1.9.4-aab.md` and
+  `ui-polish-2026-11-09.md`. Every one is in git history, unchanged at
+  tag `1.9.7` (`git show 1.9.7:<path>`). ADRs 0013, 0015, 0017 and 0018
+  and `docs/plans/cloudflare-handoff.md`, which cite some of them, say
+  so; older entries of this changelog that name them are left as they
+  were written. Three plan documents stay, because something that is
+  still in use points at them: `docs/plans/cloudflare-handoff.md` and
+  `publishOptimisation_PLAN.md` (`docs/RELEASING.md` records evidence in
+  them) and `docs/plans/sec-rustsec-2026-0459.md` (`rust/deny.toml`).
 - The read-only vault archive viewer, which no screen could reach.
 - **The dependency `file_selector`** (with `file_selector_android`,
   `file_selector_ios` and `file_selector_web`). Its desktop parts stay

@@ -5,6 +5,15 @@
 > plan, the ADRs and commit messages cite them by number ("handoff §12"), so
 > their numbering never changes. Where an older section disagrees with §0,
 > §0 wins.
+>
+> **Note of 2026-11-24:** three documents this file cites were removed from
+> the working tree as finished: the plan (`cloudflare_plan-final.md`, with its
+> Parts A–N and the Part M rows), the review
+> (`docs/plans/cloudflare-review-2026-10-29.md`) and the fix plan
+> (`docs/plans/cloudflare-fix-plan-2026-10-29.md` and its three parts). They
+> are in git history, unchanged at tag `1.9.7`; for example
+> `git show 1.9.7:cloudflare_plan-final.md`. This file stays because
+> `docs/RELEASING.md` records release evidence in its §12.
 
 ## 0. Current state (2026-10-31, evening; code verified at `71322e4`)
 
@@ -22,7 +31,7 @@ unless 0.6 says otherwise.
 | Local gates at `71322e4` | 4,621 non-golden tests pass (7 new since `b887a74`); line coverage **81.39 %** (24,445 / 30,036 lines, CI's own formula; floor 64 %); `flutter analyze lib test integration_test` zero issues; `dart format` 0 of 1,065 files changed; the pre-commit generated-code check passed on every commit. Not run locally: the two host-timezone matrices, Rust, OSV, F-Droid purity (no Rust, dependency or Gradle change) |
 | Goldens | The Linux `Update goldens` artefact for `b887a74` is byte-identical to all 10 committed PNGs. The later code changes alter no settled layout (a reload no longer shows a spinner; the move phase line shows only while busy; one sentence of dialog copy), so no PNG should change — CI confirms |
 | Device | OnePlus `678c5642` runs the F-Droid release build of `71322e4` (APK SHA-256 `ee07a9aa9f52b2195b5a5de3f2da5981df439e5164cfd3122f1018ffaf6761cd`), active host Cloudflare `pitak-worker` (§12, 2026-10-31 end state) |
-| Plan / records | [`cloudflare_plan-final.md`](../../cloudflare_plan-final.md) Part M rows 34–135; ADR 0017 (amended 2026-10-31); ADR 0018 (saved copies) |
+| Plan / records | `cloudflare_plan-final.md` (in git history at tag `1.9.7`) Part M rows 34–135; ADR 0017 (amended 2026-10-31); ADR 0018 (saved copies) |
 
 **Code changed since `b887a74`** (all found on the phone on 2026-10-31; each
 has a regression test that fails without it):
@@ -41,7 +50,8 @@ All paths are under `lib/features/publish/` or `test/features/publish/`.
   publishing, whole-site replacement, and moves in both directions — see §7–§9
   and §11. S11's trial-tool removal and Linux goldens are done.
 - **Real-host smoke (J.7, §12):** steps 1–8 and 10 PASS (2026-10-29).
-- **Fix plan** ([index](cloudflare-fix-plan-2026-10-29.md)): Phases 0–5 done
+- **Fix plan** (index: `cloudflare-fix-plan-2026-10-29.md`, in git history
+  at tag `1.9.7`): Phases 0–5 done
   (2026-10-29/30, §17); Phase 6's documentation half done (2026-10-30).
 - **Phase 6 real-host checks (§12):** three of the five §6.1 API checks
   answered (10007 = absent, an upload session creates an empty Worker = 10222,
