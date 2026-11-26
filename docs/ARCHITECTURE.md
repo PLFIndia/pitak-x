@@ -24,9 +24,9 @@ A **privacy-first, offline personal library catalogue** for Android, with
   Argon2id derives the key-encryption key and AES-256-GCM wraps the vault key;
   the key exists only inside a **Rust core** (`rust/`, crate `pitak_crypto`)
   and never crosses the FFI boundary.
-- Import/export: JSON, CSV (incl. Goodreads), PDF (Indic scripts via shaped
-  images). `.pitabak` backups restore in the Pitak that made them and in
-  newer ones.
+- Import/export: JSON, CSV (incl. Goodreads), PDF (Latin text as real text,
+  Indic scripts via shaped images; ADR 0033). `.pitabak` backups restore in
+  the Pitak that made them and in newer ones.
 - Opt-in publish of a read-only site to **one active host**: GitHub Pages or
   Cloudflare Workers static assets (ADR 0017); opt-in **library network**
   (saved libraries, hub/member cards, consent-gated OSM map).
@@ -160,6 +160,7 @@ These fail the build; change them deliberately, never to "make it pass".
 | `test/architecture/camera_scanner_gate_test.dart` | a camera that reads codes is shown through `CameraScanView` only: no other file under `lib/` imports the scanner package (`flutter_zxing`), so that a scan page cannot be built without the sentence for a refused camera, a phone without a camera, or a camera that did not start (review finding P4-M8, ADR 0030) |
 | `test/architecture/catalogue_change_signal_test.dart` | the Library list's state is nobody's signal: outside the Library screen's own files (listed in the test, each with its reason) no code line under `lib/` names `libraryControllerProvider`, so nothing can watch, listen to or invalidate the list in order to hear or to say "catalogue data changed"; that is `catalogueChangesProvider` (review findings P3-M4 and P4-M2, ADR 0031) |
 | `test/architecture/document_saving_test.dart` | a file the app made leaves it through the one share service or through the app's own saver only: the share plugin (`share_plus`) is imported by `core/platform/file_share.dart` alone; no file under `lib/`, `test/` or `integration_test/` imports a plugin that saves or picks files (`file_picker`, `flutter_file_dialog`, `file_saver`, `flutter_file_saver`, `saf_stream`), and `pubspec.yaml` names none; the export controller hands over a file, never bytes; and every name the Kotlin half and the Dart half of the save channel must agree on (the channel, its method, its keys, its codes, the two working folders, the name of a run, what a saved file may be called) is one text in both. The first of these tests that reads a Kotlin file (review finding P4-M6, ADR 0032) |
+| `test/architecture/pdf_document_write_test.dart` | a PDF is written from the document itself: no code line of a file under `lib/` that imports the `pdf` package calls `.save`, which copies the whole document to another isolate first and so needs every one of its buffers a second time; the scan sees the renderer, and the renderer has a `.write(` (review finding P3-B2, ADR 0033) |
 
 ---
 
@@ -1290,9 +1291,15 @@ loan never rebuilds the catalogue or reads a cover.
   route rebuild; the minute tick exists only for time-derived subscription
   badges. Filtered-empty and genuinely empty libraries are different states,
   and generic item flows use kind-neutral Item wording.
-- **PDF text is rendered as shaped images** (correct Devanagari conjuncts;
-  consequence: not selectable). Cancel discards — a partial catalogue must
-  never pass for a complete one.
+- **PDF text is real text where no shaping is needed, and a shaped image
+  everywhere else** (ADR 0033). Latin letters and digits are written with
+  the two bundled Latin faces and can be selected and searched. A text in
+  any other script is drawn by Flutter's engine and embedded as a picture
+  (correct Devanagari conjuncts; consequence: not selectable). A document
+  can hold only some thousand pictures while it is built, on any phone, so
+  the export counts first and refuses a list that does not fit, saying how
+  many books fit. Cancel discards, and a list that does not fit is not cut
+  short — a partial catalogue must never pass for a complete one.
 - **Publish is one operation, one host, one target** (ADR 0017). Either a
   single atomic git-data commit (GitHub Pages) or a complete assets-only
   deploy of a Pitak-dedicated Worker, both fed by the SAME section builders so

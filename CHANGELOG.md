@@ -34,6 +34,62 @@ Two known limits, measured in that run on a fast phone and accepted
   screen can stand still for about a second.
 
 ### Changed
+- **A PDF of a long list is made in seconds, and a list that cannot fit
+  is told so before the export starts (review finding P3-B2; `PLAN.md`,
+  D206, D208 to D215; ADR 0033).** The PDF export drew every piece of
+  text as a picture, Latin letters and digits too, and a PDF can hold
+  only some thousand pictures while it is built, on any phone. On a
+  phone the export of 10,000 books ran for 48 seconds, stopped at about
+  2,000 books and said "Export failed." Now Latin letters and digits
+  are written as real text, in the two Latin faces the app already
+  bundles, and only a text that needs shaping (Devanagari, Tamil and
+  other scripts) is still drawn as a picture. The same 10,000 books are
+  a PDF of 264 pages about a second after the tap.
+  - Latin text and digits of a PDF can be selected, searched and
+    copied. Text that is drawn as a picture cannot, as before.
+  - Before a PDF is made the app counts what it will hold. A list that
+    does not fit is refused at once: "This list is too long for one
+    PDF: it has N books, and about M fit. Titles and names in scripts
+    such as Devanagari or Tamil are drawn as pictures, and a PDF can
+    hold only so many. Narrow the list under "Books to include",
+    choose fewer columns, or export CSV instead. Nothing was
+    exported." Nothing is cut short: a catalogue with its end missing
+    would look complete.
+  - A PDF that runs out of memory all the same says so: "This phone
+    ran out of memory for the PDF. Nothing was exported. Narrow the
+    list under "Books to include", or export CSV instead." Everything
+    else stays "Export failed."
+  - A text that needs a picture and gets none now ends the export. It
+    is never left out of a finished PDF, and never written with a font
+    that would draw it wrongly.
+  - Underneath: the rule for "needs no shaping" is an allow-list of
+    characters (`isPlainPdfText`). The count is the same pass over the
+    rows as the drawing, with the drawing left out, so the two cannot
+    disagree; tests hold it to the finished file's own number of
+    objects. The budget is 7,000 objects (`pdfStreamObjectBudget`), in
+    one place with its reason. The file is written with
+    `PdfDocument.write` instead of `save()`, which copied the whole
+    document first; a test keeps `save()` out. The renderer's one file
+    became several smaller ones.
+  - Privacy: no new permission and no new package. A text that could
+    not be drawn is not named in the error.
+  - Known limits: a library in a script that needs shaping still has a
+    limit, about 1,740 books when title and author are both in such a
+    script and the columns are the default five; the app now says so
+    before the run, with how many books fit. No number covers a weak
+    phone with other apps open. Real text is drawn without kerning.
+    ADR 0033 has the rest, and the two ways that are left.
+  - Seen on 2026-11-25, with made-up data. In an emulator with Android
+    16 and 2 GB of memory, in debug builds: a list refused within a
+    second, through Save and through Share; 1,500 books in Devanagari
+    saved; the long sentence at the largest font, brought into view
+    whole; and, in a trial build without the budget, the "out of
+    memory" sentence, with the app open and usable afterwards. On a
+    phone with Android 14, in a release build: 10,000 books saved
+    about a second after the tap; 1,500 books in Devanagari saved
+    after about 42 seconds; 13,500 books refused within a second,
+    with how many fit. Not tried: a weak phone, a screen reader, the
+    largest font on the phone, a library of real books.
 - **A backup and an export can be saved where you choose (review
   finding P4-M6; `PLAN.md`, D164 to D196; ADR 0032).** A backup and an
   export could leave the app through the share sheet only. Whether one

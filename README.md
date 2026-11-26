@@ -50,7 +50,9 @@ a **library network** (pins on a map, hub/member cards).
   reminder.
 - **Wishlist** — track books to acquire; move to the library on purchase.
 - **Import / Export** — JSON, CSV (incl. Goodreads import), and **PDF** (a
-  paginated A4 library list with Indic-script support via shaped-image text).
+  paginated A4 library list: Latin text and digits as real, searchable text,
+  Indic scripts via shaped-image text; a list too long for one PDF is told so
+  before the export starts, with how many books fit).
   A file you choose to import or to merge is read from a **private temporary
   copy** inside the app's own storage (where no other app can read it); the
   copy is removed as soon as the file has been read.
