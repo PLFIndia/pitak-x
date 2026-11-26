@@ -44,7 +44,7 @@ was taken out.
   | What | Where |
   |---|---|
   | ONE handoff, the bird's-eye view, the two plans' stages, the traps, the decisions in one line each | this file |
-  | The findings of the four review passes with their boxes, and the items T1 to T24, open and closed | private: `review-tracker.md` |
+  | The findings of the four review passes with their boxes, and the items T1 to T28, open and closed | private: `review-tracker.md` |
   | Every design ("in detail"), result, safety check, decision in full and older handoff, word for word | private: `plan-archive-2026-11-13.md` |
   | The design of a stage that is being built | private: a file of its own (`<stage>-in-detail.md`) with a line in `.git/info/exclude`, until its fix is pushed; then it goes into the archive and the file is removed. Today there are two such files: `br10-in-detail.md`, the working file of the device runs, and `p3b2-in-detail.md`, the design file of stage 9 |
   | The four review reports, their prompts and the summary | private: `codeReviewReport1.md` to `4.md`, `codeReviewPrompt1.md` to `4.md`, `codeReviewSummary.md` |
@@ -58,9 +58,11 @@ was taken out.
 ## Handoff
 
 For an agent or a person who starts with no memory of the earlier
-sessions. Written on 2026-11-24, in the evening, at the end of the
-session that planned stage 9. Everything here was true when it was
-written; check the repository before relying on it.
+sessions. Written on 2026-11-26, in the evening, at the end of the
+session that held the review stop of stage 9, committed the stage and
+pushed it.
+Everything here was true when it was written; check the repository
+before relying on it.
 
 Read "How to use this file", then this section, then the bird's-eye
 view. The sections after it are reference: the two plans, the device
@@ -72,16 +74,15 @@ runs, the open items and questions, the traps, the decisions.
   pushed and proven on devices. Left of it: the maintainer's word on
   its "Definition of done", and publishing the private archive, which
   waits for the open items T2 to T9 (D30).
-- **The plan for the next findings**: stages 1 to 8 are done, pushed
-  and green in CI. **Stage 9 (P3-B2, PDF export) is DESIGNED and has
-  its go-ahead** (D206, D208 to D210), and is NOT built: no file under
-  `lib/` or `test/` is changed for it. The finding was read again in
-  today's code and confirmed; it was measured on the Mac; today's
-  behaviour was looked at on the phone; the sources it rests on were
-  read and quoted; three trials were made outside git. All of it, the
-  design and the order of the build are in its private file,
-  `p3b2-in-detail.md` (sections 1 to 13). Left in the table besides:
-  "later, each with a plan of its own" (two findings about packages).
+- **The plan for the next findings**: stages 1 to 9 are done, pushed
+  and green in CI. **Stage 9 (P3-B2, PDF export)** had its review
+  stop on 2026-11-26 (D216), was committed (`9a25349`, `82672f8`) and
+  pushed; CI run 45848395788 green in every job at its first attempt.
+  P3-B2 is fixed IN PART (D217): the bird's-eye view says which part,
+  and ADR 0033 says what is not solved. Left of the stage: the rest
+  of its bookkeeping ("The next session", point 2). Left in the
+  table: "later, each with a plan of its own" (two findings about
+  packages).
 - **The test that timed out now and then** (D201) is traced and
   changed (D207): `f6653ae`, test code only, pushed; CI run
   45379005173 green. In a whole run it took 18 to 29 of the 30
@@ -92,34 +93,45 @@ runs, the open items and questions, the traps, the decisions.
   design files that the private archive holds word for word were
   removed from the root, the maintainer's five old notes were moved
   to `~/pitak-old-notes/`, and this file was cut from 6,965 lines.
-- Nothing is half-built, and nothing waits for a review.
+- Four things seen or read in stage 9 that are not of the stage are
+  items of the private tracker, T25 to T28 (D216); none is in a
+  stage.
 
 ### The next session
 
 In this order:
 
-1. Confirms the state: `git status -sb`, `git log`, `git remote -v`,
-   and the CI run of the branch's head (the session that pushed it
-   may not have seen it to its end). Runs the Dart checks once, the
-   tests some minutes after analyze. The numbers to compare with:
-   `build_runner` no diff, format 0 changed of 1,536 files, analyze
-   47, 8,129 Dart tests (run last on 2026-11-24, on `f6653ae`);
-   Kotlin 144 in each flavour (offline); Rust 45 passed and 2
-   ignored (CI).
-2. **Stage 9 (P3-B2), the BUILD** (D210), as a session of its own.
-   Reads `p3b2-in-detail.md` in full first, then follows its section
-   13, step by step: tests first and seen red, the four checks after
-   each step. It pauses where that list names a pause: two sentences
-   of the app and the documents are shown before they are written;
-   the emulator, each build and each install on the phone keep their
-   own yes; one number of the design is found on a device before it
-   is set; nothing is committed before the review stop.
+1. Confirms the state: `git status -sb` (nothing but the nine review
+   files, untracked), `git log` (the head is this file's commit, on
+   top of `82672f8`; every commit pushed), `git remote -v`, and the
+   CI run of the head. Runs the Dart checks once, the tests some
+   minutes after analyze.
+   The numbers to compare with: `build_runner` changes nothing,
+   format 0 changed of 1,553 files, analyze 47, 8,269 Dart tests (run
+   last on 2026-11-26, at 20:43); Kotlin 144 in each flavour
+   (offline, 2026-11-26); Rust 45 passed and 2 ignored (CI).
+2. **The rest of stage 9's bookkeeping**, each step with its own
+   yes: the design file `p3b2-in-detail.md` goes into the private
+   archive, word for word, with an entry for each of D206 and D208 to
+   D217; then the file and its line in `.git/info/exclude` are
+   removed. The rows of D208 to D215 under "Decisions" name their
+   matter by number only; the fix is pushed, so each may now say it
+   in plain words (the text shown first).
+3. Then asks the maintainer what comes next. What is open is in the
+   bird's-eye view; of the table of stages only "later, each with a
+   plan of its own" is left; "Questions the maintainer has not
+   answered yet" has the rest.
 
 ### State of the repository
 
-- Branch `reviewFixes`, begun on `origin/main` (`fe8a2c4`); everything
-  on it is pushed. `git status -sb` says whether a later commit is
-  not pushed yet.
+- Branch `reviewFixes`, begun on `origin/main` (`fe8a2c4`); every
+  commit on it is pushed. `git status -sb` says whether a later
+  commit is not pushed yet. The working tree holds nothing that is
+  not committed, but for the nine review files. In
+  `build/app/outputs/flutter-apk/` lie the release APK of 2026-11-25,
+  15:48 (the code of `9a25349` but for comments that were changed
+  after it was built) and a debug APK of 2026-11-26, 20:47 (made for
+  the offline Kotlin tests; it is on no device).
 - Draft pull request #30, "Backup and restore rework, stages BR1 to
   BR6" (its title is out of date). CI runs on a pull request and on a
   push to `main` only; a push to `reviewFixes` runs it because of
@@ -152,24 +164,31 @@ In this order:
 ### Devices
 
 - The phone: a OnePlus 9R, Android 14; the only phone of the runs,
-  and a fast one. As the session of 2026-11-23 left it:
-  - its play install (`dev.khoj.pitaka`) is the debug build of 10:37
-    of that day, with made-up data and a made-up vault;
-    `adb shell run-as dev.khoj.pitaka` can look into its files;
-  - its F-Droid install is the release build of 12:28, with the
-    made-up library of 10,000 books and 1 GiB and no vault;
-  - neither has D190 or D193: the live region and the Export page's
-    colours have not been on any device (D200);
-  - the F-Droid install was used as it is for the look of stage 9
-    (2026-11-24): nothing was installed, pushed or left there;
+  and a fast one. As the session of 2026-11-25 left it:
+  - its play install (`dev.khoj.pitaka`) is the debug build of
+    2026-11-23, 10:37, with made-up data and a made-up vault;
+    `adb shell run-as dev.khoj.pitaka` can look into its files. It
+    has neither D190 nor D193;
+  - its F-Droid install is the release build of 2026-11-25, 15:48
+    (the code of `9a25349` but for comments; its SHA-256 begins
+    `5231e6bbb1159763`), with no vault and 13,500 made-up books: the
+    10,000 of the 1 GiB library, and 3,500 in Devanagari that were
+    imported for the stage's look. To have the 10,000 again, the
+    maintainer clears its data in the phone's Settings and the
+    made-up backup of 1 GiB is restored, as on 2026-11-23;
+  - of D193 a failure's sentence in the error colour was seen there
+    on 2026-11-25; the live region (D190) has still not been heard
+    with a screen reader on any device (D200);
   - nothing of the runs is left in its Download folder.
 - `adb shell pm clear` is refused by this phone: the maintainer
   clears an install in the phone's Settings. A debug build cannot go
   over the F-Droid install (the signatures differ; by reasoning, not
   tried).
-- Emulators: the virtual device `pitak_s11_api36` (Android 16),
-  started `-read-only`; and the image of Android 7.0 with the virtual
-  device `pitak_old_api24_test`, which stay (D205).
+- Emulators: the virtual device `pitak_s11_api36` (Android 16, 2 GB
+  of memory), started `-read-only`; and the image of Android 7.0 with
+  the virtual device `pitak_old_api24_test`, which stay (D205). The
+  first was used for stage 9 on 2026-11-25 with debug builds and a
+  made-up library, and stopped; it kept nothing.
 - `adb` is not on the PATH: `~/Library/Android/sdk/platform-tools/adb`.
   The helpers that drive the phone and the emulator, and the made-up
   backups, are in `~/pitak-device-runs/`.
@@ -259,16 +278,16 @@ cargo clippy --offline --locked --all-targets -- -D warnings
 cargo test --offline --locked --release
 ```
 
-What green looks like today (the Dart checks as run here on the tree
-of `f6653ae`, 2026-11-24; Kotlin as run here on 2026-11-23; Rust and
-the last row from CI):
+What green looks like today (the Dart checks and Kotlin as run here
+on 2026-11-26, on the tree that became `9a25349`; Rust and the last
+row from CI):
 
 | Check | Result |
 |---|---|
 | `build_runner` | no diff in git (judge by `git status`, not by "wrote N outputs") |
-| format | 0 changed of 1,536 files (`lib`, `test`, `integration_test`; 1,540 with `tool/`) |
+| format | 0 changed of 1,553 files (`lib`, `test`, `integration_test`) |
 | analyze | 47 issues: 45 under `rust_builder/`, 2 in `pubspec.yaml`; none in `lib/`, `test/`, `integration_test/`, `tool/` |
-| `flutter test --exclude-tags golden` | 8,129 passed (about 5 minutes) |
+| `flutter test --exclude-tags golden` | 8,269 passed (about 5 minutes) |
 | Kotlin unit tests | 144 in each flavour |
 | Rust | fmt and clippy clean; 45 passed, 2 ignored |
 | CI | four jobs green: Flutter (analyze, format, test, the 10 golden tests), Rust core, OSV scan, F-Droid flavor purity (with the merged manifest and the Android unit tests) |
@@ -321,7 +340,8 @@ Names a later stage builds on (the full account is in ADR 0009, ADR
 - Scratch folders under `/tmp` are left to the system, which empties
   `/tmp`. Of this work: `/tmp/pitak_d201/` (the trace and the trials
   of D207) and `/tmp/pitak_p3b2/` (stage 9: the trials, the sample
-  PDFs, the source files that were read; the design file names each).
+  PDFs, the source files that were read; under `build/` the logs and
+  the trial scripts of its build; the design file names each).
 
 ### Could be done if the maintainer wants
 
@@ -383,6 +403,7 @@ described (D30).
 | [half] | P1-n3 | The vault archive viewer that no screen led to is deleted | `09e9ad9` | open, in no stage |
 | [half] | P3-M4 | Scrolling the Library list and typing into its search box no longer make the rest of the app read the catalogue again: "catalogue data changed" is a signal of its own (worst case before: with the borrowers vault unlocked, two whole-catalogue reads for each page of 60 rows and for each typed letter) | stage 7: `08995df` | open, in no stage (ADR 0031 names it) |
 | [half] | T2 | An export is no longer handed to the share plugin as bytes, which wrote a second plain copy of it into the app's cache that nobody removed; it is one private file of the app's own, removed when the call returns | stage 8: `cf07ad8` | open, in no stage; a question for the maintainer |
+| [half] | P3-B2 | A PDF catalogue writes Latin letters and digits as real text and draws a picture only for a text that needs shaping: 10,000 books in Latin letters are a PDF about a second after the tap. What a PDF will hold is counted before it is made, and a list that cannot fit is refused at once, with how many books fit; a run out of memory has a sentence of its own (worst case before: the export of a large library fails after most of a minute, or the app closes; no PDF) | stage 9: `9a25349` | open, in no stage (ADR 0033 names it) |
 
 ### Open
 
@@ -392,7 +413,7 @@ the private tracker.
 | | Id | Area | Where it stands |
 |---|---|---|---|
 | [ ] | P4-B1 | the borrowers vault | in no stage |
-| [ ] | P3-B2 | PDF export | stage 9: designed, go-ahead given (D210); not built |
+| [ ] | P3-B2, the rest | PDF export | in no stage (ADR 0033 names it) |
 | [ ] | P3-B3, the rest | restore | in no stage |
 | [ ] | P2-M2 | a package (the catalogue's database) | later, a plan of its own (D62) |
 | [ ] | P2-M3, the rest | a package (secure storage) | later, a plan of its own (D62) |
@@ -402,12 +423,12 @@ the private tracker.
 | [ ] | P4-M5, the rest | the Restore page | a question of its own (D49) |
 | [ ] | P4-M7, the rest | progress of long runs | in no stage |
 | [ ] | P2-H4, P4-H3 | the scanner's package | in no stage (D129); one test file says what the app relies on in the package |
-| [ ] | T2 (the rest) to T9, T11 to T24 | twenty-two items found outside the review | each by its area under "Open items kept in the private tracker" |
+| [ ] | T2 (the rest) to T9, T11 to T28 | twenty-six items found outside the review | each by its area under "Open items kept in the private tracker" |
 | [ ] | 40 rated m, 30 rated n | the rest of the review | by id in the private tracker; none was rated above minor. One that is fixed gets a row of its own above, and these counts go down |
 
-In numbers (2026-11-23, after stage 8): of the review's 97 findings
-16 are ticked and 81 have an open box, seven of them fixed in part;
-of the 24 items found outside the review 2 are closed and 22 are
+In numbers (2026-11-26, after stage 9): of the review's 97 findings
+16 are ticked and 81 have an open box, eight of them fixed in part;
+of the 28 items found outside the review 2 are closed and 26 are
 open, one of them (T2) fixed in part.
 
 ## The plan: the backup and restore rework (BR1 to BR10)
@@ -510,7 +531,7 @@ and no code is written before its go-ahead (D21).
 | 6 | P4-M8 | the scanner | done 2026-11-21. D128 to D146. `a1cc905`, `9034c24`, `09ae13d`, `7803e63`. CI run 44909495333 at `8404526`, green |
 | 7 | P4-M2 with P3-M4, and P4-m13 (D150) | the library list | done 2026-11-22. D148 to D162. `08995df`, `bcb3b63`; pushed (`e81d187..d87b8cb`). CI run 44993054071 at `d87b8cb`, green at the second attempt of one job. P3-M4 in part, its box stays open |
 | 8 | P4-M6 | how a file leaves the app | done 2026-11-23. D163 to D203. `0d54038`, `cf07ad8`, `bfac8d5`, `93d5c91`, `bc1ef0f`; pushed (`67ce4b5..048246b`). CI run 45198289279 at `048246b`, green |
-| 9 | P3-B2 | PDF export | designed 2026-11-24, go-ahead given; NOT built. D206, D208 to D210. Read again in today's code and confirmed; measured on the Mac; today's behaviour looked at on the phone; three trials outside git |
+| 9 | P3-B2 | PDF export | done 2026-11-26. D206, D208 to D217. `9a25349`, `82672f8`; pushed (`a329fdf..82672f8`). CI run 45848395788 at `82672f8`, green. P3-B2 in part, its box stays open |
 | later, each with a plan of its own | P2-M2; the rest of P2-M3 | two packages | not read |
 
 Every "where" of the review reports is of 2026-11-10. Each place is
@@ -520,11 +541,12 @@ finding is confirmed or struck.
 What each stage built is in its ADR, in `CHANGELOG.md`, in its rows
 of "Decisions" and, in plain words, in the bird's-eye view: stage 2
 is ADR 0027, stage 4 ADR 0028, stage 5 ADR 0029, stage 6 ADR 0030,
-stage 7 ADR 0031, stage 8 ADR 0032; stages 1 and 3 have none.
+stage 7 ADR 0031, stage 8 ADR 0032, stage 9 ADR 0033; stages 1 and 3
+have none.
 
 Found outside a stage, and in the private tracker by number only:
 T14 (stage 3), T15 and T16 (stage 5), T17 (stage 6), T18 to T20
-(stage 7), T21 to T24 (stage 8).
+(stage 7), T21 to T24 (stage 8), T25 to T28 (stage 9).
 
 ### Definition of done for this plan
 
@@ -587,12 +609,13 @@ still cite it as "Device runs, step 3".
 
 ## Open items kept in the private tracker
 
-Twenty-two things that are not fixed and are therefore not described
+Twenty-six things that are not fixed and are therefore not described
 here (D30). The private tracker has each with its place in the code.
 None of what is open is in a stage; the last column says what an
 item waits for. T17 and T21 to T23 were put at their stage's review
 stop before they were written down (D145, D201); T24 was put to the
-maintainer during the bookkeeping of stage 8 (D203).
+maintainer during the bookkeeping of stage 8 (D203); T25 to T28 came
+out of stage 9's review stop (D216).
 
 | T | Area | Waits for |
 |---|---|---|
@@ -618,6 +641,10 @@ maintainer during the bookkeeping of stage 8 (D203).
 | T22 | The contrast of switched-off choices on the Export page (seen 2026-11-22 by a test, of the page as it was before stage 8; nobody has decided whether it counts) | a decision first |
 | T23 | A test file of the Export page, for one of the three formats (seen 2026-11-23; a gap of the tests, not of the app by what is known; not traced) | tracing first |
 | T24 | Sharing a file (read 2026-11-22 in a package's code; not traced) | reading first |
+| T25 | Two test files outside the PDF export, their stand-in picture (found 2026-11-24 and 2026-11-26; a gap of the tests, not of the app by what is known; not traced) | tracing first |
+| T26 | The Export page while a run goes on (seen 2026-11-25 on the phone; not traced; near the rest of P4-M7) | a look first |
+| T27 | The footer of a PDF catalogue (seen 2026-11-25 in the PDFs of the phone and the emulator; older than stage 9) | small |
+| T28 | Cancel at the end of a PDF export (read 2026-11-26; not seen on a device) | trying first |
 
 Closed on 2026-11-16 by the stage of D24, and so described: T1
 (Import and Merge use the app's own picker; the app no longer uses
@@ -805,6 +832,9 @@ again are kept; the stories behind them are in git history.
 - A trial never edits `pubspec.yaml`: changed, or newer than
   `.dart_tool/package_config.json`, it makes every `flutter test` ask
   pub.dev. Put the time back with `touch -r` from a `cp -p` copy.
+- With ONE test file the test tool's line for a failed test does not
+  name the file; with several it does. A trial script that looks for
+  the file's name takes the first for "nothing failed".
 - `--timeout` does not stop a test that loops in plain code. An
   assertion on wall-clock time fails under load without a change in
   the code. A test that failed "now and then" is run many times, also
@@ -924,6 +954,9 @@ again are kept; the stories behind them are in git history.
   files.
 - Before writing "not recorded", read the build's logs: a session can
   end between its last log and its last line in this file.
+- A time written into a record comes from `date` or from a file's
+  time, not from memory: on 2026-11-25 a session's own times were up
+  to 30 minutes off.
 
 **Gradle, builds and the Android manifest**
 
@@ -950,6 +983,11 @@ again are kept; the stories behind them are in git history.
   skeleton (the names, none of the behaviour).
 - A release Gradle task fails after a debug build of the `flutter`
   tool: use the debug tasks.
+- Inside a build, the Rust plugin's build tool can run a `pub get` of
+  its own ("Resolving dependencies... Downloading packages..."),
+  `--no-pub` or not: seen on 2026-11-26 in the first debug build
+  after a `flutter clean`. Whether it asks pub.dev cannot be told
+  from the log. Say so when a build after a clean is asked for.
 - `flutter test integration_test/… -d <device>` builds an APK with the
   TEST as its entry point at the path of the app's own debug APK, and
   removes its install when it ends. Build the app's APK again before
@@ -1063,7 +1101,9 @@ again are kept; the stories behind them are in git history.
 - It can be asleep and locked (`dumpsys power` says
   `mWakefulness=Dozing`) and it can drop off USB for some seconds:
   the tap that was sent went through, the reading after it failed.
-  Read the state again; do not send the step again.
+  Read the state again; do not send the step again. A helper that
+  watches a run must not take "no answer from adb" for "the process
+  is gone" (`stage9-p3b2/step9/run_with_shots_b.py` reads again).
 - `adb install -r` can report "failed to install" when the phone
   drops off USB at the end of the transfer although the install went
   through. Read the state first (`dumpsys package`,
@@ -1310,11 +1350,18 @@ and restore rework. ADRs and `CHANGELOG.md` cite these numbers.
 | D203 | 23 | One thing the planning of stage 8 had kept for its review stop was not put there; it is older than the stage and not traced. It becomes an item of its own in the private tracker | in force: T24 ("Sharing a file") |
 | D204 | 24 | Finished documents leave the working tree, and this file is cut down from 6,965 lines. Fourteen plan and review documents of work that is merged and released are removed from git (each in history, unchanged at tag `1.9.7`); the four design files that the private archive holds word for word are removed from the root; the maintainer's five old notes are moved to `~/pitak-old-notes/`; this file keeps ONE handoff, one line for each decision and the traps that still apply | done: the documents `cfef854`; this file's cut is the commit after it; the file of before is `git show fdec596:PLAN.md` |
 | D205 | 24 | The image of Android 7.0 and its virtual device stay on the Mac (4.7 GB). The maintainer left it to the agent's judgement: kept, because T21 was seen only in that image and is not traced, and nothing else here runs the oldest Android the app supports | in force |
-| D206 | 24 | Next comes P3-B2 (PDF export), as stage 9. D61 holds for it: a row under "Stages" by id only, a private design file of its own, decisions from D208. A planning session first (D21) | chosen; designed (D210), not built |
+| D206 | 24 | Next comes P3-B2 (PDF export), as stage 9. D61 holds for it: a row under "Stages" by id only, a private design file of its own, decisions from D208. A planning session first (D21) | done: stage 9, `9a25349`, `82672f8` |
 | D207 | 24 | The change of D201: the test of a backup's largest count (`backup_writer_limits_test.dart`, "as many covers as a backup holds plus the ten other entries") takes each entry once, into memory, instead of twice through `readZipFile`, and checks that every cover comes back as its one byte; its time limit stays. Traced first: 3.5 s alone, 18 to 29 s in a whole run, because making files is slow while the test tool keeps the disk busy, and two thirds of its time was the helper's second pass, 20,000 files of its own | built, test code only; `f6653ae`; pushed; CI run 45379005173 green |
 | D208 | 24 | Stage 9, its first decision point, how far the stage goes: the second of four ways, as proposed, after the look at today's behaviour on the phone and a trial outside git. What the stage builds and what it leaves for a later decision is in the private design file (D30). Not chosen: the smallest way; a larger one in the same stage; another way altogether, as a stage of its own | in force |
 | D209 | 24 | Stage 9, its second decision point, what the app does in the one case the stage cannot take away: the first of three ways, as proposed, in line with what was decided earlier for Cancel. The case and the words are in the private design file (D30) | in force |
-| D210 | 24 | Stage 9, the go-ahead for the design as shown. The build is a session of its own and follows the design file's list of steps; every commit, the push, each build, each install and each start of an emulator keep their own yes; the texts are shown before they are written; nothing is committed before the review stop | given; not built |
+| D210 | 24 | Stage 9, the go-ahead for the design as shown. The build is a session of its own and follows the design file's list of steps; every commit, the push, each build, each install and each start of an emulator keep their own yes; the texts are shown before they are written; nothing is committed before the review stop | given; built, reviewed (D216) and pushed: `9a25349`, `82672f8` |
+| D211 | 24 | Stage 9, at a stop of its build: one statement of the design about existing tests did not hold. The first of three ways, as proposed: the tests keep what they assert and change their data. The statement and the ways are in the private design file (D30) | in force |
+| D212 | 25 | Stage 9, the words of the first of its two new sentences on the Export page: the first of four ways, the draft changed in two small points, as proposed. The sentence and the ways are in the private design file (D30) | in force; built: `9a25349` |
+| D213 | 25 | Stage 9, the words of the second sentence: the first of four ways, the draft with its end as in D212, as proposed. In the private design file (D30) | in force; built: `9a25349` |
+| D214 | 25 | Stage 9, the one number of its design, looked for on a device before it was set (a trial build in the emulator, its one change put back and compared): the first of four numbers, as proposed. The number, what was seen and what it weighs are in the private design file (D30) | in force; built: `9a25349`; seen at work in a release build on the phone (2026-11-25); it stays (D215) |
+| D215 | 25 | Stage 9, after the look on the phone: one figure that stands beside the number of D214 was measured higher on the phone than in the emulator. The first of four ways, as proposed: the number of D214 stays, and the code's comment and the stage's ADR give the phone's figure. The figure and the ways are in the private design file (D30) | in force; the comment `9a25349`, the ADR `82672f8` |
+| D216 | 26 | Stage 9, review stop: the 42 points of its build, the first five one at a time, the rest by the agent's recommendation with three kept for a question, by the maintainer's word. What was built beyond the design stands; one comment at the number of D214 now says which code its phone's figure was of; four things seen or read that are not of the stage become items of the private tracker; the stage is done without the looks that ADR 0033 names as not tried | answered: T25 to T28; the comment `9a25349` |
+| D217 | 26 | Stage 9, after its push and a green CI run: P3-B2 is recorded as fixed in part, not as fixed. The first of two ways, as proposed: what is fixed is in the bird's-eye view, and its box stays open for what ADR 0033 says is not solved | in force |
 
 ## Where the earlier text went
 
