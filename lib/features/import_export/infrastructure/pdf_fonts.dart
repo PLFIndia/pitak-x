@@ -51,6 +51,16 @@ class PdfFontResolver {
     return _fonts.first;
   }
 
+  /// Whether one of the loaded fonts has a glyph for every character of [s]:
+  /// the question [fontFor] asks, without its fallback to the base font.
+  ///
+  /// The renderer writes a text as real text only when this is true. A
+  /// TrueType font draws NOTHING for a character it has no glyph for, and
+  /// says nothing either, so without this check a word could silently go
+  /// missing.
+  /// (Spaces and control characters are not asked for, as in [fontFor].)
+  bool canDraw(String s) => _fonts.any((font) => _supportsAll(font, s));
+
   static bool _supportsAll(PdfFont font, String s) {
     for (final rune in s.runes) {
       // Spaces and control chars are universally fine; skip them so a string

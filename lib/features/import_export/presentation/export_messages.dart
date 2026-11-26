@@ -5,7 +5,8 @@
 /// WHY THIS FILE EXISTS (beginner note): since review finding P4-M6 an
 /// export can be SAVED where the user says, or SHARED as before, and each
 /// way can end in several ways. The wording was approved word for word
-/// (decisions D170 and D176) and the page's tests spell every sentence out.
+/// (decisions D170 and D176; D212 and D213 for a PDF that cannot be made)
+/// and the page's tests spell every sentence out.
 /// Three sentences are the same on the Create backup page and live in
 /// `core/platform/document_save_messages.dart`.
 ///
@@ -79,6 +80,19 @@ String exportStatusMessage(ExportRunResult result) => switch (result.outcome) {
     'Nothing was shared. If no app on that list could take the file, use '
         'Save file.',
   ExportOutcome.shareUnavailable => 'Sharing is unavailable on this device.',
+  // The two sentences of a PDF that cannot be made (ADR 0033; approved
+  // word for word, decisions D212 and D213). Both numbers are books, and
+  // are written as the progress row writes numbers. "Books to include" is
+  // the page's own heading.
+  ExportOutcome.pdfTooLarge =>
+    'This list is too long for one PDF: it has ${result.books} books, and '
+        'about ${result.booksThatFit} fit. Titles and names in scripts such '
+        'as Devanagari or Tamil are drawn as pictures, and a PDF can hold '
+        'only so many. Narrow the list under "Books to include", choose '
+        'fewer columns, or export CSV instead. Nothing was exported.',
+  ExportOutcome.outOfMemory =>
+    'This phone ran out of memory for the PDF. Nothing was exported. '
+        'Narrow the list under "Books to include", or export CSV instead.',
   ExportOutcome.failed => 'Export failed.',
   ExportOutcome.cancelled => 'Export cancelled.',
 };
@@ -114,5 +128,7 @@ ExportEndKind exportEndKind(ExportOutcome outcome) => switch (outcome) {
   ExportOutcome.saveUnconfirmed ||
   ExportOutcome.saveUnavailable ||
   ExportOutcome.shareUnavailable ||
+  ExportOutcome.pdfTooLarge ||
+  ExportOutcome.outOfMemory ||
   ExportOutcome.failed => ExportEndKind.failure,
 };

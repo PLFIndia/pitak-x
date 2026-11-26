@@ -28,6 +28,7 @@ import 'package:pitaka/features/periodicals/domain/value_objects/periodical_freq
 import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
 import 'package:pitaka/features/wishlist/domain/repositories/wishlist_repository.dart';
 
+import '../../support/pdf_tile_fakes.dart';
 import '../../support/raw_catalogue_rows.dart';
 import '../periodicals/application/periodical_fakes.dart';
 import 'bundle_test_fixture.dart';
@@ -105,9 +106,61 @@ class _Books implements CatalogueItemRepository {
 /// Records what the use case asked the PDF renderer to draw (the filtered
 /// rows and the subtitle) instead of rendering, so the filter tests check
 /// the contract without parsing PDF bytes.
+///
+/// It also records the two calls of the port in their order, with what each
+/// was handed, and can be told that only [rowsThatFit] rows fit into a PDF.
 class _RecordingRenderer implements LibraryPdfRenderer {
+  _RecordingRenderer({this.rowsThatFit});
+
+  /// When set, [measure] answers that only this many rows fit.
+  final int? rowsThatFit;
+
   List<CatalogueItem> books = const [];
   String? subtitle;
+
+  /// 'measure' and 'render', in the order they were called.
+  final List<String> calls = [];
+
+  /// What [measure] and [render] were handed (the arguments both take).
+  List<Object?>? measured;
+  List<Object?>? rendered;
+
+  @override
+  Future<PdfSizeEstimate> measure({
+    required String libraryName,
+    required List<CatalogueItem> books,
+    required List<PrintColumn> columns,
+    required String footerAttribution,
+    String? subtitle,
+    PdfFontBundle regularFonts = const [],
+    PdfFontBundle boldFonts = const [],
+    Uint8List? logoBytes,
+    Uint8List? footerIconBytes,
+    RenderCancelToken? cancelToken,
+    int maxCachedTiles = PdfLibraryRenderer.defaultMaxCachedTiles,
+  }) async {
+    calls.add('measure');
+    measured = [
+      libraryName,
+      books,
+      columns,
+      footerAttribution,
+      subtitle,
+      regularFonts,
+      boldFonts,
+      logoBytes,
+      footerIconBytes,
+      cancelToken,
+      maxCachedTiles,
+    ];
+    final fit = rowsThatFit;
+    return PdfSizeEstimate(
+      objectsNeeded: fit == null ? 10 : 11,
+      objectsAllowed: 10,
+      rowsTotal: books.length,
+      rowsThatFit: fit ?? books.length,
+    );
+  }
 
   @override
   Future<Uint8List> render({
@@ -125,6 +178,20 @@ class _RecordingRenderer implements LibraryPdfRenderer {
     RenderCancelToken? cancelToken,
     int maxCachedTiles = PdfLibraryRenderer.defaultMaxCachedTiles,
   }) async {
+    calls.add('render');
+    rendered = [
+      libraryName,
+      books,
+      columns,
+      footerAttribution,
+      subtitle,
+      regularFonts,
+      boldFonts,
+      logoBytes,
+      footerIconBytes,
+      cancelToken,
+      maxCachedTiles,
+    ];
     this.books = books;
     this.subtitle = subtitle;
     return Uint8List.fromList('%PDF-fake'.codeUnits);
@@ -316,24 +383,24 @@ void main() {
       wishlistRepo: _Wishlist(wishlist),
       periodicalRepo: FakePeriodicals(),
     );
+    final raster = CountingPdfRasterizer();
     final result = await useCase(
       // Scope is ignored for PDF (always the library list); pass wishlistOnly
       // to prove the library still renders.
       scope: ExportScope.wishlistOnly,
       format: ExportFormat.pdf,
       now: 999,
-      // The fixture has a Devanagari title; supply Latin + Devanagari faces so
-      // the resolver can encode it (Helvetica alone would crash).
+      // Set up as the app sets it up (ADR 0033): the two Latin faces for
+      // real text, and a rasterizer for what needs shaping. The fixture has
+      // a Devanagari title; without a rasterizer the render would end.
       pdfRegularFonts: [
         await rootBundle.load('assets/fonts/NotoSans-Regular.ttf'),
-        await rootBundle.load('assets/fonts/NotoSansDevanagari-Regular.ttf'),
       ],
-      pdfBoldFonts: [
-        await rootBundle.load('assets/fonts/NotoSans-Bold.ttf'),
-        await rootBundle.load('assets/fonts/NotoSansDevanagari-Bold.ttf'),
-      ],
+      pdfBoldFonts: [await rootBundle.load('assets/fonts/NotoSans-Bold.ttf')],
+      textRasterizer: raster,
     );
     final export = result.getOrElse((f) => fail('pdf export failed: $f'));
+    expect(raster.runs, isNotEmpty, reason: 'the Devanagari title');
     expect(export.suggestedFileName, endsWith('.pdf'));
     expect(export.mimeType, 'application/pdf');
     expect(String.fromCharCodes(export.bytes.take(5)), '%PDF-');
@@ -359,12 +426,9 @@ void main() {
       logoBytes: logo,
       pdfRegularFonts: [
         await rootBundle.load('assets/fonts/NotoSans-Regular.ttf'),
-        await rootBundle.load('assets/fonts/NotoSansDevanagari-Regular.ttf'),
       ],
-      pdfBoldFonts: [
-        await rootBundle.load('assets/fonts/NotoSans-Bold.ttf'),
-        await rootBundle.load('assets/fonts/NotoSansDevanagari-Bold.ttf'),
-      ],
+      pdfBoldFonts: [await rootBundle.load('assets/fonts/NotoSans-Bold.ttf')],
+      textRasterizer: CountingPdfRasterizer(),
     );
     final export = result.getOrElse((f) => fail('pdf+logo export failed: $f'));
     expect(String.fromCharCodes(export.bytes.take(5)), '%PDF-');
@@ -540,6 +604,162 @@ void main() {
         expect(payload.items, hasLength(5));
       },
     );
+  });
+
+  group('PDF: the count before the run (ADR 0033)', () {
+    const five = [
+      CatalogueItem(title: 'Godaan', sourceType: ItemSourceType.donated),
+      CatalogueItem(title: 'Nirmala', sourceType: ItemSourceType.donated),
+      CatalogueItem(title: 'Gaban', sourceType: ItemSourceType.donated),
+      CatalogueItem(title: 'Rangbhoomi', sourceType: ItemSourceType.purchased),
+      CatalogueItem(title: 'Karmabhoomi', sourceType: ItemSourceType.gift),
+    ];
+
+    ExportLibraryUseCase useCaseWith(LibraryPdfRenderer renderer) =>
+        ExportLibraryUseCase(
+          jsonEncoder: const PitakaJsonExporter(),
+          pdfRenderer: renderer,
+          bookRepo: _Books(five),
+          wishlistRepo: _Wishlist(const []),
+          periodicalRepo: FakePeriodicals(),
+        );
+
+    test('the use case asks first, and hands the count and the drawing the '
+        'same things', () async {
+      final renderer = _RecordingRenderer();
+      final token = RenderCancelToken();
+      final logo = Uint8List.fromList([1, 2, 3]);
+      final icon = Uint8List.fromList([4, 5, 6]);
+      final regular = <ByteData>[ByteData(1)];
+      final bold = <ByteData>[ByteData(2)];
+      final result = await useCaseWith(renderer)(
+        scope: ExportScope.libraryOnly,
+        format: ExportFormat.pdf,
+        sourceFilter: ExportSourceFilter.byType(ItemSourceType.donated),
+        libraryName: 'Riverside Library',
+        logoBytes: logo,
+        footerIconBytes: icon,
+        pdfRegularFonts: regular,
+        pdfBoldFonts: bold,
+        cancelToken: token,
+      );
+      expect(result.isRight(), isTrue);
+      expect(renderer.calls, ['measure', 'render']);
+      final measured = renderer.measured!;
+      final rendered = renderer.rendered!;
+      expect(measured, hasLength(rendered.length));
+      for (var i = 0; i < measured.length; i++) {
+        expect(measured[i], same(rendered[i]), reason: 'argument $i');
+      }
+      // And they are the real things, not two equal nothings.
+      expect(measured[0], 'Riverside Library');
+      expect((measured[1]! as List<CatalogueItem>).map((b) => b.title), [
+        'Godaan',
+        'Nirmala',
+        'Gaban',
+      ]);
+      expect(measured[3], kPdfFooterAttribution);
+      expect(measured[4], 'Donated books');
+      expect(measured[5], same(regular));
+      expect(measured[6], same(bold));
+      expect(measured[7], same(logo));
+      expect(measured[8], same(icon));
+      expect(measured[9], same(token));
+    });
+
+    test('a list that does not fit is refused with its two numbers, and '
+        'nothing is drawn', () async {
+      final renderer = _RecordingRenderer(rowsThatFit: 3);
+      final result = await useCaseWith(renderer)(
+        scope: ExportScope.libraryOnly,
+        format: ExportFormat.pdf,
+      );
+      final failure = result.fold((f) => f, (_) => fail('was exported'));
+      expect(failure, isA<PdfTooLargeFailure>());
+      failure as PdfTooLargeFailure;
+      expect(failure.books, 5);
+      expect(failure.booksThatFit, 3);
+      expect(renderer.calls, ['measure']);
+    });
+
+    test('the numbers are those of the FILTERED list', () async {
+      final renderer = _RecordingRenderer(rowsThatFit: 1);
+      final result = await useCaseWith(renderer)(
+        scope: ExportScope.libraryOnly,
+        format: ExportFormat.pdf,
+        sourceFilter: ExportSourceFilter.byType(ItemSourceType.donated),
+      );
+      final failure = result.fold((f) => f, (_) => fail('was exported'));
+      failure as PdfTooLargeFailure;
+      expect(failure.books, 3);
+      expect(failure.booksThatFit, 1);
+      expect(renderer.calls, ['measure']);
+    });
+
+    test('JSON and CSV have no limit and are never counted', () async {
+      final renderer = _RecordingRenderer(rowsThatFit: 0);
+      for (final format in [ExportFormat.json, ExportFormat.csv]) {
+        final result = await useCaseWith(renderer)(
+          scope: ExportScope.libraryOnly,
+          format: format,
+        );
+        expect(result.isRight(), isTrue, reason: format.name);
+      }
+      expect(renderer.calls, isEmpty);
+    });
+
+    test('with the real renderer: a list exactly at the budget is drawn; at '
+        'one object less it is refused and the rasterizer is not asked '
+        'once', () async {
+      // In Devanagari, so that each row needs a picture.
+      const hindi = [
+        CatalogueItem(title: 'गोदान'),
+        CatalogueItem(title: 'निर्मला'),
+        CatalogueItem(title: 'गबन'),
+        CatalogueItem(title: 'रंगभूमि'),
+      ];
+      Future<(Either<Failure, ExportResult>, CountingPdfRasterizer)> export(
+        PdfLibraryRenderer renderer,
+      ) async {
+        final raster = CountingPdfRasterizer();
+        final result =
+            await ExportLibraryUseCase(
+              jsonEncoder: const PitakaJsonExporter(),
+              pdfRenderer: renderer,
+              bookRepo: _Books(hindi),
+              wishlistRepo: _Wishlist(const []),
+              periodicalRepo: FakePeriodicals(),
+            )(
+              scope: ExportScope.libraryOnly,
+              format: ExportFormat.pdf,
+              textRasterizer: raster,
+            );
+        return (result, raster);
+      }
+
+      // What this list needs: read from a file made without a budget in
+      // the way. One page, four pictures, one object of the file.
+      final (free, _) = await export(const PdfLibraryRenderer());
+      final needed = countPdfStreamObjects(
+        free.getOrElse((f) => fail('failed: $f')).bytes,
+      );
+      expect(needed, 1 + 2 * 4 + 1);
+
+      final (atBudget, drawn) = await export(
+        PdfLibraryRenderer(maxStreamObjects: needed),
+      );
+      expect(atBudget.isRight(), isTrue);
+      expect(drawn.runs, hasLength(4));
+
+      final (over, notAsked) = await export(
+        PdfLibraryRenderer(maxStreamObjects: needed - 1),
+      );
+      final failure = over.fold((f) => f, (_) => fail('was exported'));
+      failure as PdfTooLargeFailure;
+      expect(failure.books, 4);
+      expect(failure.booksThatFit, 3);
+      expect(notAsked.runs, isEmpty);
+    });
   });
 
   test('exporter omits null fields but keeps required ones', () {

@@ -28,6 +28,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../support/fake_document_saver.dart';
 import '../../support/fake_export_work_area.dart';
+import '../../support/pdf_ending_renderer.dart';
 import '../periodicals/application/periodical_fakes.dart';
 
 /// Share-sheet fake. Since review finding P4-M6 (decision D172) an export
@@ -102,12 +103,37 @@ class _GatedRenderer implements LibraryPdfRenderer {
   int renderCalls = 0;
   int rowsRendered = 0;
 
+  /// The fonts the last call was handed.
+  PdfFontBundle? regularFonts;
+  PdfFontBundle? boldFonts;
+
   void release() {
     final g = gate;
     gate = Completer<void>();
     parked = Completer<void>();
     g.complete();
   }
+
+  // Every list fits: these tests are about the run, not about the count.
+  @override
+  Future<PdfSizeEstimate> measure({
+    required String libraryName,
+    required List<CatalogueItem> books,
+    required List<PrintColumn> columns,
+    required String footerAttribution,
+    String? subtitle,
+    PdfFontBundle regularFonts = const [],
+    PdfFontBundle boldFonts = const [],
+    Uint8List? logoBytes,
+    Uint8List? footerIconBytes,
+    RenderCancelToken? cancelToken,
+    int maxCachedTiles = PdfLibraryRenderer.defaultMaxCachedTiles,
+  }) async => PdfSizeEstimate(
+    objectsNeeded: 0,
+    objectsAllowed: 1,
+    rowsTotal: books.length,
+    rowsThatFit: books.length,
+  );
 
   @override
   Future<Uint8List> render({
@@ -126,6 +152,8 @@ class _GatedRenderer implements LibraryPdfRenderer {
     int maxCachedTiles = PdfLibraryRenderer.defaultMaxCachedTiles,
   }) async {
     renderCalls += 1;
+    this.regularFonts = regularFonts;
+    this.boldFonts = boldFonts;
     PdfRenderProgress at(int done) => PdfRenderProgress(
       rowsDone: done,
       rowsTotal: rows,
@@ -145,7 +173,7 @@ class _GatedRenderer implements LibraryPdfRenderer {
 }
 
 class _Books implements CatalogueItemRepository {
-  _Books(this._books, {this.failWith});
+  _Books(this._books, {this.failWith, this.throwWith});
 
   // CatalogueItemRepository additions (review 2026-09-03): fakes default to "no
   // match" and a pass-through transaction unless a test overrides them.
@@ -159,12 +187,19 @@ class _Books implements CatalogueItemRepository {
   final List<CatalogueItem> _books;
   final Failure? failWith;
 
+  /// When given, reading the books for an export throws it.
+  final Object? throwWith;
+
   @override
   Future<Either<Failure, List<CatalogueItem>>> getAll() async =>
       failWith != null ? left(failWith!) : right(_books);
   @override
-  Future<Either<Failure, List<CatalogueItem>>> getAllForInterchange() async =>
-      failWith != null ? left(failWith!) : right(_books);
+  Future<Either<Failure, List<CatalogueItem>>> getAllForInterchange() async {
+    final error = throwWith;
+    if (error != null) Error.throwWithStackTrace(error, StackTrace.current);
+    return failWith != null ? left(failWith!) : right(_books);
+  }
+
   @override
   Future<Either<Failure, CatalogueItemPage>> page(
     LibraryQuery query, {
@@ -241,6 +276,9 @@ class _Wishlist implements WishlistRepository {
       right(b.length);
 }
 
+/// No fonts: the renderer then writes with its built-in Latin font.
+const PdfTextFonts _noFonts = (regular: <ByteData>[], bold: <ByteData>[]);
+
 void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
 
@@ -250,6 +288,7 @@ void main() {
     LibraryPdfRenderer pdfRenderer = const PdfLibraryRenderer(),
     FakeExportWorkArea? workArea,
     FakeDocumentSaver? saver,
+    Future<PdfTextFonts> Function()? fontsLoader,
   }) {
     final area = workArea ?? FakeExportWorkArea();
     share.workArea = area;
@@ -270,6 +309,9 @@ void main() {
         // The PDF path needs the footer icon + rasterizer providers; in a
         // pure test neither the asset bundle nor an engine is wanted.
         pdfFooterIconLoaderProvider.overrideWithValue(() async => null),
+        pdfTextFontsLoaderProvider.overrideWithValue(
+          fontsLoader ?? () async => _noFonts,
+        ),
         pdfTextRasterizerProvider.overrideWithValue(_NoRaster()),
         exportLogoReaderProvider.overrideWith(
           (ref) async =>
@@ -342,6 +384,62 @@ void main() {
         );
 
     expect(result.outcome, ExportOutcome.dismissed);
+  });
+
+  group('the fonts for real text (ADR 0033)', () {
+    test('a PDF export loads the two fonts and hands them to the renderer, '
+        'each as its own weight', () async {
+      final regular = ByteData(4)..setUint8(0, 1);
+      final bold = ByteData(4)..setUint8(0, 2);
+      var loads = 0;
+      final renderer = _GatedRenderer(rows: 1);
+      final container = makeContainer(
+        books: _Books([const CatalogueItem(id: 1, title: 'A')]),
+        share: _FakeShare(),
+        pdfRenderer: renderer,
+        fontsLoader: () async {
+          loads += 1;
+          return (regular: [regular], bold: [bold]);
+        },
+      );
+      final run = container
+          .read(exportControllerProvider.notifier)
+          .export(
+            destination: ExportDestination.share,
+            scope: ExportScope.libraryOnly,
+            format: ExportFormat.pdf,
+          );
+      await untilParked(renderer);
+      renderer.release();
+      await run;
+      expect(loads, 1);
+      expect(renderer.regularFonts, hasLength(1));
+      expect(identical(renderer.regularFonts!.single, regular), isTrue);
+      expect(renderer.boldFonts, hasLength(1));
+      expect(identical(renderer.boldFonts!.single, bold), isTrue);
+    });
+
+    for (final format in [ExportFormat.json, ExportFormat.csv]) {
+      test('a ${format.name} export loads no font', () async {
+        var loads = 0;
+        final container = makeContainer(
+          books: _Books([const CatalogueItem(id: 1, title: 'A')]),
+          share: _FakeShare(),
+          fontsLoader: () async {
+            loads += 1;
+            return _noFonts;
+          },
+        );
+        await container
+            .read(exportControllerProvider.notifier)
+            .export(
+              destination: ExportDestination.share,
+              scope: ExportScope.libraryOnly,
+              format: format,
+            );
+        expect(loads, 0);
+      });
+    }
   });
 
   group('N10-e — progress, cancel, one run at a time', () {
@@ -573,6 +671,7 @@ void main() {
           ),
           fileShareServiceProvider.overrideWithValue(share),
           pdfFooterIconLoaderProvider.overrideWithValue(() async => null),
+          pdfTextFontsLoaderProvider.overrideWithValue(() async => _noFonts),
           pdfTextRasterizerProvider.overrideWithValue(_NoRaster()),
           exportLogoReaderProvider.overrideWith(
             (ref) async =>
@@ -594,6 +693,197 @@ void main() {
       );
       expect(result.outcome, ExportOutcome.cancelled);
       expect(share.bytes, isNull);
+    });
+  });
+
+  // Review finding P3-B2 (ADR 0033; decisions D209, D212 and D213): a PDF
+  // that cannot be made ends with a sentence of its own, where it used to
+  // end as "Export failed.". There are two such endings: the list was
+  // counted and does not fit into one PDF, and the safety net under the
+  // count, a run that ran out of memory.
+  group('P3-B2: a PDF that cannot be made says why', () {
+    List<CatalogueItem> sixBooks() =>
+        List.generate(6, (i) => CatalogueItem(id: i + 1, title: 'Book $i'));
+
+    Future<ExportRunResult> run(
+      ProviderContainer container, {
+      ExportFormat format = ExportFormat.pdf,
+      ExportDestination destination = ExportDestination.share,
+    }) => container
+        .read(exportControllerProvider.notifier)
+        .export(
+          destination: destination,
+          scope: ExportScope.libraryOnly,
+          format: format,
+        );
+
+    test('a list too long for one PDF ends as "too large", with how many '
+        'books it has and how many fit; nothing is drawn and no file is '
+        'made', () async {
+      final renderer = EndingPdfRenderer(rowsThatFit: 4);
+      final share = _FakeShare();
+      final area = FakeExportWorkArea();
+      final saver = FakeDocumentSaver();
+      final container = makeContainer(
+        books: _Books(sixBooks()),
+        share: share,
+        workArea: area,
+        saver: saver,
+        pdfRenderer: renderer,
+      );
+
+      for (final destination in ExportDestination.values) {
+        final result = await run(container, destination: destination);
+
+        expect(result.outcome, ExportOutcome.pdfTooLarge);
+        expect(result.books, 6);
+        expect(result.booksThatFit, 4);
+        expect(result.fileName, isEmpty);
+        final state = container.read(exportControllerProvider);
+        expect((state as ExportFinished).result, same(result));
+      }
+      expect(renderer.measureCalls, 2);
+      expect(renderer.renderCalls, 0);
+      expect(area.files, isEmpty);
+      expect(share.path, isNull);
+      expect(saver.paths, isEmpty);
+    });
+
+    test('a list that fits carries no numbers', () async {
+      final container = makeContainer(
+        books: _Books(sixBooks()),
+        share: _FakeShare(),
+        pdfRenderer: EndingPdfRenderer(),
+      );
+
+      final result = await run(container);
+
+      expect(result.outcome, ExportOutcome.shared);
+      expect(result.books, 0);
+      expect(result.booksThatFit, 0);
+    });
+
+    test('another failure of the use case stays "failed"', () async {
+      final container = makeContainer(
+        books: _Books(const [], failWith: const StorageFailure('read failed')),
+        share: _FakeShare(),
+        pdfRenderer: EndingPdfRenderer(rowsThatFit: 4),
+      );
+
+      final result = await run(container);
+
+      expect(result.outcome, ExportOutcome.failed);
+      expect(result.books, 0);
+      expect(result.booksThatFit, 0);
+    });
+
+    // The Dart VM throws `OutOfMemoryError` when its heap cannot give what
+    // is asked for. The renderer passes it on (`pdf_text_tiles.dart`,
+    // `pdf_image_decode.dart`), and nothing between it and the controller
+    // catches it.
+    final outOfMemoryWhile = <String, EndingPdfRenderer Function()>{
+      'the PDF is drawn': () =>
+          EndingPdfRenderer(renderError: const OutOfMemoryError()),
+      'the PDF is counted': () =>
+          EndingPdfRenderer(measureError: const OutOfMemoryError()),
+    };
+    for (final MapEntry(key: moment, value: make) in outOfMemoryWhile.entries) {
+      test('out of memory while $moment ends as "out of memory", and no file '
+          'is made', () async {
+        final share = _FakeShare();
+        final area = FakeExportWorkArea();
+        final container = makeContainer(
+          books: _Books(sixBooks()),
+          share: share,
+          workArea: area,
+          pdfRenderer: make(),
+        );
+
+        final result = await run(container);
+
+        expect(result.outcome, ExportOutcome.outOfMemory);
+        expect(area.files, isEmpty);
+        expect(share.path, isNull);
+        final state = container.read(exportControllerProvider);
+        expect((state as ExportFinished).result, same(result));
+        expect(
+          container.read(exportControllerProvider.notifier).isRunning,
+          isFalse,
+        );
+      });
+    }
+
+    test('out of memory while the books of a PDF are read is "out of '
+        'memory" too', () async {
+      final container = makeContainer(
+        books: _Books(const [], throwWith: const OutOfMemoryError()),
+        share: _FakeShare(),
+        pdfRenderer: EndingPdfRenderer(),
+      );
+
+      expect((await run(container)).outcome, ExportOutcome.outOfMemory);
+    });
+
+    test('any other error of the renderer stays "failed"', () async {
+      for (final error in <Object>[
+        StateError('a mistake in code'),
+        const FormatException('bad bytes'),
+        'a thrown string',
+        const StackOverflowError(),
+      ]) {
+        final container = makeContainer(
+          books: _Books(sixBooks()),
+          share: _FakeShare(),
+          pdfRenderer: EndingPdfRenderer(renderError: error),
+        );
+
+        expect(
+          (await run(container)).outcome,
+          ExportOutcome.failed,
+          reason: '$error',
+        );
+      }
+    });
+
+    // The sentence says "for the PDF": a CSV or a JSON that ran out of
+    // memory keeps the plain sentence.
+    for (final format in [ExportFormat.csv, ExportFormat.json]) {
+      test('out of memory in a ${format.name} export stays "failed"', () async {
+        final container = makeContainer(
+          books: _Books(const [], throwWith: const OutOfMemoryError()),
+          share: _FakeShare(),
+        );
+
+        expect(
+          (await run(container, format: format)).outcome,
+          ExportOutcome.failed,
+        );
+      });
+    }
+
+    // The sentence says "Nothing was exported." Once the file is made and
+    // handed to the saver or to the share sheet, the app cannot know that
+    // any more, whatever is thrown there.
+    test('out of memory AFTER the PDF was handed on stays "failed", and the '
+        'file is given back', () async {
+      final area = FakeExportWorkArea();
+      final container = makeContainer(
+        books: _Books(sixBooks()),
+        share: _FakeShare()..error = const OutOfMemoryError(),
+        workArea: area,
+        saver: FakeDocumentSaver(error: const OutOfMemoryError()),
+        pdfRenderer: EndingPdfRenderer(),
+      );
+
+      for (final destination in ExportDestination.values) {
+        expect(
+          (await run(container, destination: destination)).outcome,
+          ExportOutcome.failed,
+          reason: destination.name,
+        );
+        expect(area.discarded.last, area.lastPath);
+      }
+      expect(area.discarded, hasLength(2));
     });
   });
 

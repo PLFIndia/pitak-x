@@ -37,6 +37,7 @@ import 'dart:typed_data';
 import 'dart:ui' show Rect;
 
 import 'package:pitaka/core/di/providers.dart';
+import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/core/platform/document_saver.dart';
 import 'package:pitaka/core/platform/file_share.dart';
 import 'package:pitaka/features/import_export/application/export_library_use_case.dart';
@@ -95,6 +96,14 @@ enum ExportOutcome {
   /// The platform cannot share files.
   shareUnavailable,
 
+  /// The list is too long for ONE PDF (ADR 0033). It was counted before
+  /// anything was drawn, so the user hears it at once; no file was made.
+  pdfTooLarge,
+
+  /// Making the PDF ran out of memory (ADR 0033): the safety net under the
+  /// count. No file was made.
+  outOfMemory,
+
   /// Building the export failed (read/render error).
   failed,
 
@@ -102,13 +111,19 @@ enum ExportOutcome {
   cancelled,
 }
 
-/// The outcome plus the file name for the success message.
+/// The outcome, plus what its sentence needs: the file name for a success,
+/// the two numbers for a list that is too long for one PDF.
 ///
 /// FOR SHOWING ONLY: after a save, [fileName] is what the PLACE calls the
 /// file, which is foreign text (cleaned by the saver) and can be empty.
 class ExportRunResult {
   /// Creates a run result.
-  const ExportRunResult(this.outcome, {this.fileName = ''});
+  const ExportRunResult(
+    this.outcome, {
+    this.fileName = '',
+    this.books = 0,
+    this.booksThatFit = 0,
+  });
 
   /// What happened.
   final ExportOutcome outcome;
@@ -117,6 +132,14 @@ class ExportRunResult {
   /// [ExportOutcome.shared], the one the place gave when it is
   /// [ExportOutcome.saved]. Empty for every other outcome.
   final String fileName;
+
+  /// How many books the list has, and how many of them one PDF can hold:
+  /// the two numbers of [ExportOutcome.pdfTooLarge]. Zero for every other
+  /// outcome.
+  final int books;
+
+  /// See [books].
+  final int booksThatFit;
 }
 
 /// What the Export screen shows. Sealed so the page's `switch` is exhaustive
@@ -195,8 +218,9 @@ class ExportController extends _$ExportController {
   /// anchors the iPad popover of the share sheet.
   ///
   /// While a run is in flight, another call returns that run's future
-  /// (D4-a). All failures collapse to [ExportOutcome.failed] — no raw error
-  /// text leaves this method (§5).
+  /// (D4-a). A PDF that cannot be made ends as [ExportOutcome.pdfTooLarge]
+  /// or [ExportOutcome.outOfMemory]; all other failures collapse to
+  /// [ExportOutcome.failed] — no raw error text leaves this method (§5).
   Future<ExportRunResult> export({
     required ExportDestination destination,
     required ExportScope scope,
@@ -256,6 +280,8 @@ class ExportController extends _$ExportController {
     required Rect? sharePositionOrigin,
     required RenderCancelToken token,
   }) async {
+    // True once the export's file is with the saver or the share sheet.
+    var handedOn = false;
     try {
       final useCase = await ref.read(exportLibraryUseCaseProvider.future);
       // CSV is library-only; PDF is always the library list.
@@ -288,9 +314,13 @@ class ExportController extends _$ExportController {
           ? await ref.read(pdfFooterIconLoaderProvider)()
           : null;
       final logoBytes = isPdf ? await _loadLibraryLogo() : null;
-      // Shaped-image PDF text: Flutter's engine shapes complex scripts right
-      // (Devanagari half-letters / matra reordering) where `drawString`
-      // cannot. Provided via DI (infrastructure needs a live engine).
+      // Real text (ADR 0033): Latin letters and digits are written with
+      // these two fonts and stay text in the PDF. Only a PDF needs them.
+      final fonts = isPdf ? await ref.read(pdfTextFontsLoaderProvider)() : null;
+      // Text that needs shaping becomes a picture: Flutter's engine shapes
+      // complex scripts right (Devanagari half-letters / matra reordering)
+      // where `drawString` cannot. Provided via DI (infrastructure needs a
+      // live engine).
       final rasterizer = isPdf ? ref.read(pdfTextRasterizerProvider) : null;
 
       // The user may have cancelled while the inputs above were loading.
@@ -305,14 +335,26 @@ class ExportController extends _$ExportController {
         libraryId: libraryId,
         footerIconBytes: footerIcon,
         logoBytes: logoBytes,
+        pdfRegularFonts: fonts?.regular ?? const [],
+        pdfBoldFonts: fonts?.bold ?? const [],
         textRasterizer: rasterizer,
         onProgress: _publishProgress,
         cancelToken: token,
       );
 
       final export = result.toNullable();
-      if (result.isLeft() || export == null) {
-        return const ExportRunResult(ExportOutcome.failed);
+      if (export == null) {
+        // A list too long for one PDF was counted, not drawn, and has a
+        // sentence of its own with its two numbers (ADR 0033).
+        return switch (result.getLeft().toNullable()) {
+          PdfTooLargeFailure(:final books, :final booksThatFit) =>
+            ExportRunResult(
+              ExportOutcome.pdfTooLarge,
+              books: books,
+              booksThatFit: booksThatFit,
+            ),
+          _ => const ExportRunResult(ExportOutcome.failed),
+        };
       }
 
       // The bytes become ONE private file of this run, under the name the
@@ -328,6 +370,7 @@ class ExportController extends _$ExportController {
       // From here on this run owns a plain copy of the library on disk.
       // `finally` gives it back on EVERY way out of this block.
       try {
+        handedOn = true;
         if (!_disposed) {
           state = ExportRunning(
             destination: destination,
@@ -352,7 +395,18 @@ class ExportController extends _$ExportController {
     } on PdfRenderCancelled {
       // The user's own request (D3-a): not a failure, no file.
       return const ExportRunResult(ExportOutcome.cancelled);
-    } on Object {
+    } on Object catch (error) {
+      // The safety net under the count (ADR 0033): the Dart VM could not
+      // give the memory a PDF asked for. Its sentence says "for the PDF"
+      // and "Nothing was exported", so it is said only for a PDF, and only
+      // while the app still knows that no file went anywhere. (Caught as
+      // `Object` and asked by type: the lint `avoid_catching_errors` does
+      // not allow `on OutOfMemoryError`.)
+      if (error is OutOfMemoryError &&
+          format == ExportFormat.pdf &&
+          !handedOn) {
+        return const ExportRunResult(ExportOutcome.outOfMemory);
+      }
       // Fail closed with a typed outcome; never raw error text (§5).
       return const ExportRunResult(ExportOutcome.failed);
     }

@@ -192,8 +192,12 @@ void main() {
       // language field moved to widgets/language_field.dart (640 → 526) so
       // the periodical form could share it.
       'lib/features/library/presentation/pages/add_book_page.dart': 526,
-      'lib/features/import_export/infrastructure/pdf_library_renderer.dart':
-          605,
+      // pdf_library_renderer.dart left this list on 2026-11-25 (ADR 0033).
+      // First the tile source moved to pdf_text_tiles.dart and the decoding
+      // of the logo to pdf_image_decode.dart (604 → 521); then the pass over
+      // the rows moved to pdf_library_pass.dart, where it can also run
+      // without drawing, and the columns' arithmetic to
+      // pdf_column_layout.dart (521 → <500).
       // http_github_api.dart left this list on 2026-11-02 (publish plan
       // S10b, J8): the commit flow moved to http_github_commit.dart
       // (`GitHubCommitWriter`) when it gained pacing and rate-limit

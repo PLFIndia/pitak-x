@@ -23,6 +23,8 @@ void main() {
     ExportOutcome.saveUnconfirmed: ExportEndKind.failure,
     ExportOutcome.saveUnavailable: ExportEndKind.failure,
     ExportOutcome.shareUnavailable: ExportEndKind.failure,
+    ExportOutcome.pdfTooLarge: ExportEndKind.failure,
+    ExportOutcome.outOfMemory: ExportEndKind.failure,
     ExportOutcome.failed: ExportEndKind.failure,
   };
 
@@ -41,5 +43,42 @@ void main() {
 
   test('every kind is used by at least one ending', () {
     expect(kinds.values.toSet(), ExportEndKind.values.toSet());
+  });
+
+  // Review finding P3-B2 (ADR 0033). Both sentences were approved word for
+  // word (decisions D212 and D213) and are spelled out here in full.
+  group('P3-B2: the sentences of a PDF that cannot be made', () {
+    test('a list too long for one PDF: both numbers, in books, written as '
+        'the progress row writes numbers', () {
+      expect(
+        exportStatusMessage(
+          const ExportRunResult(
+            ExportOutcome.pdfTooLarge,
+            books: 6000,
+            booksThatFit: 3900,
+          ),
+        ),
+        'This list is too long for one PDF: it has 6000 books, and about '
+        '3900 fit. Titles and names in scripts such as Devanagari or Tamil '
+        'are drawn as pictures, and a PDF can hold only so many. Narrow the '
+        'list under "Books to include", choose fewer columns, or export CSV '
+        'instead. Nothing was exported.',
+      );
+    });
+
+    test('a run that ran out of memory', () {
+      expect(
+        exportStatusMessage(const ExportRunResult(ExportOutcome.outOfMemory)),
+        'This phone ran out of memory for the PDF. Nothing was exported. '
+        'Narrow the list under "Books to include", or export CSV instead.',
+      );
+    });
+
+    test('every other failure of the making keeps its plain sentence', () {
+      expect(
+        exportStatusMessage(const ExportRunResult(ExportOutcome.failed)),
+        'Export failed.',
+      );
+    });
   });
 }

@@ -19,6 +19,7 @@ import 'dart:typed_data';
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/core/text/file_name_slug.dart';
+import 'package:pitaka/features/import_export/application/export_library_pdf.dart';
 import 'package:pitaka/features/import_export/domain/export_source_filter.dart';
 import 'package:pitaka/features/import_export/domain/library_json_codec.dart';
 import 'package:pitaka/features/import_export/domain/pdf_column.dart';
@@ -117,15 +118,21 @@ class ExportLibraryUseCase {
   ///  - [footerIconBytes]: the Pitak app icon composited into the footer;
   ///  - [logoBytes]: the user's library logo drawn left of the header name
   ///    (decoded PNG/JPEG bytes); null → header shows the name only;
-  ///  - [pdfRegularFonts]/[pdfBoldFonts]: ordered TTF bundles (Latin base first,
-  ///    then Indic fallbacks) for mixed-script text. Empty = Latin-only.
-  ///  - [textRasterizer]: when supplied, PDF text is shaped by Flutter's engine
-  ///    and embedded as images so complex scripts (Devanagari half-letters /
-  ///    matra reordering) render correctly; null keeps the Latin-only path.
+  ///  - [pdfRegularFonts]/[pdfBoldFonts]: the TTF fonts that text which
+  ///    needs no shaping (Latin letters, digits) is written with, as real
+  ///    text. Empty = a built-in font that knows Latin-1 only.
+  ///  - [textRasterizer]: draws every other text with Flutter's engine, as a
+  ///    picture, so complex scripts (Devanagari half-letters / matra
+  ///    reordering) come out right; without it such a text ends the render
+  ///    with an error (ADR 0033).
   ///  - [onProgress] / [cancelToken] (N10-e): forwarded to the PDF renderer.
   ///    A cancelled render throws [PdfRenderCancelled] — deliberately NOT
   ///    mapped to a `Failure` here, because nothing failed: the caller that
   ///    owns the token asked to stop and is the one that catches it (D3-a).
+  ///
+  /// A PDF is COUNTED before it is drawn (ADR 0033, `exportLibraryPdf`): a
+  /// list too long for one PDF comes back as a [PdfTooLargeFailure] with how
+  /// many books it has and how many fit, and nothing is drawn.
   Future<Either<Failure, ExportResult>> call({
     required ExportScope scope,
     required ExportFormat format,
@@ -219,7 +226,9 @@ class ExportLibraryUseCase {
         // regardless of scope.
         final selection = pdfColumns ?? PdfColumn.defaultSelection;
         final columns = resolvePrintColumns(selection, defaultPdfLabels());
-        final bytes = await _pdf.render(
+        // Counted first, drawn only when it fits (ADR 0033).
+        final pdf = await exportLibraryPdf(
+          _pdf,
           libraryName: libraryName.trim().isEmpty ? 'My Library' : libraryName,
           subtitle: sourceFilter.isActive
               ? describeSourceFilter(sourceFilter)
@@ -235,8 +244,8 @@ class ExportLibraryUseCase {
           onProgress: onProgress,
           cancelToken: cancelToken,
         );
-        return right(
-          ExportResult(
+        return pdf.map(
+          (bytes) => ExportResult(
             suggestedFileName:
                 'pitak-${sourceFilterFileTag(sourceFilter)}$ymd.pdf',
             mimeType: 'application/pdf',

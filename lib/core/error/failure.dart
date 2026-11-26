@@ -200,6 +200,27 @@ final class BackupTooLargeFailure extends Failure {
   final int? limit;
 }
 
+/// A list of books is too long for ONE PDF (ADR 0033).
+///
+/// Why this exists (beginner note): a PDF can hold only some thousand pages
+/// and pictures of text while it is built; the limit is a count, and no
+/// phone has more. The export counts first, and a list that does not fit is
+/// refused with this failure BEFORE any work is done, so the user gets a
+/// sentence with numbers at once instead of "Export failed." after a long
+/// wait. Nothing is written: a catalogue with its end missing would look
+/// complete.
+final class PdfTooLargeFailure extends Failure {
+  /// Creates the failure for a list of [books] of which only the first
+  /// [booksThatFit] would fit into one PDF.
+  const PdfTooLargeFailure({required this.books, required this.booksThatFit});
+
+  /// How many books the list has.
+  final int books;
+
+  /// How many of them, counted from the first, one PDF can hold.
+  final int booksThatFit;
+}
+
 /// A cryptographic operation failed (KDF, AEAD, or SQLCipher open).
 final class CryptoFailure extends Failure {
   /// Creates a crypto failure with a short diagnostic [reason].

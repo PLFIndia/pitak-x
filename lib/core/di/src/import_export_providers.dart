@@ -18,6 +18,7 @@ import 'package:pitaka/features/import_export/application/import_library_use_cas
 import 'package:pitaka/features/import_export/application/merge_library_use_case.dart';
 import 'package:pitaka/features/import_export/domain/bundle_cover_files.dart';
 import 'package:pitaka/features/import_export/domain/export_work_area.dart';
+import 'package:pitaka/features/import_export/domain/pdf_render_port.dart';
 import 'package:pitaka/features/import_export/domain/pdf_text_raster.dart';
 import 'package:pitaka/features/import_export/infrastructure/background_merge_planner.dart';
 import 'package:pitaka/features/import_export/infrastructure/file_bundle_cover_store.dart';
@@ -127,6 +128,25 @@ Future<Uint8List?> Function() pdfFooterIconLoader(PdfFooterIconLoaderRef ref) =>
         return null;
       }
     };
+
+/// Loads the two fonts the PDF export writes REAL text with (ADR 0033): the
+/// bundled Latin face, regular and bold. Each is the first entry of its
+/// list, which is ordered base-first.
+///
+/// Only the Latin face is handed over, on purpose. The `pdf` package places
+/// glyph after glyph and cannot shape, so a font of an Indian script would
+/// make the renderer believe it can write that text, and it would come out
+/// wrong. Such text is drawn by the rasterizer below instead.
+///
+/// Behind a provider because `rootBundle` is a side effect the application
+/// layer must not own (as for the footer icon above). A font that cannot be
+/// loaded is NOT skipped: the error ends the export, which says "failed".
+@riverpod
+Future<PdfTextFonts> Function() pdfTextFontsLoader(PdfTextFontsLoaderRef ref) =>
+    () async => (
+      regular: [await rootBundle.load(pdfRegularFontAssets.first)],
+      bold: [await rootBundle.load(pdfBoldFontAssets.first)],
+    );
 
 /// Shaped-text rasterizer for the PDF export (needs a live Flutter engine +
 /// the bundled Noto fonts — infrastructure, injected as the domain

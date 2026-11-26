@@ -169,6 +169,39 @@ final pdfFooterIconLoaderProvider =
 // ignore: unused_element
 typedef PdfFooterIconLoaderRef =
     AutoDisposeProviderRef<Future<Uint8List?> Function()>;
+String _$pdfTextFontsLoaderHash() =>
+    r'c7e53aacee5daff6da71fd727bb9ee40b892c103';
+
+/// Loads the two fonts the PDF export writes REAL text with (ADR 0033): the
+/// bundled Latin face, regular and bold. Each is the first entry of its
+/// list, which is ordered base-first.
+///
+/// Only the Latin face is handed over, on purpose. The `pdf` package places
+/// glyph after glyph and cannot shape, so a font of an Indian script would
+/// make the renderer believe it can write that text, and it would come out
+/// wrong. Such text is drawn by the rasterizer below instead.
+///
+/// Behind a provider because `rootBundle` is a side effect the application
+/// layer must not own (as for the footer icon above). A font that cannot be
+/// loaded is NOT skipped: the error ends the export, which says "failed".
+///
+/// Copied from [pdfTextFontsLoader].
+@ProviderFor(pdfTextFontsLoader)
+final pdfTextFontsLoaderProvider =
+    AutoDisposeProvider<Future<PdfTextFonts> Function()>.internal(
+      pdfTextFontsLoader,
+      name: r'pdfTextFontsLoaderProvider',
+      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+          ? null
+          : _$pdfTextFontsLoaderHash,
+      dependencies: null,
+      allTransitiveDependencies: null,
+    );
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef PdfTextFontsLoaderRef =
+    AutoDisposeProviderRef<Future<PdfTextFonts> Function()>;
 String _$pdfTextRasterizerHash() => r'841e6d7a430d6ead5467b94ed731527f70f5ef44';
 
 /// Shaped-text rasterizer for the PDF export (needs a live Flutter engine +

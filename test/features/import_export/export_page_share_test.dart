@@ -29,6 +29,7 @@ import '../../support/a11y.dart';
 import '../../support/fake_document_saver.dart';
 import '../../support/fake_export_work_area.dart';
 import '../../support/live_regions.dart';
+import '../../support/pdf_ending_renderer.dart';
 import '../periodicals/application/periodical_fakes.dart';
 
 /// Captures what would be handed to the OS share sheet.
@@ -87,6 +88,27 @@ class _FakeShare implements FileShareService {
 class _GatedRenderer implements LibraryPdfRenderer {
   Completer<void> gate = Completer<void>();
   bool sawCancel = false;
+
+  // Every list fits: these tests are about the run, not about the count.
+  @override
+  Future<PdfSizeEstimate> measure({
+    required String libraryName,
+    required List<CatalogueItem> books,
+    required List<PrintColumn> columns,
+    required String footerAttribution,
+    String? subtitle,
+    PdfFontBundle regularFonts = const [],
+    PdfFontBundle boldFonts = const [],
+    Uint8List? logoBytes,
+    Uint8List? footerIconBytes,
+    RenderCancelToken? cancelToken,
+    int maxCachedTiles = PdfLibraryRenderer.defaultMaxCachedTiles,
+  }) async => PdfSizeEstimate(
+    objectsNeeded: 0,
+    objectsAllowed: 1,
+    rowsTotal: books.length,
+    rowsThatFit: books.length,
+  );
 
   @override
   Future<Uint8List> render({
@@ -475,6 +497,9 @@ void main() {
             exportWorkAreaProvider.overrideWith((ref) async => share.workArea),
             documentSaverProvider.overrideWithValue(share.saver),
             pdfFooterIconLoaderProvider.overrideWithValue(() async => null),
+            pdfTextFontsLoaderProvider.overrideWithValue(
+              () async => (regular: <ByteData>[], bold: <ByteData>[]),
+            ),
             pdfTextRasterizerProvider.overrideWithValue(_NoRaster()),
             exportLogoReaderProvider.overrideWith(
               (ref) async =>
@@ -566,6 +591,9 @@ void main() {
             exportWorkAreaProvider.overrideWith((ref) async => share.workArea),
             documentSaverProvider.overrideWithValue(share.saver),
             pdfFooterIconLoaderProvider.overrideWithValue(() async => null),
+            pdfTextFontsLoaderProvider.overrideWithValue(
+              () async => (regular: <ByteData>[], bold: <ByteData>[]),
+            ),
             pdfTextRasterizerProvider.overrideWithValue(_NoRaster()),
             exportLogoReaderProvider.overrideWith(
               (ref) async =>
@@ -1169,6 +1197,156 @@ void main() {
         'Saved as ${FakeDocumentSaver.savedName}.',
       ]);
       handle.dispose();
+    });
+  });
+
+  // Review finding P3-B2 (ADR 0033; decisions D209, D212 and D213): a PDF
+  // that cannot be made used to end as "Export failed.", after a long wait
+  // and with no word on why or on what to do. Now a list that is too long
+  // for one PDF is counted first and gets a sentence with its numbers, and
+  // a run that ran out of memory gets one too. Both sentences were approved
+  // word for word.
+  group('P3-B2: a PDF that cannot be made says why', () {
+    const tooLong =
+        'This list is too long for one PDF: it has 6 books, and about 4 fit. '
+        'Titles and names in scripts such as Devanagari or Tamil are drawn '
+        'as pictures, and a PDF can hold only so many. Narrow the list under '
+        '"Books to include", choose fewer columns, or export CSV instead. '
+        'Nothing was exported.';
+    const outOfMemory =
+        'This phone ran out of memory for the PDF. Nothing was exported. '
+        'Narrow the list under "Books to include", or export CSV instead.';
+
+    /// Shows the page with six books, chooses PDF and taps [button]. The
+    /// run ends at once: [renderer] does not wait.
+    Future<_FakeShare> runPdfExport(
+      WidgetTester tester,
+      EndingPdfRenderer renderer,
+      String button,
+    ) async {
+      tester.view
+        ..physicalSize = const Size(1080, 2400)
+        ..devicePixelRatio = 2.0;
+      addTearDown(tester.view.reset);
+      final share = _FakeShare();
+      final useCase = ExportLibraryUseCase(
+        jsonEncoder: const PitakaJsonExporter(),
+        pdfRenderer: renderer,
+        bookRepo: _Books(
+          List.generate(6, (i) => CatalogueItem(id: i + 1, title: 'Book $i')),
+        ),
+        wishlistRepo: _Wishlist(),
+        periodicalRepo: FakePeriodicals(),
+      );
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            exportLibraryUseCaseProvider.overrideWith((ref) async => useCase),
+            fileShareServiceProvider.overrideWithValue(share),
+            exportWorkAreaProvider.overrideWith((ref) async => share.workArea),
+            documentSaverProvider.overrideWithValue(share.saver),
+            pdfFooterIconLoaderProvider.overrideWithValue(() async => null),
+            pdfTextFontsLoaderProvider.overrideWithValue(
+              () async => (regular: <ByteData>[], bold: <ByteData>[]),
+            ),
+            pdfTextRasterizerProvider.overrideWithValue(_NoRaster()),
+            exportLogoReaderProvider.overrideWith(
+              (ref) async =>
+                  (_) async => null,
+            ),
+          ],
+          child: const MaterialApp(home: ExportPage()),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('PDF'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(button));
+      await tester.pumpAndSettle();
+      return share;
+    }
+
+    final endings = <String, (EndingPdfRenderer Function(), String)>{
+      'a list of 6 books of which 4 fit': (
+        () => EndingPdfRenderer(rowsThatFit: 4),
+        tooLong,
+      ),
+      'a run that ran out of memory': (
+        () => EndingPdfRenderer(renderError: const OutOfMemoryError()),
+        outOfMemory,
+      ),
+    };
+    for (final MapEntry(key: title, value: (make, sentence))
+        in endings.entries) {
+      for (final button in ['Save file', 'Share file']) {
+        testWidgets('$title, after "$button": its sentence, as a failure, '
+            'read out; no file anywhere; the page ready again', (tester) async {
+          final handle = tester.ensureSemantics();
+          final renderer = make();
+          final share = await runPdfExport(tester, renderer, button);
+
+          // The sentence, and nothing of the plain one.
+          expect(find.text(sentence), findsOneWidget);
+          expect(find.text('Export failed.'), findsNothing);
+          // Drawn as a failure (D193), and read out when it appears (D190).
+          final theme = Theme.of(tester.element(find.text(sentence)));
+          expect(
+            theme.colorScheme.error,
+            isNot(theme.textTheme.bodyMedium?.color),
+          );
+          expect(
+            tester.widget<Text>(find.text(sentence)).style?.color,
+            theme.colorScheme.error,
+          );
+          expect(liveRegionLabels(tester), [sentence]);
+          // What the sentence sends the user to is on this page, under
+          // these very words.
+          expect(find.text('Books to include'), findsOneWidget);
+          expect(find.text('PDF columns'), findsOneWidget);
+          expect(find.text('CSV'), findsOneWidget);
+          // No file was made, and nobody was handed one.
+          expect(share.workArea.files, isEmpty);
+          expect(share.bytes, isNull);
+          expect(share.saver.paths, isEmpty);
+          // The run is over: no bar, no Cancel, both buttons live again.
+          expect(find.byKey(const Key('export-progress')), findsNothing);
+          expect(find.byKey(const Key('export-cancel')), findsNothing);
+          expect(
+            tester
+                .widget<FilledButton>(
+                  find.widgetWithText(FilledButton, 'Save file'),
+                )
+                .enabled,
+            isTrue,
+          );
+          expect(
+            tester
+                .widget<OutlinedButton>(
+                  find.widgetWithText(OutlinedButton, 'Share file'),
+                )
+                .enabled,
+            isTrue,
+          );
+          handle.dispose();
+        });
+      }
+    }
+
+    testWidgets('a list that is too long is not drawn at all', (tester) async {
+      final renderer = EndingPdfRenderer(rowsThatFit: 4);
+      await runPdfExport(tester, renderer, 'Save file');
+
+      expect(renderer.measureCalls, 1);
+      expect(renderer.renderCalls, 0);
+    });
+
+    testWidgets('a PDF that can be made is made as before', (tester) async {
+      final renderer = EndingPdfRenderer();
+      final share = await runPdfExport(tester, renderer, 'Share file');
+
+      expect(renderer.renderCalls, 1);
+      expect(find.textContaining('Shared'), findsOneWidget);
+      expect(share.fileName, endsWith('.pdf'));
     });
   });
 }
