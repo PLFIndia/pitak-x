@@ -46,7 +46,7 @@ was taken out.
   | ONE handoff, the bird's-eye view, the two plans' stages, the traps, the decisions in one line each | this file |
   | The findings of the four review passes with their boxes, and the items T1 to T28, open and closed | private: `review-tracker.md` |
   | Every design ("in detail"), result, safety check, decision in full and older handoff, word for word | private: `plan-archive-2026-11-13.md` |
-  | The design of a stage that is being built | private: a file of its own (`<stage>-in-detail.md`) with a line in `.git/info/exclude`, until its fix is pushed; then it goes into the archive and the file is removed. Today there are two such files: `br10-in-detail.md`, the working file of the device runs, and `p3b2-in-detail.md`, the design file of stage 9 |
+  | The design of a stage that is being built | private: a file of its own (`<stage>-in-detail.md`) with a line in `.git/info/exclude`, until its fix is pushed; then it goes into the archive and the file is removed. Today there is one such file: `br10-in-detail.md`, the working file of the device runs |
   | The four review reports, their prompts and the summary | private: `codeReviewReport1.md` to `4.md`, `codeReviewPrompt1.md` to `4.md`, `codeReviewSummary.md` |
   | What each stage built | its ADR (`docs/adr/`), `CHANGELOG.md`, the commits |
   | This file as it was before the cut of 2026-11-24 | git: `git show fdec596:PLAN.md` |
@@ -59,8 +59,8 @@ was taken out.
 
 For an agent or a person who starts with no memory of the earlier
 sessions. Written on 2026-11-26, in the evening, at the end of the
-session that held the review stop of stage 9, committed the stage and
-pushed it.
+session that held the review stop of stage 9, committed the stage,
+pushed it and did its bookkeeping.
 Everything here was true when it was written; check the repository
 before relying on it.
 
@@ -79,10 +79,10 @@ runs, the open items and questions, the traps, the decisions.
   stop on 2026-11-26 (D216), was committed (`9a25349`, `82672f8`) and
   pushed; CI run 45848395788 green in every job at its first attempt.
   P3-B2 is fixed IN PART (D217): the bird's-eye view says which part,
-  and ADR 0033 says what is not solved. Left of the stage: the rest
-  of its bookkeeping ("The next session", point 2). Left in the
-  table: "later, each with a plan of its own" (two findings about
-  packages).
+  and ADR 0033 says what is not solved. The stage's bookkeeping is
+  done: its design file is in the private archive, word for word.
+  Left in the table: "later, each with a plan of its own" (two
+  findings about packages).
 - **The test that timed out now and then** (D201) is traced and
   changed (D207): `f6653ae`, test code only, pushed; CI run
   45379005173 green. In a whole run it took 18 to 29 of the 30
@@ -102,22 +102,15 @@ runs, the open items and questions, the traps, the decisions.
 In this order:
 
 1. Confirms the state: `git status -sb` (nothing but the nine review
-   files, untracked), `git log` (the head is this file's commit, on
-   top of `82672f8`; every commit pushed), `git remote -v`, and the
-   CI run of the head. Runs the Dart checks once, the tests some
-   minutes after analyze.
+   files, untracked), `git log` (the head is this file's latest
+   commit, on top of `24de96b`; every commit pushed),
+   `git remote -v`, and the CI run of the head. Runs the Dart checks
+   once, the tests some minutes after analyze.
    The numbers to compare with: `build_runner` changes nothing,
    format 0 changed of 1,553 files, analyze 47, 8,269 Dart tests (run
    last on 2026-11-26, at 20:43); Kotlin 144 in each flavour
    (offline, 2026-11-26); Rust 45 passed and 2 ignored (CI).
-2. **The rest of stage 9's bookkeeping**, each step with its own
-   yes: the design file `p3b2-in-detail.md` goes into the private
-   archive, word for word, with an entry for each of D206 and D208 to
-   D217; then the file and its line in `.git/info/exclude` are
-   removed. The rows of D208 to D215 under "Decisions" name their
-   matter by number only; the fix is pushed, so each may now say it
-   in plain words (the text shown first).
-3. Then asks the maintainer what comes next. What is open is in the
+2. Then asks the maintainer what comes next. What is open is in the
    bird's-eye view; of the table of stages only "later, each with a
    plan of its own" is left; "Questions the maintainer has not
    answered yet" has the rest.
@@ -146,8 +139,8 @@ In this order:
   passes it untouched.
 - Private files, in the root of the working tree and on this Mac
   only: `review-tracker.md`, `plan-archive-2026-11-13.md`,
-  `br10-in-detail.md` and `p3b2-in-detail.md` (lines in
-  `.git/info/exclude` keep them out of `git status` and `git add`),
+  and `br10-in-detail.md` (lines in `.git/info/exclude` keep them
+  out of `git status` and `git add`),
   and the nine review files
   (`codeReviewPrompt1.md` to `4.md`, `codeReviewReport1.md` to
   `4.md`, `codeReviewSummary.md`), which `git status` shows as
@@ -341,7 +334,8 @@ Names a later stage builds on (the full account is in ADR 0009, ADR
   `/tmp`. Of this work: `/tmp/pitak_d201/` (the trace and the trials
   of D207) and `/tmp/pitak_p3b2/` (stage 9: the trials, the sample
   PDFs, the source files that were read; under `build/` the logs and
-  the trial scripts of its build; the design file names each).
+  the trial scripts of its build; the design file's copy in the
+  archive names each).
 
 ### Could be done if the maintainer wants
 
@@ -1352,14 +1346,14 @@ and restore rework. ADRs and `CHANGELOG.md` cite these numbers.
 | D205 | 24 | The image of Android 7.0 and its virtual device stay on the Mac (4.7 GB). The maintainer left it to the agent's judgement: kept, because T21 was seen only in that image and is not traced, and nothing else here runs the oldest Android the app supports | in force |
 | D206 | 24 | Next comes P3-B2 (PDF export), as stage 9. D61 holds for it: a row under "Stages" by id only, a private design file of its own, decisions from D208. A planning session first (D21) | done: stage 9, `9a25349`, `82672f8` |
 | D207 | 24 | The change of D201: the test of a backup's largest count (`backup_writer_limits_test.dart`, "as many covers as a backup holds plus the ten other entries") takes each entry once, into memory, instead of twice through `readZipFile`, and checks that every cover comes back as its one byte; its time limit stays. Traced first: 3.5 s alone, 18 to 29 s in a whole run, because making files is slow while the test tool keeps the disk busy, and two thirds of its time was the helper's second pass, 20,000 files of its own | built, test code only; `f6653ae`; pushed; CI run 45379005173 green |
-| D208 | 24 | Stage 9, its first decision point, how far the stage goes: the second of four ways, as proposed, after the look at today's behaviour on the phone and a trial outside git. What the stage builds and what it leaves for a later decision is in the private design file (D30). Not chosen: the smallest way; a larger one in the same stage; another way altogether, as a stage of its own | in force |
-| D209 | 24 | Stage 9, its second decision point, what the app does in the one case the stage cannot take away: the first of three ways, as proposed, in line with what was decided earlier for Cancel. The case and the words are in the private design file (D30) | in force |
+| D208 | 24 | Stage 9, its first decision point, how far the stage goes: the second of four ways, as proposed. A text that needs no shaping (Latin letters, digits) is written as real text with the bundled Latin fonts and only a text that needs shaping is a picture; what a PDF needs is counted before the run; a run out of memory gets a sentence of its own. After the look at today's behaviour on the phone (10,000 made-up books: "Export failed." after 48 s at about 2,020 rows, the app open) and a trial outside git. Not chosen: only a limit with a sentence; cheaper pictures in the same stage (one object for a picture instead of two); Android's own PDF writer, as a stage of its own | built: `9a25349` |
+| D209 | 24 | Stage 9, its second decision point, what the app does with a list that does not fit into one PDF: it is refused before the run, in a sentence that says how many of its books fit and what to do; in line with what was decided earlier for Cancel (no catalogue with its end missing). Not chosen: a PDF of the books that fit; several PDFs | built: `9a25349` |
 | D210 | 24 | Stage 9, the go-ahead for the design as shown. The build is a session of its own and follows the design file's list of steps; every commit, the push, each build, each install and each start of an emulator keep their own yes; the texts are shown before they are written; nothing is committed before the review stop | given; built, reviewed (D216) and pushed: `9a25349`, `82672f8` |
-| D211 | 24 | Stage 9, at a stop of its build: one statement of the design about existing tests did not hold. The first of three ways, as proposed: the tests keep what they assert and change their data. The statement and the ways are in the private design file (D30) | in force |
-| D212 | 25 | Stage 9, the words of the first of its two new sentences on the Export page: the first of four ways, the draft changed in two small points, as proposed. The sentence and the ways are in the private design file (D30) | in force; built: `9a25349` |
-| D213 | 25 | Stage 9, the words of the second sentence: the first of four ways, the draft with its end as in D212, as proposed. In the private design file (D30) | in force; built: `9a25349` |
-| D214 | 25 | Stage 9, the one number of its design, looked for on a device before it was set (a trial build in the emulator, its one change put back and compared): the first of four numbers, as proposed. The number, what was seen and what it weighs are in the private design file (D30) | in force; built: `9a25349`; seen at work in a release build on the phone (2026-11-25); it stays (D215) |
-| D215 | 25 | Stage 9, after the look on the phone: one figure that stands beside the number of D214 was measured higher on the phone than in the emulator. The first of four ways, as proposed: the number of D214 stays, and the code's comment and the stage's ADR give the phone's figure. The figure and the ways are in the private design file (D30) | in force; the comment `9a25349`, the ADR `82672f8` |
+| D211 | 24 | Stage 9, at a stop of its build: the design said the renderer's existing tests stay green as they are, and that did not hold. Their stand-in picture did not decode, their rows were Latin, which is no longer drawn as pictures, and three tests fed a font of an Indian script and no rasterizer. The first of three ways, as proposed: the tests keep what they assert and change their data (rows in Devanagari, a stand-in picture that decodes, one assertion that pictures reach the file). Not chosen: a caller that feeds a script font and no rasterizer still gets unshaped text; planning the tests anew | built: `9a25349` |
+| D212 | 25 | Stage 9, the words of the sentence for a list too long for one PDF: the design's draft with plain numbers, as the page's progress row writes them, and ending "or export CSV instead" in place of "which has no limit", which nobody had measured. The sentence: "This list is too long for one PDF: it has 6000 books, and about 3900 fit. Titles and names in scripts such as Devanagari or Tamil are drawn as pictures, and a PDF can hold only so many. Narrow the list under "Books to include", choose fewer columns, or export CSV instead. Nothing was exported." Not chosen: the draft word for word; separators in the numbers; other words | built: `9a25349` |
+| D213 | 25 | Stage 9, the words of the sentence for a run out of memory: "This phone ran out of memory for the PDF. Nothing was exported. Narrow the list under "Books to include", or export CSV instead." Not chosen: with "choose fewer columns"; "This device"; other words | built: `9a25349` |
+| D214 | 25 | Stage 9, the budget: one PDF may have 7,000 stream objects. Looked for on a device before it was set: a trial build in the emulator with the budget out of the way (its one change put back and compared) saved a PDF of 7,661 objects and ran out above 7,758, with the "out of memory" sentence and the app open. 7,000 lets through about 1,740 books of a library with title and author in Devanagari. Not chosen: 6,000; 4,096; another number | built: `9a25349`; seen at work in a release build on the phone (2026-11-25); it stays (D215) |
+| D215 | 25 | Stage 9, after the look on the phone: the memory a document takes at its most was measured higher on the phone (about 85 KiB an object, about 580 MB at the budget) than in the emulator (about 63 KiB). The first of four ways, as proposed: the budget stays at 7,000, because what stops a PDF is the count of places and nothing seen spoke against it, and the code's comment and ADR 0033 give the phone's figure. Not chosen: 6,000; one more run on the phone first; left for the review stop | the comment `9a25349`, the ADR `82672f8` |
 | D216 | 26 | Stage 9, review stop: the 42 points of its build, the first five one at a time, the rest by the agent's recommendation with three kept for a question, by the maintainer's word. What was built beyond the design stands; one comment at the number of D214 now says which code its phone's figure was of; four things seen or read that are not of the stage become items of the private tracker; the stage is done without the looks that ADR 0033 names as not tried | answered: T25 to T28; the comment `9a25349` |
 | D217 | 26 | Stage 9, after its push and a green CI run: P3-B2 is recorded as fixed in part, not as fixed. The first of two ways, as proposed: what is fixed is in the bird's-eye view, and its box stays open for what ADR 0033 says is not solved | in force |
 
