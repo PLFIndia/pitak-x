@@ -44,7 +44,7 @@ was taken out.
   | What | Where |
   |---|---|
   | ONE handoff, the bird's-eye view, the two plans' stages, the traps, the decisions in one line each | this file |
-  | The findings of the four review passes with their boxes, and the items T1 to T29, open and closed | private: `review-tracker.md` |
+  | The findings of the four review passes with their boxes, and the items T1 to T31, open and closed | private: `review-tracker.md` |
   | Every design ("in detail"), result, safety check, decision in full and older handoff, word for word | private: `plan-archive-2026-11-13.md` |
   | The design of a stage that is being built | private: a file of its own (`<stage>-in-detail.md`) with a line in `.git/info/exclude`, until its fix is pushed; then it goes into the archive and the file is removed. Today there are two such files: `br10-in-detail.md`, the working file of the device runs, and `p4b1-in-detail.md`, the design file of stage 10 |
   | The four review reports, their prompts and the summary | private: `codeReviewReport1.md` to `4.md`, `codeReviewPrompt1.md` to `4.md`, `codeReviewSummary.md` |
@@ -58,8 +58,8 @@ was taken out.
 ## Handoff
 
 For an agent or a person who starts with no memory of the earlier
-sessions. Written on 2026-11-27, about 16:45, at the stop of the
-third session of stage 10's planning.
+sessions. Written on 2026-11-27, about 22:15, at the stop of the
+fourth session of stage 10's planning.
 Everything here was true when it was written; check the repository
 before relying on it.
 
@@ -80,19 +80,24 @@ runs, the open items and questions, the traps, the decisions.
   plan of its own" (two findings about packages).
 - **Stage 10 (P4-B1, the borrowers vault) is being PLANNED** (D218)
   and is NOT designed: no file under `lib/` or `test/` is changed
-  for it, and it has no go-ahead. Done on 2026-11-27, in three
+  for it, and it has no go-ahead. Done on 2026-11-27, in four
   sessions: the finding read again in today's code and confirmed;
-  today's behaviour looked at on the phone (D219); nine decision
-  points answered (D220 to D223, D225 to D229), one of which takes
-  the review's P1-m4 into the stage; the vault's code, its tests,
-  the libraries under it and the documents the stage touches read
-  for the design, one part of it with the network (how two other
-  apps word such a thing; the design credits them). Every decision
-  point that the reading opened is answered. All of it is in its
-  private file, `p4b1-in-detail.md` (sections 1 to 35). Two things
-  that are not of the stage are items of the private tracker: T29
-  (the Restore page, seen in the look; D224) and T30 (an idea read
-  in another app; D230).
+  today's behaviour looked at on the phone (D219); ten decision
+  points answered (D220 to D223, D225 to D229, D234), one of which
+  takes the review's P1-m4 into the stage; the vault's code, its
+  tests, the libraries under it and the documents the stage touches
+  read for the design, one part of it with the network (how two
+  other apps word such a thing; the design credits them); and two
+  looks in emulator images, of Android 7.0 and of Android 16, at
+  how the app asks for the phone's lock. The reading for the design
+  is done but for two files that its private file names, and every
+  decision point that the reading and the looks opened is answered.
+  All of it is in its private file, `p4b1-in-detail.md` (sections 1
+  to 50). Three things that are not of the stage are items of the
+  private tracker: T29 (the Restore page, seen in the look on the
+  phone; D224), T30 (an idea read in another app; D230) and T31
+  (seen in the look in the image of Android 7.0; D231, D233), which
+  comes after stage 10 with a plan of its own (D232).
 - **The test that timed out now and then** (D201) is traced and
   changed (D207): `f6653ae`, test code only, pushed; CI run
   45379005173 green. In a whole run it took 18 to 29 of the 30
@@ -113,18 +118,18 @@ In this order:
 
 1. Confirms the state: `git status -sb` (nothing but the nine review
    files, untracked), `git log` (the head is this file's latest
-   commit, on top of `2819aed`; every commit pushed),
+   commit, on top of `d084995`; every commit pushed),
    `git remote -v`, and the CI run of the head. Runs the Dart checks
    once, the tests some minutes after analyze.
    The numbers to compare with: `build_runner` changes nothing,
    format 0 changed of 1,553 files, analyze 47, 8,269 Dart tests (run
-   last on 2026-11-27, at 15:38); Kotlin 144 in each flavour
+   last on 2026-11-27, at 15:38; the fourth session did not run the
+   checks, and nothing under `lib/` or `test/` has changed since);
+   Kotlin 144 in each flavour
    (offline, 2026-11-26); Rust 45 passed and 2 ignored (CI).
 2. **Stage 10 (P4-B1), the planning goes on** (D21: no code before
    the go-ahead). Reads `p4b1-in-detail.md` in full first; its
-   section 35 says what is left, in its order: one look in the image
-   of Android 7.0, which the design waits for (an emulator run: ask
-   first); the rest of the reading for the design; the design, with
+   section 50 says what is left, in its order: the design, with
    every text of the app and of the documents as a draft, and the
    order of the build; shows it and asks for the go-ahead. The build
    is a session of its own.
@@ -137,8 +142,9 @@ In this order:
   not committed, but for the nine review files. In
   `build/app/outputs/flutter-apk/` lie the release APK of 2026-11-25,
   15:48 (the code of `9a25349` but for comments that were changed
-  after it was built) and a debug APK of 2026-11-26, 20:47 (made for
-  the offline Kotlin tests; it is on no device).
+  after it was built) and a debug APK of 2026-11-26, 20:47 (the code
+  of `9a25349`; made for the offline Kotlin tests and used for the
+  two emulator looks of 2026-11-27; it is on no device).
 - Draft pull request #30, "Backup and restore rework, stages BR1 to
   BR6" (its title is out of date). CI runs on a pull request and on a
   push to `main` only; a push to `reviewFixes` runs it because of
@@ -198,7 +204,13 @@ In this order:
   of memory), started `-read-only`; and the image of Android 7.0 with
   the virtual device `pitak_old_api24_test`, which stay (D205). The
   first was used for stage 9 on 2026-11-25 with debug builds and a
-  made-up library, and stopped; it kept nothing.
+  made-up library, and stopped; it kept nothing. Both were used for
+  stage 10 on 2026-11-27, started `-read-only`, with the debug build
+  of 2026-11-26 and made-up data, and stopped; neither kept anything
+  of it (the files of their disks keep their older times). The
+  first holds an F-Droid install only; the second holds the debug
+  build of 2026-11-23 with a made-up library of 12 books (stage 8's
+  look, which was not started `-read-only`).
 - `adb` is not on the PATH: `~/Library/Android/sdk/platform-tools/adb`.
   The helpers that drive the phone and the emulator, and the made-up
   backups, are in `~/pitak-device-runs/`.
@@ -207,6 +219,11 @@ In this order:
 
 - One question at a time: a few plain sentences of background, the
   question, lettered options, a recommendation.
+- Plain words first, and nothing assumed about the app's users, the
+  stores, devices or how a release is made: what the repository's
+  documents say is read, and what they do not say the maintainer is
+  asked, one question at a time, with "I don't know" allowed
+  (2026-11-27).
 - A stop after each stage. A commit only after a yes to the exact
   command; the same for a push, a package fetch, a deletion, a Gradle
   run with the network, a build put onto the phone and an emulator
@@ -359,8 +376,15 @@ Names a later stage builds on (the full account is in ADR 0009, ADR
   they were before the second and the third session's writes, and
   beside them the logs of those sessions' baselines
   (`baseline-*.log`, `baseline3-*.log`); under `biometric-1.1.0/` a
-  library of the build, unpacked, and one class of it printed; under
-  `wording/` the files that were read from the network).
+  library of the build, unpacked, and two classes of it printed;
+  under `wording/` the files that were read from the network; under
+  `before-4/` and `before-4b/` the files as they were before the
+  fourth session's writes; under `core-1.13.1/` to `core-1.18.0/`
+  one class of four versions of a second library; under
+  `look-api24/` and `look-api36/` the working files of the two
+  emulator looks, whose records are in
+  `~/pitak-device-runs/stage10-p4b1/`; under `plan-draft/` the
+  draft of this file's text of the fourth session).
 
 ### Could be done if the maintainer wants
 
@@ -442,12 +466,12 @@ the private tracker.
 | [ ] | P4-M5, the rest | the Restore page | a question of its own (D49) |
 | [ ] | P4-M7, the rest | progress of long runs | in no stage |
 | [ ] | P2-H4, P4-H3 | the scanner's package | in no stage (D129); one test file says what the app relies on in the package |
-| [ ] | T2 (the rest) to T9, T11 to T30 | twenty-eight items found outside the review | each by its area under "Open items kept in the private tracker" |
+| [ ] | T2 (the rest) to T9, T11 to T31 | twenty-nine items found outside the review | each by its area under "Open items kept in the private tracker" |
 | [ ] | 40 rated m, 30 rated n | the rest of the review | by id in the private tracker; none was rated above minor. One that is fixed gets a row of its own above, and these counts go down |
 
 In numbers (2026-11-27): of the review's 97 findings
 16 are ticked and 81 have an open box, eight of them fixed in part;
-of the 30 items found outside the review 2 are closed and 28 are
+of the 31 items found outside the review 2 are closed and 29 are
 open, one of them (T2) fixed in part.
 
 ## The plan: the backup and restore rework (BR1 to BR10)
@@ -551,7 +575,7 @@ and no code is written before its go-ahead (D21).
 | 7 | P4-M2 with P3-M4, and P4-m13 (D150) | the library list | done 2026-11-22. D148 to D162. `08995df`, `bcb3b63`; pushed (`e81d187..d87b8cb`). CI run 44993054071 at `d87b8cb`, green at the second attempt of one job. P3-M4 in part, its box stays open |
 | 8 | P4-M6 | how a file leaves the app | done 2026-11-23. D163 to D203. `0d54038`, `cf07ad8`, `bfac8d5`, `93d5c91`, `bc1ef0f`; pushed (`67ce4b5..048246b`). CI run 45198289279 at `048246b`, green |
 | 9 | P3-B2 | PDF export | done 2026-11-26. D206, D208 to D217. `9a25349`, `82672f8`; pushed (`a329fdf..82672f8`). CI run 45848395788 at `82672f8`, green. P3-B2 in part, its box stays open |
-| 10 | P4-B1; with it P1-m4 and its hand-over P1-H14 (D221) | the borrowers vault | being planned since 2026-11-27. D218 to D230. Not designed, not built |
+| 10 | P4-B1; with it P1-m4 and its hand-over P1-H14 (D221) | the borrowers vault | being planned since 2026-11-27. D218 to D234. Not designed, not built |
 | later, each with a plan of its own | P2-M2; the rest of P2-M3 | two packages | not read |
 
 Every "where" of the review reports is of 2026-11-10. Each place is
@@ -566,7 +590,7 @@ have none.
 
 Found outside a stage, and in the private tracker by number only:
 T14 (stage 3), T15 and T16 (stage 5), T17 (stage 6), T18 to T20
-(stage 7), T21 to T24 (stage 8), T25 to T28 (stage 9), T29 and T30
+(stage 7), T21 to T24 (stage 8), T25 to T28 (stage 9), T29 to T31
 (stage 10).
 
 ### Definition of done for this plan
@@ -630,15 +654,17 @@ still cite it as "Device runs, step 3".
 
 ## Open items kept in the private tracker
 
-Twenty-eight things that are not fixed and are therefore not described
+Twenty-nine things that are not fixed and are therefore not described
 here (D30). The private tracker has each with its place in the code.
 None of what is open is in a stage; the last column says what an
 item waits for. T17 and T21 to T23 were put at their stage's review
 stop before they were written down (D145, D201); T24 was put to the
 maintainer during the bookkeeping of stage 8 (D203); T25 to T28 came
 out of stage 9's review stop (D216); T29 was seen in the look of
-stage 10 (D224), and T30 was read in another app while stage 10 was
-planned (D230): it is an idea, not a fault.
+stage 10 (D224); T30 was read in another app while stage 10 was
+planned (D230): it is an idea, not a fault; T31 was seen in a look
+of stage 10 in an emulator image (D231) and comes after the stage
+(D232).
 
 | T | Area | Waits for |
 |---|---|---|
@@ -670,6 +696,7 @@ planned (D230): it is an idea, not a fault.
 | T28 | Cancel at the end of a PDF export (read 2026-11-26; not seen on a device) | trying first |
 | T29 | The Restore page, after a tap on "Restore" (seen 2026-11-27 on the phone; older than stage 10) | small |
 | T30 | The borrowers vault (an idea read in another app's texts on 2026-11-27; not a fault, and not designed) | a plan of its own, after stage 10 |
+| T31 | The app lock and the vault's biometric unlock on the oldest Androids the app supports (seen 2026-11-27 in an emulator image of Android 7.0; not seen on a phone) | a plan of its own, after stage 10 (D232) |
 
 Closed on 2026-11-16 by the stage of D24, and so described: T1
 (Import and Merge use the app's own picker; the app no longer uses
@@ -954,6 +981,13 @@ again are kept; the stories behind them are in git history.
   is not read there. An AndroidX library has no source here: its AAR
   lies in the Gradle cache, and a class of it is read with `javap -p
   -c` from the `classes.jar` inside, unpacked under `/tmp`.
+- A RELEASE APK does not show a library's class by its name (a
+  release build renames or removes classes). Which version of a
+  library a build takes is asked of Gradle, offline, in `android/`
+  (`./gradlew --offline :app:dependencyInsight --dependency
+  <group>:<name> --configuration playDebugRuntimeClasspath`; it
+  builds nothing). A class of a DEBUG APK is read with `apkanalyzer
+  dex code --class <name> <apk>`.
 - A pattern with a backtick inside a double-quoted shell string
   starts a command: single quotes. `[ a -nt b ]` in this Mac's bash
   (3.2) compares whole seconds.
@@ -981,7 +1015,8 @@ again are kept; the stories behind them are in git history.
   to the installed SDK). In a linked worktree (`git worktree add`)
   the hook cannot work at all.
 - `git checkout`, `git restore`, `git add -N`, `rm` and `chmod` need a
-  yes each time, also for the agent's own edits and scratch files.
+  yes each time, also for the agent's own edits and scratch files. A
+  scratch script is run with `bash <file>`, which needs no `chmod`.
 - A script that saves "everything that changed" by a folder's name
   also takes what the maintainer keeps untracked there. Name the
   files.
@@ -1112,7 +1147,16 @@ again are kept; the stories behind them are in git history.
   at is opened.
 - The oldest Android the app supports (API 24) is the image
   `system-images;android-24;default;arm64-v8a`. Its document window's
-  LIST takes no `adb shell input tap`: TAB, the arrows and ENTER.
+  LIST takes no `adb shell input tap`: TAB, the arrows and ENTER. It
+  has no `locksettings`: a PIN is set in its Settings, tap by tap
+  (the image of Android 16 has `locksettings set-pin`). `adb pull` of
+  an installed APK answers "does not exist" there: `adb exec-out cat`
+  reads it.
+- A fingerprint for an image: `adb -s <emulator> emu finger touch 1`,
+  then `emu finger remove`, while the image's Settings ask for one.
+  One touch enrols on Android 7.0, three on Android 16.
+- That an image kept nothing of a `-read-only` run is read from the
+  times of its disk files after the stop, not taken from the flag.
 **The phone**
 
 - What `adb` prints of the screen holds whatever is on it: the
@@ -1413,6 +1457,10 @@ and restore rework. ADRs and `CHANGELOG.md` cite these numbers.
 | D228 | 27 | Stage 10, a second decision point that the reading opened: the first of three ways, as proposed. The matter is in the private design file (D30). Not chosen: the other two | in force |
 | D229 | 27 | Stage 10, a third decision point that the reading opened, a word of the app: the first of three ways, as proposed. The matter is in the private design file (D30). Not chosen: the other two | in force |
 | D230 | 27 | Stage 10: an idea read in another app's texts, which is not of the stage, becomes an item of the private tracker; the first of three ways, as proposed. Not chosen: into the stage; not recorded | in force: T30 ("The borrowers vault") |
+| D231 | 27 | Stage 10: what a look in an emulator image of Android 7.0 found, which is not of the stage, becomes an item of the private tracker with a plan of its own; the first of three ways, as proposed. Not chosen: into the stage; not recorded | in force: T31 ("The app lock and the vault's biometric unlock on the oldest Androids the app supports") |
+| D232 | 27 | Stage 10 goes on first, and T31 comes after it; the first of three ways, as proposed. Not chosen: T31 first; decided another day | in force |
+| D233 | 27 | A matter of words seen in the same look, which is not of the stage, is a sentence of T31's row in the private tracker and no item of its own; the first of three ways, as proposed. Not chosen: an item of its own; not recorded | in force |
+| D234 | 27 | Stage 10, a decision point that the look opened: the first of three ways, as proposed. The matter is in the private design file (D30). Not chosen: the other two | in force |
 
 ## Where the earlier text went
 
