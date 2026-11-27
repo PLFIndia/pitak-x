@@ -58,8 +58,8 @@ was taken out.
 ## Handoff
 
 For an agent or a person who starts with no memory of the earlier
-sessions. Written on 2026-11-27, about 13:20, at the stop of the
-second session of stage 10's planning.
+sessions. Written on 2026-11-27, about 16:45, at the stop of the
+third session of stage 10's planning.
 Everything here was true when it was written; check the repository
 before relying on it.
 
@@ -80,15 +80,19 @@ runs, the open items and questions, the traps, the decisions.
   plan of its own" (two findings about packages).
 - **Stage 10 (P4-B1, the borrowers vault) is being PLANNED** (D218)
   and is NOT designed: no file under `lib/` or `test/` is changed
-  for it, and it has no go-ahead. Done on 2026-11-27, in two
+  for it, and it has no go-ahead. Done on 2026-11-27, in three
   sessions: the finding read again in today's code and confirmed;
-  today's behaviour looked at on the phone (D219); six decision
-  points answered (D220 to D223, D225, D226), one of which takes
-  the review's P1-m4 into the stage; the vault's code, its tests and
-  the documents the stage touches read for the design. All of it is
-  in its private file, `p4b1-in-detail.md` (sections 1 to 24). One
-  thing seen in the look that is not of the stage (the Restore page)
-  is an item of the private tracker, T29 (D224).
+  today's behaviour looked at on the phone (D219); nine decision
+  points answered (D220 to D223, D225 to D229), one of which takes
+  the review's P1-m4 into the stage; the vault's code, its tests,
+  the libraries under it and the documents the stage touches read
+  for the design, one part of it with the network (how two other
+  apps word such a thing; the design credits them). Every decision
+  point that the reading opened is answered. All of it is in its
+  private file, `p4b1-in-detail.md` (sections 1 to 35). Two things
+  that are not of the stage are items of the private tracker: T29
+  (the Restore page, seen in the look; D224) and T30 (an idea read
+  in another app; D230).
 - **The test that timed out now and then** (D201) is traced and
   changed (D207): `f6653ae`, test code only, pushed; CI run
   45379005173 green. In a whole run it took 18 to 29 of the 30
@@ -109,21 +113,21 @@ In this order:
 
 1. Confirms the state: `git status -sb` (nothing but the nine review
    files, untracked), `git log` (the head is this file's latest
-   commit, on top of `b6292f3`; every commit pushed),
+   commit, on top of `2819aed`; every commit pushed),
    `git remote -v`, and the CI run of the head. Runs the Dart checks
    once, the tests some minutes after analyze.
    The numbers to compare with: `build_runner` changes nothing,
    format 0 changed of 1,553 files, analyze 47, 8,269 Dart tests (run
-   last on 2026-11-27, at 10:52); Kotlin 144 in each flavour
+   last on 2026-11-27, at 15:38); Kotlin 144 in each flavour
    (offline, 2026-11-26); Rust 45 passed and 2 ignored (CI).
 2. **Stage 10 (P4-B1), the planning goes on** (D21: no code before
    the go-ahead). Reads `p4b1-in-detail.md` in full first; its
-   section 24 says what is left, in its order: the rest of the
-   reading (one part needs the network: ask first); the decision
-   points the reading opened, one at a time; the design, with every
-   text of the app and of the documents as a draft, and the order of
-   the build; shows it and asks for the go-ahead. The build is a
-   session of its own.
+   section 35 says what is left, in its order: one look in the image
+   of Android 7.0, which the design waits for (an emulator run: ask
+   first); the rest of the reading for the design; the design, with
+   every text of the app and of the documents as a draft, and the
+   order of the build; shows it and asks for the go-ahead. The build
+   is a session of its own.
 
 ### State of the repository
 
@@ -286,8 +290,8 @@ cargo test --offline --locked --release
 
 What green looks like today (the Dart checks and Kotlin as run here
 on 2026-11-26, on the tree that became `9a25349`; Rust and the last
-row from CI; the Dart checks again on 2026-11-27 at `197a489` and at
-`b6292f3`, with the same numbers):
+row from CI; the Dart checks again on 2026-11-27 at `197a489`, at
+`b6292f3` and at `2819aed`, with the same numbers):
 
 | Check | Result |
 |---|---|
@@ -351,9 +355,12 @@ Names a later stage builds on (the full account is in ADR 0009, ADR
   the trial scripts of its build; the design file's copy in the
   archive names each). Of stage 10: `/tmp/pitak_p4b1/` (this file,
   the tracker and the archive as they were before it, and the design
-  file's first draft; under `before-2/` the three files as they were
-  before the second session's writes, and beside it the logs of that
-  session's baseline (`baseline-*.log`)).
+  file's first draft; under `before-2/` and `before-3/` the files as
+  they were before the second and the third session's writes, and
+  beside them the logs of those sessions' baselines
+  (`baseline-*.log`, `baseline3-*.log`); under `biometric-1.1.0/` a
+  library of the build, unpacked, and one class of it printed; under
+  `wording/` the files that were read from the network).
 
 ### Could be done if the maintainer wants
 
@@ -435,12 +442,12 @@ the private tracker.
 | [ ] | P4-M5, the rest | the Restore page | a question of its own (D49) |
 | [ ] | P4-M7, the rest | progress of long runs | in no stage |
 | [ ] | P2-H4, P4-H3 | the scanner's package | in no stage (D129); one test file says what the app relies on in the package |
-| [ ] | T2 (the rest) to T9, T11 to T29 | twenty-seven items found outside the review | each by its area under "Open items kept in the private tracker" |
+| [ ] | T2 (the rest) to T9, T11 to T30 | twenty-eight items found outside the review | each by its area under "Open items kept in the private tracker" |
 | [ ] | 40 rated m, 30 rated n | the rest of the review | by id in the private tracker; none was rated above minor. One that is fixed gets a row of its own above, and these counts go down |
 
 In numbers (2026-11-27): of the review's 97 findings
 16 are ticked and 81 have an open box, eight of them fixed in part;
-of the 29 items found outside the review 2 are closed and 27 are
+of the 30 items found outside the review 2 are closed and 28 are
 open, one of them (T2) fixed in part.
 
 ## The plan: the backup and restore rework (BR1 to BR10)
@@ -544,7 +551,7 @@ and no code is written before its go-ahead (D21).
 | 7 | P4-M2 with P3-M4, and P4-m13 (D150) | the library list | done 2026-11-22. D148 to D162. `08995df`, `bcb3b63`; pushed (`e81d187..d87b8cb`). CI run 44993054071 at `d87b8cb`, green at the second attempt of one job. P3-M4 in part, its box stays open |
 | 8 | P4-M6 | how a file leaves the app | done 2026-11-23. D163 to D203. `0d54038`, `cf07ad8`, `bfac8d5`, `93d5c91`, `bc1ef0f`; pushed (`67ce4b5..048246b`). CI run 45198289279 at `048246b`, green |
 | 9 | P3-B2 | PDF export | done 2026-11-26. D206, D208 to D217. `9a25349`, `82672f8`; pushed (`a329fdf..82672f8`). CI run 45848395788 at `82672f8`, green. P3-B2 in part, its box stays open |
-| 10 | P4-B1; with it P1-m4 and its hand-over P1-H14 (D221) | the borrowers vault | being planned since 2026-11-27. D218 to D226. Not designed, not built |
+| 10 | P4-B1; with it P1-m4 and its hand-over P1-H14 (D221) | the borrowers vault | being planned since 2026-11-27. D218 to D230. Not designed, not built |
 | later, each with a plan of its own | P2-M2; the rest of P2-M3 | two packages | not read |
 
 Every "where" of the review reports is of 2026-11-10. Each place is
@@ -559,7 +566,8 @@ have none.
 
 Found outside a stage, and in the private tracker by number only:
 T14 (stage 3), T15 and T16 (stage 5), T17 (stage 6), T18 to T20
-(stage 7), T21 to T24 (stage 8), T25 to T28 (stage 9), T29 (stage 10).
+(stage 7), T21 to T24 (stage 8), T25 to T28 (stage 9), T29 and T30
+(stage 10).
 
 ### Definition of done for this plan
 
@@ -622,14 +630,15 @@ still cite it as "Device runs, step 3".
 
 ## Open items kept in the private tracker
 
-Twenty-seven things that are not fixed and are therefore not described
+Twenty-eight things that are not fixed and are therefore not described
 here (D30). The private tracker has each with its place in the code.
 None of what is open is in a stage; the last column says what an
 item waits for. T17 and T21 to T23 were put at their stage's review
 stop before they were written down (D145, D201); T24 was put to the
 maintainer during the bookkeeping of stage 8 (D203); T25 to T28 came
 out of stage 9's review stop (D216); T29 was seen in the look of
-stage 10 (D224).
+stage 10 (D224), and T30 was read in another app while stage 10 was
+planned (D230): it is an idea, not a fault.
 
 | T | Area | Waits for |
 |---|---|---|
@@ -660,6 +669,7 @@ stage 10 (D224).
 | T27 | The footer of a PDF catalogue (seen 2026-11-25 in the PDFs of the phone and the emulator; older than stage 9) | small |
 | T28 | Cancel at the end of a PDF export (read 2026-11-26; not seen on a device) | trying first |
 | T29 | The Restore page, after a tap on "Restore" (seen 2026-11-27 on the phone; older than stage 10) | small |
+| T30 | The borrowers vault (an idea read in another app's texts on 2026-11-27; not a fault, and not designed) | a plan of its own, after stage 10 |
 
 Closed on 2026-11-16 by the stage of D24, and so described: T1
 (Import and Merge use the app's own picker; the app no longer uses
@@ -939,6 +949,11 @@ again are kept; the stories behind them are in git history.
 - The pub cache holds several versions of a package, and the last
   one listed is the newest, not the one the app builds with. Read a
   package's source at the version `pubspec.lock` names.
+- Android's own source on this Mac is of ONE version
+  (`sources/android-36.1` under the SDK): what an older Android does
+  is not read there. An AndroidX library has no source here: its AAR
+  lies in the Gradle cache, and a class of it is read with `javap -p
+  -c` from the `classes.jar` inside, unpacked under `/tmp`.
 - A pattern with a backtick inside a double-quoted shell string
   starts a command: single quotes. `[ a -nt b ]` in this Mac's bash
   (3.2) compares whole seconds.
@@ -1394,6 +1409,10 @@ and restore rework. ADRs and `CHANGELOG.md` cite these numbers.
 | D224 | 27 | Stage 10: one thing seen in the look of D219 that is not of the stage becomes an item of the private tracker; the first of three ways, as proposed. Not chosen: into the stage; not recorded | in force: T29 ("The Restore page") |
 | D225 | 27 | Stage 10: a second thing seen in the look of D219 is of the stage; the first of three ways, as proposed. The matter is in the private design file (D30). Not chosen: an item of the private tracker; as it is | in force |
 | D226 | 27 | Stage 10, the decision point that D225 opened: the second of three ways, as proposed. The matter is in the private design file (D30) | in force |
+| D227 | 27 | Stage 10, a decision point that the reading opened: the second of three ways, as proposed. The matter is in the private design file (D30). Not chosen: the first; nothing new | in force |
+| D228 | 27 | Stage 10, a second decision point that the reading opened: the first of three ways, as proposed. The matter is in the private design file (D30). Not chosen: the other two | in force |
+| D229 | 27 | Stage 10, a third decision point that the reading opened, a word of the app: the first of three ways, as proposed. The matter is in the private design file (D30). Not chosen: the other two | in force |
+| D230 | 27 | Stage 10: an idea read in another app's texts, which is not of the stage, becomes an item of the private tracker; the first of three ways, as proposed. Not chosen: into the stage; not recorded | in force: T30 ("The borrowers vault") |
 
 ## Where the earlier text went
 
