@@ -58,8 +58,8 @@ was taken out.
 ## Handoff
 
 For an agent or a person who starts with no memory of the earlier
-sessions. Written on 2026-11-27, about 22:15, at the stop of the
-fourth session of stage 10's planning.
+sessions. Written on 2026-11-28, about 11:35, at the stop of the
+fifth session of stage 10's planning: the design, and its go-ahead.
 Everything here was true when it was written; check the repository
 before relying on it.
 
@@ -78,26 +78,25 @@ runs, the open items and questions, the traps, the decisions.
   bird's-eye view says which part, and ADR 0033 says what is not
   solved. Left in the table besides stage 10: "later, each with a
   plan of its own" (two findings about packages).
-- **Stage 10 (P4-B1, the borrowers vault) is being PLANNED** (D218)
-  and is NOT designed: no file under `lib/` or `test/` is changed
-  for it, and it has no go-ahead. Done on 2026-11-27, in four
-  sessions: the finding read again in today's code and confirmed;
-  today's behaviour looked at on the phone (D219); ten decision
-  points answered (D220 to D223, D225 to D229, D234), one of which
-  takes the review's P1-m4 into the stage; the vault's code, its
-  tests, the libraries under it and the documents the stage touches
-  read for the design, one part of it with the network (how two
-  other apps word such a thing; the design credits them); and two
-  looks in emulator images, of Android 7.0 and of Android 16, at
-  how the app asks for the phone's lock. The reading for the design
-  is done but for two files that its private file names, and every
-  decision point that the reading and the looks opened is answered.
-  All of it is in its private file, `p4b1-in-detail.md` (sections 1
-  to 50). Three things that are not of the stage are items of the
-  private tracker: T29 (the Restore page, seen in the look on the
-  phone; D224), T30 (an idea read in another app; D230) and T31
-  (seen in the look in the image of Android 7.0; D231, D233), which
-  comes after stage 10 with a plan of its own (D232).
+- **Stage 10 (P4-B1, the borrowers vault) is DESIGNED and has its
+  go-ahead** (D242), and is NOT built: no file under `lib/` or
+  `test/` is changed for it. Planned on 2026-11-27 and 2026-11-28,
+  in five sessions (D218 to D243): the finding read again in today's
+  code and confirmed; today's behaviour looked at on the phone
+  (D219); two looks in emulator images, of Android 7.0 and of
+  Android 16; ten decision points answered (D220 to D223, D225
+  to D229, D234), one of which takes the review's P1-m4 into the
+  stage; the design, with ten choices of its own, each accepted
+  (D235 to D240); the texts of the app and of the documents as
+  drafts, accepted (D241). All of it is in its private file,
+  `p4b1-in-detail.md` (sections 1 to 68): the design is its
+  sections 52 and 53, the documents' drafts its section 62. Four
+  things that are not of the stage are items of the private
+  tracker: T29 (the Restore page, seen in the look on the phone;
+  D224), T30 (an idea read in another app; D230), T31 (seen in the
+  look in the image of Android 7.0; D231, D233), which comes after
+  stage 10 with a plan of its own (D232), and T32 (a question of
+  the maintainer's at the go-ahead; D243), which does too.
 - **The test that timed out now and then** (D201) is traced and
   changed (D207): `f6653ae`, test code only, pushed; CI run
   45379005173 green. In a whole run it took 18 to 29 of the 30
@@ -118,21 +117,24 @@ In this order:
 
 1. Confirms the state: `git status -sb` (nothing but the nine review
    files, untracked), `git log` (the head is this file's latest
-   commit, on top of `d084995`; every commit pushed),
+   commit, on top of `c295097`; every commit pushed),
    `git remote -v`, and the CI run of the head. Runs the Dart checks
-   once, the tests some minutes after analyze.
+   once, the tests some minutes after analyze: they are the build's
+   baseline.
    The numbers to compare with: `build_runner` changes nothing,
    format 0 changed of 1,553 files, analyze 47, 8,269 Dart tests (run
-   last on 2026-11-27, at 15:38; the fourth session did not run the
-   checks, and nothing under `lib/` or `test/` has changed since);
-   Kotlin 144 in each flavour
+   last on 2026-11-27, at 15:38; the two sessions after it did not
+   run the checks, and nothing under `lib/` or `test/` has changed
+   since); Kotlin 144 in each flavour
    (offline, 2026-11-26); Rust 45 passed and 2 ignored (CI).
-2. **Stage 10 (P4-B1), the planning goes on** (D21: no code before
-   the go-ahead). Reads `p4b1-in-detail.md` in full first; its
-   section 50 says what is left, in its order: the design, with
-   every text of the app and of the documents as a draft, and the
-   order of the build; shows it and asks for the go-ahead. The build
-   is a session of its own.
+2. **Stage 10 (P4-B1), the build** (D242). Reads `p4b1-in-detail.md`
+   in full first. Builds in the order of its section 52.11, each
+   step with its tests first and seen red; what a device must show
+   is its section 52.12, each look with its own yes; the documents
+   are written from its section 62 in the step before the looks,
+   and what differs from a draft by then is shown again. A pause
+   only where the design does not hold. Nothing is committed before
+   the review stop.
 
 ### State of the repository
 
@@ -383,8 +385,10 @@ Names a later stage builds on (the full account is in ADR 0009, ADR
   one class of four versions of a second library; under
   `look-api24/` and `look-api36/` the working files of the two
   emulator looks, whose records are in
-  `~/pitak-device-runs/stage10-p4b1/`; under `plan-draft/` the
-  draft of this file's text of the fourth session).
+  `~/pitak-device-runs/stage10-p4b1/`; under `plan-draft/` and
+  `plan-draft-5/` the drafts of this file's text of the fourth and
+  the fifth session; under `before-5/` the files as they were
+  before the fifth session's writes).
 
 ### Could be done if the maintainer wants
 
@@ -455,7 +459,7 @@ the private tracker.
 
 | | Id | Area | Where it stands |
 |---|---|---|---|
-| [ ] | P4-B1 | the borrowers vault | stage 10, being planned (D218) |
+| [ ] | P4-B1 | the borrowers vault | stage 10: designed, with its go-ahead (D242); not built |
 | [ ] | P3-B2, the rest | PDF export | in no stage (ADR 0033 names it) |
 | [ ] | P3-B3, the rest | restore | in no stage |
 | [ ] | P2-M2 | a package (the catalogue's database) | later, a plan of its own (D62) |
@@ -575,7 +579,7 @@ and no code is written before its go-ahead (D21).
 | 7 | P4-M2 with P3-M4, and P4-m13 (D150) | the library list | done 2026-11-22. D148 to D162. `08995df`, `bcb3b63`; pushed (`e81d187..d87b8cb`). CI run 44993054071 at `d87b8cb`, green at the second attempt of one job. P3-M4 in part, its box stays open |
 | 8 | P4-M6 | how a file leaves the app | done 2026-11-23. D163 to D203. `0d54038`, `cf07ad8`, `bfac8d5`, `93d5c91`, `bc1ef0f`; pushed (`67ce4b5..048246b`). CI run 45198289279 at `048246b`, green |
 | 9 | P3-B2 | PDF export | done 2026-11-26. D206, D208 to D217. `9a25349`, `82672f8`; pushed (`a329fdf..82672f8`). CI run 45848395788 at `82672f8`, green. P3-B2 in part, its box stays open |
-| 10 | P4-B1; with it P1-m4 and its hand-over P1-H14 (D221) | the borrowers vault | being planned since 2026-11-27. D218 to D234. Not designed, not built |
+| 10 | P4-B1; with it P1-m4 and its hand-over P1-H14 (D221) | the borrowers vault | planned on 2026-11-27 and 2026-11-28. D218 to D243. Designed, with its go-ahead (D242). Not built |
 | later, each with a plan of its own | P2-M2; the rest of P2-M3 | two packages | not read |
 
 Every "where" of the review reports is of 2026-11-10. Each place is
@@ -590,7 +594,7 @@ have none.
 
 Found outside a stage, and in the private tracker by number only:
 T14 (stage 3), T15 and T16 (stage 5), T17 (stage 6), T18 to T20
-(stage 7), T21 to T24 (stage 8), T25 to T28 (stage 9), T29 to T31
+(stage 7), T21 to T24 (stage 8), T25 to T28 (stage 9), T29 to T32
 (stage 10).
 
 ### Definition of done for this plan
@@ -654,7 +658,7 @@ still cite it as "Device runs, step 3".
 
 ## Open items kept in the private tracker
 
-Twenty-nine things that are not fixed and are therefore not described
+Thirty things that are not fixed and are therefore not described
 here (D30). The private tracker has each with its place in the code.
 None of what is open is in a stage; the last column says what an
 item waits for. T17 and T21 to T23 were put at their stage's review
@@ -664,7 +668,8 @@ out of stage 9's review stop (D216); T29 was seen in the look of
 stage 10 (D224); T30 was read in another app while stage 10 was
 planned (D230): it is an idea, not a fault; T31 was seen in a look
 of stage 10 in an emulator image (D231) and comes after the stage
-(D232).
+(D232); T32 came of a question the maintainer asked at stage 10's
+go-ahead (D243): it is an idea too, and comes after the stage.
 
 | T | Area | Waits for |
 |---|---|---|
@@ -697,6 +702,7 @@ of stage 10 in an emulator image (D231) and comes after the stage
 | T29 | The Restore page, after a tap on "Restore" (seen 2026-11-27 on the phone; older than stage 10) | small |
 | T30 | The borrowers vault (an idea read in another app's texts on 2026-11-27; not a fault, and not designed) | a plan of its own, after stage 10 |
 | T31 | The app lock and the vault's biometric unlock on the oldest Androids the app supports (seen 2026-11-27 in an emulator image of Android 7.0; not seen on a phone) | a plan of its own, after stage 10 (D232) |
+| T32 | A file with the whole catalogue and its covers and without the borrowers vault (asked for by the maintainer on 2026-11-28; an idea, not a fault, and not designed); with it one sentence of the Export page | a plan of its own, after stage 10 (D243) |
 
 Closed on 2026-11-16 by the stage of D24, and so described: T1
 (Import and Merge use the app's own picker; the app no longer uses
@@ -1461,6 +1467,15 @@ and restore rework. ADRs and `CHANGELOG.md` cite these numbers.
 | D232 | 27 | Stage 10 goes on first, and T31 comes after it; the first of three ways, as proposed. Not chosen: T31 first; decided another day | in force |
 | D233 | 27 | A matter of words seen in the same look, which is not of the stage, is a sentence of T31's row in the private tracker and no item of its own; the first of three ways, as proposed. Not chosen: an item of its own; not recorded | in force |
 | D234 | 27 | Stage 10, a decision point that the look opened: the first of three ways, as proposed. The matter is in the private design file (D30). Not chosen: the other two | in force |
+| D235 | 28 | Stage 10, its design: five choices of the design that no user sees (where the new code lives, where one value of the platform comes from, how two pages learn one fact, the place of the guide's new text, which documents change) are accepted as proposed. The matter is in the private design file (D30) | in force |
+| D236 | 28 | Stage 10, a choice of the design about what one screen says: the first of three ways, as proposed. The matter is in the private design file (D30). Not chosen: the other two | in force |
+| D237 | 28 | Stage 10, a choice of the design about where a result is said: the first of two ways, as proposed. The matter is in the private design file (D30). Not chosen: the other | in force |
+| D238 | 28 | Stage 10, a choice of the design about a question the phone does not answer: the first of three ways, as proposed (fail closed), with an addition of the maintainer's for one text of the guide. The matter is in the private design file (D30). Not chosen: the other two | in force |
+| D239 | 28 | Stage 10, a choice of the design about the app lock: the first of two ways, as proposed. What the phone shows of it in the stage's build is put to the maintainer before anything is changed for it. The matter is in the private design file (D30). Not chosen: the other | in force |
+| D240 | 28 | Stage 10, a choice of the design about an order of steps: the first of three ways, as proposed. The matter is in the private design file (D30). Not chosen: the other two | in force |
+| D241 | 28 | Stage 10: the texts of the guide, `SECURITY.md`, `README.md`, `PRIVACY.md`, `docs/ARCHITECTURE.md`, ADR 0034 (new), ADR 0005 and the changelog are accepted as drafts; the first of three ways, as proposed. They are written in the build, from what was built, and what differs from a draft then is shown again. Not chosen: the drafts without one of their sentences; another change | in force |
+| D242 | 28 | Stage 10 has its go-ahead: it is built as its private design file says, and the build is the next session; the first of three ways, as proposed. Not chosen: beginning the build in the same session; not yet | in force |
+| D243 | 28 | Stage 10: a question the maintainer asked at the go-ahead, which is not of the stage, becomes an item of the private tracker with a plan of its own after the stage; the first of three ways, as proposed. Not chosen: into the stage; not recorded | in force: T32 ("A file with the whole catalogue and its covers and without the borrowers vault") |
 
 ## Where the earlier text went
 
