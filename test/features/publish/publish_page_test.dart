@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -16,9 +17,14 @@ import 'package:pitaka/features/publish/domain/github_commit_plan.dart';
 import 'package:pitaka/features/publish/domain/github_models.dart';
 import 'package:pitaka/features/publish/domain/publish_credential_store.dart';
 import 'package:pitaka/features/publish/presentation/pages/publish_page.dart';
+import 'package:pitaka/features/publish/presentation/widgets/basic_info_tab.dart';
+import 'package:pitaka/features/settings/domain/app_settings.dart';
+import 'package:pitaka/features/settings/domain/settings_repository.dart';
+import 'package:pitaka/features/settings/presentation/settings_write.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../support/a11y.dart';
+import '../../support/form_back_harness.dart';
 import 'support/cloudflare_fakes.dart';
 
 /// An in-memory credential store, starting signed out, so the Connection tab
@@ -204,6 +210,68 @@ class _EmptyEventsRepo implements EventsRepository {
   @override
   Future<Either<Failure, String>> savePosterImage(Uint8List b) async =>
       right('posters/x.jpg');
+}
+
+/// A settings store in memory for the tests of leaving "Basic info" (review
+/// finding P4-M1). Each of the three writes of the tab's Save can be held
+/// open, and the contact write can be refused. Any other write is not
+/// expected on the Publish page and fails the test that causes it.
+final class _HeldSettings implements SettingsRepository {
+  AppSettings stored = AppSettings.defaults.copyWith(libraryName: 'My Shelf');
+
+  /// While a write's name is in here ('name', 'contact' or 'sharing'), that
+  /// write waits for the completer before it stores anything.
+  final Map<String, Completer<void>> holds = {};
+
+  /// When true, the contact write answers a failure and stores nothing.
+  bool refuseContact = false;
+
+  /// How many writes stored something.
+  int writes = 0;
+
+  @override
+  Future<AppSettings> load() async => stored;
+
+  @override
+  Future<Either<Failure, Unit>> setLibraryName(String name) async {
+    await holds['name']?.future;
+    stored = stored.copyWith(libraryName: name);
+    writes++;
+    return right(unit);
+  }
+
+  @override
+  Future<Either<Failure, Unit>> setPublishContact({
+    required String address,
+    required String gps,
+    required String email,
+    required String phone,
+  }) async {
+    await holds['contact']?.future;
+    if (refuseContact) return left(const StorageFailure('synthetic'));
+    stored = stored.copyWith(
+      publishContactAddress: address,
+      publishContactGps: gps,
+      publishContactEmail: email,
+      publishContactPhone: phone,
+    );
+    writes++;
+    return right(unit);
+  }
+
+  @override
+  Future<Either<Failure, Unit>> setPublishLocationSharing(
+    LocationSharing sharing,
+  ) async {
+    await holds['sharing']?.future;
+    stored = stored.copyWith(publishLocationSharing: sharing);
+    writes++;
+    return right(unit);
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnimplementedError(invocation.memberName.toString());
 }
 
 List<Override> _cloudflareOverrides() {
@@ -902,5 +970,439 @@ void main() {
     for (var i = 0; i < 10; i++) {
       await tester.pump(const Duration(seconds: 1));
     }
+  });
+
+  // What the Publish page does when the user leaves it while "Basic info"
+  // holds unsaved edits (review finding P4-M1). The page stands ABOVE a home
+  // page here, as in the app; "the page is gone" means the home page shows
+  // again. Two things are special about this form: it is a TAB, so a change
+  // of tab must not throw the edits away, and the question must come from
+  // every tab of the page.
+  group('leaving with unsaved "Basic info" (P4-M1)', () {
+    late _HeldSettings settings;
+
+    /// When a test sets this and has the provider built again, the settings
+    /// store itself can no longer be had, and a write THROWS instead of
+    /// answering a failure.
+    late bool storeBroken;
+
+    setUp(() {
+      settings = _HeldSettings();
+      storeBroken = false;
+    });
+
+    final page = find.byType(PublishPage);
+    final editButton = find.widgetWithText(OutlinedButton, 'Edit');
+    final saveButton = find.widgetWithText(FilledButton, 'Save');
+    Finder field(String label) => find.widgetWithText(TextField, label);
+    Finder tab(String label) => find.widgetWithText(Tab, label);
+
+    // Written out here, not taken from the app's code: a changed word has
+    // to fail the tests (decision D96 of PLAN.md).
+    const tabSentence = 'Your changes under "Basic info" have not been saved.';
+
+    Future<void> openPublish(
+      WidgetTester tester, {
+      PublishTab initialTab = PublishTab.basicInfo,
+    }) async {
+      // Tall enough to have every field and the Save button on the screen.
+      tester.view.physicalSize = const Size(800, 2400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+      SharedPreferences.setMockInitialValues({});
+      await pumpFormAboveHome(
+        tester,
+        PublishPage(initialTab: initialTab),
+        overrides: [
+          ..._cloudflareOverrides(),
+          publishCredentialStoreProvider.overrideWithValue(_FakeCreds()),
+          eventsRepositoryProvider.overrideWith(
+            (ref) async => _EmptyEventsRepo(),
+          ),
+          settingsRepositoryProvider.overrideWith((ref) async {
+            if (storeBroken) throw StateError('synthetic');
+            return settings;
+          }),
+        ],
+      );
+    }
+
+    Future<void> tapEdit(WidgetTester tester) async {
+      await tester.tap(editButton);
+      await tester.pumpAndSettle();
+    }
+
+    Future<void> tapSave(WidgetTester tester) async {
+      await tester.tap(saveButton);
+      await tester.pumpAndSettle();
+    }
+
+    Future<void> goToTab(WidgetTester tester, String label) async {
+      await tester.tap(tab(label));
+      await tester.pumpAndSettle();
+    }
+
+    /// Takes the focus out of the text field that has it, as the keyboard's
+    /// Done key does. A text field keeps its tab alive while it has the
+    /// focus; without this step a test of "the tab keeps its edits" would
+    /// pass on a tab that throws them away.
+    Future<void> giveUpFocus(WidgetTester tester) async {
+      FocusManager.instance.primaryFocus?.unfocus();
+      await tester.pumpAndSettle();
+    }
+
+    /// The number of the tab on the screen (0 Connection, 1 Basic info,
+    /// 2 Events).
+    int shownTab(WidgetTester tester) =>
+        DefaultTabController.of(tester.element(find.byType(TabBarView))).index;
+
+    void expectGoneWithoutQuestion() {
+      expect(findDiscardQuestion(), findsNothing);
+      expect(page, findsNothing);
+      expect(findFormBackHome(), findsOneWidget);
+    }
+
+    void expectAsked() {
+      expect(findDiscardQuestion(), findsOneWidget);
+      expect(find.text(tabSentence), findsOneWidget);
+      expect(page, findsOneWidget);
+    }
+
+    testWidgets('opened on Connection, "Basic info" never shown: Back '
+        'leaves at once', (tester) async {
+      await openPublish(tester, initialTab: PublishTab.connection);
+      expect(find.byType(BasicInfoTab, skipOffstage: false), findsNothing);
+      await pressSystemBack(tester);
+
+      expectGoneWithoutQuestion();
+    });
+
+    testWidgets('"Basic info" in view mode, a name stored: Back leaves', (
+      tester,
+    ) async {
+      await openPublish(tester);
+      expect(find.text('My Shelf'), findsOneWidget);
+      expect(editButton, findsOneWidget);
+      await pressSystemBack(tester);
+
+      expectGoneWithoutQuestion();
+    });
+
+    testWidgets('"Basic info" looked at, then to Connection: Back leaves', (
+      tester,
+    ) async {
+      await openPublish(tester);
+      await goToTab(tester, 'Connection');
+      await pressSystemBack(tester);
+
+      expectGoneWithoutQuestion();
+    });
+
+    testWidgets('"Edit" and nothing more: Back leaves', (tester) async {
+      await openPublish(tester);
+      await tapEdit(tester);
+      expect(saveButton, findsOneWidget);
+      await pressSystemBack(tester);
+
+      expectGoneWithoutQuestion();
+    });
+
+    testWidgets('a name typed, Back: the question with the sentence of the '
+        'tab. "Keep editing" keeps edit mode and the text; Back again '
+        'and "Discard" leaves, and nothing is stored', (tester) async {
+      await openPublish(tester);
+      await tapEdit(tester);
+      await tester.enterText(field('Library name'), 'Typed name');
+      await pressSystemBack(tester);
+      expectAsked();
+
+      await tester.tap(findKeepEditing());
+      await tester.pumpAndSettle();
+      expect(findDiscardQuestion(), findsNothing);
+      expect(saveButton, findsOneWidget);
+      expect(find.widgetWithText(TextField, 'Typed name'), findsOneWidget);
+
+      await pressSystemBack(tester);
+      await tester.tap(findDiscard());
+      await tester.pumpAndSettle();
+      expectGoneWithoutQuestion();
+      expect(settings.writes, 0, reason: 'discarded, not saved');
+      expect(settings.stored.libraryName, 'My Shelf');
+    });
+
+    testWidgets('the arrow of the app bar asks as well', (tester) async {
+      await openPublish(tester);
+      await tapEdit(tester);
+      await tester.enterText(field('Library name'), 'Typed name');
+      await tester.tap(find.byType(BackButton));
+      await tester.pumpAndSettle();
+
+      expectAsked();
+    });
+
+    // Every text field the tab shows in edit mode, by its label. A field
+    // that is added to the tab has to be added here (the count below fails
+    // otherwise), and then its own test says whether the guard knows of it.
+    const textFields = [
+      'Library name',
+      'Library address',
+      'GPS location',
+      'Email',
+      'Phone',
+    ];
+
+    testWidgets('edit mode shows exactly the text fields these tests know', (
+      tester,
+    ) async {
+      await openPublish(tester);
+      await tapEdit(tester);
+
+      expect(find.byType(TextField), findsNWidgets(textFields.length));
+      for (final label in textFields) {
+        expect(field(label), findsOneWidget);
+      }
+    });
+
+    for (final label in textFields) {
+      testWidgets('"$label" changed, Back: the question', (tester) async {
+        await openPublish(tester);
+        await tapEdit(tester);
+        await tester.enterText(field(label), '7');
+        await pressSystemBack(tester);
+
+        expectAsked();
+      });
+    }
+
+    testWidgets('only the location choice changed, Back: the question', (
+      tester,
+    ) async {
+      await openPublish(tester);
+      await tapEdit(tester);
+      await tester.tap(find.text('Exact'));
+      await tester.pumpAndSettle();
+      await pressSystemBack(tester);
+
+      expectAsked();
+    });
+
+    testWidgets('typed and put back, Back: leaves', (tester) async {
+      await openPublish(tester);
+      await tapEdit(tester);
+      await tester.enterText(field('Library name'), 'Typed name');
+      await tester.enterText(field('Library name'), 'My Shelf');
+      await pressSystemBack(tester);
+
+      expectGoneWithoutQuestion();
+    });
+
+    testWidgets('the location choice changed and put back, Back: leaves', (
+      tester,
+    ) async {
+      await openPublish(tester);
+      await tapEdit(tester);
+      await tester.tap(find.text('Exact'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Not shared'));
+      await tester.pumpAndSettle();
+      await pressSystemBack(tester);
+
+      expectGoneWithoutQuestion();
+    });
+
+    // The two neighbours of "Basic info", with their place among the tabs.
+    const neighbours = {'Connection': 0, 'Events': 2};
+
+    for (final neighbour in neighbours.entries) {
+      final other = neighbour.key;
+
+      testWidgets('a name typed, then to $other, Back there: the question. '
+          '"Keep editing" stays on $other, and the text is still under '
+          '"Basic info"', (tester) async {
+        await openPublish(tester);
+        await tapEdit(tester);
+        await tester.enterText(field('Library name'), 'Typed name');
+        await giveUpFocus(tester);
+        await goToTab(tester, other);
+        await pressSystemBack(tester);
+        expectAsked();
+
+        await tester.tap(findKeepEditing());
+        await tester.pumpAndSettle();
+        expect(page, findsOneWidget);
+        expect(shownTab(tester), neighbour.value);
+
+        await goToTab(tester, 'Basic info');
+        expect(saveButton, findsOneWidget);
+        expect(find.widgetWithText(TextField, 'Typed name'), findsOneWidget);
+      });
+
+      testWidgets('a name typed, the focus given up, to $other and back: '
+          'still in edit mode, with the text', (tester) async {
+        await openPublish(tester);
+        await tapEdit(tester);
+        await tester.enterText(field('Library name'), 'Typed name');
+        await giveUpFocus(tester);
+        await goToTab(tester, other);
+        expect(shownTab(tester), neighbour.value);
+        await goToTab(tester, 'Basic info');
+
+        expect(saveButton, findsOneWidget);
+        expect(find.widgetWithText(TextField, 'Typed name'), findsOneWidget);
+      });
+
+      testWidgets('only the location choice changed, to $other and back: '
+          'the choice is kept', (tester) async {
+        await openPublish(tester);
+        await tapEdit(tester);
+        await tester.tap(find.text('Exact'));
+        await tester.pumpAndSettle();
+        await goToTab(tester, other);
+        expect(shownTab(tester), neighbour.value);
+        await goToTab(tester, 'Basic info');
+
+        expect(saveButton, findsOneWidget);
+        expect(
+          tester
+              .widget<SegmentedButton<LocationSharing>>(
+                find.byType(SegmentedButton<LocationSharing>),
+              )
+              .selected,
+          {LocationSharing.exact},
+        );
+      });
+    }
+
+    // A Save of this tab is three writes, one after the other. Back has to
+    // wait through all three (D95), so each is held open once.
+    for (final write in ['name', 'contact', 'sharing']) {
+      testWidgets('Back while the save runs (its "$write" write held open) '
+          'does nothing; then the tab shows the saved name, the page stays, '
+          'and Back leaves with no question', (tester) async {
+        final hold = Completer<void>();
+        addTearDown(() {
+          if (!hold.isCompleted) hold.complete();
+        });
+        await openPublish(tester);
+        await tapEdit(tester);
+        await tester.enterText(field('Library name'), 'New name');
+        await giveUpFocus(tester);
+        settings.holds[write] = hold;
+        await tapSave(tester);
+
+        await pressSystemBack(tester);
+        expect(findDiscardQuestion(), findsNothing);
+        expect(page, findsOneWidget, reason: 'Back waits for the save');
+
+        hold.complete();
+        await tester.pumpAndSettle();
+        expect(page, findsOneWidget, reason: 'this form stays after a save');
+        expect(editButton, findsOneWidget);
+        expect(find.text('New name'), findsOneWidget);
+        expect(settings.stored.libraryName, 'New name');
+
+        await pressSystemBack(tester);
+        expectGoneWithoutQuestion();
+      });
+    }
+
+    testWidgets('after a save the store refused, Back asks', (tester) async {
+      settings.refuseContact = true;
+      await openPublish(tester);
+      await tapEdit(tester);
+      await tester.enterText(field('Library address'), '14 Banyan Road');
+      await giveUpFocus(tester);
+      await tapSave(tester);
+      expect(find.text(settingsSaveFailedMessage), findsOneWidget);
+      expect(saveButton, findsOneWidget, reason: 'still in edit mode');
+      await pressSystemBack(tester);
+
+      expectAsked();
+    });
+
+    testWidgets('after a save that threw, Back is not left dead: it asks', (
+      tester,
+    ) async {
+      await openPublish(tester);
+      await tapEdit(tester);
+      await tester.enterText(field('Library name'), 'New name');
+      await giveUpFocus(tester);
+      storeBroken = true;
+      ProviderScope.containerOf(
+        tester.element(page),
+      ).invalidate(settingsRepositoryProvider);
+      // The Save button's handler is not awaited by anybody, so what it
+      // throws is an error nobody catches, and such an error fails a test at
+      // once. A zone of its own around the tap catches it here instead.
+      Object? thrown;
+      await runZonedGuarded(
+        () => tapSave(tester),
+        (error, _) => thrown = error,
+      );
+      expect(thrown, isStateError);
+      expect(saveButton, findsOneWidget, reason: 'still in edit mode');
+      await pressSystemBack(tester);
+
+      expectAsked();
+    });
+
+    testWidgets('after "Save", Back: leaves', (tester) async {
+      await openPublish(tester);
+      await tapEdit(tester);
+      await tester.enterText(field('Library name'), 'New name');
+      await giveUpFocus(tester);
+      await tapSave(tester);
+      expect(settings.stored.libraryName, 'New name');
+      await pressSystemBack(tester);
+
+      expectGoneWithoutQuestion();
+    });
+
+    testWidgets('after "Save", "Edit" again and nothing changed: Back '
+        'leaves', (tester) async {
+      await openPublish(tester);
+      await tapEdit(tester);
+      await tester.enterText(field('Library name'), 'New name');
+      await giveUpFocus(tester);
+      await tapSave(tester);
+      await tapEdit(tester);
+      expect(saveButton, findsOneWidget);
+      await pressSystemBack(tester);
+
+      expectGoneWithoutQuestion();
+    });
+
+    testWidgets('after "Save", "Edit" again and a field changed: Back asks', (
+      tester,
+    ) async {
+      await openPublish(tester);
+      await tapEdit(tester);
+      await tester.enterText(field('Library name'), 'New name');
+      await giveUpFocus(tester);
+      await tapSave(tester);
+      await tapEdit(tester);
+      await tester.enterText(field('Phone'), '7');
+      await pressSystemBack(tester);
+
+      expectAsked();
+    });
+
+    testWidgets('the question shows nothing that was typed', (tester) async {
+      await openPublish(tester);
+      await tapEdit(tester);
+      await tester.enterText(field('Phone'), '98450 12345');
+      await giveUpFocus(tester);
+      await goToTab(tester, 'Connection');
+      await pressSystemBack(tester);
+      expectAsked();
+
+      expect(
+        find.descendant(
+          of: find.byType(AlertDialog),
+          matching: find.textContaining('98450'),
+        ),
+        findsNothing,
+      );
+    });
   });
 }

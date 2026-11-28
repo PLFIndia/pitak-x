@@ -2,10 +2,9 @@
 ///
 /// Pure Dart — no Flutter, no `pdf` package, no IO — so the column selection,
 /// Source-merge rule, and word-wrap logic stay unit-testable in isolation
-/// from the renderer (mirrors Kotlin `data/export/PdfColumn.kt` +
-/// `PdfColumnPlan` + `PdfLibraryRenderer.wrapCell`, which are likewise pure).
+/// from the renderer.
 ///
-/// Faithful port of the Kotlin contract: same column set, weights, wrapLines,
+/// The contract: a fixed column set, weights, wrapLines,
 /// the mandatory Title, the `private` (default-off) location/source columns,
 /// the CSV (de)serialization of a selection, and the Source/Source-detail
 /// two-line merge.
@@ -79,11 +78,10 @@ enum PdfColumn {
   /// Max lines this column's cell may word-wrap to (1 = single-line).
   final int wrapLines;
 
-  /// The stable storage token (the enum name in Kotlin's UPPER_SNAKE form).
+  /// The stable storage token (the enum name in UPPER_SNAKE form).
   ///
-  /// Kotlin persists `TITLE,AUTHOR,...` (enum `name`). We store the same tokens
-  /// so a selection round-trips identically and could be shared with the
-  /// Kotlin app's pref if ever needed.
+  /// A selection is stored as `TITLE,AUTHOR,...`. A token must not change,
+  /// or a selection that an install has stored would no longer be read.
   String get token => switch (this) {
     PdfColumn.title => 'TITLE',
     PdfColumn.author => 'AUTHOR',
@@ -138,7 +136,7 @@ enum PdfColumn {
 }
 
 /// Localised labels + formatters the pure plan/renderer needs but cannot
-/// resolve itself (mirrors Kotlin `PdfColumnLabels`). Supplied by the caller so
+/// resolve itself. Supplied by the caller so
 /// this layer stays free of any string-resource / locale dependency.
 class PdfColumnLabels {
   /// Creates the label bundle.
@@ -197,7 +195,7 @@ class PrintColumn {
 /// Resolves the printable columns for a render: the user's selection in
 /// canonical order, with the Source-merge rule applied.
 ///
-/// Source-merge rule (Kotlin parity): when BOTH [PdfColumn.source] and
+/// Source-merge rule: when BOTH [PdfColumn.source] and
 /// [PdfColumn.sourceDetail] are selected, they collapse into a single "Source"
 /// column whose cell renders two lines — the type ("Gift") on line 1, the
 /// detail on line 2. When only one is selected it renders as its own
@@ -206,7 +204,7 @@ List<PrintColumn> resolvePrintColumns(
   List<PdfColumn> selected,
   PdfColumnLabels labels,
 ) {
-  // Normalise the selection exactly as Kotlin does (mandatory + canonical
+  // Normalise the selection (mandatory + canonical
   // order) before resolving.
   final set = PdfColumn.parseCsv(PdfColumn.toCsv(selected)).toSet();
   final mergeSource =
@@ -281,8 +279,7 @@ String _cellValue(PdfColumn col, CatalogueItem b, PdfColumnLabels labels) =>
 /// Pure (no rendering) so it's unit-testable. Each logical line (the merged
 /// Source column supplies two) is wrapped independently; results are
 /// concatenated and then capped — so a two-line source cell with a long detail
-/// still respects the cap. Faithful port of Kotlin
-/// `PdfLibraryRenderer.wrapCell`.
+/// still respects the cap.
 List<String> wrapCell(List<String> logical, int maxChars, int maxLines) {
   final limit = maxChars < 1 ? 1 : maxChars;
   final out = <String>[];
@@ -301,7 +298,7 @@ List<String> wrapCell(List<String> logical, int maxChars, int maxLines) {
 }
 
 /// Greedy word-wrap of a single string to [limit] chars/line. A single word
-/// longer than [limit] is hard-split. Port of Kotlin `wrapWords`.
+/// longer than [limit] is hard-split.
 List<String> _wrapWords(String s, int limit) {
   final text = s.trim();
   if (text.isEmpty) return const [];

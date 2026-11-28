@@ -2,7 +2,9 @@
 ///
 /// Reconciles another maintainer's exported `.json` library with this device's
 /// catalogue (PLAN-merge.md). Flow:
-///  1. Pick a Pitak JSON export file (read under the shared bounded-read cap).
+///  1. Choose a Pitak JSON export file. It comes through the app's own
+///     picker and is read by the controller, under the text cap (decision
+///     D24): this page never holds a file or its bytes.
 ///  2. [MergeController] runs the library-ID gate:
 ///     - IDs MATCH → the add-only union is applied automatically; we show the
 ///       counts (added / identical / to-review — books AND magazine titles,
@@ -28,17 +30,13 @@
 /// (the local title is kept), so they are counted and listed, not resolved.
 library;
 
-import 'dart:convert';
-import 'dart:typed_data';
-
-import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pitaka/core/error/failure.dart';
-import 'package:pitaka/core/platform/bounded_file_read.dart';
 import 'package:pitaka/features/import_export/application/merge_controller.dart';
 import 'package:pitaka/features/import_export/application/merge_library_use_case.dart';
 import 'package:pitaka/features/import_export/domain/import_limits.dart';
+import 'package:pitaka/features/import_export/presentation/picked_file_messages.dart';
 import 'package:pitaka/features/import_export/presentation/widgets/merge_review_section.dart';
 
 /// Screen to merge an incoming library file into the local catalogue.
@@ -51,47 +49,49 @@ class MergePage extends ConsumerStatefulWidget {
 }
 
 class _MergePageState extends ConsumerState<MergePage> {
-  /// Page-local failure of the pick/read itself (before the controller is
-  /// involved): oversized or unreadable file.
+  /// Why the chosen file was not taken (too large, could not be read, …),
+  /// as a sentence. Page-local: the merge itself never started, so the
+  /// controller's state is what it was. Null when there is nothing to say.
   String? _pickError;
 
   Future<void> _pickAndMerge() async {
-    const group = XTypeGroup(label: 'Pitak library', extensions: ['json']);
-    // N11: the picker plugin and the read can throw (platform errors,
-    // disappearing files) — fail closed with safe copy instead of an
-    // unhandled async error.
-    final Uint8List bytes;
-    try {
-      final file = await openFile(acceptedTypeGroups: [group]);
-      if (file == null) return;
-      // M05/N11: the shared bounded read replaces the old length-then-
-      // `readAsString` check — a lying `length()` can no longer buy an
-      // unbounded buffer, and malformed UTF-8 is decoded leniently (same as
-      // the Import page) so the PARSER rejects it with merge-specific copy.
-      final read = await readPickedFileBounded(
-        file,
-        maxBytes: ImportLimits.defaults.maxTextChars,
-      );
-      if (read == null) {
-        if (!mounted) return;
-        setState(() => _pickError = 'File is too large to import safely.');
-        return;
-      }
-      bytes = read;
-    } on Object {
-      if (!mounted) return;
-      setState(
-        () => _pickError = 'Could not read that file. Please try again.',
-      );
-      return;
-    }
-    if (!mounted) return;
     setState(() => _pickError = null);
-    // The controller owns the merge from here — nothing after this await
-    // touches `ref` or `setState`, so leaving the page mid-merge is safe.
-    await ref
+    // The controller owns the whole way of the file: the system's picker,
+    // the private copy under the size cap, the read, the removal of the
+    // copy, and the merge (decision D24). It answers only when no file was
+    // taken, with the reason.
+    //
+    // N11: nothing after this await touches `ref`, so leaving the page
+    // while the picker is open or the merge runs is safe.
+    final problem = await ref
         .read(mergeControllerProvider.notifier)
-        .mergeText(utf8.decode(bytes, allowMalformed: true));
+        .mergeFile();
+    if (problem == null || !mounted) return;
+    setState(
+      () => _pickError = pickedFileProblemMessage(
+        problem,
+        use: PickedFileUse.merge,
+        maxBytes: ImportLimits.defaults.maxTextChars,
+      ),
+    );
+  }
+
+  /// Forgets the sentence about a file that was not taken. Called when the
+  /// user does the next thing on this page (Join, Replace, a review row):
+  /// the sentence is about an earlier pick and would otherwise stay next
+  /// to the result of what is done now.
+  void _forgetPickError() {
+    if (_pickError != null) setState(() => _pickError = null);
+  }
+
+  Future<void> _join() async {
+    _forgetPickError();
+    await ref.read(mergeControllerProvider.notifier).applyJoin();
+  }
+
+  Future<void> _resolve(int index, MergeResolution resolution) async {
+    _forgetPickError();
+    await ref.read(mergeControllerProvider.notifier).resolve(index, resolution);
   }
 
   Future<void> _overwrite(MergeDiffersDecision decision) async {
@@ -124,6 +124,7 @@ class _MergePageState extends ConsumerState<MergePage> {
       ),
     );
     if (confirmed != true || !mounted) return;
+    _forgetPickError();
     await ref.read(mergeControllerProvider.notifier).applyOverwrite();
   }
 
@@ -142,6 +143,8 @@ class _MergePageState extends ConsumerState<MergePage> {
     // a new file pick is refused by the controller too — the disabled button
     // just makes that visible.
     final resolving = mergeState is MergeDone && mergeState.isResolving;
+    // The same while a Join or a Replace is being written.
+    final applying = mergeState is MergeNeedsDecision && mergeState.applying;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Merge from a file')),
@@ -158,7 +161,7 @@ class _MergePageState extends ConsumerState<MergePage> {
           ),
           const SizedBox(height: 16),
           FilledButton.icon(
-            onPressed: busy || resolving ? null : _pickAndMerge,
+            onPressed: busy || resolving || applying ? null : _pickAndMerge,
             icon: const Icon(Icons.merge_type),
             label: const Text('Choose a library file'),
           ),
@@ -179,9 +182,7 @@ class _MergePageState extends ConsumerState<MergePage> {
               ),
             _DecisionView(
               decision: mergeState.decision,
-              onJoin: mergeState.applying
-                  ? null
-                  : ref.read(mergeControllerProvider.notifier).applyJoin,
+              onJoin: mergeState.applying ? null : _join,
               onOverwrite: mergeState.applying
                   ? null
                   : () => _overwrite(mergeState.decision),
@@ -190,10 +191,7 @@ class _MergePageState extends ConsumerState<MergePage> {
           if (mergeState is MergeDone) ...[
             _ResultView(result: mergeState.result),
             if (mergeState.review.isNotEmpty)
-              MergeReviewSection(
-                done: mergeState,
-                onResolve: ref.read(mergeControllerProvider.notifier).resolve,
-              ),
+              MergeReviewSection(done: mergeState, onResolve: _resolve),
           ],
         ],
       ),

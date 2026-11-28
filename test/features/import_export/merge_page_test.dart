@@ -1,16 +1,14 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:typed_data';
+import 'dart:io';
 
-// Existing file_selector dependency's test seam; no runtime dependency added.
-// ignore: depend_on_referenced_packages
-import 'package:file_selector_platform_interface/file_selector_platform_interface.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/core/platform/document_picker.dart';
 import 'package:pitaka/features/import_export/application/merge_controller.dart';
 import 'package:pitaka/features/import_export/application/merge_library_use_case.dart';
 import 'package:pitaka/features/import_export/infrastructure/pitaka_json_importer.dart';
@@ -22,66 +20,25 @@ import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
 import 'package:pitaka/features/settings/application/settings_controller.dart';
 
 import '../../support/a11y.dart';
+import '../../support/fake_document_picker.dart';
+import '../../support/fake_picked_document_reader.dart';
 import '../library/replacement_harness.dart';
 import '../library/replacement_test_guard.dart';
 import '../periodicals/application/periodical_fakes.dart';
 
-class _Picker extends FileSelectorPlatform {
-  _Picker([Uint8List? bytes]) : _file = null, _bytes = bytes ?? _defaultJson;
-
-  /// Hands back a specific [XFile] (e.g. the strict-decoding one below).
-  _Picker.file(this._file) : _bytes = null;
-
-  final Uint8List? _bytes;
-  final XFile? _file;
-
-  static final Uint8List _defaultJson = Uint8List.fromList(
-    utf8.encode(
-      jsonEncode({
-        'schemaVersion': 3,
-        'libraryId': 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
-        'libraryName': 'Other',
-        'books': [
-          {'title': 'Incoming', 'bookUid': 'new'},
-        ],
-        'wishlist': <Object>[],
-      }),
-    ),
-  );
-
-  @override
-  Future<XFile?> openFile({
-    List<XTypeGroup>? acceptedTypeGroups,
-    String? initialDirectory,
-    String? confirmButtonText,
-  }) async => _file ?? XFile.fromData(_bytes!, name: 'test.json');
-}
-
-/// An [XFile] whose `readAsString` STRICTLY decodes UTF-8 (throws on
-/// malformed bytes) — like the real path-backed file the picker returns on
-/// device. `XFile.fromData` never throws (it maps bytes to code points),
-/// which would hide the difference between the old `readAsString` path and
-/// the shared bounded read + lenient decode.
-class _StrictXFile extends XFile {
-  _StrictXFile(this._bytes) : super('fake.json');
-
-  final Uint8List _bytes;
-
-  @override
-  Future<int> length() async => _bytes.length;
-
-  @override
-  Stream<Uint8List> openRead([int? start, int? end]) async* {
-    yield _bytes.sublist(start ?? 0, end);
-  }
-
-  @override
-  Future<Uint8List> readAsBytes() async => _bytes;
-
-  @override
-  Future<String> readAsString({Encoding encoding = utf8}) async =>
-      encoding.decode(_bytes);
-}
+/// A library file of ANOTHER library (its id differs from this device's),
+/// with one book: what a pick hands out unless a test says otherwise.
+final List<int> _otherLibraryJson = utf8.encode(
+  jsonEncode({
+    'schemaVersion': 3,
+    'libraryId': 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+    'libraryName': 'Other',
+    'books': [
+      {'title': 'Incoming', 'bookUid': 'new'},
+    ],
+    'wishlist': <Object>[],
+  }),
+);
 
 class _Books implements CatalogueItemRepository {
   @override
@@ -95,6 +52,29 @@ class _Books implements CatalogueItemRepository {
 }
 
 void main() {
+  // The system's picker and the private copy it makes, played by a fake
+  // that writes real files; and a reader that reads them at once (a widget
+  // test cannot wait for real file work). Decision D24.
+  late Directory tmp;
+  late FakeDocumentPicker picker;
+  late FakePickedDocumentReader reader;
+
+  setUp(() {
+    tmp = Directory.systemTemp.createTempSync('merge_page_test');
+    picker = FakeDocumentPicker(Directory('${tmp.path}/picked_documents'));
+    reader = FakePickedDocumentReader();
+  });
+
+  tearDown(() {
+    if (tmp.existsSync()) tmp.deleteSync(recursive: true);
+  });
+
+  /// Puts the two fakes in the place of the system's picker and the disk.
+  List<Override> pickerOverrides() => [
+    documentPickerProvider.overrideWith((ref) async => picker),
+    pickedDocumentReaderProvider.overrideWith((ref) => reader),
+  ];
+
   testWidgets('merge page renders intro + the file-pick action', (
     tester,
   ) async {
@@ -115,9 +95,7 @@ void main() {
   testWidgets(
     'M03: confirmation explains protection and refusal stays visible',
     (tester) async {
-      final previous = FileSelectorPlatform.instance;
-      addTearDown(() => FileSelectorPlatform.instance = previous);
-      FileSelectorPlatform.instance = _Picker();
+      picker.willPick(_otherLibraryJson);
       final guard = FakeReplacementGuard(
         failure: const ValidationFailure(
           'Existing loan history cannot be matched.',
@@ -127,6 +105,7 @@ void main() {
       await tester.pumpWidget(
         ProviderScope(
           overrides: [
+            ...pickerOverrides(),
             settingsRepositoryProvider.overrideWith((ref) async => settings),
             mergeLibraryUseCaseProvider.overrideWith(
               (ref) async => MergeLibraryUseCase(
@@ -167,12 +146,11 @@ void main() {
     // mid-run used to throw in the page's unguarded setState — and the error
     // handler then threw AGAIN calling setState on the dead widget.
     final gate = Completer<void>();
-    final previous = FileSelectorPlatform.instance;
-    addTearDown(() => FileSelectorPlatform.instance = previous);
-    FileSelectorPlatform.instance = _Picker();
+    picker.willPick(_otherLibraryJson);
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          ...pickerOverrides(),
           settingsRepositoryProvider.overrideWith(
             (ref) async => ReplacementSettings(),
           ),
@@ -223,12 +201,11 @@ void main() {
   testWidgets('N11: a throwing merge provider surfaces a safe message', (
     tester,
   ) async {
-    final previous = FileSelectorPlatform.instance;
-    addTearDown(() => FileSelectorPlatform.instance = previous);
-    FileSelectorPlatform.instance = _Picker();
+    picker.willPick(_otherLibraryJson);
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          ...pickerOverrides(),
           mergeLibraryUseCaseProvider.overrideWith(
             (ref) async => throw StateError('plugin exploded'),
           ),
@@ -250,17 +227,14 @@ void main() {
 
   testWidgets('N11: a malformed-UTF8 pick is bounded-read and rejected by the '
       'parser with merge copy', (tester) async {
-    // The old length-then-readAsString path THREW on malformed UTF-8 and showed
-    // the read-failure copy; the shared bounded read + lenient decode lets the
-    // parser reject it with merge-specific copy instead.
-    final previous = FileSelectorPlatform.instance;
-    addTearDown(() => FileSelectorPlatform.instance = previous);
-    FileSelectorPlatform.instance = _Picker.file(
-      _StrictXFile(Uint8List.fromList([0xFF, 0xFE, 0xFD, 0x00, 0x01])),
-    );
+    // A strict decode would THROW on malformed UTF-8 and show a "could not
+    // read" sentence; the bounded read + lenient decode lets the parser
+    // reject it with merge-specific copy instead.
+    picker.willPick([0xFF, 0xFE, 0xFD, 0x00, 0x01]);
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          ...pickerOverrides(),
           settingsRepositoryProvider.overrideWith(
             (ref) async => ReplacementSettings(),
           ),
@@ -288,6 +262,319 @@ void main() {
       findsOneWidget,
     );
     expect(tester.takeException(), isNull);
+  });
+
+  // Decision D24: the file comes through the app's own picker; the page
+  // shows a sentence when no file was taken, and nothing else changes.
+  group("a chosen file comes through the app's own picker (D24)", () {
+    Widget page() => ProviderScope(
+      overrides: [
+        ...pickerOverrides(),
+        settingsRepositoryProvider.overrideWith(
+          (ref) async => ReplacementSettings(),
+        ),
+        mergeLibraryUseCaseProvider.overrideWith(
+          (ref) async => MergeLibraryUseCase(
+            bookRepo: _Books(),
+            periodicalRepo: FakePeriodicals(),
+            namespace: ref.read(settingsControllerProvider.notifier),
+            jsonParser: const PitakaJsonImporter(),
+            replacementGuard: FakeReplacementGuard(),
+            planner: planMergeInline,
+          ),
+        ),
+      ],
+      child: const MaterialApp(home: MergePage()),
+    );
+
+    const tooLargeSentence =
+        'This file is too large to merge. A library file can be at most '
+        '64.0 MB.';
+
+    testWidgets('a picked library file is merged; the picker was asked with '
+        'the text cap, and the copy is removed', (tester) async {
+      picker.willPick(_otherLibraryJson);
+      await tester.pumpWidget(page());
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Choose a library file'));
+      await tester.pumpAndSettle();
+
+      // The file is of another library: the page asks how to combine.
+      expect(find.text('Different library'), findsOneWidget);
+      expect(picker.caps, [64 * 1024 * 1024]);
+      // Merge reads the file without a look at its kind first.
+      expect(reader.asked, ['readAll ${64 * 1024 * 1024}']);
+      expect(picker.copiesOnDisk(), isEmpty);
+    });
+
+    testWidgets('a file above the cap is refused with a sentence that names '
+        'the cap, and nothing is read', (tester) async {
+      picker.willAnswer(const DocumentPickTooLarge());
+      await tester.pumpWidget(page());
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Choose a library file'));
+      await tester.pumpAndSettle();
+
+      expect(find.text(tooLargeSentence), findsOneWidget);
+      expect(reader.asked, isEmpty);
+      expect(find.text('Different library'), findsNothing);
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+    });
+
+    // The four answers that read the same on every page that picks a file.
+    const sentences = <(DocumentPickResult, String)>[
+      (
+        DocumentPickUnreadable(),
+        'That file could not be read. If it is kept online, check the '
+            'connection and try again.',
+      ),
+      (
+        DocumentPickNotSaved(),
+        'The file could not be copied to this phone. Free some storage and '
+            'try again.',
+      ),
+      (
+        DocumentPickUnavailable(),
+        'Choosing a file is not available on this device.',
+      ),
+      (
+        DocumentPickFailed(),
+        'Something went wrong choosing the file. Please try again.',
+      ),
+    ];
+    for (final (answer, sentence) in sentences) {
+      testWidgets('${answer.runtimeType} shows its own sentence', (
+        tester,
+      ) async {
+        picker.willAnswer(answer);
+        await tester.pumpWidget(page());
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.text('Choose a library file'));
+        await tester.pumpAndSettle();
+
+        expect(find.text(sentence), findsOneWidget);
+        expect(find.text('Different library'), findsNothing);
+      });
+    }
+
+    testWidgets('a copy that cannot be read shows the "could not be read" '
+        'sentence', (tester) async {
+      picker.willPick(_otherLibraryJson);
+      reader.failing = true;
+      await tester.pumpWidget(page());
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Choose a library file'));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('could not be read'), findsOneWidget);
+      expect(picker.copiesOnDisk(), isEmpty, reason: 'the copy is removed');
+    });
+
+    testWidgets('closing the picker keeps a pending choice on the page, and '
+        'a new tap clears the sentence of the pick before', (tester) async {
+      picker
+        ..willPick(_otherLibraryJson)
+        ..willAnswer(const DocumentPickTooLarge());
+      await tester.pumpWidget(page());
+      await tester.pumpAndSettle();
+
+      // First pick: the choice between Join and Replace is on the page.
+      await tester.tap(find.text('Choose a library file'));
+      await tester.pumpAndSettle();
+      expect(find.text('Different library'), findsOneWidget);
+
+      // Second pick is too large: the sentence, and the choice is still
+      // there.
+      await tester.tap(find.text('Choose a library file'));
+      await tester.pumpAndSettle();
+      expect(find.text(tooLargeSentence), findsOneWidget);
+      expect(find.text('Different library'), findsOneWidget);
+
+      // Third pick: nothing is scripted, the fake answers "cancelled".
+      await tester.tap(find.text('Choose a library file'));
+      await tester.pumpAndSettle();
+      expect(picker.caps, hasLength(3));
+      expect(find.text(tooLargeSentence), findsNothing);
+      expect(find.text('Different library'), findsOneWidget);
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+    });
+
+    // Seen in the emulator on 2026-11-14: the sentence about a refused
+    // file stayed on the page after the Join, above "Merge complete".
+    group('the sentence about a refused file goes with the next thing the '
+        'user does', () {
+      /// A choice between Join and Replace on the page, and above it the
+      /// sentence about a second file that was too large.
+      Future<void> pumpChoiceAndRefusal(WidgetTester tester) async {
+        picker
+          ..willPick(_otherLibraryJson)
+          ..willAnswer(const DocumentPickTooLarge());
+        await tester.pumpWidget(page());
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Choose a library file'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Choose a library file'));
+        await tester.pumpAndSettle();
+        expect(find.text(tooLargeSentence), findsOneWidget);
+        expect(find.text('Join (recommended)'), findsOneWidget);
+      }
+
+      testWidgets('Join', (tester) async {
+        await pumpChoiceAndRefusal(tester);
+
+        await tester.tap(find.text('Join (recommended)'));
+        await tester.pumpAndSettle();
+
+        expect(find.text(tooLargeSentence), findsNothing);
+      });
+
+      testWidgets('Replace, once it is confirmed; not when the question is '
+          'answered with Cancel', (tester) async {
+        await pumpChoiceAndRefusal(tester);
+
+        await tester.ensureVisible(find.text('Replace my library'));
+        await tester.tap(find.text('Replace my library'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Cancel'));
+        await tester.pumpAndSettle();
+        expect(find.text(tooLargeSentence), findsOneWidget);
+
+        await tester.ensureVisible(find.text('Replace my library'));
+        await tester.tap(find.text('Replace my library'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Replace'));
+        await tester.pumpAndSettle();
+        expect(find.text(tooLargeSentence), findsNothing);
+      });
+
+      testWidgets('a review row that is resolved', (tester) async {
+        // A tall screen: with the sentence above it, the row's buttons
+        // would otherwise lie below the edge of the test's small screen.
+        tester.view.physicalSize = const Size(800, 2000);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.reset);
+        const local = CatalogueItem(
+          id: 1,
+          itemUid: 'u1',
+          title: 'Godaan',
+          genre: 'Fiction',
+          addedDate: 1,
+        );
+        const incoming = CatalogueItem(
+          itemUid: 'u1',
+          title: 'Godaan',
+          genre: 'Classic',
+          addedDate: 2,
+        );
+        // A finished merge with one row to review; its `resolve` is
+        // scripted, its `mergeFile` is the real one.
+        final controller = _ScriptedController(
+          const MergeResult(
+            added: 0,
+            identical: 0,
+            conflicts: [
+              MergeConflict(
+                local: local,
+                incoming: incoming,
+                matchedBy: MatchKind.uid,
+              ),
+            ],
+            possibleDuplicates: [],
+          ),
+        );
+        picker.willAnswer(const DocumentPickTooLarge());
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: [
+              ...pickerOverrides(),
+              mergeControllerProvider.overrideWith(() => controller),
+            ],
+            child: const MaterialApp(home: MergePage()),
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Choose a library file'));
+        await tester.pumpAndSettle();
+        expect(find.text(tooLargeSentence), findsOneWidget);
+        expect(find.text('Take theirs'), findsOneWidget);
+
+        await tester.tap(find.text('Take theirs'));
+        await tester.pumpAndSettle();
+
+        expect(controller.calls, [(0, MergeResolution.takeTheirs)]);
+        expect(find.text(tooLargeSentence), findsNothing);
+      });
+    });
+
+    testWidgets('while the picker is open the button is off, the spinner '
+        'shows, and an earlier choice cannot be acted on', (tester) async {
+      final pickerOpen = Completer<void>();
+      picker.willPick(_otherLibraryJson);
+      await tester.pumpWidget(page());
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Choose a library file'));
+      await tester.pumpAndSettle();
+      expect(find.text('Join (recommended)'), findsOneWidget);
+
+      // The picker opens again and stays open.
+      picker.holdNextPick = pickerOpen;
+      await tester.tap(find.text('Choose a library file'));
+      // Not `pumpAndSettle`: the spinner never comes to rest.
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+      final choose = tester.widget<FilledButton>(
+        find.widgetWithText(FilledButton, 'Choose a library file'),
+      );
+      expect(choose.onPressed, isNull);
+      // Join and Replace are not on the page while a pick is under way.
+      expect(find.text('Join (recommended)'), findsNothing);
+      expect(find.text('Replace my library'), findsNothing);
+
+      // The picker is closed without a choice: everything is back.
+      pickerOpen.complete();
+      await tester.pumpAndSettle();
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+      expect(find.text('Join (recommended)'), findsOneWidget);
+    });
+
+    testWidgets('while a Join or a Replace is being written the button is '
+        'off', (tester) async {
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            ...pickerOverrides(),
+            mergeControllerProvider.overrideWith(
+              () => _PinnedController(
+                const MergeNeedsDecision(
+                  MergeDiffersDecision(
+                    incomingBooks: [],
+                    incomingLibraryId: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+                    incomingLibraryName: 'Other',
+                    localLibraryName: 'Mine',
+                    localIsEmpty: false,
+                  ),
+                  applying: true,
+                ),
+              ),
+            ),
+          ],
+          child: const MaterialApp(home: MergePage()),
+        ),
+      );
+      await tester.pump();
+
+      final choose = tester.widget<FilledButton>(
+        find.widgetWithText(FilledButton, 'Choose a library file'),
+      );
+      expect(choose.onPressed, isNull);
+      expect(picker.caps, isEmpty);
+    });
   });
 
   // Review finding N07: "do not describe a partial merge as complete
@@ -714,6 +1001,17 @@ class _ScriptedController extends MergeController {
       failure == null ? ReviewResolved(resolution) : ReviewFailed(failure),
     );
   }
+}
+
+/// A merge controller pinned to any one state, for rendering the page in a
+/// state that is hard to stop a real merge in.
+class _PinnedController extends MergeController {
+  _PinnedController(this._state);
+
+  final MergeUiState _state;
+
+  @override
+  MergeUiState build() => _state;
 }
 
 /// A merge controller pinned to one terminal state, for rendering the

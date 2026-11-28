@@ -25,15 +25,17 @@ library;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pitaka/core/di/providers.dart';
+import 'package:pitaka/core/widgets/discard_changes_guard.dart';
 import 'package:pitaka/features/library/application/add_book_controller.dart';
-import 'package:pitaka/features/library/application/library_controller.dart';
+import 'package:pitaka/features/library/application/catalogue_changes.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/value_objects/item_details.dart';
 import 'package:pitaka/features/library/presentation/catalogue_save_messages.dart';
+import 'package:pitaka/features/library/presentation/maintainer_stamp.dart';
+import 'package:pitaka/features/library/presentation/widgets/catalogue_choice_labels.dart';
 import 'package:pitaka/features/library/presentation/widgets/form_cover_field.dart';
 import 'package:pitaka/features/library/presentation/widgets/language_field.dart';
 import 'package:pitaka/features/periodicals/presentation/widgets/form_rows.dart';
-import 'package:pitaka/features/settings/application/settings_controller.dart';
 
 /// Form screen to add a new "other" item or edit an existing one.
 class OtherItemFormPage extends ConsumerStatefulWidget {
@@ -77,6 +79,35 @@ class _OtherItemFormPageState extends ConsumerState<OtherItemFormPage> {
 
   bool get _isEdit => widget.item != null;
 
+  /// What the form held when it opened, so that Back can ask before unsaved
+  /// input is lost (the "Discard changes?" guard, ADR 0028).
+  late final OpenedValues _opened;
+
+  /// Every text controller of the form: disposed together, and read
+  /// together by [_values], so a field cannot be in one and not the other.
+  List<TextEditingController> get _texts => [
+    _title,
+    _transliteration,
+    _language,
+    _description,
+    _location,
+    _copies,
+    _sourceDetail,
+  ];
+
+  /// Everything Save would store, as one list for [_opened]. The cover
+  /// counts through [_coverDirty] (a photo taken or removed on purpose; it
+  /// never goes back to false) and through [_coverPending]: leaving while
+  /// a photo is still being stored would lose it.
+  List<Object?> _values() => [
+    for (final c in _texts) c.text,
+    _sourceType,
+    _ageGroup,
+    _addedDate,
+    _coverDirty,
+    _coverPending,
+  ];
+
   @override
   void initState() {
     super.initState();
@@ -92,19 +123,12 @@ class _OtherItemFormPageState extends ConsumerState<OtherItemFormPage> {
     _ageGroup = b?.ageGroup;
     _addedDate = b?.addedDate ?? DateTime.now().millisecondsSinceEpoch;
     _coverRef = b?.coverUrl;
+    _opened = OpenedValues(_values);
   }
 
   @override
   void dispose() {
-    for (final c in [
-      _title,
-      _transliteration,
-      _language,
-      _description,
-      _location,
-      _copies,
-      _sourceDetail,
-    ]) {
+    for (final c in _texts) {
       c.dispose();
     }
     super.dispose();
@@ -113,16 +137,6 @@ class _OtherItemFormPageState extends ConsumerState<OtherItemFormPage> {
   String? _trimToNull(TextEditingController c) {
     final v = c.text.trim();
     return v.isEmpty ? null : v;
-  }
-
-  /// The maintainer name from settings, or null when unset/blank. Only used
-  /// to attribute newly-added rows (same rule as the book form).
-  String? _maintainerStamp() {
-    final name = ref
-        .read(settingsControllerProvider)
-        .maybeWhen(data: (s) => s.maintainerName, orElse: () => '')
-        .trim();
-    return name.isEmpty ? null : name;
   }
 
   /// Assembles the [CatalogueItem] to persist from the form fields, taking
@@ -175,7 +189,7 @@ class _OtherItemFormPageState extends ConsumerState<OtherItemFormPage> {
       return;
     }
     final controller = ref.read(addBookControllerProvider.notifier);
-    final stamp = _maintainerStamp();
+    final stamp = maintainerStampOf(ref);
     final editing = widget.item;
     if (editing == null) {
       await controller.save(_buildItem(null, maintainerStamp: stamp));
@@ -190,7 +204,12 @@ class _OtherItemFormPageState extends ConsumerState<OtherItemFormPage> {
     if (!mounted) return;
     final state = ref.read(addBookControllerProvider);
     if (state.hasValue && state.value != null) {
-      await ref.read(libraryControllerProvider.notifier).refresh();
+      // Saved: say "catalogue changed" and leave (ADR 0031, D154). The
+      // form does not wait for the library list, which reads again
+      // underneath like everything else that shows the item. So there is
+      // no moment between the save and leaving in which Back could ask;
+      // `markSaved()`, which covered that moment, is not needed here.
+      ref.read(catalogueChangesProvider.notifier).changed();
       if (mounted) Navigator.of(context).pop();
     }
   }
@@ -208,7 +227,7 @@ class _OtherItemFormPageState extends ConsumerState<OtherItemFormPage> {
         ? current.coverUrl
         : _coverRef;
 
-    return Scaffold(
+    final page = Scaffold(
       appBar: AppBar(title: Text(_isEdit ? 'Edit item' : 'Add other item')),
       body: ListView(
         padding: const EdgeInsets.all(16),
@@ -269,7 +288,7 @@ class _OtherItemFormPageState extends ConsumerState<OtherItemFormPage> {
             items: [
               const DropdownMenuItem(child: Text('Not set')),
               for (final t in ItemSourceType.values)
-                DropdownMenuItem(value: t, child: Text(_sourceLabel(t))),
+                DropdownMenuItem(value: t, child: Text(itemSourceLabel(t))),
             ],
             onChanged: (v) => setState(() => _sourceType = v),
           ),
@@ -284,7 +303,7 @@ class _OtherItemFormPageState extends ConsumerState<OtherItemFormPage> {
             items: [
               const DropdownMenuItem(child: Text('Not set')),
               for (final g in AgeGroup.values)
-                DropdownMenuItem(value: g, child: Text(_ageGroupLabel(g))),
+                DropdownMenuItem(value: g, child: Text(ageGroupLabel(g))),
             ],
             onChanged: (v) => setState(() => _ageGroup = v),
           ),
@@ -334,21 +353,10 @@ class _OtherItemFormPageState extends ConsumerState<OtherItemFormPage> {
         ],
       ),
     );
+    return DiscardChangesGuard(
+      hasChanges: () => _opened.changed,
+      saving: saving,
+      child: page,
+    );
   }
-
-  static String _sourceLabel(ItemSourceType t) => switch (t) {
-    ItemSourceType.purchased => 'Purchased',
-    ItemSourceType.gift => 'Gift',
-    ItemSourceType.donated => 'Donated',
-    ItemSourceType.inherited => 'Inherited',
-    ItemSourceType.other => 'Other',
-  };
-
-  static String _ageGroupLabel(AgeGroup g) => switch (g) {
-    AgeGroup.above3 => 'Ages 3+',
-    AgeGroup.above6 => 'Ages 6+',
-    AgeGroup.above10 => 'Ages 10+',
-    AgeGroup.above15 => 'Ages 15+',
-    AgeGroup.advanced => 'Advanced',
-  };
 }

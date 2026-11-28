@@ -3,7 +3,7 @@
 ///
 /// The encrypted borrowers vault is NOT here — it is owned by the Rust core
 /// (decision: secrets never live in Dart-side storage). FTS5 mirrors the
-/// five-field search the Kotlin app derived from `books_fts` (FTS4
+/// five-field search of the Room-shaped `books_fts` (FTS4
 /// external-content); we rebuild it as FTS5 rather than migrating the virtual
 /// table (decision: a derived index is rebuilt, not migrated).
 library;
@@ -16,7 +16,7 @@ import 'package:pitaka/features/library/domain/value_objects/language_merge_plan
 
 part 'app_database.g.dart';
 
-/// Columns mirrored into the FTS5 index: the Kotlin `books_fts` five plus
+/// Columns mirrored into the FTS5 index: the Room-shaped `books_fts` five plus
 /// `notes` since schema v5 (ADR 0013 D10 — an "other" item is described in
 /// its notes, so the description must be searchable; search is on-device,
 /// so indexing private notes leaks nothing).

@@ -70,6 +70,26 @@ void main() {
     expect(settings.libraryLogo, reference);
   });
 
+  // Decision of 2026-11-10: only a photographed COVER became smaller
+  // (240×360). The logo keeps the shared 400×600 default.
+  test('a large logo is still stored at 400x600', () async {
+    final container = makeContainer();
+    await container.read(settingsControllerProvider.future);
+    final large = Uint8List.fromList(
+      img.encodePng(img.Image(width: 1200, height: 1800)),
+    );
+
+    final result = await container
+        .read(libraryLogoControllerProvider.notifier)
+        .setLogo(large);
+
+    final reference = result.getOrElse((f) => fail('unexpected failure: $f'));
+    final stored = File('${tmp.path}/${reference.split('/').last}');
+    final picture = img.decodeImage(stored.readAsBytesSync())!;
+    expect(picture.width, 400);
+    expect(picture.height, 600);
+  });
+
   test('undecodable bytes → ValidationFailure, settings untouched', () async {
     final container = makeContainer();
     await container.read(settingsControllerProvider.future);

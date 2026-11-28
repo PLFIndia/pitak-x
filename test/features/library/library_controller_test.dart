@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/features/library/application/catalogue_changes.dart';
 import 'package:pitaka/features/library/application/library_controller.dart';
 import 'package:pitaka/features/library/application/library_filter_controller.dart';
 import 'package:pitaka/features/library/application/library_window.dart';
@@ -49,6 +50,9 @@ class _FakeBookRepo implements CatalogueItemRepository {
 
   int markRemovedCalls = 0;
 
+  /// When set, markRemoved answers what this completes with, when it does.
+  Completer<Either<Failure, Unit>>? heldWrite;
+
   @override
   Future<Either<Failure, List<CatalogueItem>>> getAll() async => right(_all);
   @override
@@ -87,6 +91,8 @@ class _FakeBookRepo implements CatalogueItemRepository {
   @override
   Future<Either<Failure, Unit>> markRemoved(int id, int at) async {
     markRemovedCalls++;
+    final held = heldWrite;
+    if (held != null) return held.future;
     final f = failWritesWith;
     return f != null ? left(f) : right(unit);
   }
@@ -188,6 +194,59 @@ class _FailingLaterRepo extends _FakeBookRepo {
   }
 }
 
+/// Repo that answers like a store (a plain listing pages every row, a search
+/// pages the rows whose title contains the text) and whose reads can be
+/// HELD, so a test can look at the list while a read is running (review
+/// finding P4-M2): the read with index N of [pagesSeen] waits on `holds[N]`,
+/// every other read on [holdAll] while that is set.
+class _HeldRepo extends _FakeBookRepo {
+  _HeldRepo(super.all);
+  final Map<int, Completer<void>> holds = {};
+  Completer<void>? holdAll;
+
+  /// When set, every read answers this failure (after its hold).
+  Failure? failReadsWith;
+
+  /// When true, every read answers "no rows, and there are more": what a
+  /// broken store could say.
+  bool moreButNoRows = false;
+
+  /// The rows a real store would hold now; tests add and remove in place.
+  List<CatalogueItem> get rows => _all;
+
+  /// Lets every held read go on.
+  void release() {
+    final all = holdAll;
+    holdAll = null;
+    all?.complete();
+    for (final hold in holds.values) {
+      if (!hold.isCompleted) hold.complete();
+    }
+    holds.clear();
+  }
+
+  @override
+  Future<Either<Failure, CatalogueItemPage>> page(
+    LibraryQuery query, {
+    required int limit,
+    int offset = 0,
+  }) async {
+    final index = pagesSeen.length;
+    pagesSeen.add((query: query, limit: limit, offset: offset));
+    final hold = holds[index] ?? holdAll;
+    if (hold != null) await hold.future;
+    final failure = failReadsWith;
+    if (failure != null) return left(failure);
+    if (moreButNoRows) {
+      return right(const CatalogueItemPage(items: [], hasMore: true));
+    }
+    final matching = query.isSearch
+        ? _all.where((b) => b.title.contains(query.text)).toList()
+        : _all;
+    return right(_FakeBookRepo.slice(matching, limit: limit, offset: offset));
+  }
+}
+
 /// In-memory settings repo so the settings controller (and its sort value)
 /// can be driven without shared_preferences.
 class _FakeSettingsRepo implements SettingsRepository {
@@ -286,11 +345,14 @@ void main() {
       c.read(libraryControllerProvider).value!;
 
   test('build loads the first page of the book list', () async {
-    final container = makeContainer(_FakeBookRepo([...books]));
+    final repo = _FakeBookRepo([...books]);
+    final container = makeContainer(repo);
     final window = await container.read(libraryControllerProvider.future);
     expect(window.books.single.title, 'Dune');
     expect(window.hasMore, isFalse);
     expect(window.isLoadingMore, isFalse);
+    // The store said "no more": one read, although a page has room for more.
+    expect(repo.pagesSeen, hasLength(1));
   });
 
   test('remove failure surfaces AsyncError(Failure) — never a silent '
@@ -305,6 +367,8 @@ void main() {
     final state = container.read(libraryControllerProvider);
     expect(state, isA<AsyncError<LibraryWindow>>());
     expect(state.error, isA<StorageFailure>());
+    // Nothing was written, so nobody is told to read again (D151).
+    expect(container.read(catalogueChangesProvider), 0);
   });
 
   test('restoreRemoved failure surfaces AsyncError(Failure)', () async {
@@ -318,16 +382,26 @@ void main() {
     final state = container.read(libraryControllerProvider);
     expect(state, isA<AsyncError<LibraryWindow>>());
     expect(state.error, isA<StorageFailure>());
+    expect(container.read(catalogueChangesProvider), 0);
   });
 
-  test('successful remove refreshes with data', () async {
+  // Rewritten for P4-M2 / P3-M4 (D151, D154): a remove used to reload the
+  // list itself and wait for it. Now it tells the app's "catalogue changed"
+  // signal, and the list, one listener among others, reads again.
+  test('a successful remove says "changed" once and the list reads '
+      'again', () async {
     final repo = _FakeBookRepo([...books]);
-    final container = makeContainer(repo);
+    final container = makeContainer(repo)
+      ..listen(libraryControllerProvider, (_, _) {});
     await container.read(libraryControllerProvider.future);
+    final readsBefore = repo.pagesSeen.length;
 
     await container.read(libraryControllerProvider.notifier).remove(1);
 
     expect(repo.markRemovedCalls, 1);
+    expect(container.read(catalogueChangesProvider), 1);
+    await container.read(libraryControllerProvider.future);
+    expect(repo.pagesSeen, hasLength(readsBefore + 1));
     expect(container.read(libraryControllerProvider).hasValue, isTrue);
   });
 
@@ -585,6 +659,10 @@ void main() {
       expect(window.hasMore, isFalse);
     });
 
+    // Rewritten for P4-M2 (D153, D154): refresh() and remove() no longer
+    // hand back the reload's future (nobody waits for the list any more),
+    // so the test waits for the list itself. Up to maxLibraryPageSize rows
+    // the reload is still ONE read; beyond it, see the group below.
     test(
       'D2-b: refresh after scrolling two pages reloads the SAME depth in '
       'ONE read so the user keeps their place; a remove does the same',
@@ -596,14 +674,20 @@ void main() {
         await container.read(libraryControllerProvider.future);
         await notifier.loadMore();
         expect(windowOf(container).books, hasLength(120));
+        var reads = repo.pagesSeen.length;
 
-        await notifier.refresh();
+        notifier.refresh();
+        await container.read(libraryControllerProvider.future);
+        expect(repo.pagesSeen, hasLength(reads + 1));
         expect(repo.pagesSeen.last.offset, 0);
         expect(repo.pagesSeen.last.limit, 120);
         expect(windowOf(container).books, hasLength(120));
         expect(windowOf(container).hasMore, isTrue);
+        reads = repo.pagesSeen.length;
 
         await notifier.remove(3);
+        await container.read(libraryControllerProvider.future);
+        expect(repo.pagesSeen, hasLength(reads + 1));
         expect(repo.pagesSeen.last.offset, 0);
         expect(repo.pagesSeen.last.limit, 120);
       },
@@ -703,5 +787,493 @@ void main() {
         );
       },
     );
+  });
+
+  // Review findings P4-M2 and P3-M4 (ADR 0031; decisions D151 to D154). The
+  // list is one listener of the app's "catalogue changed" signal. While it
+  // is read again its rows stay in the state; a deep list is read again in
+  // pieces; a load that a newer one overtakes stops.
+  group('P4-M2 — the rows stay while the list is read again', () {
+    /// A library of [n] books over a store whose reads can be held, loaded
+    /// and scrolled to [depth] rows, with a listener, as the screen is one.
+    /// The store's record of reads and the recorded states start empty.
+    Future<(_HeldRepo, ProviderContainer, List<AsyncValue<LibraryWindow>>)>
+    openAt(int depth, {int n = 800}) async {
+      final repo = _HeldRepo(manyBooks(n));
+      final states = <AsyncValue<LibraryWindow>>[];
+      final container = makeContainer(repo)
+        ..listen(libraryControllerProvider, (_, next) => states.add(next));
+      await container.read(libraryControllerProvider.future);
+      final notifier = container.read(libraryControllerProvider.notifier);
+      while (windowOf(container).books.length < depth) {
+        await notifier.loadMore();
+      }
+      expect(windowOf(container).books, hasLength(depth));
+      repo.pagesSeen.clear();
+      states.clear();
+      return (repo, container, states);
+    }
+
+    List<(int, int)> readsOf(_HeldRepo repo) => [
+      for (final p in repo.pagesSeen) (p.offset, p.limit),
+    ];
+
+    test('a change is said: the list is read again to where the user was, '
+        'in pieces of at most maxLibraryPageSize, and the old rows stay '
+        'meanwhile (D152, D153)', () async {
+      final (repo, container, states) = await openAt(660);
+      final serial = windowOf(container).listSerial;
+      // What a write elsewhere did: one row gone, a new one in front.
+      repo.rows
+        ..removeWhere((b) => b.id == 7)
+        ..insert(0, const CatalogueItem(id: 9000, title: 'new'));
+
+      repo.holdAll = Completer<void>();
+      container.read(catalogueChangesProvider.notifier).changed();
+      final during = container.read(libraryControllerProvider);
+      expect(during.isLoading, isTrue);
+      expect(during.hasValue, isTrue);
+      expect(during.value!.books, hasLength(660));
+      expect(during.value!.books.first.id, 1, reason: 'the OLD rows');
+
+      repo.release();
+      final window = await container.read(libraryControllerProvider.future);
+      expect(readsOf(repo), [(0, maxLibraryPageSize), (500, 160)]);
+      expect(window.books, hasLength(660));
+      expect(window.books.first.id, 9000);
+      expect(window.books.any((b) => b.id == 7), isFalse);
+      expect(window.listSerial, serial, reason: 'the same list');
+      expect(window.hasMore, isTrue);
+      expect(states, isNotEmpty);
+      expect(states.every((s) => s.hasValue), isTrue);
+    });
+
+    test('a reload that a newer change overtakes reads no further piece, '
+        'and its end changes nothing (D153)', () async {
+      final (repo, container, _) = await openAt(660);
+      // Reload A: its first piece is held.
+      final holdA = repo.holds[0] = Completer<void>();
+      container.read(catalogueChangesProvider.notifier).changed();
+      container.read(libraryControllerProvider); // the list starts reading
+      await Future<void>.delayed(Duration.zero);
+      expect(readsOf(repo), [(0, 500)], reason: 'A asked for its first piece');
+
+      // A second change while A waits: reload B runs to its end.
+      repo.rows.insert(0, const CatalogueItem(id: 9000, title: 'new'));
+      container.read(catalogueChangesProvider.notifier).changed();
+      final afterB = await container.read(libraryControllerProvider.future);
+      expect(afterB.books.first.id, 9000);
+      expect(afterB.books, hasLength(660));
+      expect(readsOf(repo), [(0, 500), (0, 500), (500, 160)]);
+
+      // Now A's first piece arrives, late.
+      holdA.complete();
+      await Future<void>.delayed(Duration.zero);
+      await Future<void>.delayed(Duration.zero);
+      final end = container.read(libraryControllerProvider);
+      expect(repo.pagesSeen, hasLength(3), reason: 'A read no further piece');
+      expect(end.hasError, isFalse);
+      expect(end.isLoading, isFalse);
+      expect(end.value!.books.first.id, 9000);
+      expect(end.value!.books, hasLength(660));
+    });
+
+    test('two changes said one after the other, before the first reload '
+        'has asked the store: ONE read of the head, not two', () async {
+      final (repo, container, _) = await openAt(120);
+      container.read(catalogueChangesProvider.notifier).changed();
+      container.read(libraryControllerProvider); // reload A starts
+      container.read(catalogueChangesProvider.notifier).changed();
+      await container.read(libraryControllerProvider.future); // reload B
+      await Future<void>.delayed(Duration.zero);
+
+      expect(readsOf(repo), [(0, 120)]);
+    });
+
+    test('a load of ANOTHER list that ends after a newer load does not '
+        'rewrite what the screen shows: the place is kept at the next '
+        'change', () async {
+      final (repo, container, _) = await openAt(120);
+      final notifier = container.read(libraryControllerProvider.notifier);
+      final serial = windowOf(container).listSerial;
+
+      // Load A: a search, held.
+      final holdA = repo.holds[0] = Completer<void>();
+      notifier.onQueryChanged('book 7');
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+      container.read(libraryControllerProvider);
+      await Future<void>.delayed(Duration.zero);
+      expect(repo.pagesSeen.single.query.text, 'book 7');
+
+      // Load B: the text cleared again. The same list as on the screen.
+      notifier.onQueryChanged('');
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+      var window = await container.read(libraryControllerProvider.future);
+      expect(window.listSerial, serial);
+      expect(window.books, hasLength(120));
+
+      // A ends late; then a change is said.
+      holdA.complete();
+      await Future<void>.delayed(Duration.zero);
+      await Future<void>.delayed(Duration.zero);
+      container.read(catalogueChangesProvider.notifier).changed();
+      window = await container.read(libraryControllerProvider.future);
+
+      expect(window.query.text, '');
+      expect(window.listSerial, serial, reason: 'still the same list');
+      expect(window.books, hasLength(120), reason: 'and to its depth');
+    });
+
+    test('a reload that fails shows the error and keeps the old rows behind '
+        'it; refresh() reads again, and while it reads the state says both '
+        '"loading" and "error"', () async {
+      final (repo, container, _) = await openAt(120);
+      repo.failReadsWith = const StorageFailure('disk gone');
+      container.read(catalogueChangesProvider.notifier).changed();
+      await expectLater(
+        container.read(libraryControllerProvider.future),
+        throwsA(isA<StorageFailure>()),
+      );
+      final failed = container.read(libraryControllerProvider);
+      expect(failed.hasError, isTrue);
+      expect(failed.isLoading, isFalse);
+      expect(failed.valueOrNull?.books, hasLength(120));
+
+      repo
+        ..failReadsWith = null
+        ..holdAll = Completer<void>()
+        ..pagesSeen.clear();
+      container.read(libraryControllerProvider.notifier).refresh();
+      final retrying = container.read(libraryControllerProvider);
+      expect(retrying.isLoading, isTrue);
+      expect(
+        retrying.hasError,
+        isTrue,
+        reason: 'the error screen stays until the answer is there',
+      );
+
+      repo.release();
+      final window = await container.read(libraryControllerProvider.future);
+      expect(container.read(libraryControllerProvider).hasError, isFalse);
+      expect(window.books, hasLength(120));
+      expect(readsOf(repo), [(0, 120)], reason: 'to the depth it had');
+    });
+
+    test('after a deep reload the next page goes on from the right row; a '
+        'page that arrives after a change is dropped, and no row stands '
+        'twice', () async {
+      final (repo, container, _) = await openAt(660);
+      container.read(catalogueChangesProvider.notifier).changed();
+      await container.read(libraryControllerProvider.future);
+      repo.pagesSeen.clear();
+
+      // The next page is asked for and held; a change overtakes it.
+      final hold = repo.holds[0] = Completer<void>();
+      final more = container
+          .read(libraryControllerProvider.notifier)
+          .loadMore();
+      await Future<void>.delayed(Duration.zero);
+      expect(readsOf(repo), [(660, libraryPageSize)]);
+      container.read(catalogueChangesProvider.notifier).changed();
+      await container.read(libraryControllerProvider.future);
+      hold.complete();
+      await more;
+
+      var window = windowOf(container);
+      final ids = window.books.map((b) => b.id).toList();
+      expect(ids.toSet(), hasLength(ids.length));
+      expect(window.books, hasLength(660));
+      expect(window.isLoadingMore, isFalse);
+
+      // The page that was overtaken does not stand in the way of the next:
+      // scrolling on reads again.
+      await container.read(libraryControllerProvider.notifier).loadMore();
+      window = windowOf(container);
+      expect(readsOf(repo).last, (660, libraryPageSize));
+      expect(window.books, hasLength(720));
+    });
+
+    test('a write that fails while the next page is being read: the error '
+        'stays, the late page is not painted over it (§5)', () async {
+      final (repo, container, _) = await openAt(120);
+      final hold = repo.holds[0] = Completer<void>();
+      final more = container
+          .read(libraryControllerProvider.notifier)
+          .loadMore();
+      await Future<void>.delayed(Duration.zero);
+
+      repo.failWritesWith = const StorageFailure('disk full');
+      await container.read(libraryControllerProvider.notifier).remove(3);
+      expect(container.read(libraryControllerProvider).hasError, isTrue);
+
+      hold.complete();
+      await more;
+      final state = container.read(libraryControllerProvider);
+      expect(state.hasError, isTrue);
+      expect(state.error, isA<StorageFailure>());
+    });
+
+    test('scrolling and typing say nothing to the signal; a remove and a '
+        'restore say it once each (P3-M4, D151)', () async {
+      final (repo, container, _) = await openAt(60);
+      var heard = 0;
+      container.listen(catalogueChangesProvider, (_, _) => heard++);
+      final notifier = container.read(libraryControllerProvider.notifier);
+      await notifier.loadMore();
+      await notifier.loadMore();
+      await notifier.loadMore();
+      notifier.onQueryChanged('book 1');
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+      await container.read(libraryControllerProvider.future);
+      expect(repo.pagesSeen, hasLength(4), reason: 'three pages, one search');
+      expect(heard, 0);
+
+      // The notifier is read anew for each write, as the item's page does:
+      // that read brings the list up to date first (see `_write`).
+      await container.read(libraryControllerProvider.notifier).remove(3);
+      expect(heard, 1);
+      await container
+          .read(libraryControllerProvider.notifier)
+          .restoreRemoved(3);
+      expect(heard, 2);
+    });
+
+    test('remove and restoreRemoved do not wait for the list: they are done '
+        'when the write is (D154)', () async {
+      final (repo, container, _) = await openAt(120);
+      repo.holdAll = Completer<void>(); // the list's next read does not end
+
+      await container
+          .read(libraryControllerProvider.notifier)
+          .remove(3)
+          .timeout(const Duration(seconds: 2));
+      expect(
+        container.read(libraryControllerProvider).isLoading,
+        isTrue,
+        reason: 'the list is still reading; the remove is done',
+      );
+      await container
+          .read(libraryControllerProvider.notifier)
+          .restoreRemoved(3)
+          .timeout(const Duration(seconds: 2));
+      expect(container.read(catalogueChangesProvider), 2);
+
+      repo.release();
+      await container.read(libraryControllerProvider.future);
+    });
+
+    test('another list gets the next serial number and starts at one page; '
+        'the same list keeps its number and its depth (D152)', () async {
+      final (_, container, _) = await openAt(120);
+      final notifier = container.read(libraryControllerProvider.notifier);
+      final first = windowOf(container);
+      expect(first.query.text, '');
+
+      // The same list: a page more, a change said, a retry.
+      await notifier.loadMore();
+      expect(windowOf(container).listSerial, first.listSerial);
+      container.read(catalogueChangesProvider.notifier).changed();
+      var window = await container.read(libraryControllerProvider.future);
+      expect(window.listSerial, first.listSerial);
+      expect(window.books, hasLength(180));
+      notifier.refresh();
+      window = await container.read(libraryControllerProvider.future);
+      expect(window.listSerial, first.listSerial);
+      expect(window.books, hasLength(180));
+
+      // Another text ('book 1' is in the title of 111 of the 800 books).
+      notifier.onQueryChanged('book 1');
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+      window = await container.read(libraryControllerProvider.future);
+      expect(window.listSerial, first.listSerial + 1);
+      expect(window.query.text, 'book 1');
+      expect(window.books, hasLength(libraryPageSize));
+
+      // A kind chip, then a language chip.
+      container.read(libraryKindFilterProvider.notifier).toggle(ItemKind.book);
+      window = await container.read(libraryControllerProvider.future);
+      expect(window.listSerial, first.listSerial + 2);
+      expect(window.query.kind, ItemKind.book);
+      container.read(libraryLanguageFilterProvider.notifier).set('Hindi');
+      window = await container.read(libraryControllerProvider.future);
+      expect(window.listSerial, first.listSerial + 3);
+      expect(window.query.language, 'Hindi');
+
+      // The sort.
+      await container.read(settingsControllerProvider.future);
+      await container
+          .read(settingsControllerProvider.notifier)
+          .setLibrarySort(LibrarySort.languageAsc);
+      window = await container.read(libraryControllerProvider.future);
+      expect(window.listSerial, first.listSerial + 4);
+      expect(window.query.sort, LibrarySort.languageAsc);
+
+      // The text cleared: another list again, not "the first one back".
+      notifier.onQueryChanged('');
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+      window = await container.read(libraryControllerProvider.future);
+      expect(window.listSerial, first.listSerial + 5);
+      expect(window.query.text, '');
+      expect(window.books, hasLength(libraryPageSize));
+    });
+
+    test('while ANOTHER list is being read the old rows stay in the state, '
+        'with their own question and number; after the first load nothing '
+        'is ever drawn as the spinner (D152)', () async {
+      final (repo, container, states) = await openAt(120);
+      final notifier = container.read(libraryControllerProvider.notifier);
+      final old = windowOf(container);
+
+      repo.holdAll = Completer<void>();
+      notifier.onQueryChanged('book 7');
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+      final during = container.read(libraryControllerProvider);
+      expect(during.isLoading, isTrue);
+      expect(during.value!.books, hasLength(120));
+      expect(
+        during.value!.query.text,
+        '',
+        reason: 'the rows on the screen still answer the OLD question',
+      );
+      expect(during.value!.listSerial, old.listSerial);
+
+      repo.release();
+      final window = await container.read(libraryControllerProvider.future);
+      expect(window.query.text, 'book 7');
+      expect(window.listSerial, old.listSerial + 1);
+      // The page draws the state with `skipLoadingOnReload: true`.
+      expect(states, isNotEmpty);
+      for (final state in states) {
+        expect(
+          state.when(
+            skipLoadingOnReload: true,
+            data: (_) => 'rows',
+            error: (_, _) => 'error',
+            loading: () => 'spinner',
+          ),
+          'rows',
+        );
+      }
+    });
+
+    test('letters typed quickly make ONE read, for the last text', () async {
+      final (repo, container, _) = await openAt(60);
+      final notifier = container.read(libraryControllerProvider.notifier)
+        ..onQueryChanged('b')
+        ..onQueryChanged('bo')
+        ..onQueryChanged('book 7');
+      expect(notifier.query, 'book 7');
+
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+      await container.read(libraryControllerProvider.future);
+      expect(repo.pagesSeen.single.query.text, 'book 7');
+    });
+
+    test('a change said in the pause after a typed letter reads with the '
+        'typed text at once, and the end of the pause brings no second '
+        'read of the same list', () async {
+      final (repo, container, _) = await openAt(60);
+      container
+          .read(libraryControllerProvider.notifier)
+          .onQueryChanged('book 7');
+      container.read(catalogueChangesProvider.notifier).changed();
+      await container.read(libraryControllerProvider.future);
+      expect(repo.pagesSeen.single.query.text, 'book 7');
+
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+      await container.read(libraryControllerProvider.future);
+      expect(repo.pagesSeen, hasLength(1));
+    });
+
+    test('a letter typed after a change was said, before the list has '
+        'started to read again, is read by that one read too', () async {
+      final (repo, container, _) = await openAt(60);
+      // The search box holds the notifier, as the page does: its call does
+      // not bring the list up to date first.
+      final notifier = container.read(libraryControllerProvider.notifier);
+      container.read(catalogueChangesProvider.notifier).changed();
+      notifier.onQueryChanged('book 7');
+      await container.read(libraryControllerProvider.future);
+      expect(repo.pagesSeen.single.query.text, 'book 7');
+
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+      await container.read(libraryControllerProvider.future);
+      expect(repo.pagesSeen, hasLength(1), reason: 'the pause was dropped');
+    });
+
+    test('a write that ends while the list is waiting to be read again '
+        'still says "changed" (Riverpod refuses ref.read then)', () async {
+      final (repo, container, _) = await openAt(60);
+      final write = Completer<Either<Failure, Unit>>();
+      repo.heldWrite = write;
+      final removing = container
+          .read(libraryControllerProvider.notifier)
+          .remove(3);
+      await Future<void>.delayed(Duration.zero);
+
+      // Another write elsewhere says "changed"; nobody reads the list, so
+      // it has not been rebuilt when the held write ends in the same turn.
+      container.read(catalogueChangesProvider.notifier).changed();
+      write.complete(right(unit));
+      await removing;
+
+      expect(container.read(catalogueChangesProvider), 2);
+      await container.read(libraryControllerProvider.future);
+    });
+
+    test('a page that lands after a change was said, but before the list '
+        'has started to read again, is dropped as well', () async {
+      final (repo, container, states) = await openAt(120);
+      final hold = repo.holds[0] = Completer<void>();
+      final more = container
+          .read(libraryControllerProvider.notifier)
+          .loadMore();
+      await Future<void>.delayed(Duration.zero);
+      states.clear();
+
+      // Both in one turn: the page's answer is handled before Riverpod has
+      // rebuilt the list.
+      container.read(catalogueChangesProvider.notifier).changed();
+      hold.complete();
+      await more;
+      final window = await container.read(libraryControllerProvider.future);
+
+      expect(window.books, hasLength(120));
+      expect(
+        states.where((s) => s.valueOrNull?.books.length == 180),
+        isEmpty,
+        reason: 'the late page was never put on the screen',
+      );
+    });
+
+    test('a page asked for in the pause after a typed letter belongs to '
+        'the list ON THE SCREEN, not to the text in the box', () async {
+      final (repo, container, _) = await openAt(60);
+      final notifier = container.read(libraryControllerProvider.notifier)
+        ..onQueryChanged('book 7');
+
+      await notifier.loadMore();
+      expect(repo.pagesSeen.single.query.text, '');
+      expect(repo.pagesSeen.single.offset, 60);
+      expect(windowOf(container).books, hasLength(120));
+
+      // The pause ends inside the test, so no timer outlives it.
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+      final window = await container.read(libraryControllerProvider.future);
+      expect(window.query.text, 'book 7');
+    });
+
+    test('a store that says "there are more" and gives no rows does not '
+        'keep the list reading for ever', () async {
+      final (repo, container, _) = await openAt(120);
+      repo.moreButNoRows = true;
+      container.read(catalogueChangesProvider.notifier).changed();
+
+      final window = await container
+          .read(libraryControllerProvider.future)
+          .timeout(const Duration(seconds: 5));
+      expect(repo.pagesSeen, hasLength(1));
+      expect(window.books, isEmpty);
+    });
   });
 }

@@ -116,7 +116,7 @@ final updateIssueUseCaseProvider =
 // ignore: unused_element
 typedef UpdateIssueUseCaseRef =
     AutoDisposeFutureProviderRef<UpdateIssueUseCase>;
-String _$periodicalByIdHash() => r'4df90a9fb3ccb148280737c5e8ee582d176ebd5e';
+String _$periodicalByIdHash() => r'1eec36a3430be13b0763cb78abd58097a8b18aa8';
 
 /// Copied from Dart SDK
 class _SystemHash {
@@ -146,10 +146,10 @@ class _SystemHash {
 ///
 /// Freshness signals (N04): BOTH mutation signals are watched, value
 /// ignored. `periodicalsControllerProvider` fires on every series write
-/// (form save, remove/restore, delete); `libraryControllerProvider` fires on
-/// every item write — including import, merge and restore, which rewrite
-/// periodicals without going through the series controller. Watching only
-/// the repository OBJECT would never fire.
+/// (form save, remove/restore, delete); `catalogueChangesProvider` (ADR
+/// 0031) fires on every item write — including import, merge and restore,
+/// which rewrite periodicals without going through the series controller.
+/// Watching only the repository OBJECT would never fire.
 ///
 /// `null` = the row no longer exists. A repository `Left` is thrown so the
 /// screen sees `AsyncError`.
@@ -165,10 +165,10 @@ const periodicalByIdProvider = PeriodicalByIdFamily();
 ///
 /// Freshness signals (N04): BOTH mutation signals are watched, value
 /// ignored. `periodicalsControllerProvider` fires on every series write
-/// (form save, remove/restore, delete); `libraryControllerProvider` fires on
-/// every item write — including import, merge and restore, which rewrite
-/// periodicals without going through the series controller. Watching only
-/// the repository OBJECT would never fire.
+/// (form save, remove/restore, delete); `catalogueChangesProvider` (ADR
+/// 0031) fires on every item write — including import, merge and restore,
+/// which rewrite periodicals without going through the series controller.
+/// Watching only the repository OBJECT would never fire.
 ///
 /// `null` = the row no longer exists. A repository `Left` is thrown so the
 /// screen sees `AsyncError`.
@@ -182,10 +182,10 @@ class PeriodicalByIdFamily extends Family<AsyncValue<Periodical?>> {
   ///
   /// Freshness signals (N04): BOTH mutation signals are watched, value
   /// ignored. `periodicalsControllerProvider` fires on every series write
-  /// (form save, remove/restore, delete); `libraryControllerProvider` fires on
-  /// every item write — including import, merge and restore, which rewrite
-  /// periodicals without going through the series controller. Watching only
-  /// the repository OBJECT would never fire.
+  /// (form save, remove/restore, delete); `catalogueChangesProvider` (ADR
+  /// 0031) fires on every item write — including import, merge and restore,
+  /// which rewrite periodicals without going through the series controller.
+  /// Watching only the repository OBJECT would never fire.
   ///
   /// `null` = the row no longer exists. A repository `Left` is thrown so the
   /// screen sees `AsyncError`.
@@ -200,10 +200,10 @@ class PeriodicalByIdFamily extends Family<AsyncValue<Periodical?>> {
   ///
   /// Freshness signals (N04): BOTH mutation signals are watched, value
   /// ignored. `periodicalsControllerProvider` fires on every series write
-  /// (form save, remove/restore, delete); `libraryControllerProvider` fires on
-  /// every item write — including import, merge and restore, which rewrite
-  /// periodicals without going through the series controller. Watching only
-  /// the repository OBJECT would never fire.
+  /// (form save, remove/restore, delete); `catalogueChangesProvider` (ADR
+  /// 0031) fires on every item write — including import, merge and restore,
+  /// which rewrite periodicals without going through the series controller.
+  /// Watching only the repository OBJECT would never fire.
   ///
   /// `null` = the row no longer exists. A repository `Left` is thrown so the
   /// screen sees `AsyncError`.
@@ -242,10 +242,10 @@ class PeriodicalByIdFamily extends Family<AsyncValue<Periodical?>> {
 ///
 /// Freshness signals (N04): BOTH mutation signals are watched, value
 /// ignored. `periodicalsControllerProvider` fires on every series write
-/// (form save, remove/restore, delete); `libraryControllerProvider` fires on
-/// every item write — including import, merge and restore, which rewrite
-/// periodicals without going through the series controller. Watching only
-/// the repository OBJECT would never fire.
+/// (form save, remove/restore, delete); `catalogueChangesProvider` (ADR
+/// 0031) fires on every item write — including import, merge and restore,
+/// which rewrite periodicals without going through the series controller.
+/// Watching only the repository OBJECT would never fire.
 ///
 /// `null` = the row no longer exists. A repository `Left` is thrown so the
 /// screen sees `AsyncError`.
@@ -259,10 +259,10 @@ class PeriodicalByIdProvider extends AutoDisposeFutureProvider<Periodical?> {
   ///
   /// Freshness signals (N04): BOTH mutation signals are watched, value
   /// ignored. `periodicalsControllerProvider` fires on every series write
-  /// (form save, remove/restore, delete); `libraryControllerProvider` fires on
-  /// every item write — including import, merge and restore, which rewrite
-  /// periodicals without going through the series controller. Watching only
-  /// the repository OBJECT would never fire.
+  /// (form save, remove/restore, delete); `catalogueChangesProvider` (ADR
+  /// 0031) fires on every item write — including import, merge and restore,
+  /// which rewrite periodicals without going through the series controller.
+  /// Watching only the repository OBJECT would never fire.
   ///
   /// `null` = the row no longer exists. A repository `Left` is thrown so the
   /// screen sees `AsyncError`.
@@ -347,7 +347,7 @@ class _PeriodicalByIdProviderElement
   int get id => (origin as PeriodicalByIdProvider).id;
 }
 
-String _$periodicalByUidHash() => r'23d33946562ebdb847d69cd7ce5b3340b0dcc7d2';
+String _$periodicalByUidHash() => r'8357fc14729c06818485e7c7fee8f518731878f6';
 
 /// One magazine title, observed by its stable `periodicalUid` — the key an
 /// issue's `IssueOf.periodicalUid` carries, so an issue's detail page can
@@ -510,7 +510,7 @@ class _PeriodicalByUidProviderElement
   String get periodicalUid => (origin as PeriodicalByUidProvider).periodicalUid;
 }
 
-String _$periodicalCoversHash() => r'7df6807d20ce15fa54dbb6338ce3c28a07506f3d';
+String _$periodicalCoversHash() => r'81dcfe849259acd2180ad586efa93546981d3775';
 
 /// Series covers keyed by `periodicalUid`, for the issue rows of the library
 /// list (ADR 0014 W4): an issue without its own cover shows its series' cover

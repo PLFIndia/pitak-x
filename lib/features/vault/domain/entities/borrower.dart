@@ -1,5 +1,5 @@
-/// Vault domain models. Mirror of Kotlin `Borrower` / `Loan` / `BorrowerStats`
-/// (source app). Pure Dart (AGENTS.md §3.1). These live in the encrypted vault;
+/// Vault domain models: `Borrower`, `Loan`, `BorrowerStats`.
+/// Pure Dart (AGENTS.md §3.1). These live in the encrypted vault;
 /// the data crosses the FFI boundary as rows out of the Rust core, never with
 /// the key.
 library;
@@ -111,9 +111,24 @@ class Loan {
       notes: notes ?? this.notes,
     );
   }
+
+  /// This loan as "not returned any more": every field kept, the date of
+  /// return cleared. It is what taking a return back ("Undo") writes.
+  ///
+  /// Why a method of its own (beginner note): [copyWith] keeps the old value
+  /// whenever it is given null, so `copyWith(returnedDate: null)` changes
+  /// nothing. Clearing a field needs to be said in so many words.
+  Loan reopened() => Loan(
+    id: id,
+    itemId: itemId,
+    borrowerId: borrowerId,
+    lentDate: lentDate,
+    dueDate: dueDate,
+    notes: notes,
+  );
 }
 
-/// Live-computed borrower statistics (Kotlin `BorrowerStats`).
+/// Live-computed borrower statistics.
 class BorrowerStats {
   /// Creates a stats snapshot.
   const BorrowerStats({

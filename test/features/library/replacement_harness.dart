@@ -147,6 +147,11 @@ class ReplacementHarness {
           (ref) async => MemoryKeysReset().reset,
         ),
         appDocsDirProvider.overrideWith((ref) async => directory),
+        // BR4: a backup is built under the app's temporary folder. A folder
+        // inside this harness's own directory, so `close` removes it too.
+        appTempDirProvider.overrideWith(
+          (ref) async => Directory('${directory.path}/app_temp'),
+        ),
         if (!generations) ...[
           // The real coversDir resolves through the active data generation,
           // whose startup adoption would MOVE this harness's hand-placed flat
@@ -161,7 +166,11 @@ class ReplacementHarness {
         if (generations && openCatalogue != null)
           restoreBackupProvider.overrideWith((ref) async {
             final real = await ref.watch(dataGenerationsProvider.future);
-            final dir = await ref.watch(appDocsDirProvider.future);
+            // BR6: the app's own scratch folders for a restore, under the
+            // harness's temporary folder.
+            final workFolders = await ref.watch(
+              restoreWorkFoldersProvider.future,
+            );
             return RestoreBackup(
               vault: vault,
               generations: real,
@@ -171,7 +180,7 @@ class ReplacementHarness {
                   .read(activeDataGenerationProvider.notifier)
                   .activate(generation),
               openCatalogue: openCatalogue,
-              workDir: '${dir.path}/restore_work',
+              workFolders: workFolders,
               replacementGuard: ref.read(
                 vaultSessionControllerProvider.notifier,
               ),

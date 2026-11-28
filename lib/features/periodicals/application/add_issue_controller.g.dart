@@ -7,7 +7,7 @@ part of 'add_issue_controller.dart';
 // **************************************************************************
 
 String _$addIssueControllerHash() =>
-    r'b9e94f606a4d1f2e14ef0093b8c41efaa34957e2';
+    r'bf63181e2d43c7e4d6edb94ab027f9ccb3ea82f4';
 
 /// Drives a one-shot add or edit of a magazine issue and surfaces the saved
 /// row.

@@ -14,7 +14,16 @@ import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:pitaka/core/network/lookup_http_client.dart';
 import 'package:pitaka/core/network/timeout_http_client.dart';
+import 'package:pitaka/core/platform/app_settings_opener.dart';
+import 'package:pitaka/core/platform/channel_document_picker.dart';
+import 'package:pitaka/core/platform/channel_document_saver.dart';
+import 'package:pitaka/core/platform/device_cameras.dart';
+import 'package:pitaka/core/platform/device_resources.dart';
+import 'package:pitaka/core/platform/document_picker.dart';
+import 'package:pitaka/core/platform/document_saver.dart';
+import 'package:pitaka/core/platform/file_picked_document_reader.dart';
 import 'package:pitaka/core/platform/file_share.dart';
+import 'package:pitaka/core/platform/picked_document_reader.dart';
 import 'package:pitaka/core/platform/screen_security.dart';
 import 'package:pitaka/core/storage/data_generations.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
@@ -32,6 +41,17 @@ Future<Directory> appDocsDir(AppDocsDirRef ref) =>
 /// publish cannot leave a full copy of the site in Documents forever.
 @Riverpod(keepAlive: true)
 Future<Directory> appTempDir(AppTempDirRef ref) => getTemporaryDirectory();
+
+/// Whether the app REALLY runs on Android: `Platform.isAndroid`, the system
+/// underneath.
+///
+/// Not `defaultTargetPlatform`: a widget test pretends to be Android, and
+/// code that deletes files by the shape of their name (the clean-up of the
+/// old file picker's copies, decision D33) must not believe that on a
+/// developer's machine. Overridden only by a test that brings a folder of
+/// its own.
+@riverpod
+bool runsOnAndroid(RunsOnAndroidRef ref) => Platform.isAndroid;
 
 /// The app's cache directory, where saved copies of other libraries'
 /// published files live (ADR 0018).
@@ -98,6 +118,65 @@ http.Client lookupHttpClient(LookupHttpClientRef ref) {
 @riverpod
 ScreenSecurity screenSecurity(ScreenSecurityRef ref) =>
     const MethodChannelScreenSecurity();
+
+/// How much free storage and available memory the device has (backup
+/// rework BR9), for the notice before a backup and before a restore. A
+/// narrow platform channel without arguments; off Android every figure is
+/// "unknown". Overridden in tests with a fake.
+@riverpod
+DeviceResources deviceResources(DeviceResourcesRef ref) =>
+    const MethodChannelDeviceResources();
+
+/// Whether this phone has a camera (review finding P4-M8): the question a
+/// scan page asks before it shows the scanner, so that a phone without a
+/// camera gets a sentence instead of an empty page. Backed by the camera
+/// plugin; where that is missing the answer is "could not be read".
+/// Overridden in tests with a fake.
+@riverpod
+DeviceCameras deviceCameras(DeviceCamerasRef ref) =>
+    const PluginDeviceCameras();
+
+/// The way to Pitak's own page of the phone's settings (review finding
+/// P4-M8), for the "Open settings" button a scan page and the cover camera
+/// show when the camera is refused. A narrow platform channel without
+/// arguments. "Not available" wherever the app does not really run on
+/// Android ([runsOnAndroid]): the button is then not built. Overridden in
+/// tests with a fake.
+@riverpod
+AppSettingsOpener appSettingsOpener(AppSettingsOpenerRef ref) =>
+    MethodChannelAppSettingsOpener(onAndroid: ref.watch(runsOnAndroidProvider));
+
+/// The app's own document picker (backup rework BR5b): lets the user choose
+/// one document and keeps a private copy of it that is never larger than a
+/// cap. Android only; elsewhere every pick answers "not available" (D19).
+/// Overridden in tests with a fake.
+///
+/// keepAlive (justified): this object remembers which picked copies are IN
+/// USE in this app session, so that a sweep never deletes a file a restore
+/// is still reading. An auto-disposed instance would forget that between
+/// two reads (the same reason as `backupWorkArea`).
+@Riverpod(keepAlive: true)
+Future<DocumentPicker> documentPicker(DocumentPickerRef ref) async {
+  final temp = await ref.watch(appTempDirProvider.future);
+  return ChannelDocumentPicker(tempRoot: temp.path);
+}
+
+/// Reads the private copy of a picked document into memory, under a cap
+/// (decision D24). Import and Merge use it: they need a file's text, and
+/// the picker above hands out a copy on disk. Overridden in widget tests
+/// with a fake that reads at once.
+@riverpod
+PickedDocumentReader pickedDocumentReader(PickedDocumentReaderRef ref) =>
+    const FilePickedDocumentReader();
+
+/// Saves a copy of one finished file of the app (a backup, an export) where
+/// the user says, through the system's own save window (review finding
+/// P4-M6). Overridden in widget tests with a fake that answers at once.
+///
+/// Auto-disposed: the saver keeps nothing between two calls.
+@riverpod
+DocumentSaver documentSaver(DocumentSaverRef ref) =>
+    const ChannelDocumentSaver();
 
 /// Hands generated files (exports, backups) to the OS share sheet. Overridden
 /// in widget tests with a fake to assert what would be shared.

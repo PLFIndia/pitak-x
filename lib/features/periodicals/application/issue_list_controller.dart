@@ -11,11 +11,11 @@
 /// first, `IssueSorter`'s SQL twin), so the controller never sorts or
 /// filters.
 ///
-/// Freshness: every write path in the app already invalidates or refreshes
-/// `libraryControllerProvider` (N03) — an issue added, edited, removed or
-/// re-projected after a series edit fires it. Watching it here (value
-/// ignored, same idiom as `catalogueItemById`) re-reads this list on that
-/// one signal, with no new plumbing. The depth survives such a reload for
+/// Freshness: every write path in the app says "catalogue changed" to
+/// `catalogueChangesProvider` (N03; ADR 0031) — an issue added, edited,
+/// removed or re-projected after a series edit fires it. Watching it here
+/// (value ignored, same idiom as `catalogueItemById`) re-reads this list on
+/// that one signal. The depth survives such a reload for
 /// the same reason it does in `LibraryController` (D2-b): Riverpod keeps the
 /// notifier instance across rebuilds of a live provider.
 library;
@@ -23,7 +23,7 @@ library;
 import 'dart:math' as math;
 
 import 'package:pitaka/core/di/providers.dart';
-import 'package:pitaka/features/library/application/library_controller.dart';
+import 'package:pitaka/features/library/application/catalogue_changes.dart';
 import 'package:pitaka/features/library/application/library_window.dart';
 import 'package:pitaka/features/library/domain/catalogue_item_page.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
@@ -51,8 +51,8 @@ class IssueListController extends _$IssueListController {
 
   @override
   FutureOr<LibraryWindow> build(String periodicalUid) {
-    // The catalogue mutation signal (N03): value ignored, see the header.
-    ref.watch(libraryControllerProvider);
+    // The "catalogue changed" signal (N03): value ignored, see the header.
+    ref.watch(catalogueChangesProvider);
     _supersede();
     return _loadHead();
   }
@@ -100,7 +100,11 @@ class IssueListController extends _$IssueListController {
           ...page.items,
         ]);
         _loadedDepth = books.length;
-        return LibraryWindow(books: books, hasMore: page.hasMore);
+        return latest.copyWith(
+          books: books,
+          hasMore: page.hasMore,
+          isLoadingMore: false,
+        );
       }),
     );
   }
@@ -139,6 +143,7 @@ class IssueListController extends _$IssueListController {
         return LibraryWindow(
           books: List<CatalogueItem>.unmodifiable(page.items),
           hasMore: page.hasMore,
+          query: _intent,
         );
       },
     );

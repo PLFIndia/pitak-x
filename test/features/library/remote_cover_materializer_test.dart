@@ -5,8 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
-import 'package:pitaka/features/library/application/library_controller.dart';
-import 'package:pitaka/features/library/application/library_window.dart';
+import 'package:pitaka/features/library/application/catalogue_changes.dart';
 import 'package:pitaka/features/library/application/materialize_remote_cover_use_case.dart';
 import 'package:pitaka/features/library/application/remote_cover_materializer.dart';
 import 'package:pitaka/features/library/domain/cover_files.dart';
@@ -106,17 +105,6 @@ class _Settings implements SettingsRepository {
       throw UnsupportedError('Unexpected settings write');
 }
 
-/// Counts rebuilds of the library list so a successful materialisation can be
-/// shown to refresh it (and a failed one not to).
-class _LibraryRebuilds extends LibraryController {
-  static int count = 0;
-  @override
-  FutureOr<LibraryWindow> build() {
-    count++;
-    return const LibraryWindow(books: [], hasMore: false);
-  }
-}
-
 class _PeriodicalRebuilds extends PeriodicalsController {
   static int count = 0;
   @override
@@ -131,7 +119,6 @@ void main() {
 
   setUp(() {
     script = _ScriptedUseCase();
-    _LibraryRebuilds.count = 0;
     _PeriodicalRebuilds.count = 0;
   });
 
@@ -148,7 +135,6 @@ void main() {
         materializeRemoteCoverUseCaseProvider.overrideWith(
           (ref) async => script.build(),
         ),
-        libraryControllerProvider.overrideWith(_LibraryRebuilds.new),
         periodicalsControllerProvider.overrideWith(_PeriodicalRebuilds.new),
       ],
     );
@@ -158,9 +144,7 @@ void main() {
     if (settingsDelay == null) {
       await container.read(settingsControllerProvider.future);
     }
-    container
-      ..listen(libraryControllerProvider, (_, _) {})
-      ..listen(periodicalsControllerProvider, (_, _) {});
+    container.listen(periodicalsControllerProvider, (_, _) {});
     return container;
   }
 
@@ -290,33 +274,33 @@ void main() {
   );
 
   test(
-    'periodical success invalidates both library and periodical signals',
+    'periodical success says "catalogue changed" and tells the series list',
     () async {
       final c = await make(consent: true);
       final n = c.read(remoteCoverMaterializerProvider.notifier);
-      final libraryBefore = _LibraryRebuilds.count;
+      final saidBefore = c.read(catalogueChangesProvider);
       final periodicalsBefore = _PeriodicalRebuilds.count;
 
       n.request(CoverOwners.periodical('per-1'), _coverUrl);
       await n.idle;
       await Future<void>.delayed(Duration.zero);
 
-      expect(_LibraryRebuilds.count, libraryBefore + 1);
+      expect(c.read(catalogueChangesProvider), saidBefore + 1);
       expect(_PeriodicalRebuilds.count, periodicalsBefore + 1);
     },
   );
 
-  test('a successful materialisation refreshes the library list; a failed '
-      'one does not', () async {
+  test('a successful materialisation says "catalogue changed" once (D151); '
+      'a failed one says nothing', () async {
     final c = await make(consent: true);
     final n = c.read(remoteCoverMaterializerProvider.notifier);
-    final before = _LibraryRebuilds.count;
+    final before = c.read(catalogueChangesProvider);
 
     // "Nothing to do" (right(unit)) counts as success → refresh.
     n.request(CoverOwners.item(1), _coverUrl);
     await n.idle;
     await Future<void>.delayed(Duration.zero);
-    expect(_LibraryRebuilds.count, before + 1);
+    expect(c.read(catalogueChangesProvider), before + 1);
 
     script.holdRuns = true;
     n.request(CoverOwners.item(2), _coverUrl);
@@ -324,6 +308,10 @@ void main() {
     script.gates[CoverOwners.item(2)]!.succeed(left(const StorageFailure('x')));
     await n.idle;
     await Future<void>.delayed(Duration.zero);
-    expect(_LibraryRebuilds.count, before + 1, reason: 'no refresh on failure');
+    expect(
+      c.read(catalogueChangesProvider),
+      before + 1,
+      reason: 'nothing said on failure',
+    );
   });
 }

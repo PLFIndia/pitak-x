@@ -3,12 +3,15 @@
 library;
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:pitaka/features/backup/presentation/create_backup_messages.dart';
+import 'package:pitaka/features/backup/presentation/resource_notice_messages.dart';
 import 'package:pitaka/features/guides/domain/guide.dart';
 import 'package:pitaka/features/guides/domain/guide_catalog.dart';
 import 'package:pitaka/features/guides/domain/guide_markup.dart';
 import 'package:pitaka/features/publish/domain/availability/availability_pacing.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_account_id.dart';
 import 'package:pitaka/features/publish/presentation/widgets/cloudflare_token_dialog.dart';
+import 'package:pitaka/features/vault/presentation/widgets/loan_return_action.dart';
 
 void main() {
   test('exactly nine guides, unique ids, in the approved order', () {
@@ -95,10 +98,14 @@ void main() {
       GuideId.events: [0, 5, 3, 3],
       GuideId.map: [0, 6, 3, 3],
       // S11 (plan CV6): "what is inside" gained the publishing-record line.
-      GuideId.backup: [0, 6, 4, 2, 3, 1, 1, 1, 2],
+      // Backup rework BR9 (decision D55): both step lists gained the step
+      // for the notice that opens before a backup and before a restore
+      // ("Make a backup" 2 → 3, "Restore on a new phone" 3 → 4).
+      GuideId.backup: [0, 6, 4, 3, 4, 1, 1, 1, 2],
       // 2026-11-09 (PR #26 retired the Pending page): "Returns and
-      // reminders" has 4 bullets (Return, Borrowed Items, Reminder message
-      // card, contact buttons) and a "Lending rules" paragraph follows.
+      // reminders" has 4 bullets (Mark returned, Borrowed Items, Reminder
+      // message card, contact buttons) and a "Lending rules" paragraph
+      // follows. Review finding P4-M3 rewrote the first bullet, not the count.
       GuideId.vault: [0, 3, 3, 4, 1, 3],
       // ADR 0024: "Event alerts (Android)" paragraphs (2) before the end.
       GuideId.network: [0, 1, 2, 5, 2, 0],
@@ -236,6 +243,78 @@ void main() {
         reason: '${guide.id}',
       );
     }
+  });
+
+  test('the backup guide names the buttons of the notice by their on-screen '
+      'labels', () {
+    // Backup rework BR9 (decision D55): a tap on "Create backup" or on
+    // "Restore" opens the resource notice first, and the last step of each
+    // list tells the reader which button to tap in it. Those words must be
+    // the dialog's own, or the reader looks for a button that is not there.
+    final sections = guideById(GuideId.backup).sections;
+    GuideSteps stepsOf(String title) => sections
+        .whereType<GuideSteps>()
+        .singleWhere((section) => section.title == title);
+
+    final backupLabel = resourceNoticeConfirmLabel(ResourceNoticeRun.backup);
+    final restoreLabel = resourceNoticeConfirmLabel(ResourceNoticeRun.restore);
+    expect(stepsOf('Make a backup').steps.last, contains('**$backupLabel**'));
+    expect(
+      stepsOf('Restore on a new phone').steps.last,
+      contains('**$restoreLabel**'),
+    );
+  });
+
+  test('the backup guide names the two buttons of the Create backup page by '
+      'their on-screen labels', () {
+    // Review finding P4-M6 (decision D173): the page has two buttons where
+    // "Create backup" stood, and the guide tells the reader which to tap.
+    // Those words must be the page's own, or the reader looks for a button
+    // that is not there. ("Create backup" stays the name of the row in
+    // Settings and of the page: step 1 leads there.)
+    final steps = guideById(GuideId.backup).sections
+        .whereType<GuideSteps>()
+        .singleWhere((section) => section.title == 'Make a backup')
+        .steps;
+
+    expect(steps, hasLength(3));
+    for (final label in [saveBackupLabel, shareBackupLabel]) {
+      expect(steps[1], contains('**$label**'), reason: label);
+      expect(steps[2], contains('**$label**'), reason: label);
+    }
+    expect(steps.join('\n'), isNot(contains('Tap **Create backup**')));
+    // What the page says after a save, so that the reader knows it worked.
+    expect(steps[2], contains('Backup saved as'));
+  });
+
+  test('the vault guide says where an item is marked returned, with the '
+      "buttons' on-screen labels", () {
+    // Review finding P4-M3 (decisions D109 and D114). The guide used to
+    // send the reader through the vault to the borrower for a "Return"
+    // button. The button now says "Mark returned" and stands on Borrowed
+    // Items, on the item's page and on the borrower's page; a wrong tap is
+    // taken back with "Undo" or, later, with "Not returned".
+    final returns = guideById(GuideId.vault).sections
+        .whereType<GuideBullets>()
+        .singleWhere((section) => section.title == 'Returns and reminders');
+    final first = returns.bullets.first;
+
+    for (final label in [
+      markReturnedLabel,
+      undoReturnLabel,
+      notReturnedLabel,
+    ]) {
+      expect(first, contains('**$label**'), reason: label);
+    }
+    expect(first, contains('**History**'), reason: 'where "Not returned" is');
+    expect(first, isNot(contains('**Return**')), reason: 'the old label');
+    // Borrowed Items is named first (D109): it is where people look first.
+    final borrowedItems = first.indexOf('**☰ → Borrowed Items**');
+    expect(borrowedItems, greaterThanOrEqualTo(0));
+    expect(borrowedItems, lessThan(first.indexOf("item's page")));
+    expect(borrowedItems, lessThan(first.indexOf("borrower's page")));
+    expect(first.indexOf("item's page"), greaterThan(0));
+    expect(first.indexOf("borrower's page"), greaterThan(0));
   });
 
   group('Cloudflare guide matches the real setup', () {

@@ -4,6 +4,9 @@
 //! rusqlite-4.5.7 opens a zetetic-4.5.4 DB this way).
 //!
 //! NOT `PRAGMA key='x'..'` (raw-key hex mode) and NOT a UTF-8 string passphrase.
+//!
+//! Linked since 2026-11: SQLCipher 4.20.0 on SQLite 3.54.1 (the test
+//! `linked_library_is_sqlcipher_4_on_sqlite_3_54_or_newer` asks the library).
 
 use rusqlite::Connection;
 use std::ffi::{c_int, c_void};
@@ -946,5 +949,217 @@ mod tests {
         // A wrong key fails the decrypt-check in open_and_key → Key error.
         assert!(matches!(res, Err(VaultError::Key(_))), "got {res:?}");
         cleanup(&db);
+    }
+
+    // Backup rework BR4 rider 2 (review finding P1-m1, decision D17).
+    //
+    // WHY THIS TEST EXISTS: SQLite keeps a side file, `borrowers.db-journal`,
+    // while it writes. If the app is killed in the middle of a vault write,
+    // that file stays, and the database file alone is then not a whole
+    // database. The Dart backup writer therefore leaves such a vault out and
+    // tells the user: "Unlock the vault once, then create the backup again."
+    // This test is what makes that sentence true: opening the vault the way
+    // unlock does (`open_and_read`) puts the saved pages back, and the vault
+    // reads exactly as it did before the write that never finished.
+    //
+    // It also pins the assumption the Dart side rests on: the vault uses
+    // SQLite's rollback journal (`journal_mode = delete`). If a later change
+    // sets another mode, this test fails and the backup rule must be read
+    // again.
+    #[test]
+    fn opening_a_vault_repairs_a_write_that_was_cut_off() {
+        const BORROWERS: usize = 300;
+        let key = test_key();
+        let path = fresh_path();
+        create_vault(&path, &key).expect("create");
+
+        // The vault as it was last saved: 300 borrowers of about 1 KB each,
+        // so that the table spans many pages.
+        {
+            let mut conn = open_and_key(&path, &key, true).expect("open");
+            let mode: String = conn
+                .query_row("PRAGMA journal_mode", [], |r| r.get(0))
+                .expect("journal_mode");
+            assert_eq!(mode, "delete", "the backup rule assumes this mode");
+            let tx = conn.transaction().expect("begin");
+            for i in 0..BORROWERS {
+                tx.execute(
+                    "INSERT INTO borrowers(name, contact, notes) VALUES (?1, NULL, ?2)",
+                    rusqlite::params![format!("kept {i}"), "x".repeat(1000)],
+                )
+                .expect("insert");
+            }
+            tx.commit().expect("commit");
+        }
+        let size_before = std::fs::metadata(&path).expect("size").len();
+        let journal = format!("{path}-journal");
+        assert!(
+            !std::path::Path::new(&journal).exists(),
+            "a finished write leaves no journal"
+        );
+
+        // The "crash": a write that changes every borrower and never commits.
+        // The two files are copied as they are on disk in the middle of it,
+        // which is what a killed app leaves behind. The page cache is made
+        // tiny so that changed pages really reach the database file before
+        // the commit (otherwise only the journal would have changed).
+        let crashed = fresh_path();
+        let crashed_journal = format!("{crashed}-journal");
+        {
+            let mut conn = open_and_key(&path, &key, true).expect("open");
+            conn.execute_batch("PRAGMA cache_size = 10;")
+                .expect("cache_size");
+            let tx = conn
+                .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+                .expect("begin");
+            tx.execute(
+                "UPDATE borrowers SET name = 'changed ' || id, notes = notes || ?1",
+                rusqlite::params!["y".repeat(1500)],
+            )
+            .expect("update");
+            std::fs::copy(&path, &crashed).expect("copy the database");
+            std::fs::copy(&journal, &crashed_journal).expect("copy the journal");
+            tx.rollback().expect("rollback");
+        }
+        assert!(
+            std::fs::metadata(&crashed).expect("size").len() > size_before,
+            "the unfinished write must have reached the database file, \
+             or this test proves nothing"
+        );
+
+        // Opening it the way unlock does repairs it.
+        let data = open_and_read(&crashed, &key).expect("open the crashed vault");
+        assert_eq!(data.borrowers.len(), BORROWERS);
+        assert!(
+            data.borrowers
+                .iter()
+                .all(|b| b.name.as_deref().is_some_and(|n| n.starts_with("kept "))),
+            "no row of the unfinished write may be visible"
+        );
+        assert!(
+            !std::path::Path::new(&crashed_journal).exists(),
+            "the journal is used up, so the Dart check sees a clean vault"
+        );
+        assert_eq!(
+            std::fs::metadata(&crashed).expect("size").len(),
+            size_before
+        );
+        let conn = open_and_key(&crashed, &key, false).expect("open again");
+        let verdict: String = conn
+            .query_row("PRAGMA integrity_check", [], |r| r.get(0))
+            .expect("integrity_check");
+        assert_eq!(verdict, "ok");
+        drop(conn);
+
+        cleanup(&path);
+        cleanup(&crashed);
+    }
+
+    // The leading "a.b.c" of a version text as three numbers ("4.20.0
+    // community" gives 4, 20, 0), or None when the text does not begin with
+    // three numbers. The test below treats None as a failure: a version
+    // that cannot be read is not a pass.
+    fn leading_version(text: &str) -> Option<(u32, u32, u32)> {
+        let first = text.split_whitespace().next()?;
+        let mut numbers = first.split('.').map(|part| part.parse::<u32>().ok());
+        Some((numbers.next()??, numbers.next()??, numbers.next()??))
+    }
+
+    // Review finding P2-M4 (decisions D63 and D73 of PLAN.md).
+    //
+    // WHY THIS TEST EXISTS: the vault's SQLCipher is C code that is compiled
+    // into the app. Which version that is cannot be seen in this file: it
+    // follows from `rust/Cargo.lock`. This test asks the library that is
+    // really linked.
+    //
+    // - SQLite older than 3.54.0 has a known fault (RUSTSEC-2026-0459: a
+    //   crafted database with a `-wal` file of another page size makes it
+    //   hand back memory it should not). The update to SQLCipher 4.20.0, on
+    //   SQLite 3.54.1, closed it for the vault. A step back fails here.
+    // - SQLCipher stays on major version 4. A new major version may store a
+    //   vault in another way, so whether the vaults that exist still open
+    //   has to be planned and tried first. The change that plans that move
+    //   changes the number here on purpose (the same idea as
+    //   `test/architecture/secure_storage_major_pin_test.dart`).
+    // - A build without SQLCipher answers `PRAGMA cipher_version` with no
+    //   row at all, so it fails here as well.
+    #[test]
+    fn linked_library_is_sqlcipher_4_on_sqlite_3_54_or_newer() {
+        let key = test_key();
+        let db = fresh_vault(&key);
+        let conn = open_and_key(&db, &key, false).expect("open");
+        let sqlite: String = conn
+            .query_row("SELECT sqlite_version()", [], |r| r.get(0))
+            .expect("sqlite_version()");
+        let cipher: String = conn
+            .query_row("PRAGMA cipher_version", [], |r| r.get(0))
+            .expect("PRAGMA cipher_version gave no row: is this SQLCipher?");
+        drop(conn);
+        cleanup(&db);
+
+        let sqlite_numbers = leading_version(&sqlite)
+            .unwrap_or_else(|| panic!("cannot read a version from {sqlite:?}"));
+        assert!(
+            sqlite_numbers >= (3, 54, 0),
+            "the linked SQLite is {sqlite}; it must be 3.54.0 or newer \
+             (RUSTSEC-2026-0459)"
+        );
+        let cipher_numbers = leading_version(&cipher)
+            .unwrap_or_else(|| panic!("cannot read a version from {cipher:?}"));
+        assert_eq!(
+            cipher_numbers.0, 4,
+            "the linked SQLCipher is {cipher}; a new major version has to be \
+             planned first (see the comment above this test)"
+        );
+    }
+
+    // WHY THIS TEST EXISTS: no other test says directly that the vault is
+    // encrypted where it lies on disk. The others read the vault back
+    // through the library; this one reads the FILE, as someone who holds a
+    // copy of it would. It must not begin with the header every plain SQLite
+    // file begins with, and neither the borrower's details nor the text of
+    // the schema may be anywhere in its bytes. It is a pin for every change
+    // of the C library underneath (review finding P2-M4).
+    #[test]
+    fn a_vault_file_is_not_readable_as_it_lies_on_disk() {
+        const NAME: &str = "Plaintext Needle Borrower";
+        const CONTACT: &str = "needle-contact-555-0199";
+        const NOTES: &str = "needle-notes-on-disk";
+        let key = test_key();
+        let path = fresh_path();
+        create_vault(&path, &key).expect("create");
+        insert_borrower(
+            &path,
+            &key,
+            &BorrowerInput {
+                name: NAME.into(),
+                contact: Some(CONTACT.into()),
+                notes: Some(NOTES.into()),
+            },
+        )
+        .expect("insert");
+
+        // The row IS in the vault. Without this, "not in the bytes" below
+        // could simply mean that nothing was written.
+        let data = open_and_read(&path, &key).expect("read back");
+        assert_eq!(data.borrowers.len(), 1);
+        assert_eq!(data.borrowers[0].name.as_deref(), Some(NAME));
+        assert_eq!(data.borrowers[0].contact.as_deref(), Some(CONTACT));
+        assert_eq!(data.borrowers[0].notes.as_deref(), Some(NOTES));
+
+        let bytes = std::fs::read(&path).expect("read the file's bytes");
+        cleanup(&path);
+        assert!(
+            !bytes.starts_with(b"SQLite format 3\0"),
+            "the vault file begins with the header of a plain SQLite file"
+        );
+        for needle in [NAME, CONTACT, NOTES, "CREATE TABLE"] {
+            assert!(
+                !bytes
+                    .windows(needle.len())
+                    .any(|window| window == needle.as_bytes()),
+                "{needle:?} can be read in the bytes of the vault file"
+            );
+        }
     }
 }

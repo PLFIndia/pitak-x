@@ -1,19 +1,26 @@
 /// Library list + search screen (presentation layer, AGENTS.md §3.1).
 ///
 /// Pure presentation: reads [LibraryController] state and forwards user input
-/// to it. No business logic, no direct repository/DB access. Mirrors the Kotlin
-/// `LibraryScreen` (search field, sort/filter controls, row list with covers,
-/// empty state).
+/// to it. No business logic, no direct repository/DB access. It has a
+/// search field, sort/filter controls, a row list with covers and an
+/// empty state.
 ///
 /// N10-d part 2: the list renders the controller's [LibraryWindow] — the rows
 /// loaded so far — and asks for the next window as the user nears the end
 /// (`loadMore`), with a footer indicator while it is in flight. The screen
 /// never holds the whole catalogue.
 ///
+/// P4-M2 (ADR 0031): while the list is read again its rows stay on the
+/// screen. The same list keeps its place; another list (new search text,
+/// chip or sort) is a new scroll view and so starts at the top. The spinner
+/// is left for the very first load.
+///
 /// S14: the app-bar overflow menu moved to `widgets/library_menu_button.dart`;
 /// the quick-add scan now routes through [RouteScannedBarcodeUseCase] (ADR
 /// 0013 D11) — the page only switches on the sealed [ScanRoute].
 library;
+
+import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -36,7 +43,9 @@ import 'package:pitaka/features/library/presentation/widgets/catalogue_item_grid
 import 'package:pitaka/features/library/presentation/widgets/catalogue_item_row.dart';
 import 'package:pitaka/features/library/presentation/widgets/empty_library_state.dart';
 import 'package:pitaka/features/library/presentation/widgets/library_controls_row.dart';
+import 'package:pitaka/features/library/presentation/widgets/library_error_state.dart';
 import 'package:pitaka/features/library/presentation/widgets/library_menu_button.dart';
+import 'package:pitaka/features/library/presentation/widgets/loan_status_hidden_banner.dart';
 import 'package:pitaka/features/library/presentation/widgets/network_map_icon.dart';
 import 'package:pitaka/features/lookup/presentation/pages/scanner_page.dart';
 import 'package:pitaka/features/network/presentation/pages/network_page.dart';
@@ -90,10 +99,18 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
     final route = await ref.read(routeScannedBarcodeUseCaseProvider.future);
     if (!mounted) return;
     final scanned = await Navigator.of(context).push<String>(
-      MaterialPageRoute<String>(builder: (_) => const ScannerPage()),
+      MaterialPageRoute<String>(
+        // No ISBN field lies under this scan: "Enter it by hand" leads to
+        // the sheet that adds an item by hand (review finding P4-M8, D132).
+        builder: (_) => ScannerPage(afterEnterByHand: _addByHand),
+      ),
     );
     if (scanned == null || !mounted) return;
     await routeScannedBarcode(context, route, scanned);
+  }
+
+  void _addByHand() {
+    if (mounted) unawaited(showAddSheet(context));
   }
 
   @override
@@ -101,12 +118,6 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
     final controller = ref.watch(libraryControllerProvider.notifier);
     final booksAsync = ref.watch(libraryControllerProvider);
     final hasQuery = controller.query.trim().isNotEmpty;
-    // Facets are independent provider state (the same source as the chips).
-    // Watching them here keeps the empty-state explanation and recovery
-    // buttons truthful immediately after a chip is tapped or cleared.
-    final hasKindFilter = ref.watch(libraryKindFilterProvider) != null;
-    final hasLanguageFilter = ref.watch(libraryLanguageFilterProvider) != null;
-    final hasFilters = hasKindFilter || hasLanguageFilter;
     // Use the user's library name as the title (select: only that field
     // rebuilds this page, §8), falling back to 'Library'.
     final libraryName = ref.watch(
@@ -119,7 +130,21 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
     // keepAlive provider makes this a genuine one-shot; `listen` (not watch)
     // so the sweep's completion never rebuilds the page.
     if (booksAsync.hasValue) {
-      ref.listen(orphanCoverSweepProvider, (_, _) {});
+      ref
+        ..listen(orphanCoverSweepProvider, (_, _) {})
+        // Same one-shot pattern (backup rework BR4): remove what a backup
+        // left in the app's temporary folder when the app was killed in
+        // the middle of it. That file is a plain copy of the whole library.
+        ..listen(staleBackupWorkSweepProvider, (_, _) {})
+        // The same for an export (review finding P4-M6): the file that
+        // was being saved or shared, also a plain copy of the library.
+        ..listen(staleExportWorkSweepProvider, (_, _) {})
+        // And the same for a restore (backup rework BR6): the private copy
+        // of a chosen backup file, and the databases unpacked from it.
+        ..listen(staleRestoreFilesSweepProvider, (_, _) {})
+        // Once after the update that removed the old file picker (decision
+        // D33): the copies of chosen files it left in the cache folder.
+        ..listen(legacyPickerCopiesSweepProvider, (_, _) {});
     }
 
     return Scaffold(
@@ -185,18 +210,34 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
             ),
           ),
           const LibraryControlsRow(),
+          // P4-M4: one line while a vault exists and is locked, because the
+          // rows cannot mark what is lent out then. Zero-height otherwise.
+          const LoanStatusHiddenBanner(),
           Expanded(
             child: booksAsync.when(
+              // P4-M2: a list that is read AGAIN is not "loading" for the
+              // eye. Its rows stay until the new ones are there, so only
+              // the very first load, which has no rows yet, is a spinner.
+              skipLoadingOnReload: true,
               loading: () =>
                   const Center(child: CircularProgressIndicator.adaptive()),
-              error: (error, _) => _LibraryError(
+              error: (error, _) => LibraryErrorState(
                 isSearching: hasQuery,
-                onRetry: controller.refresh,
+                // Greyed out while the list is being read again: a second
+                // tap could add nothing.
+                onRetry: booksAsync.isLoading ? null : controller.refresh,
               ),
               data: (window) => window.books.isEmpty
                   ? EmptyLibraryState(
-                      hasQuery: hasQuery,
-                      hasFilters: hasFilters,
+                      // What the EMPTY ANSWER on the screen was asked, not
+                      // what the search box and the chips say now: while the
+                      // next list is read these words still stand, and they
+                      // must stay true ("no item matches" is not "your
+                      // library is empty").
+                      hasQuery: window.query.isSearch,
+                      hasFilters:
+                          window.query.kind != null ||
+                          window.query.language != null,
                       onClearSearch: _clearSearch,
                       onClearFilters: _clearFilters,
                       onAdd: () => Navigator.of(context).push(
@@ -291,8 +332,14 @@ class _BookList extends ConsumerWidget {
       onNotification: _onScroll,
       child: LayoutBuilder(
         builder: (context, constraints) {
+          // The key is the list's serial number (P4-M2): the same number
+          // is the same scroll view, which keeps its place while its rows
+          // change; a new number is a new scroll view, which starts at the
+          // top. One key for both layouts, as they stand in the same place.
+          final listKey = ValueKey<int>(window.listSerial);
           if (constraints.maxWidth >= largeScreenMinWidth) {
             return CustomScrollView(
+              key: listKey,
               slivers: [
                 SliverPadding(
                   padding: const EdgeInsets.all(16),
@@ -321,6 +368,7 @@ class _BookList extends ConsumerWidget {
             );
           }
           return CustomScrollView(
+            key: listKey,
             slivers: [
               SliverPadding(
                 padding: const EdgeInsets.symmetric(
@@ -423,30 +471,5 @@ Future<void> routeScannedBarcode(
           builder: (_) => PeriodicalFormPage(initialIssn: issn),
         ),
       );
-  }
-}
-
-/// Safe error state — never shows raw exception text (AGENTS.md §5).
-class _LibraryError extends StatelessWidget {
-  const _LibraryError({required this.isSearching, required this.onRetry});
-
-  final bool isSearching;
-  final Future<void> Function() onRetry;
-
-  @override
-  Widget build(BuildContext context) {
-    final message = isSearching
-        ? "Couldn't run that search. Please try again."
-        : "Couldn't load your library. Please try again.";
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(message, style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 8),
-          TextButton(onPressed: onRetry, child: const Text('Retry')),
-        ],
-      ),
-    );
   }
 }

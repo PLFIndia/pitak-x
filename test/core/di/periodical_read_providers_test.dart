@@ -14,7 +14,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
-import 'package:pitaka/features/library/application/library_controller.dart';
+import 'package:pitaka/features/library/application/catalogue_changes.dart';
 import 'package:pitaka/features/library/application/route_scanned_barcode_use_case.dart';
 import 'package:pitaka/features/periodicals/application/periodicals_controller.dart';
 import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
@@ -80,16 +80,14 @@ void main() {
     test('follows a catalogue mutation (the library controller)', () async {
       final series = periodicals.seed(const Periodical(title: 'Old title'));
       keepAlive(periodicalByIdProvider(series.id));
-      keepAlive(libraryControllerProvider);
-      await container.read(libraryControllerProvider.future);
       expect(
         (await container.read(periodicalByIdProvider(series.id).future))!.title,
         'Old title',
       );
 
-      // An import rewrote the series and fired only the library signal.
+      // An import rewrote the series and said only "catalogue changed".
       periodicals.rows[series.id] = series.copyWith(title: 'Imported');
-      await container.read(libraryControllerProvider.notifier).refresh();
+      container.read(catalogueChangesProvider.notifier).changed();
 
       expect(
         (await container.read(periodicalByIdProvider(series.id).future))!.title,
@@ -131,9 +129,7 @@ void main() {
       );
       keepAlive(periodicalByUidProvider('uid-fl'));
       keepAlive(periodicalsControllerProvider);
-      keepAlive(libraryControllerProvider);
       await container.read(periodicalsControllerProvider.future);
-      await container.read(libraryControllerProvider.future);
       Future<String> title() async => (await container.read(
         periodicalByUidProvider('uid-fl').future,
       ))!.title;
@@ -144,7 +140,7 @@ void main() {
       expect(await title(), 'v2');
 
       periodicals.rows[series.id] = series.copyWith(title: 'v3');
-      await container.read(libraryControllerProvider.notifier).refresh();
+      container.read(catalogueChangesProvider.notifier).changed();
       expect(await title(), 'v3');
     });
   });

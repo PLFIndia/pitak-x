@@ -136,17 +136,14 @@ final class UnsupportedItemKindFailure extends Failure {
 
 /// The supplied backup passphrase did not unwrap the vault blob.
 ///
-/// Mirrors Kotlin `BackupRestore.Result.WrongPassphrase` — kept distinct from
-/// [BackupCorruptFailure] so the UI can let the user retry rather than declare
-/// the archive broken.
+/// Kept distinct from [BackupCorruptFailure] so the UI can let the user retry
+/// rather than declare the archive broken.
 final class WrongPassphraseFailure extends Failure {
   /// Creates a wrong-passphrase failure.
   const WrongPassphraseFailure();
 }
 
 /// The backup archive is structurally invalid or its crypto blob is corrupt.
-///
-/// Mirrors Kotlin `BackupRestore.Result.Failed` / `SetBlobResult.InvalidFormat`.
 final class BackupCorruptFailure extends Failure {
   /// Creates a corrupt-archive failure with a short diagnostic [reason].
   const BackupCorruptFailure(this.reason);
@@ -156,8 +153,6 @@ final class BackupCorruptFailure extends Failure {
 }
 
 /// The archive's schema version is newer than this build can read.
-///
-/// Mirrors Kotlin `BackupRestore.Result.SchemaTooNew`.
 final class SchemaTooNewFailure extends Failure {
   /// Creates a schema-too-new failure for the given [schemaVersion].
   const SchemaTooNewFailure(this.schemaVersion);
@@ -175,13 +170,55 @@ final class SchemaTooNewFailure extends Failure {
 /// every `other` row back to a book, every issue link detached — i.e. a backup
 /// that looks fine and silently loses data on restore. This failure is
 /// returned INSTEAD of such an archive, before anything is written out.
+///
+/// Since BR3 the same failure also covers sizes and counts: too many cover
+/// pictures, too much content, a single part that is too large. The reader
+/// refuses such a file outright, so the writer does not build it.
+///
+/// Since BR8 the RESTORE side makes it too, for a file that holds more than
+/// a backup can (a backup made by a version without limits, or by a later
+/// one with higher limits). Until then such a file was called damaged
+/// ([BackupCorruptFailure]), which it is not. From a restore, [actual] is
+/// always null: a number a file claims about itself is not shown to anyone.
 final class BackupTooLargeFailure extends Failure {
-  /// Creates a too-large failure. [detail] is a short diagnostic, never shown
-  /// verbatim (the UI maps this type to one plain sentence).
-  const BackupTooLargeFailure([this.detail = '']);
+  /// Creates a too-large failure. [detail] is the name of the limit that was
+  /// hit (a `BackupOverflow` code of the backup feature), never shown
+  /// verbatim. [actual] and [limit] are what the library has and what a
+  /// backup can hold, in the same unit (bytes or a count, depending on the
+  /// code). The UI builds one plain sentence from the three.
+  const BackupTooLargeFailure([this.detail = '', this.actual, this.limit]);
 
-  /// Short diagnostic for logs/tests.
+  /// Which limit was hit: the name of a `BackupOverflow` code. A plain
+  /// String because `core/` must not import a feature.
   final String detail;
+
+  /// What the library has. Null when the creator did not say; the UI then
+  /// falls back to a sentence without numbers.
+  final int? actual;
+
+  /// What a backup can hold. Null under the same rule as [actual].
+  final int? limit;
+}
+
+/// A list of books is too long for ONE PDF (ADR 0033).
+///
+/// Why this exists (beginner note): a PDF can hold only some thousand pages
+/// and pictures of text while it is built; the limit is a count, and no
+/// phone has more. The export counts first, and a list that does not fit is
+/// refused with this failure BEFORE any work is done, so the user gets a
+/// sentence with numbers at once instead of "Export failed." after a long
+/// wait. Nothing is written: a catalogue with its end missing would look
+/// complete.
+final class PdfTooLargeFailure extends Failure {
+  /// Creates the failure for a list of [books] of which only the first
+  /// [booksThatFit] would fit into one PDF.
+  const PdfTooLargeFailure({required this.books, required this.booksThatFit});
+
+  /// How many books the list has.
+  final int books;
+
+  /// How many of them, counted from the first, one PDF can hold.
+  final int booksThatFit;
 }
 
 /// A cryptographic operation failed (KDF, AEAD, or SQLCipher open).

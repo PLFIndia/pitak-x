@@ -1,7 +1,6 @@
 /// Redaction for the world-facing publish payload (pure domain, #32, F-01).
 ///
-/// Port of Kotlin `redactForPublish` + `PublishBook.fromRedacted`, fused into
-/// one pure function mapping a private `CatalogueItem` to a world-facing
+/// One pure function mapping a private `CatalogueItem` to a world-facing
 /// `PublishItem` — plus the ADR 0014 W3 twin mapping a private `Periodical`
 /// to a world-facing `PublishPeriodical`. Doing the mapping directly (rather
 /// than mutating the entity) avoids relying on `copyWith` to null-out fields

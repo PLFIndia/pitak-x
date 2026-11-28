@@ -1,6 +1,6 @@
 /// Library sort + filter controls (presentation, AGENTS.md §3.1).
 ///
-/// Parity with Kotlin `LibraryControlsRow`: a sort dropdown
+/// A sort dropdown
 /// {Date added, Language, Age group} and horizontally-scrolling language filter
 /// chips, with a "Clear" chip when a facet is active. Sort persists via
 /// settings; the language filter is library-session state on the controller.
@@ -41,9 +41,13 @@ class LibraryControlsRow extends ConsumerWidget {
     // "Clear" chip rebuild the moment the filter changes (review 2026-09-03).
     final activeLang = ref.watch(libraryLanguageFilterProvider);
     final activeKind = ref.watch(libraryKindFilterProvider);
-    final languages = ref
-        .watch(libraryLanguagesProvider)
-        .maybeWhen(data: (l) => l, orElse: () => const <String>[]);
+    // `valueOrNull`, not `maybeWhen(data: ...)`: while the languages are
+    // read again (after every change of the catalogue) the provider is
+    // "loading", and the chips it had would vanish for that moment and come
+    // back, a visible blink (review finding P4-m13). The last known
+    // languages stay until the new ones are there.
+    final languages =
+        ref.watch(libraryLanguagesProvider).valueOrNull ?? const <String>[];
 
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,

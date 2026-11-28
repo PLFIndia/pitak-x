@@ -1,6 +1,6 @@
 /// Salted cover-path hashing (pure domain, AGENTS.md §3.1, #32, F-01).
 ///
-/// Port of Kotlin `PublishCoverIds`. The published cover for book id `n` is
+/// The published cover for book id `n` is
 /// `covers/<shortHex(sha256(salt||utf8(n)))>.jpg`, stable across publishes so
 /// external links keep working between updates (same id maps to same path).
 ///

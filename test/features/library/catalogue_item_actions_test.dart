@@ -4,8 +4,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/features/library/application/catalogue_changes.dart';
 import 'package:pitaka/features/library/application/delete_catalogue_item_use_case.dart';
-import 'package:pitaka/features/library/application/library_controller.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/value_objects/item_details.dart';
 import 'package:pitaka/features/library/presentation/widgets/catalogue_item_actions.dart';
@@ -88,8 +88,6 @@ void main() {
       ],
     );
     addTearDown(container.dispose);
-    final librarySub = container.listen(libraryControllerProvider, (_, _) {});
-    addTearDown(librarySub.close);
     var periodicalEvents = 0;
     final periodicalSub = container.listen(
       periodicalsControllerProvider,
@@ -98,7 +96,6 @@ void main() {
     );
     addTearDown(periodicalSub.close);
 
-    await container.read(libraryControllerProvider.future);
     final before = await container.read(periodicalsControllerProvider.future);
     final notifier = container.read(periodicalsControllerProvider.notifier);
     expect(before.single.issueCount, 1);
@@ -136,6 +133,7 @@ void main() {
     await _pumpFrames(tester);
 
     expect(items.rows, isEmpty, reason: 'the issue was really hard-deleted');
+    expect(container.read(catalogueChangesProvider), 1, reason: 'D151');
     expect(find.text('open detail'), findsOneWidget);
     await tester.pump();
     final after = await container.read(periodicalsControllerProvider.future);
@@ -188,5 +186,6 @@ void main() {
     expect(find.textContaining('book'), findsNothing);
     expect(find.textContaining('private database detail'), findsNothing);
     expect(items.rows, hasLength(1), reason: 'a failed delete changes nothing');
+    expect(container.read(catalogueChangesProvider), 0);
   });
 }

@@ -8,6 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/core/platform/document_saver.dart';
 import 'package:pitaka/core/platform/file_share.dart';
 import 'package:pitaka/features/import_export/application/export_controller.dart';
 import 'package:pitaka/features/import_export/application/export_library_use_case.dart';
@@ -25,17 +26,57 @@ import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
 import 'package:pitaka/features/wishlist/domain/repositories/wishlist_repository.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../support/fake_document_saver.dart';
+import '../../support/fake_export_work_area.dart';
+import '../../support/pdf_ending_renderer.dart';
 import '../periodicals/application/periodical_fakes.dart';
 
+/// Share-sheet fake. Since review finding P4-M6 (decision D172) an export
+/// is shared as a FILE of the app's own, by its path; the bytes and the
+/// name the tests look at are those of that file, read from the fake work
+/// area.
 class _FakeShare implements FileShareService {
+  /// Set by `makeContainer`: where the controller puts the export's file.
+  FakeExportWorkArea? workArea;
+
+  Uint8List? bytes;
+  String? fileName;
+  String? path;
+  String? mimeType;
+  ShareOutcome outcome = ShareOutcome.success;
+
+  /// When given, the share sheet throws it instead of answering.
+  Object? error;
+
+  /// When given, the share sheet "stays open" until it completes.
+  Completer<void>? gate;
+
+  /// When given, `share` is added to it when the sheet is asked.
+  List<String>? events;
+
+  @override
+  Future<ShareOutcome> shareFile({
+    required String path,
+    required String mimeType,
+    Rect? sharePositionOrigin,
+  }) async {
+    events?.add('share');
+    this.path = path;
+    this.mimeType = mimeType;
+    bytes = workArea!.files[path];
+    fileName = path.split('/').last;
+    await gate?.future;
+    final e = error;
+    if (e != null) Error.throwWithStackTrace(e, StackTrace.current);
+    return outcome;
+  }
+
   @override
   Future<ShareOutcome> shareText(String text, {Rect? sharePositionOrigin}) =>
       throw UnimplementedError();
 
-  Uint8List? bytes;
-  String? fileName;
-  ShareOutcome outcome = ShareOutcome.success;
-
+  // D172: sharing BYTES made the share plugin write a copy that nobody
+  // removes. The controller must never do it again.
   @override
   Future<ShareOutcome> shareBytes({
     required Uint8List bytes,
@@ -43,11 +84,7 @@ class _FakeShare implements FileShareService {
     required String mimeType,
     String? text,
     Rect? sharePositionOrigin,
-  }) async {
-    this.bytes = bytes;
-    this.fileName = fileName;
-    return outcome;
-  }
+  }) => throw UnimplementedError();
 }
 
 /// A renderer that reports one row at a time and waits at a gate the test
@@ -66,12 +103,37 @@ class _GatedRenderer implements LibraryPdfRenderer {
   int renderCalls = 0;
   int rowsRendered = 0;
 
+  /// The fonts the last call was handed.
+  PdfFontBundle? regularFonts;
+  PdfFontBundle? boldFonts;
+
   void release() {
     final g = gate;
     gate = Completer<void>();
     parked = Completer<void>();
     g.complete();
   }
+
+  // Every list fits: these tests are about the run, not about the count.
+  @override
+  Future<PdfSizeEstimate> measure({
+    required String libraryName,
+    required List<CatalogueItem> books,
+    required List<PrintColumn> columns,
+    required String footerAttribution,
+    String? subtitle,
+    PdfFontBundle regularFonts = const [],
+    PdfFontBundle boldFonts = const [],
+    Uint8List? logoBytes,
+    Uint8List? footerIconBytes,
+    RenderCancelToken? cancelToken,
+    int maxCachedTiles = PdfLibraryRenderer.defaultMaxCachedTiles,
+  }) async => PdfSizeEstimate(
+    objectsNeeded: 0,
+    objectsAllowed: 1,
+    rowsTotal: books.length,
+    rowsThatFit: books.length,
+  );
 
   @override
   Future<Uint8List> render({
@@ -90,6 +152,8 @@ class _GatedRenderer implements LibraryPdfRenderer {
     int maxCachedTiles = PdfLibraryRenderer.defaultMaxCachedTiles,
   }) async {
     renderCalls += 1;
+    this.regularFonts = regularFonts;
+    this.boldFonts = boldFonts;
     PdfRenderProgress at(int done) => PdfRenderProgress(
       rowsDone: done,
       rowsTotal: rows,
@@ -109,7 +173,7 @@ class _GatedRenderer implements LibraryPdfRenderer {
 }
 
 class _Books implements CatalogueItemRepository {
-  _Books(this._books, {this.failWith});
+  _Books(this._books, {this.failWith, this.throwWith});
 
   // CatalogueItemRepository additions (review 2026-09-03): fakes default to "no
   // match" and a pass-through transaction unless a test overrides them.
@@ -123,12 +187,19 @@ class _Books implements CatalogueItemRepository {
   final List<CatalogueItem> _books;
   final Failure? failWith;
 
+  /// When given, reading the books for an export throws it.
+  final Object? throwWith;
+
   @override
   Future<Either<Failure, List<CatalogueItem>>> getAll() async =>
       failWith != null ? left(failWith!) : right(_books);
   @override
-  Future<Either<Failure, List<CatalogueItem>>> getAllForInterchange() async =>
-      failWith != null ? left(failWith!) : right(_books);
+  Future<Either<Failure, List<CatalogueItem>>> getAllForInterchange() async {
+    final error = throwWith;
+    if (error != null) Error.throwWithStackTrace(error, StackTrace.current);
+    return failWith != null ? left(failWith!) : right(_books);
+  }
+
   @override
   Future<Either<Failure, CatalogueItemPage>> page(
     LibraryQuery query, {
@@ -205,6 +276,9 @@ class _Wishlist implements WishlistRepository {
       right(b.length);
 }
 
+/// No fonts: the renderer then writes with its built-in Latin font.
+const PdfTextFonts _noFonts = (regular: <ByteData>[], bold: <ByteData>[]);
+
 void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
 
@@ -212,9 +286,16 @@ void main() {
     required CatalogueItemRepository books,
     required _FakeShare share,
     LibraryPdfRenderer pdfRenderer = const PdfLibraryRenderer(),
+    FakeExportWorkArea? workArea,
+    FakeDocumentSaver? saver,
+    Future<PdfTextFonts> Function()? fontsLoader,
   }) {
+    final area = workArea ?? FakeExportWorkArea();
+    share.workArea = area;
     final container = ProviderContainer(
       overrides: [
+        exportWorkAreaProvider.overrideWith((ref) async => area),
+        documentSaverProvider.overrideWithValue(saver ?? FakeDocumentSaver()),
         exportLibraryUseCaseProvider.overrideWith(
           (ref) async => ExportLibraryUseCase(
             jsonEncoder: const PitakaJsonExporter(),
@@ -228,6 +309,9 @@ void main() {
         // The PDF path needs the footer icon + rasterizer providers; in a
         // pure test neither the asset bundle nor an engine is wanted.
         pdfFooterIconLoaderProvider.overrideWithValue(() async => null),
+        pdfTextFontsLoaderProvider.overrideWithValue(
+          fontsLoader ?? () async => _noFonts,
+        ),
         pdfTextRasterizerProvider.overrideWithValue(_NoRaster()),
         exportLogoReaderProvider.overrideWith(
           (ref) async =>
@@ -251,7 +335,11 @@ void main() {
 
     final result = await container
         .read(exportControllerProvider.notifier)
-        .export(scope: ExportScope.both, format: ExportFormat.json);
+        .export(
+          destination: ExportDestination.share,
+          scope: ExportScope.both,
+          format: ExportFormat.json,
+        );
 
     expect(result.outcome, ExportOutcome.shared);
     expect(result.fileName, endsWith('.json'));
@@ -272,7 +360,11 @@ void main() {
 
       final result = await container
           .read(exportControllerProvider.notifier)
-          .export(scope: ExportScope.libraryOnly, format: ExportFormat.csv);
+          .export(
+            destination: ExportDestination.share,
+            scope: ExportScope.libraryOnly,
+            format: ExportFormat.csv,
+          );
 
       expect(result.outcome, ExportOutcome.failed);
       expect(share.bytes, isNull);
@@ -285,9 +377,69 @@ void main() {
 
     final result = await container
         .read(exportControllerProvider.notifier)
-        .export(scope: ExportScope.libraryOnly, format: ExportFormat.csv);
+        .export(
+          destination: ExportDestination.share,
+          scope: ExportScope.libraryOnly,
+          format: ExportFormat.csv,
+        );
 
     expect(result.outcome, ExportOutcome.dismissed);
+  });
+
+  group('the fonts for real text (ADR 0033)', () {
+    test('a PDF export loads the two fonts and hands them to the renderer, '
+        'each as its own weight', () async {
+      final regular = ByteData(4)..setUint8(0, 1);
+      final bold = ByteData(4)..setUint8(0, 2);
+      var loads = 0;
+      final renderer = _GatedRenderer(rows: 1);
+      final container = makeContainer(
+        books: _Books([const CatalogueItem(id: 1, title: 'A')]),
+        share: _FakeShare(),
+        pdfRenderer: renderer,
+        fontsLoader: () async {
+          loads += 1;
+          return (regular: [regular], bold: [bold]);
+        },
+      );
+      final run = container
+          .read(exportControllerProvider.notifier)
+          .export(
+            destination: ExportDestination.share,
+            scope: ExportScope.libraryOnly,
+            format: ExportFormat.pdf,
+          );
+      await untilParked(renderer);
+      renderer.release();
+      await run;
+      expect(loads, 1);
+      expect(renderer.regularFonts, hasLength(1));
+      expect(identical(renderer.regularFonts!.single, regular), isTrue);
+      expect(renderer.boldFonts, hasLength(1));
+      expect(identical(renderer.boldFonts!.single, bold), isTrue);
+    });
+
+    for (final format in [ExportFormat.json, ExportFormat.csv]) {
+      test('a ${format.name} export loads no font', () async {
+        var loads = 0;
+        final container = makeContainer(
+          books: _Books([const CatalogueItem(id: 1, title: 'A')]),
+          share: _FakeShare(),
+          fontsLoader: () async {
+            loads += 1;
+            return _noFonts;
+          },
+        );
+        await container
+            .read(exportControllerProvider.notifier)
+            .export(
+              destination: ExportDestination.share,
+              scope: ExportScope.libraryOnly,
+              format: format,
+            );
+        expect(loads, 0);
+      });
+    }
   });
 
   group('N10-e — progress, cancel, one run at a time', () {
@@ -309,7 +461,11 @@ void main() {
 
       final run = container
           .read(exportControllerProvider.notifier)
-          .export(scope: ExportScope.libraryOnly, format: ExportFormat.pdf);
+          .export(
+            destination: ExportDestination.share,
+            scope: ExportScope.libraryOnly,
+            format: ExportFormat.pdf,
+          );
       await untilParked(renderer);
       expect(container.read(exportControllerProvider), isA<ExportRunning>());
       expect(container.read(exportControllerProvider.notifier).isRunning, true);
@@ -325,12 +481,20 @@ void main() {
 
       final running = states.whereType<ExportRunning>().toList();
       // Throttled: 60 rows publish the 0/25/50 marks and the final 60, not
-      // one state per row.
+      // one state per row. These are the states WHILE the file is made.
       final reported = running
+          .where((s) => !s.fileMade)
           .map((s) => s.progress?.rowsDone)
           .whereType<int>()
           .toList();
       expect(reported, [0, 25, 50, 60]);
+      // P4-M6: then ONE more running state, "the file is made", which keeps
+      // the renderer's last report (the page goes on showing its words
+      // while the share sheet is open).
+      final made = running.where((s) => s.fileMade).toList();
+      expect(made, hasLength(1));
+      expect(running.last, same(made.single));
+      expect(made.single.progress?.rowsDone, 60);
       for (var i = 1; i < reported.length; i++) {
         expect(reported[i], greaterThan(reported[i - 1]));
       }
@@ -353,6 +517,7 @@ void main() {
       );
       final notifier = container.read(exportControllerProvider.notifier);
       final run = notifier.export(
+        destination: ExportDestination.share,
         scope: ExportScope.libraryOnly,
         format: ExportFormat.pdf,
       );
@@ -386,6 +551,7 @@ void main() {
       );
       final notifier = container.read(exportControllerProvider.notifier);
       final run = notifier.export(
+        destination: ExportDestination.share,
         scope: ExportScope.libraryOnly,
         format: ExportFormat.pdf,
       );
@@ -409,11 +575,13 @@ void main() {
       );
       final notifier = container.read(exportControllerProvider.notifier);
       final first = notifier.export(
+        destination: ExportDestination.share,
         scope: ExportScope.libraryOnly,
         format: ExportFormat.pdf,
       );
       await untilParked(renderer);
       final second = notifier.export(
+        destination: ExportDestination.share,
         scope: ExportScope.both,
         format: ExportFormat.json, // ignored: the running PDF wins
       );
@@ -432,6 +600,7 @@ void main() {
 
       // Once finished, a new export starts a fresh run.
       final third = notifier.export(
+        destination: ExportDestination.share,
         scope: ExportScope.libraryOnly,
         format: ExportFormat.csv,
       );
@@ -456,7 +625,11 @@ void main() {
         );
         final run = container
             .read(exportControllerProvider.notifier)
-            .export(scope: ExportScope.libraryOnly, format: ExportFormat.pdf);
+            .export(
+              destination: ExportDestination.share,
+              scope: ExportScope.libraryOnly,
+              format: ExportFormat.pdf,
+            );
         await untilParked(renderer);
 
         // The page is popped: its listener goes away while rows are pending.
@@ -498,6 +671,7 @@ void main() {
           ),
           fileShareServiceProvider.overrideWithValue(share),
           pdfFooterIconLoaderProvider.overrideWithValue(() async => null),
+          pdfTextFontsLoaderProvider.overrideWithValue(() async => _noFonts),
           pdfTextRasterizerProvider.overrideWithValue(_NoRaster()),
           exportLogoReaderProvider.overrideWith(
             (ref) async =>
@@ -513,11 +687,445 @@ void main() {
         }
       });
       final result = await notifier.export(
+        destination: ExportDestination.share,
         scope: ExportScope.libraryOnly,
         format: ExportFormat.pdf,
       );
       expect(result.outcome, ExportOutcome.cancelled);
       expect(share.bytes, isNull);
+    });
+  });
+
+  // Review finding P3-B2 (ADR 0033; decisions D209, D212 and D213): a PDF
+  // that cannot be made ends with a sentence of its own, where it used to
+  // end as "Export failed.". There are two such endings: the list was
+  // counted and does not fit into one PDF, and the safety net under the
+  // count, a run that ran out of memory.
+  group('P3-B2: a PDF that cannot be made says why', () {
+    List<CatalogueItem> sixBooks() =>
+        List.generate(6, (i) => CatalogueItem(id: i + 1, title: 'Book $i'));
+
+    Future<ExportRunResult> run(
+      ProviderContainer container, {
+      ExportFormat format = ExportFormat.pdf,
+      ExportDestination destination = ExportDestination.share,
+    }) => container
+        .read(exportControllerProvider.notifier)
+        .export(
+          destination: destination,
+          scope: ExportScope.libraryOnly,
+          format: format,
+        );
+
+    test('a list too long for one PDF ends as "too large", with how many '
+        'books it has and how many fit; nothing is drawn and no file is '
+        'made', () async {
+      final renderer = EndingPdfRenderer(rowsThatFit: 4);
+      final share = _FakeShare();
+      final area = FakeExportWorkArea();
+      final saver = FakeDocumentSaver();
+      final container = makeContainer(
+        books: _Books(sixBooks()),
+        share: share,
+        workArea: area,
+        saver: saver,
+        pdfRenderer: renderer,
+      );
+
+      for (final destination in ExportDestination.values) {
+        final result = await run(container, destination: destination);
+
+        expect(result.outcome, ExportOutcome.pdfTooLarge);
+        expect(result.books, 6);
+        expect(result.booksThatFit, 4);
+        expect(result.fileName, isEmpty);
+        final state = container.read(exportControllerProvider);
+        expect((state as ExportFinished).result, same(result));
+      }
+      expect(renderer.measureCalls, 2);
+      expect(renderer.renderCalls, 0);
+      expect(area.files, isEmpty);
+      expect(share.path, isNull);
+      expect(saver.paths, isEmpty);
+    });
+
+    test('a list that fits carries no numbers', () async {
+      final container = makeContainer(
+        books: _Books(sixBooks()),
+        share: _FakeShare(),
+        pdfRenderer: EndingPdfRenderer(),
+      );
+
+      final result = await run(container);
+
+      expect(result.outcome, ExportOutcome.shared);
+      expect(result.books, 0);
+      expect(result.booksThatFit, 0);
+    });
+
+    test('another failure of the use case stays "failed"', () async {
+      final container = makeContainer(
+        books: _Books(const [], failWith: const StorageFailure('read failed')),
+        share: _FakeShare(),
+        pdfRenderer: EndingPdfRenderer(rowsThatFit: 4),
+      );
+
+      final result = await run(container);
+
+      expect(result.outcome, ExportOutcome.failed);
+      expect(result.books, 0);
+      expect(result.booksThatFit, 0);
+    });
+
+    // The Dart VM throws `OutOfMemoryError` when its heap cannot give what
+    // is asked for. The renderer passes it on (`pdf_text_tiles.dart`,
+    // `pdf_image_decode.dart`), and nothing between it and the controller
+    // catches it.
+    final outOfMemoryWhile = <String, EndingPdfRenderer Function()>{
+      'the PDF is drawn': () =>
+          EndingPdfRenderer(renderError: const OutOfMemoryError()),
+      'the PDF is counted': () =>
+          EndingPdfRenderer(measureError: const OutOfMemoryError()),
+    };
+    for (final MapEntry(key: moment, value: make) in outOfMemoryWhile.entries) {
+      test('out of memory while $moment ends as "out of memory", and no file '
+          'is made', () async {
+        final share = _FakeShare();
+        final area = FakeExportWorkArea();
+        final container = makeContainer(
+          books: _Books(sixBooks()),
+          share: share,
+          workArea: area,
+          pdfRenderer: make(),
+        );
+
+        final result = await run(container);
+
+        expect(result.outcome, ExportOutcome.outOfMemory);
+        expect(area.files, isEmpty);
+        expect(share.path, isNull);
+        final state = container.read(exportControllerProvider);
+        expect((state as ExportFinished).result, same(result));
+        expect(
+          container.read(exportControllerProvider.notifier).isRunning,
+          isFalse,
+        );
+      });
+    }
+
+    test('out of memory while the books of a PDF are read is "out of '
+        'memory" too', () async {
+      final container = makeContainer(
+        books: _Books(const [], throwWith: const OutOfMemoryError()),
+        share: _FakeShare(),
+        pdfRenderer: EndingPdfRenderer(),
+      );
+
+      expect((await run(container)).outcome, ExportOutcome.outOfMemory);
+    });
+
+    test('any other error of the renderer stays "failed"', () async {
+      for (final error in <Object>[
+        StateError('a mistake in code'),
+        const FormatException('bad bytes'),
+        'a thrown string',
+        const StackOverflowError(),
+      ]) {
+        final container = makeContainer(
+          books: _Books(sixBooks()),
+          share: _FakeShare(),
+          pdfRenderer: EndingPdfRenderer(renderError: error),
+        );
+
+        expect(
+          (await run(container)).outcome,
+          ExportOutcome.failed,
+          reason: '$error',
+        );
+      }
+    });
+
+    // The sentence says "for the PDF": a CSV or a JSON that ran out of
+    // memory keeps the plain sentence.
+    for (final format in [ExportFormat.csv, ExportFormat.json]) {
+      test('out of memory in a ${format.name} export stays "failed"', () async {
+        final container = makeContainer(
+          books: _Books(const [], throwWith: const OutOfMemoryError()),
+          share: _FakeShare(),
+        );
+
+        expect(
+          (await run(container, format: format)).outcome,
+          ExportOutcome.failed,
+        );
+      });
+    }
+
+    // The sentence says "Nothing was exported." Once the file is made and
+    // handed to the saver or to the share sheet, the app cannot know that
+    // any more, whatever is thrown there.
+    test('out of memory AFTER the PDF was handed on stays "failed", and the '
+        'file is given back', () async {
+      final area = FakeExportWorkArea();
+      final container = makeContainer(
+        books: _Books(sixBooks()),
+        share: _FakeShare()..error = const OutOfMemoryError(),
+        workArea: area,
+        saver: FakeDocumentSaver(error: const OutOfMemoryError()),
+        pdfRenderer: EndingPdfRenderer(),
+      );
+
+      for (final destination in ExportDestination.values) {
+        expect(
+          (await run(container, destination: destination)).outcome,
+          ExportOutcome.failed,
+          reason: destination.name,
+        );
+        expect(area.discarded.last, area.lastPath);
+      }
+      expect(area.discarded, hasLength(2));
+    });
+  });
+
+  // Review finding P4-M6 (decisions D165, D167 and D172): an export is told
+  // where it goes. Either way its bytes become ONE private file first, the
+  // saver or the share sheet gets that file by its path, and the file is
+  // given back on every way out.
+  group("P4-M6: one file of the app's own for Save and for Share", () {
+    final oneBook = _Books([const CatalogueItem(id: 1, title: 'Godaan')]);
+
+    Future<ExportRunResult> run(
+      ProviderContainer container,
+      ExportDestination destination, {
+      ExportFormat format = ExportFormat.csv,
+    }) => container
+        .read(exportControllerProvider.notifier)
+        .export(
+          destination: destination,
+          scope: ExportScope.libraryOnly,
+          format: format,
+        );
+
+    test('Share hands over the file that was put, by its path and with its '
+        'type, and gives it back afterwards', () async {
+      final events = <String>[];
+      final share = _FakeShare()..events = events;
+      final area = FakeExportWorkArea(events: events);
+      final saver = FakeDocumentSaver(events: events);
+      final container = makeContainer(
+        books: oneBook,
+        share: share,
+        workArea: area,
+        saver: saver,
+      );
+
+      final result = await run(container, ExportDestination.share);
+
+      expect(result.outcome, ExportOutcome.shared);
+      expect(share.path, area.lastPath);
+      expect(share.mimeType, 'text/csv');
+      expect(result.fileName, share.fileName);
+      expect(result.fileName, matches(RegExp(r'^pitak-library-\d{8}\.csv$')));
+      expect(events, ['put', 'share', 'discard']);
+      expect(area.discarded, [area.lastPath]);
+      expect(saver.paths, isEmpty);
+    });
+
+    test('Save hands the same kind of file to the saver, and the name in '
+        'the result is the one the place gave', () async {
+      final events = <String>[];
+      final share = _FakeShare()..events = events;
+      final area = FakeExportWorkArea(events: events);
+      final saver = FakeDocumentSaver(
+        result: FakeDocumentSaver.saved(name: 'pitak-library (1).csv'),
+        events: events,
+      );
+      final container = makeContainer(
+        books: oneBook,
+        share: share,
+        workArea: area,
+        saver: saver,
+      );
+
+      final result = await run(container, ExportDestination.save);
+
+      expect(result.outcome, ExportOutcome.saved);
+      expect(result.fileName, 'pitak-library (1).csv');
+      expect(saver.paths, [area.lastPath]);
+      expect(area.files[area.lastPath], isNotEmpty);
+      expect(events, ['put', 'save', 'discard']);
+      expect(share.path, isNull, reason: 'the share sheet is not asked');
+    });
+
+    test('each of the three formats is put under a name that may be '
+        'saved', () async {
+      for (final format in ExportFormat.values) {
+        final area = FakeExportWorkArea();
+        final container = makeContainer(
+          books: oneBook,
+          share: _FakeShare(),
+          workArea: area,
+        );
+
+        final result = await run(
+          container,
+          ExportDestination.save,
+          format: format,
+        );
+
+        expect(result.outcome, ExportOutcome.saved, reason: '$format');
+        expect(
+          isSavableFileName(area.lastPath!.split('/').last),
+          isTrue,
+          reason: '$format',
+        );
+      }
+    });
+
+    const answers = <String, (DocumentSaveResult, ExportOutcome)>{
+      'the save window was left': (
+        DocumentSaveCancelled(),
+        ExportOutcome.saveCancelled,
+      ),
+      'the place could not take it': (
+        DocumentSaveNotSaved(),
+        ExportOutcome.notSaved,
+      ),
+      'an unfinished file may be left': (
+        DocumentSaveLeftBehind(),
+        ExportOutcome.saveLeftBehind,
+      ),
+      'the chosen file has content (D176)': (
+        DocumentSaveNotEmpty(),
+        ExportOutcome.saveNotEmpty,
+      ),
+      'the place cannot confirm that the file is stored (D183)': (
+        DocumentSaveUnconfirmed(),
+        ExportOutcome.saveUnconfirmed,
+      ),
+      'no save window (D171)': (
+        DocumentSaveUnavailable(),
+        ExportOutcome.saveUnavailable,
+      ),
+      'the file was gone': (DocumentSaveSourceGone(), ExportOutcome.failed),
+      'a mistake in code': (DocumentSaveFailed(), ExportOutcome.failed),
+    };
+    for (final MapEntry(key: title, value: (answer, outcome))
+        in answers.entries) {
+      test('not saved, $title: its own outcome, and the file is given '
+          'back', () async {
+        final area = FakeExportWorkArea();
+        final container = makeContainer(
+          books: oneBook,
+          share: _FakeShare(),
+          workArea: area,
+          saver: FakeDocumentSaver(result: answer),
+        );
+
+        final result = await run(container, ExportDestination.save);
+
+        expect(result.outcome, outcome);
+        expect(result.fileName, isEmpty);
+        expect(area.discarded, [area.lastPath]);
+      });
+    }
+
+    test(
+      'a file that cannot be put is "failed", and nobody is asked',
+      () async {
+        final share = _FakeShare();
+        final saver = FakeDocumentSaver();
+        final area = FakeExportWorkArea(putFails: true);
+        for (final destination in ExportDestination.values) {
+          final container = makeContainer(
+            books: oneBook,
+            share: share,
+            workArea: area,
+            saver: saver,
+          );
+
+          expect(
+            (await run(container, destination)).outcome,
+            ExportOutcome.failed,
+          );
+        }
+        expect(share.path, isNull);
+        expect(saver.paths, isEmpty);
+        expect(
+          area.discarded,
+          isEmpty,
+          reason: 'there is nothing to give back',
+        );
+      },
+    );
+
+    test('a saver or a share sheet that throws is "failed", and the file is '
+        'still given back', () async {
+      final area = FakeExportWorkArea();
+      final container = makeContainer(
+        books: oneBook,
+        share: _FakeShare()..error = StateError('plugin exploded'),
+        workArea: area,
+        saver: FakeDocumentSaver(error: StateError('channel exploded')),
+      );
+
+      for (final destination in ExportDestination.values) {
+        expect(
+          (await run(container, destination)).outcome,
+          ExportOutcome.failed,
+        );
+        expect(area.discarded.last, area.lastPath);
+      }
+      expect(area.discarded, hasLength(2));
+    });
+
+    test('while the file is being saved the state says so, and Cancel '
+        'changes nothing any more', () async {
+      final gate = Completer<void>();
+      final container = makeContainer(
+        books: oneBook,
+        share: _FakeShare(),
+        saver: FakeDocumentSaver(gate: gate),
+      );
+      final states = <ExportUiState>[];
+      container.listen(exportControllerProvider, (_, next) => states.add(next));
+      final notifier = container.read(exportControllerProvider.notifier);
+
+      final running = run(container, ExportDestination.save);
+      // First: the file is being made, on the way to Save.
+      final first = container.read(exportControllerProvider) as ExportRunning;
+      expect(first.destination, ExportDestination.save);
+      expect(first.fileMade, isFalse);
+
+      // Let the export be made and the saver be asked.
+      await pumpEventQueue();
+      final waiting = container.read(exportControllerProvider) as ExportRunning;
+      expect(waiting.destination, ExportDestination.save);
+      expect(waiting.fileMade, isTrue);
+
+      // The cancel token is only looked at while the file is made.
+      notifier.cancel();
+      gate.complete();
+      expect((await running).outcome, ExportOutcome.saved);
+      expect(states.last, isA<ExportFinished>());
+    });
+
+    test('on the way to the share sheet the state says "share", and that '
+        'the file is made', () async {
+      final gate = Completer<void>();
+      final container = makeContainer(
+        books: oneBook,
+        share: _FakeShare()..gate = gate,
+      );
+
+      final running = run(container, ExportDestination.share);
+      await pumpEventQueue();
+      final waiting = container.read(exportControllerProvider) as ExportRunning;
+      expect(waiting.destination, ExportDestination.share);
+      expect(waiting.fileMade, isTrue);
+
+      gate.complete();
+      expect((await running).outcome, ExportOutcome.shared);
     });
   });
 }

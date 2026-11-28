@@ -24,8 +24,9 @@
 - **Amends:** ADR 0007 (a third persisted `String` token plus ephemeral
   upload/completion JWTs) and ADR 0010 (no pinning for a second publishing
   API). ADR 0012 gains the `workers.dev` reader URL by the same work.
-- **Plan:** `cloudflare_plan-final.md` (parts A–N). Related: ADR 0007,
-  ADR 0010, ADR 0012, ADR 0015, ADR 0016.
+- **Plan:** `cloudflare_plan-final.md` (parts A–N; removed on 2026-11-24 as
+  finished, in git history at tag `1.9.7`). Related: ADR 0007, ADR 0010,
+  ADR 0012, ADR 0015, ADR 0016.
 
 ## Context
 

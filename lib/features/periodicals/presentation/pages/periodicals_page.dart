@@ -111,7 +111,7 @@ class _PeriodicalRow extends StatelessWidget {
     final textTheme = Theme.of(context).textTheme;
     final periodical = entry.periodical;
     // A removed title is dimmed (visible-but-inert), mirroring the library
-    // row's rule for removed books (Kotlin D39).
+    // row's rule for removed books.
     final titleColor = periodical.removed
         ? scheme.onSurfaceVariant
         : scheme.onSurface;

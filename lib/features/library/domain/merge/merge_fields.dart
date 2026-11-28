@@ -233,8 +233,8 @@ final List<_MergeFieldSpec> _mergeFieldSpecs = [
   ),
   // Cover refs go through [_coversEqual]: LOCAL refs (`covers/<uuid>.jpg`,
   // legacy `file://…`) are per-device artifacts — the JSON importer nulls
-  // them on the receiving device (`keepLocalCovers=false`), so comparing
-  // them raw made every camera-captured cover a PHANTOM conflict on every
+  // them on the receiving device, so comparing them raw made every
+  // camera-captured cover a PHANTOM conflict on every
   // cross-device exchange (REVIEW_FINDINGS_2 S5). Only remote https refs
   // carry catalogue meaning across devices, and a local file on one side is
   // never a conflict with a remote ref on the other (N07/M09).
@@ -364,7 +364,7 @@ bool _coversEqual(String? a, String? b) {
 }
 
 /// Normalises an ISBN for comparison: strip spaces/hyphens, uppercase (X check
-/// digit). Null/blank → empty string. (Kotlin `String?.normIsbn`.)
+/// digit). Null/blank → empty string.
 String normIsbn(String? isbn) {
   if (isbn == null) return '';
   return isbn.replaceAll(RegExp(r'[\s-]'), '').toUpperCase();

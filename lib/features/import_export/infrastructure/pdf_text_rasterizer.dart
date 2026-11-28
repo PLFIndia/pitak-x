@@ -5,11 +5,16 @@
 /// 1:1 with NO complex-script shaping (it ships shaping for Arabic only). For
 /// Indic scripts that breaks conjuncts / half-letters and matra reordering — e.g.
 /// "बच्चे" renders as full letters with a visible halant instead of the ्च
-/// half-form. The Kotlin app avoids this by drawing on an Android `Canvas`,
-/// which shapes via the OS. The cross-platform equivalent is to let Flutter's
+/// half-form. Drawing on an Android `Canvas` would avoid this, because the
+/// OS shapes the text there. The cross-platform equivalent is to let Flutter's
 /// own text engine shape + lay out each run, capture it as an image, and embed
-/// that image in the PDF. The tradeoff (chosen with the user): PDF text becomes
-/// raster, not selectable — acceptable for a printable catalogue.
+/// that image in the PDF. The tradeoff (chosen with the user): such text
+/// becomes raster, not selectable — acceptable for a printable catalogue.
+///
+/// Since 2026-11 this file is asked only for a text that NEEDS shaping
+/// (ADR 0033). Latin letters and digits are written as real text and never
+/// come here (`pdf_text_tiles.dart` decides), because a picture is costly
+/// and one PDF can hold only so many of them.
 ///
 /// This is the side-effecting edge (uses `dart:ui` + a live engine): it
 /// implements the pure `PdfTextRasterizer` port declared in

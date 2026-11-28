@@ -6,15 +6,67 @@ part of 'backup_providers.dart';
 // RiverpodGenerator
 // **************************************************************************
 
+String _$backupWorkAreaHash() => r'a28d6f9ee8616bd719f813886d65799ce364bd38';
+
+/// The private folders backups are built in (backup rework BR4): one new
+/// folder per build under the app's temporary directory, and the one place
+/// that removes them again.
+///
+/// keepAlive (justified): this object remembers which folders are IN USE by
+/// a build of this app session, so that a sweep never deletes a backup that
+/// is being written or shared. An auto-disposed instance would forget that
+/// between two reads.
+///
+/// Copied from [backupWorkArea].
+@ProviderFor(backupWorkArea)
+final backupWorkAreaProvider = FutureProvider<BackupWorkArea>.internal(
+  backupWorkArea,
+  name: r'backupWorkAreaProvider',
+  debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+      ? null
+      : _$backupWorkAreaHash,
+  dependencies: null,
+  allTransitiveDependencies: null,
+);
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef BackupWorkAreaRef = FutureProviderRef<BackupWorkArea>;
+String _$staleBackupWorkSweepHash() =>
+    r'd50a26337f78227eda1aa7b07506ab38d1c9420d';
+
+/// One-time clean-up per app start: removes what a backup left behind when
+/// the app was killed in the middle of it (a plain copy of the library).
+/// Triggered next to the cover sweep, by the Library screen's first build.
+///
+/// keepAlive (justified): "once per app session" is the whole point, as for
+/// `orphanCoverSweep`. The result is not shown anywhere: when something
+/// could not be removed, the next start (and the next backup) tries again.
+///
+/// Copied from [staleBackupWorkSweep].
+@ProviderFor(staleBackupWorkSweep)
+final staleBackupWorkSweepProvider = FutureProvider<void>.internal(
+  staleBackupWorkSweep,
+  name: r'staleBackupWorkSweepProvider',
+  debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+      ? null
+      : _$staleBackupWorkSweepHash,
+  dependencies: null,
+  allTransitiveDependencies: null,
+);
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef StaleBackupWorkSweepRef = FutureProviderRef<void>;
 String _$createBackupUseCaseHash() =>
-    r'2fc9aceac0680e14c01df42797f1219facae104c';
+    r'e6059fa54fd163731b7adc8fa2d37cd2faeb60ef';
 
 /// Creates a `.pitabak` backup of the whole local catalog (#28B): Room-format
 /// books/wishlist written from Drift, the persistent vault copied verbatim, and
 /// covers bundled — plus the library identity and the saved-libraries list
 /// (docs/ARCHITECTURE.md §3 network) and the website publishing record (plan
-/// CV6), all gathered best-effort. Returns the archive bytes for the UI to
-/// save.
+/// CV6), all gathered best-effort. Returns where the finished archive file
+/// is, for the UI to share and then discard.
 ///
 /// Copied from [createBackupUseCase].
 @ProviderFor(createBackupUseCase)
@@ -33,7 +85,130 @@ final createBackupUseCaseProvider =
 // ignore: unused_element
 typedef CreateBackupUseCaseRef =
     AutoDisposeFutureProviderRef<CreateBackupUseCase>;
-String _$restoreBackupHash() => r'81a08374eacb31a27c8900d6950de4bfa967453f';
+String _$libraryFootprintSourceHash() =>
+    r'3b47af9582b0246cf442dd8145cd184fd83be7ea';
+
+/// How much room the library takes on disk (backup rework BR9), for the
+/// notice before a backup and before a restore. It only adds up file sizes
+/// of the data generation in use, in a worker isolate. The generation is
+/// resolved lazily (`ref.read` at call time), as the restorer below does: a
+/// restore switches generations, and the next read must see the new one.
+/// Overridden in tests with a fake.
+///
+/// Copied from [libraryFootprintSource].
+@ProviderFor(libraryFootprintSource)
+final libraryFootprintSourceProvider =
+    AutoDisposeProvider<LibraryFootprintSource>.internal(
+      libraryFootprintSource,
+      name: r'libraryFootprintSourceProvider',
+      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+          ? null
+          : _$libraryFootprintSourceHash,
+      dependencies: null,
+      allTransitiveDependencies: null,
+    );
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef LibraryFootprintSourceRef =
+    AutoDisposeProviderRef<LibraryFootprintSource>;
+String _$restoreWorkFoldersHash() =>
+    r'74c71166702c97a7637f41f3be90622565a48d91';
+
+/// The private scratch folders of restores (backup rework BR6): one new
+/// folder per restore under the app's temporary directory, for the
+/// databases a restore unpacks before it reads them, and the one place that
+/// removes them again.
+///
+/// Under the TEMPORARY folder, as the backup's work area is: Documents is
+/// never cleared by the system, so a restore that was killed half-way left
+/// plain copies of the databases there for good. The old
+/// `<Documents>/restore_work` of earlier versions is no longer written; a
+/// sweep removes it when it is still there.
+///
+/// keepAlive (justified): this object remembers which folders are IN USE by
+/// a restore of this app session, so that a sweep never deletes the files a
+/// restore is reading. An auto-disposed instance would forget that between
+/// two reads (the same reason as `backupWorkArea`).
+///
+/// Copied from [restoreWorkFolders].
+@ProviderFor(restoreWorkFolders)
+final restoreWorkFoldersProvider = FutureProvider<RunFolders>.internal(
+  restoreWorkFolders,
+  name: r'restoreWorkFoldersProvider',
+  debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+      ? null
+      : _$restoreWorkFoldersHash,
+  dependencies: null,
+  allTransitiveDependencies: null,
+);
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef RestoreWorkFoldersRef = FutureProviderRef<RunFolders>;
+String _$staleRestoreFilesSweepHash() =>
+    r'e2d581105c351460ab41e284c3f9fb3dd56ec29d';
+
+/// One-time clean-up per app start: removes what a restore left behind when
+/// the app was killed in the middle of it. That is the private copy of a
+/// chosen backup file (a plain copy of a whole library) and the databases
+/// unpacked from it. Triggered next to the other two sweeps, by the Library
+/// screen's first build.
+///
+/// keepAlive (justified): "once per app session" is the whole point, as for
+/// `staleBackupWorkSweep`. The result is not shown anywhere: what could not
+/// be removed is tried again at the next start and before the next restore.
+///
+/// Copied from [staleRestoreFilesSweep].
+@ProviderFor(staleRestoreFilesSweep)
+final staleRestoreFilesSweepProvider = FutureProvider<void>.internal(
+  staleRestoreFilesSweep,
+  name: r'staleRestoreFilesSweepProvider',
+  debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+      ? null
+      : _$staleRestoreFilesSweepHash,
+  dependencies: null,
+  allTransitiveDependencies: null,
+);
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef StaleRestoreFilesSweepRef = FutureProviderRef<void>;
+String _$legacyPickerCopiesSweepHash() =>
+    r'f08bbc5181de0a62415e9db685f2e776abceb07a';
+
+/// Clean-up after the update that took the `file_selector` plugin out of
+/// the app (decision D33): removes the plain copies of chosen files that
+/// the plugin left in the app's cache folder, among them whole backups that
+/// were chosen for a restore. See `legacy_picker_copies.dart` for how such
+/// a copy is told apart from everything else in that folder. Triggered next
+/// to the other sweeps, by the Library screen's first build.
+///
+/// ONCE: when nothing is left, a flag is written to the preferences and
+/// later app starts do nothing here. When something could not be removed,
+/// no flag is written and a later look tries again.
+///
+/// Auto-disposed, unlike the other sweeps: the flag is what makes this run
+/// once, so nothing has to be remembered in memory. The result is not shown
+/// anywhere.
+///
+/// Copied from [legacyPickerCopiesSweep].
+@ProviderFor(legacyPickerCopiesSweep)
+final legacyPickerCopiesSweepProvider =
+    AutoDisposeFutureProvider<void>.internal(
+      legacyPickerCopiesSweep,
+      name: r'legacyPickerCopiesSweepProvider',
+      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+          ? null
+          : _$legacyPickerCopiesSweepHash,
+      dependencies: null,
+      allTransitiveDependencies: null,
+    );
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef LegacyPickerCopiesSweepRef = AutoDisposeFutureProviderRef<void>;
+String _$restoreBackupHash() => r'03509172b3a51bd62503a9809a606eb18a94bb5c';
 
 /// Backup-archive restorer (authoritative overwrite of local state).
 ///

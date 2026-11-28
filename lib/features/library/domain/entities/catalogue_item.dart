@@ -1,7 +1,6 @@
 /// Pure domain model for one catalogue item (any kind) in the user's library.
 ///
-/// The catalogue item row — ADR 0013 (pending). Originally ported from Kotlin
-/// `dev.khoj.pitaka.domain.model.Book` (source app) and named `Book` until
+/// The catalogue item row — ADR 0013 (pending). It was named `Book` until
 /// 2026-10; renamed because the same row is the base of every item kind, not
 /// only books. Pure Dart: no Flutter/Drift/Riverpod imports (AGENTS.md §3.1).
 /// Immutable; `copyWith` for edits.
@@ -13,8 +12,7 @@ import 'package:pitaka/features/library/domain/value_objects/item_details.dart';
 import 'package:pitaka/features/library/domain/value_objects/item_kind.dart';
 
 /// Fixed provenance categories for `CatalogueItem.sourceType`. Stored as the
-/// Dart enum constant name (e.g. `purchased`) — mirrors Kotlin where it is
-/// persisted as the enum `name`. Tolerant parse via
+/// Dart enum constant name (e.g. `purchased`). Tolerant parse via
 /// [ItemSourceTypeX.fromToken].
 enum ItemSourceType {
   /// Bought.
@@ -35,7 +33,7 @@ enum ItemSourceType {
 
 /// Tolerant parsing for [ItemSourceType].
 extension ItemSourceTypeX on ItemSourceType {
-  /// The stable storage token (Kotlin enum `name`, upper-case).
+  /// The stable storage token (the enum name, upper-case).
   String get token => name.toUpperCase();
 
   /// Parses a stored value tolerantly; unknown/blank → null (never throws).
@@ -78,7 +76,7 @@ enum AgeGroup {
   /// Band order for the Age-group sort.
   final int sortRank;
 
-  /// Tolerant parse, byte-for-byte equivalent to Kotlin `AgeGroup.fromToken`.
+  /// Tolerant parse.
   ///
   /// Accepts the current [token], the current enum name (`above_3`…), AND the
   /// LEGACY pre-"above N" names (`age_0_5/age_6_10/age_11_16/advance`) so old
@@ -122,7 +120,7 @@ enum AgeGroup {
 /// the same row with [details] set. `id == emptyId` means "not yet
 /// persisted".
 class CatalogueItem {
-  /// Creates an item. Only [title] is required (matches Kotlin). [details]
+  /// Creates an item. Only [title] is required. [details]
   /// is null for a book.
   const CatalogueItem({
     required this.title,

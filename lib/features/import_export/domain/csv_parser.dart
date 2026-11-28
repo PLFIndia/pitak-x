@@ -1,7 +1,6 @@
 /// Minimal RFC 4180 CSV parser. Pure Dart, no external dependency.
 ///
-/// Direct port of the Kotlin `parseCsv` (source app `data/import_/CsvParser.kt`)
-/// so the Flutter Goodreads/CSV import behaves byte-for-byte the same. Handles:
+/// Handles:
 ///  - quoted fields with embedded commas, quotes (`""`), and newlines;
 ///  - bare unquoted fields;
 ///  - both `\r\n` and `\n` line endings;

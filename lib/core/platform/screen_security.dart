@@ -4,8 +4,7 @@
 /// Without protection the Android Recents/Overview thumbnail captures that PII
 /// and screen-cast / accessibility services can read the pixels. The fix is to
 /// set Android `FLAG_SECURE` while the vault is unlocked and clear it when
-/// locked — mirroring the Kotlin source app's `VaultWindowSecurity` + the
-/// `MainActivity` window-flag toggle.
+/// locked.
 ///
 /// The decision (`shouldSecure`) is a pure function so it is unit-tested; the
 /// actual platform call crosses a narrow [MethodChannel] (no new dependency —
@@ -18,8 +17,7 @@ import 'package:pitaka/core/platform/app_log.dart';
 import 'package:pitaka/features/vault/domain/entities/vault_session_state.dart';
 
 /// Pure policy: the window must be screen-capture-protected when the vault is
-/// unlocked (vault PII is on screen) — mirroring Kotlin
-/// `VaultWindowSecurity.shouldSecure` — OR while any passphrase entry field
+/// unlocked (vault PII is on screen) OR while any passphrase entry field
 /// is visible (REVIEW_FINDINGS_2 S2: the create/unlock/change/restore flows
 /// run BEFORE any unlock succeeds, so keying off `VaultUnlocked` alone left
 /// those screens capturable).

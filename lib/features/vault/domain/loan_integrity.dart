@@ -4,8 +4,7 @@
 ///
 /// Books live in the Drift database; loans live in the encrypted Rust vault.
 /// There is no DB-level foreign key across that boundary, so referential
-/// integrity is enforced here in the application layer — exactly as the Kotlin
-/// app does across its separate Room/SQLCipher databases.
+/// integrity is enforced here in the application layer.
 ///
 /// Pure Dart, no IO: callers pass in the set of known book ids and the loans to
 /// check. This keeps the rule unit-testable without the FFI or any database.

@@ -3,6 +3,9 @@
 - **Status:** Accepted
 - **Date:** 2026-10-21 (decisions resolved with the maintainer on the
   original magazines implementation plan, revision 5)
+- **Read first:** since 2026-11-18 nothing of the retired Kotlin app is
+  honoured (ADR 0025). "A Kotlin-compatible layout" below is history: the
+  layout stays, for Pitak's own vaults.
 
 ## Context
 
@@ -249,4 +252,4 @@ these implementation contracts. The interchange-side rules are in ADR 0014.
 | 5 | Rename now | F7 (plan sessions S1–S4) |
 | 6 | Kinds are app-defined; add a built-in "Others" kind | F3, O1–O4 |
 | 7 | Others have no type label — the description/notes field says what the item is, and notes become searchable | O1–O2, D10, explicit `item_kinds.json` (ADR 0014) |
-| 8 | Plan written as discrete, independently runnable sessions with a handoff file | Original magazines plan, revision 5, Parts B/C (retained in git history); `docs/plans/magazines-progress.md` |
+| 8 | Plan written as discrete, independently runnable sessions with a handoff file | Original magazines plan, revision 5, Parts B/C (retained in git history); `docs/plans/magazines-progress.md` (removed on 2026-11-24 as finished; in git history at tag `1.9.7`) |

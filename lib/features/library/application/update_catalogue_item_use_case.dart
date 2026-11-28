@@ -1,11 +1,11 @@
 /// Update an existing library book (application layer, AGENTS.md §3/§4).
 ///
-/// Mirrors Kotlin `UpdateBookUseCase`: title-required, the row must already
+/// The rules: title-required, the row must already
 /// exist (else [NotFoundFailure]), and the id is immutable (the repository
-/// matches on it). `addedDate` is intentionally user-editable (Kotlin D30, as
-/// amended) — the form may back-date a book — so it is NOT forced here.
+/// matches on it). `addedDate` is intentionally user-editable
+/// — the form may back-date a book — so it is NOT forced here.
 ///
-/// The ISBN-change confirmation dialog (Kotlin D30) is a UI concern and is not
+/// The ISBN-change confirmation dialog is a UI concern and is not
 /// part of this use case.
 library;
 

@@ -1,6 +1,6 @@
 /// World-facing publish payload (pure domain, AGENTS.md §3.1, #32).
 ///
-/// Port of Kotlin `PublishExport` / `PublishBook`. This is the `books.json`
+/// This is the `books.json`
 /// uploaded to GitHub Pages. SEPARATE from the re-importable export payload on
 /// purpose: it carries ONLY viewer-facing catalog metadata plus a coarse
 /// availability flag — never id, notes, location, source, addedDate (those are
@@ -39,14 +39,14 @@ final class PublishExport {
   final String? keySet;
 
   /// The world-facing book rows (books, magazine issues and others — the
-  /// list kept its Kotlin-era name; the wire key stays `books`, ADR 0014).
+  /// list kept its first name; the wire key stays `books`, ADR 0014).
   final List<PublishItem> books;
 
   /// The world-facing magazine titles the issues group under (ADR 0014 W3).
   /// Public fields only — see `redactPeriodicalForPublish`.
   final List<PublishPeriodical> periodicals;
 
-  /// JSON map (camelCase keys mirror the Kotlin payload + viewer reads).
+  /// JSON map (camelCase keys, as the viewer reads them).
   Map<String, dynamic> toJson() => {
     'schemaVersion': schemaVersion,
     'exportedAt': exportedAt,

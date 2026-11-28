@@ -26,6 +26,23 @@ import io.flutter.plugin.common.MethodChannel
  *    The class is FLAVOR-SPLIT: `src/play/kotlin` holds the real Play Core
  *    implementation, `src/fdroid/kotlin` an inert twin that registers
  *    nothing, so the F-Droid APK contains no proprietary Play code.
+ *  - [PickedDocumentChannel] — BR5b: ONE method that opens the system's
+ *    document picker and copies the chosen document, under a size cap, into
+ *    the app's private cache folder. Dart sends the cap and nothing else;
+ *    no permission is involved. See that class for the trust boundary.
+ *  - [SavedDocumentChannel] — review finding P4-M6: ONE method that opens
+ *    the system's save window and copies ONE finished file from the app's
+ *    own working folders into the new, empty document. Dart sends the
+ *    file's path and nothing else; no permission is involved. See that
+ *    class for the trust boundary.
+ *  - [DeviceResourcesChannel] — BR9: ONE read-only method without an
+ *    argument that answers how much free storage and available memory the
+ *    device has, for the notice before a backup and before a restore. No
+ *    permission is involved, and nothing is stored or sent.
+ *  - [AppSettingsChannel] — review finding P4-M8: ONE method without an
+ *    argument that opens Pitak's own page of the phone's settings, for
+ *    the "Open settings" button a scan page shows when the camera is
+ *    refused. No permission is involved, and nothing leaves the phone.
  *
  * No other native surface is exposed.
  */
@@ -39,9 +56,26 @@ class MainActivity : FlutterFragmentActivity() {
     // that guarantee; construction time is always early enough.
     private val appUpdateChannel = AppUpdateChannel(this)
 
+    // A field for the same reason: it registers the document picker.
+    private val pickedDocumentChannel = PickedDocumentChannel(this)
+
+    // A field for the same reason: it registers the system's save window.
+    private val savedDocumentChannel = SavedDocumentChannel(this)
+
+    // A field like the two above, for one shape. It registers nothing: it
+    // touches the activity only when a call comes in.
+    private val deviceResourcesChannel = DeviceResourcesChannel(this)
+
+    // The same shape: it touches the activity only when a call comes in.
+    private val appSettingsChannel = AppSettingsChannel(this)
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         appUpdateChannel.attach(flutterEngine)
+        pickedDocumentChannel.attach(flutterEngine)
+        savedDocumentChannel.attach(flutterEngine)
+        deviceResourcesChannel.attach(flutterEngine)
+        appSettingsChannel.attach(flutterEngine)
         MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
             BiometricSecretVault.CHANNEL,
@@ -79,6 +113,10 @@ class MainActivity : FlutterFragmentActivity() {
 
     override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
         appUpdateChannel.detach()
+        pickedDocumentChannel.detach()
+        savedDocumentChannel.detach()
+        deviceResourcesChannel.detach()
+        appSettingsChannel.detach()
         super.cleanUpFlutterEngine(flutterEngine)
     }
 

@@ -180,8 +180,11 @@ const Guide vaultGuide = Guide(
     GuideBullets(
       title: 'Returns and reminders',
       bullets: [
-        '**☰ → Borrowers vault**, tap the borrower, then **Return** next to '
-            'the item.',
+        'When an item comes back, tap **Mark returned** next to the item in '
+            "**☰ → Borrowed Items**. The same button is on the item's page "
+            "and on the borrower's page. Tapped the wrong one? Tap **Undo** "
+            "right away, or later open the borrower's page and tap **Not "
+            'returned** under **History**.',
         '**☰ → Borrowed Items** lists every active loan; filter **Overdue**, '
             '**Due soon (72 hours)** or **No due date**. In the Library '
             'list, items missing details are marked **Needs info**.',

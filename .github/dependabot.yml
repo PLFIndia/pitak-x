@@ -5,6 +5,9 @@
 # NOT exempt from the F-Droid flavor rule: the `fdroid-purity` CI job is the
 # automated form of docs/RELEASING.md §2 check 1 and runs on every PR,
 # including these.
+#
+# One package is held back on its major version on purpose:
+# flutter_secure_storage (the reason is at its entry below).
 version: 2
 updates:
   # Dart packages. The Flutter SDK itself is ignored: it is bumped by hand
@@ -27,6 +30,22 @@ updates:
       - dependency-name: flutter_localizations
       - dependency-name: sky_engine
       - dependency-name: flutter_rust_bridge
+      # flutter_secure_storage: NO MAJOR update by Dependabot (minor and
+      # patch updates still come). On Android, version 11 cannot read what
+      # version 9 stored (its changelog, 11.0.0: "If you used a version
+      # prior to v10, upgrade to v10 first so existing data is migrated"),
+      # and Pitak keeps its tokens, the cover salt and the record for
+      # fingerprint unlock there. So a release on 10.x has to come first
+      # and has to reach users; that step is made by hand, as a planned
+      # change. This entry stays until then: the change that goes on to 11
+      # removes it.
+      # This stops ONE way the jump can arrive. Whether it also holds for a
+      # security update, or when another package's update drags the major
+      # along, GitHub's reference does not say. The guard that holds
+      # either way is test/architecture/secure_storage_major_pin_test.dart,
+      # which reads pubspec.lock.
+      - dependency-name: flutter_secure_storage
+        update-types: ["version-update:semver-major"]
 
   # Rust crate. flutter_rust_bridge is ignored: its version must match the
   # flutter_rust_bridge Dart package AND the generated bindings — bump it by

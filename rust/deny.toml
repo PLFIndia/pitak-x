@@ -13,26 +13,25 @@ db-urls = ["https://github.com/rustsec/advisory-db"]
 unsound = "all"
 unmaintained = "all"
 yanked = "deny"
-# Reviewed, TIME-BOXED exceptions. cargo-deny has no expiry field, so each
-# one is mirrored in `osv-scanner.toml` with `ignoreUntil` — the OSV job
-# fails CI again on that date, forcing a re-review. Analysis:
-# docs/plans/sec-rustsec-2026-0459.md.
-ignore = [
-  { id = "RUSTSEC-2026-0459", reason = "Until 2026-12-09 (osv-scanner.toml enforces). SQLite < 3.54.0 WAL page-size read (CVE-2026-119375). No fixed crate for SQLCipher builds yet: libsqlite3-sys 0.39.x pins sqlcipher-src =419.0.6 (SQLite 3.53.4, still affected), so the suggested upgrade would hide, not fix, it; rusqlite PR #1932 (SQLCipher 4.20 / SQLite 3.54.1) is pending. Exposure needs a crafted DB + sibling -wal from a less trusted party; the app never writes archive-supplied companion files (restore stages only books.db / wishlist.db / borrowers.db into a fresh dir; pinned by restore_backup_test) and never sets WAL mode on the vault." },
-]
+# No advisory is ignored today. An exception that is ever added here must be
+# reviewed and TIME-BOXED: cargo-deny has no expiry field, so it is mirrored
+# in `osv-scanner.toml` with `ignoreUntil`, and the OSV job fails CI again
+# on that date. (The one for RUSTSEC-2026-0459 ended with the update to
+# SQLCipher 4.20.0: docs/plans/sec-rustsec-2026-0459.md.)
 
 [licenses]
 # Allow-list: every license here is GPL-3.0-or-later compatible.
 # OpenSSL 3 (bundled via rusqlite's vendored feature) is Apache-2.0;
 # SQLCipher is BSD-style. Fonts (OFL) are assets, not crates.
 # Exactly the licenses present in today's graph (cargo-deny warns on unused
-# allowances, keeping this list honest). The vendored OpenSSL/SQLCipher C
-# code built by rusqlite carries no crate license tag; its licenses
-# (Apache-2.0 / BSD-style) are GPL-compatible per LICENSE must match the F-Droid listing.
+# allowances, keeping this list honest). The OpenSSL C code that the crate
+# `openssl-src` builds is Apache-2.0, which is GPL-3.0 compatible. The
+# SQLCipher C code comes from the crate `sqlcipher-src`, which declares its
+# licenses itself; the two of them that are not on this list are allowed for
+# that crate alone, below.
 allow = [
   "MIT",
   "Apache-2.0",
-  "BSD-2-Clause",
   "BSD-3-Clause",
   "Unicode-3.0",
   "Zlib",
@@ -40,6 +39,20 @@ allow = [
 ]
 # Confidence threshold for license-expression detection (default 0.8).
 confidence-threshold = 0.8
+
+# `sqlcipher-src` carries the C source of SQLCipher and declares
+# `MIT AND BSD-3-Clause AND blessing AND WTFPL`. The two that the list above
+# does not have are allowed for THIS crate only (decision D77 of PLAN.md), so
+# that any other crate under one of them still needs a look:
+# - `blessing` is SQLite's own notice in place of a license (SQLite is in
+#   the public domain). SQLite has always been inside SQLCipher.
+# - `WTFPL` is the license of libtomcrypt, which lies in the crate but is NOT
+#   compiled into the app: the build uses OpenSSL (`libsqlcipher.a` holds no
+#   libtomcrypt symbol; looked at on 2026-11-19).
+# By the FSF's license list both are compatible with the GNU GPL.
+[[licenses.exceptions]]
+allow = ["blessing", "WTFPL"]
+crate = "sqlcipher-src"
 
 [[licenses.clarify]]
 # allo-isolate (flutter_rust_bridge dep) declares no SPDX expression, only a

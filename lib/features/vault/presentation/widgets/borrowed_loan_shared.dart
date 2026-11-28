@@ -7,6 +7,7 @@ import 'package:pitaka/features/library/domain/value_objects/item_kind.dart';
 import 'package:pitaka/features/vault/domain/borrowed_items.dart';
 import 'package:pitaka/features/vault/domain/loan_status.dart';
 import 'package:pitaka/features/vault/domain/value_objects/borrower_contact.dart';
+import 'package:pitaka/features/vault/presentation/widgets/loan_return_action.dart';
 
 /// Title, author, badges, due date, borrower and decoded phone.
 final class BorrowedLoanSummary extends StatelessWidget {
@@ -58,18 +59,21 @@ final class BorrowedLoanSummary extends StatelessWidget {
   }
 }
 
-/// Call, generic share, and direct WhatsApp text actions for one loan.
+/// Call, generic share and direct WhatsApp text actions for one loan, and
+/// under them "Mark returned" (review finding P4-M3).
 final class BorrowedLoanActions extends StatelessWidget {
-  /// Creates call/share actions for one loan.
+  /// Creates the actions for one loan.
   const BorrowedLoanActions({
     required this.busy,
     required this.onCall,
     required this.onShare,
     required this.onWhatsAppText,
+    required this.onMarkReturned,
     super.key,
   });
 
-  /// Whether this loan's reminder action is busy.
+  /// Whether one of this loan's actions is running. While it is, all of
+  /// them wait: the card has ONE busy state.
   final bool busy;
 
   /// Sanitized dialer action, or null when no phone is available.
@@ -82,8 +86,32 @@ final class BorrowedLoanActions extends StatelessWidget {
   /// no sanitized phone number is available.
   final VoidCallback? onWhatsAppText;
 
+  /// Marks this loan returned.
+  final VoidCallback onMarkReturned;
+
   @override
   Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _iconButtons(),
+        // A button with words, not one more icon: it is the action most
+        // people come to this card for. It gets the same gesture sink as the
+        // icon buttons (see the comment in [_iconButtons]): while the card
+        // is busy, a tap on it must not fall through and open the item.
+        GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: busy ? () {} : null,
+          child: TextButton(
+            onPressed: busy ? null : onMarkReturned,
+            child: const Text(markReturnedLabel),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _iconButtons() {
     return Wrap(
       spacing: 4,
       runSpacing: 4,

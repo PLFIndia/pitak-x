@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/features/publish/domain/cover_url_allow_list.dart';
 
-/// Mirrors the Kotlin `PublishViewerCspTest`: the bundled viewer's CSP
+/// The bundled viewer's CSP
 /// `img-src` must list exactly the same remote cover hosts as
 /// `CoverUrlAllowList`. Drift between them is a security bug (a host allowed in
 /// JSON but blocked by CSP renders no cover; one allowed by CSP but not the

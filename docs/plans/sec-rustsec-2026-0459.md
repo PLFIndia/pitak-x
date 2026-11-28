@@ -137,6 +137,11 @@ first point so the exception's justification cannot silently rot.
 - Still unflagged by scanners and still open: Dart-side SQLite 3.52.0 via
   EOL `sqlite3_flutter_libs` (migration to `sqlite3` 3.x native assets;
   check F-Droid purity, `docs/RELEASING.md` §2).
+- **2026-11-19: the follow-up is done (review finding P2-M4).**
+  `rusqlite` 0.43 and `libsqlite3-sys` 0.40 build SQLCipher 4.20.0 on
+  SQLite 3.54.1, and both exceptions are removed. The decisions and the
+  proof: ADR 0027 and `CHANGELOG.md`. The Dart-side SQLite of the line
+  above is still open.
 
 ## Out-of-scope observations
 

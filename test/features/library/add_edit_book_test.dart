@@ -450,7 +450,7 @@ void main() {
       expect(err(r), isA<ValidationFailure>());
     });
 
-    // S34: the duplicate-ISBN routing the Kotlin app deferred. The UNIQUE
+    // S34: the duplicate-ISBN routing. The UNIQUE
     // index always refused the row; the use case now says WHY, naming the
     // existing book, instead of letting a raw storage error surface.
     test('S34: a duplicate ISBN is refused as DuplicateIsbnFailure', () async {

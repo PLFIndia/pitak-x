@@ -6,7 +6,7 @@ part of 'library_controller.dart';
 // RiverpodGenerator
 // **************************************************************************
 
-String _$libraryControllerHash() => r'8af5f75ad8d25ee7c623853af1b95011246aaf9a';
+String _$libraryControllerHash() => r'c12d28d86bccd26cb2abb2abdc2afb2cf95b66ea';
 
 /// Loads and pages the library book list for the presentation layer.
 ///

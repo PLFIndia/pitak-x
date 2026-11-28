@@ -1,11 +1,10 @@
-/// Parses a Goodreads "Export library" CSV. Pure Dart port of Kotlin
-/// `GoodreadsCsvImporter` (source app).
+/// Parses a Goodreads "Export library" CSV. Pure Dart.
 ///
-/// Mapping decisions (verified against Kotlin source §3):
+/// Mapping decisions:
 ///  - `Exclusive Shelf == "to-read"` → Wishlist; everything else → Library.
 ///  - ISBN columns come wrapped as `="..."` (Excel leading-zero guard); we
 ///    strip the wrapper. `ISBN13` preferred over `ISBN`; both empty → null.
-///  - Per-row failures are collected, not raised (Kotlin D26).
+///  - Per-row failures are collected, not raised.
 ///  - Required headers: `Title` and `Exclusive Shelf`.
 library;
 

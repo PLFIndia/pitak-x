@@ -1,9 +1,7 @@
 /// Borrower profile + stats computation (domain, pure Dart, AGENTS.md §3.1).
 ///
-/// Port of Kotlin `GetBorrowerProfileUseCase` (D31) + `LoanRepositoryImpl.
-/// statsFor`. Kotlin computes the stats with one SQL aggregation over the
-/// encrypted `loans` table; here the loans are already decrypted in the session
-/// (`VaultData`), so we compute the identical numbers in Dart over the
+/// The loans are already decrypted in the session
+/// (`VaultData`), so the numbers are computed in Dart over the
 /// in-memory list. Pure and side-effect-free, so it is trivially testable.
 library;
 
@@ -22,7 +20,7 @@ class BorrowerProfile {
   /// The borrower.
   final Borrower borrower;
 
-  /// Loans not yet returned, ordered like Kotlin `observeActive`: due date
+  /// Loans not yet returned, in this order: due date
   /// ascending (nulls last), then most-recently-lent, then id descending.
   final List<Loan> active;
 
@@ -57,7 +55,7 @@ BorrowerProfile buildBorrowerProfile({
   );
 }
 
-/// Active-loan ordering (Kotlin `observeActive`): due date ascending with nulls
+/// Active-loan ordering: due date ascending with nulls
 /// last, then most-recently-lent first, then id descending.
 int _activeOrder(Loan a, Loan b) {
   final aHasDue = a.dueDate != null;
@@ -72,7 +70,7 @@ int _activeOrder(Loan a, Loan b) {
   return b.id.compareTo(a.id);
 }
 
-/// Mirrors Kotlin `statsForBorrower` + `statsFor`:
+/// The statistics:
 ///  - totalLoans = count
 ///  - averageReturnDays = mean (returned_date - lent_date) over returned loans,
 ///    in days; null when nothing returned

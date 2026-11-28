@@ -23,7 +23,7 @@ library;
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
-import 'package:pitaka/features/library/application/library_controller.dart';
+import 'package:pitaka/features/library/application/catalogue_changes.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/periodicals/application/periodicals_controller.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
@@ -88,9 +88,10 @@ class AddIssueController extends _$AddIssueController {
       AsyncData.new,
     );
     if (result.isRight()) {
-      ref
-        ..invalidate(libraryControllerProvider)
-        ..invalidate(periodicalsControllerProvider);
+      // An issue is a catalogue row: "catalogue changed" (ADR 0031); the
+      // series list, which counts its issues, is told directly.
+      ref.read(catalogueChangesProvider.notifier).changed();
+      ref.invalidate(periodicalsControllerProvider);
     }
   }
 }

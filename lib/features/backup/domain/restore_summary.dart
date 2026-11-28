@@ -17,6 +17,7 @@ class RestoreSummary {
     this.danglingLoans = const [],
     this.existingVaultKept = false,
     this.coversDropped = 0,
+    this.coverPicturesLeftOut = const [],
     this.restoredIdentity,
     this.restoredPublishedFingerprint,
     this.restoredNetwork,
@@ -66,6 +67,20 @@ class RestoreSummary {
   /// row pointed at a site the app no longer loads covers from, so the link
   /// was removed rather than persisted. The book itself is kept.
   final int coversDropped;
+
+  /// The titles of the restored items whose cover PICTURE was in the backup
+  /// but above the size a restore takes, and was therefore not restored
+  /// (decisions D18 and D23): books first, then wishlist entries, then
+  /// magazine titles. The items themselves are restored and show the letter
+  /// placeholder. Empty when no picture was left out, and when the backup's
+  /// pictures are not used at all.
+  ///
+  /// Not the same thing as [coversDropped], which counts cover LINKS to
+  /// sites the app no longer loads from.
+  ///
+  /// Titles are the user's own catalogue data: shown on the restore page
+  /// only, never logged.
+  final List<String> coverPicturesLeftOut;
 
   /// The validated library identity parsed from the archive's
   /// `identity.json` (docs/ARCHITECTURE.md §5.5) — null when the archive carried no
@@ -199,6 +214,7 @@ class RestoreSummary {
       danglingLoans: danglingLoans,
       existingVaultKept: existingVaultKept,
       coversDropped: coversDropped,
+      coverPicturesLeftOut: coverPicturesLeftOut,
       restoredIdentity: restoredIdentity,
       restoredPublishedFingerprint: restoredPublishedFingerprint,
       restoredNetwork: restoredNetwork,
@@ -225,10 +241,11 @@ class RestoreSummary {
   }
 
   /// True when restore changed anything the user should know about beyond
-  /// the row counts: dropped cover links (M15) or W2 rows/links that could
-  /// not be honoured.
+  /// the row counts: dropped cover links (M15), cover pictures that were
+  /// left out (D18), or W2 rows/links that could not be honoured.
   bool get hasAdjustments =>
       coversDropped > 0 ||
+      coverPicturesLeftOut.isNotEmpty ||
       issuesDetached > 0 ||
       issueEntriesDropped > 0 ||
       rowsSkippedUnknownKind > 0 ||

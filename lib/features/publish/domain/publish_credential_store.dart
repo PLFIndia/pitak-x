@@ -1,7 +1,7 @@
 /// Credential store port for GitHub publishing (domain, §3.3, §6.3, #32).
 ///
-/// Holds the user's GitHub access token and target repo. Port of Kotlin
-/// `GitHubCredentialStore`. Every value belongs to the user; the app holds it
+/// Holds the user's GitHub access token and target repo.
+/// Every value belongs to the user; the app holds it
 /// on their behalf and only ever sends the token to github.com /
 /// api.github.com. The token is a secret → hardware-backed secure storage
 /// (Keystore/Keychain), never shared_prefs or logs.

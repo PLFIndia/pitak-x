@@ -9,7 +9,8 @@
 ADR 0015 decision 3 made the native viewer "fetch on open, no persistent
 cache": every tap on a saved library downloaded its whole `books.json` (up to
 64 MiB) and `events.json` again, and a library that could not be reached
-showed only an error. Its Consequences, and Part E of `appViewer_plan.md`,
+showed only an error. Its Consequences, and Part E of `appViewer_plan.md`
+(removed on 2026-11-24 as finished; in git history at tag `1.9.7`),
 deferred persistent caching until a concrete requirement and an ADR covering
 freshness, eviction, storage caps, delete-on-remove, restore and backup
 exclusion.

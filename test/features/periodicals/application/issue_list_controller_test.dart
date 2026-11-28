@@ -9,7 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
-import 'package:pitaka/features/library/application/library_controller.dart';
+import 'package:pitaka/features/library/application/catalogue_changes.dart';
 import 'package:pitaka/features/library/application/library_window.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/library_query.dart';
@@ -133,7 +133,7 @@ void main() {
         ),
       ),
     );
-    await container.read(libraryControllerProvider.notifier).refresh();
+    container.read(catalogueChangesProvider.notifier).changed();
     final window = await container.read(
       issueListControllerProvider(uid).future,
     );

@@ -17,8 +17,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:pitaka/core/widgets/library_logo.dart';
 
-// Ashokan Brahmi spelling of "Pitak" (verified from the Kotlin app's welcome
-// screen): U+11027 U+1103A U+1101D U+11013.
+// Ashokan Brahmi spelling of "Pitak": U+11027 U+1103A U+1101D U+11013.
 /// Brahmi text shown on the splash screen.
 const String kPitakBrahmi = '\u{11027}\u{1103A}\u{1101D}\u{11013}';
 

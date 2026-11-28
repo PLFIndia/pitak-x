@@ -7,7 +7,7 @@ part of 'book_cover_controller.dart';
 // **************************************************************************
 
 String _$bookCoverControllerHash() =>
-    r'2d93d0aa70b2f4cbe6f12ee6dfbc3382e24e80f1';
+    r'987ef0cfb8eafbe8763f87a505e2abbe5fb58c9e';
 
 /// Replaces a book's cover image from raw captured bytes.
 ///

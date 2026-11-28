@@ -206,7 +206,7 @@ class _DataTab extends ConsumerWidget {
         ListTile(
           leading: const Icon(Icons.download_outlined),
           title: const Text('Import'),
-          subtitle: const Text('Add books from a file (JSON, CSV, bundle)'),
+          subtitle: const Text('Add books from a file (JSON, CSV)'),
           onTap: () => go(const ImportPage()),
         ),
         ListTile(

@@ -27,20 +27,28 @@ void main() {
   }
 
   test('an entry of exactly maxBytes is still readable', () {
-    final extras = readBackupExtras({
-      periodicalsEntryName: Uint8List.fromList(
-        utf8.encode(paddedPeriodicals(ItemDetailsArchiveCodec.maxBytes)),
-      ),
-    }, manifest);
+    final extras = readBackupExtras(
+      {
+        periodicalsEntryName: Uint8List.fromList(
+          utf8.encode(paddedPeriodicals(ItemDetailsArchiveCodec.maxBytes)),
+        ),
+      },
+      manifest,
+      carriedCoverLeaves: const {},
+    );
     expect(extras.periodicals, isNotNull);
   });
 
   test('one byte past maxBytes is unreadable (never parsed)', () {
-    final extras = readBackupExtras({
-      periodicalsEntryName: Uint8List.fromList(
-        utf8.encode(paddedPeriodicals(ItemDetailsArchiveCodec.maxBytes + 1)),
-      ),
-    }, manifest);
+    final extras = readBackupExtras(
+      {
+        periodicalsEntryName: Uint8List.fromList(
+          utf8.encode(paddedPeriodicals(ItemDetailsArchiveCodec.maxBytes + 1)),
+        ),
+      },
+      manifest,
+      carriedCoverLeaves: const {},
+    );
     expect(extras.periodicals, isNull);
   });
 
@@ -48,9 +56,11 @@ void main() {
     const json = '{"schemaVersion":1,"kinds":[]}';
     String padded(int totalBytes) => '${' ' * (totalBytes - json.length)}$json';
 
-    BackupExtras read(int totalBytes) => readBackupExtras({
-      itemKindsEntryName: Uint8List.fromList(utf8.encode(padded(totalBytes))),
-    }, manifest);
+    BackupExtras read(int totalBytes) => readBackupExtras(
+      {itemKindsEntryName: Uint8List.fromList(utf8.encode(padded(totalBytes)))},
+      manifest,
+      carriedCoverLeaves: const {},
+    );
 
     expect(read(ItemDetailsArchiveCodec.maxBytes).itemKinds, isNotNull);
     expect(read(ItemDetailsArchiveCodec.maxBytes + 1).itemKinds, isNull);

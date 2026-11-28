@@ -1,7 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:pitaka/core/di/providers.dart';
+import 'package:pitaka/core/platform/device_cameras.dart';
+import 'package:pitaka/core/widgets/camera_scan_messages.dart';
 import 'package:pitaka/core/widgets/qr_scan_page.dart';
 import 'package:pitaka/features/library/domain/value_objects/library_qr_payload.dart';
+
+import '../../support/fake_scan_camera.dart';
 
 /// Tests for the generic QR-scan page (docs/ARCHITECTURE.md §3). The camera is
 /// never exercised (repo rule: scanners are tested through the decision made
@@ -220,6 +226,57 @@ void main() {
         ),
       );
       expect(find.text('Scan a library QR'), findsOneWidget);
+    });
+  });
+
+  group('without a camera picture (review finding P4-M8)', () {
+    // The page shows its camera through the shared `CameraScanView`, whose
+    // states are tested in `camera_scan_view_test.dart`. Here: that a QR
+    // scan page uses that view at all, and that it never offers "Enter it
+    // by hand" (a QR code cannot be typed, decision D132).
+    Future<void> pumpPage(
+      WidgetTester tester,
+      DeviceCameraAnswer answer,
+    ) async {
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            deviceCamerasProvider.overrideWithValue(
+              FakeDeviceCameras(answer: answer),
+            ),
+            appSettingsOpenerProvider.overrideWithValue(
+              FakeAppSettingsOpener(),
+            ),
+          ],
+          child: const MaterialApp(
+            home: QrScanPage<String>(
+              title: 'Scan a library QR',
+              accept: LibraryQrPayload.parse,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('a phone without a camera: the page says so, with no '
+        'button', (tester) async {
+      await pumpPage(tester, DeviceCameraAnswer.noCamera);
+
+      expect(find.text('Scan a library QR'), findsOneWidget);
+      expect(find.text(scanNoCameraSentence), findsOneWidget);
+      expect(find.text(enterByHandLabel), findsNothing);
+      expect(find.text(tryAgainLabel), findsNothing);
+      expect(find.text(openSettingsLabel), findsNothing);
+    });
+
+    testWidgets('a list of cameras that cannot be read: "The camera did '
+        'not start." and "Try again", nothing to type', (tester) async {
+      await pumpPage(tester, DeviceCameraAnswer.unreadable);
+
+      expect(find.text(scanCameraDidNotStartSentence), findsOneWidget);
+      expect(find.text(tryAgainLabel), findsOneWidget);
+      expect(find.text(enterByHandLabel), findsNothing);
     });
   });
 }

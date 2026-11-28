@@ -69,7 +69,7 @@ class CatalogueItemRow extends ConsumerWidget {
       removed: book.removed,
       unavailable: unavailable,
     );
-    // Removed books are dimmed (visible-but-inert), mirroring Kotlin D39.
+    // Removed books are dimmed (visible-but-inert).
     final titleColor = book.removed
         ? scheme.onSurfaceVariant
         : scheme.onSurface;

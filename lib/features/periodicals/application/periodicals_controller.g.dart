@@ -7,7 +7,7 @@ part of 'periodicals_controller.dart';
 // **************************************************************************
 
 String _$periodicalsControllerHash() =>
-    r'cad176920535e73ccb8a90bacefbd71cdb1c67a6';
+    r'95676467cfc83d62c1b9a33b79fc1616484866cb';
 
 /// Loads the magazine titles for the presentation layer.
 ///

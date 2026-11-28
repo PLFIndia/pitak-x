@@ -116,13 +116,14 @@ final orphanCoverSweepProvider = FutureProvider<int>.internal(
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef OrphanCoverSweepRef = FutureProviderRef<int>;
-String _$libraryLanguagesHash() => r'ef1ac5008e41ad2b566663470107b12e399e8ae1';
+String _$libraryLanguagesHash() => r'148e57db4842b3fc497f8b5f8571a0e6df091030';
 
 /// Distinct non-blank languages present in the library (filter-chip facets).
 ///
-/// N04: watches [libraryControllerProvider] as the mutation signal (same
-/// pattern as [catalogueItemById]) — watching only the repository OBJECT never
-/// fires, so without this an add/edit/import/restore left the chips stale.
+/// N04: watches the app's "catalogue changed" signal
+/// ([catalogueChangesProvider], ADR 0031; same pattern as
+/// [catalogueItemById]) — watching only the repository OBJECT never fires, so
+/// without this an add/edit/import/restore left the chips stale.
 ///
 /// Copied from [libraryLanguages].
 @ProviderFor(libraryLanguages)
@@ -141,7 +142,7 @@ final libraryLanguagesProvider =
 // ignore: unused_element
 typedef LibraryLanguagesRef = AutoDisposeFutureProviderRef<List<String>>;
 String _$librarySourceDetailsHash() =>
-    r'd4e84d00665b366a84943f25a2d2c4a5c3ca1195';
+    r'8b5a4681f266ebed0503780b17774a81f2ce1737';
 
 /// Copied from Dart SDK
 class _SystemHash {
@@ -168,7 +169,7 @@ class _SystemHash {
 /// one [ItemSourceType] — the Export screen's "source detail" picker values.
 ///
 /// Same freshness rule as [libraryLanguages]: watches
-/// [libraryControllerProvider] as the mutation signal so an edit that renames
+/// [catalogueChangesProvider] so an edit that renames
 /// a donor is reflected the next time the picker opens. A repository failure
 /// degrades to an empty list — the picker then offers "Any", and the export
 /// itself still runs; nothing here is worth blocking the screen for.
@@ -181,7 +182,7 @@ const librarySourceDetailsProvider = LibrarySourceDetailsFamily();
 /// one [ItemSourceType] — the Export screen's "source detail" picker values.
 ///
 /// Same freshness rule as [libraryLanguages]: watches
-/// [libraryControllerProvider] as the mutation signal so an edit that renames
+/// [catalogueChangesProvider] so an edit that renames
 /// a donor is reflected the next time the picker opens. A repository failure
 /// degrades to an empty list — the picker then offers "Any", and the export
 /// itself still runs; nothing here is worth blocking the screen for.
@@ -192,7 +193,7 @@ class LibrarySourceDetailsFamily extends Family<AsyncValue<List<String>>> {
   /// one [ItemSourceType] — the Export screen's "source detail" picker values.
   ///
   /// Same freshness rule as [libraryLanguages]: watches
-  /// [libraryControllerProvider] as the mutation signal so an edit that renames
+  /// [catalogueChangesProvider] so an edit that renames
   /// a donor is reflected the next time the picker opens. A repository failure
   /// degrades to an empty list — the picker then offers "Any", and the export
   /// itself still runs; nothing here is worth blocking the screen for.
@@ -204,7 +205,7 @@ class LibrarySourceDetailsFamily extends Family<AsyncValue<List<String>>> {
   /// one [ItemSourceType] — the Export screen's "source detail" picker values.
   ///
   /// Same freshness rule as [libraryLanguages]: watches
-  /// [libraryControllerProvider] as the mutation signal so an edit that renames
+  /// [catalogueChangesProvider] so an edit that renames
   /// a donor is reflected the next time the picker opens. A repository failure
   /// degrades to an empty list — the picker then offers "Any", and the export
   /// itself still runs; nothing here is worth blocking the screen for.
@@ -240,7 +241,7 @@ class LibrarySourceDetailsFamily extends Family<AsyncValue<List<String>>> {
 /// one [ItemSourceType] — the Export screen's "source detail" picker values.
 ///
 /// Same freshness rule as [libraryLanguages]: watches
-/// [libraryControllerProvider] as the mutation signal so an edit that renames
+/// [catalogueChangesProvider] so an edit that renames
 /// a donor is reflected the next time the picker opens. A repository failure
 /// degrades to an empty list — the picker then offers "Any", and the export
 /// itself still runs; nothing here is worth blocking the screen for.
@@ -252,7 +253,7 @@ class LibrarySourceDetailsProvider
   /// one [ItemSourceType] — the Export screen's "source detail" picker values.
   ///
   /// Same freshness rule as [libraryLanguages]: watches
-  /// [libraryControllerProvider] as the mutation signal so an edit that renames
+  /// [catalogueChangesProvider] so an edit that renames
   /// a donor is reflected the next time the picker opens. A repository failure
   /// degrades to an empty list — the picker then offers "Any", and the export
   /// itself still runs; nothing here is worth blocking the screen for.
@@ -428,7 +429,7 @@ final deleteCatalogueItemUseCaseProvider =
 // ignore: unused_element
 typedef DeleteCatalogueItemUseCaseRef =
     AutoDisposeFutureProviderRef<DeleteCatalogueItemUseCase>;
-String _$catalogueItemByIdHash() => r'a4ac06de8855a15aecf641a58fbbd1f5f057bb4f';
+String _$catalogueItemByIdHash() => r'910321feb5c1935c42999b36bf1682357f9cdfc2';
 
 /// One library book, observed by id, for a detail screen (N03).
 ///
@@ -441,12 +442,14 @@ String _$catalogueItemByIdHash() => r'a4ac06de8855a15aecf641a58fbbd1f5f057bb4f';
 /// fresh row (a cover file the janitor had already deleted came back as the
 /// row's cover).
 ///
-/// Freshness signal: every mutation path in the app already invalidates or
-/// refreshes [libraryControllerProvider] (cover replace, materializer, edit
-/// save, remove/restore, import, restore, wishlist move). Watching it here —
-/// value ignored — makes this provider re-read the row on the same signal,
-/// with no new plumbing. The repository has no row streams (N04); when it
-/// gains one this dependency is the single line to swap.
+/// Freshness signal: every mutation path in the app says "catalogue
+/// changed" to [catalogueChangesProvider] (cover replace, materializer, edit
+/// save, remove/restore, import, restore, wishlist move; ADR 0031). Watching
+/// it here — value ignored — makes this provider re-read the row on that
+/// signal. Until November 2026 the signal was the Library list's own state,
+/// which also changed when the user only scrolled or typed (review finding
+/// P3-M4). The repository has no row streams (N04); when it gains one this
+/// dependency is the single line to swap.
 ///
 /// `null` = the row no longer exists. A repository `Left` is thrown so the
 /// screen sees `AsyncError` (same idiom as `LibraryController._load`).
@@ -466,12 +469,14 @@ const catalogueItemByIdProvider = CatalogueItemByIdFamily();
 /// fresh row (a cover file the janitor had already deleted came back as the
 /// row's cover).
 ///
-/// Freshness signal: every mutation path in the app already invalidates or
-/// refreshes [libraryControllerProvider] (cover replace, materializer, edit
-/// save, remove/restore, import, restore, wishlist move). Watching it here —
-/// value ignored — makes this provider re-read the row on the same signal,
-/// with no new plumbing. The repository has no row streams (N04); when it
-/// gains one this dependency is the single line to swap.
+/// Freshness signal: every mutation path in the app says "catalogue
+/// changed" to [catalogueChangesProvider] (cover replace, materializer, edit
+/// save, remove/restore, import, restore, wishlist move; ADR 0031). Watching
+/// it here — value ignored — makes this provider re-read the row on that
+/// signal. Until November 2026 the signal was the Library list's own state,
+/// which also changed when the user only scrolled or typed (review finding
+/// P3-M4). The repository has no row streams (N04); when it gains one this
+/// dependency is the single line to swap.
 ///
 /// `null` = the row no longer exists. A repository `Left` is thrown so the
 /// screen sees `AsyncError` (same idiom as `LibraryController._load`).
@@ -489,12 +494,14 @@ class CatalogueItemByIdFamily extends Family<AsyncValue<CatalogueItem?>> {
   /// fresh row (a cover file the janitor had already deleted came back as the
   /// row's cover).
   ///
-  /// Freshness signal: every mutation path in the app already invalidates or
-  /// refreshes [libraryControllerProvider] (cover replace, materializer, edit
-  /// save, remove/restore, import, restore, wishlist move). Watching it here —
-  /// value ignored — makes this provider re-read the row on the same signal,
-  /// with no new plumbing. The repository has no row streams (N04); when it
-  /// gains one this dependency is the single line to swap.
+  /// Freshness signal: every mutation path in the app says "catalogue
+  /// changed" to [catalogueChangesProvider] (cover replace, materializer, edit
+  /// save, remove/restore, import, restore, wishlist move; ADR 0031). Watching
+  /// it here — value ignored — makes this provider re-read the row on that
+  /// signal. Until November 2026 the signal was the Library list's own state,
+  /// which also changed when the user only scrolled or typed (review finding
+  /// P3-M4). The repository has no row streams (N04); when it gains one this
+  /// dependency is the single line to swap.
   ///
   /// `null` = the row no longer exists. A repository `Left` is thrown so the
   /// screen sees `AsyncError` (same idiom as `LibraryController._load`).
@@ -513,12 +520,14 @@ class CatalogueItemByIdFamily extends Family<AsyncValue<CatalogueItem?>> {
   /// fresh row (a cover file the janitor had already deleted came back as the
   /// row's cover).
   ///
-  /// Freshness signal: every mutation path in the app already invalidates or
-  /// refreshes [libraryControllerProvider] (cover replace, materializer, edit
-  /// save, remove/restore, import, restore, wishlist move). Watching it here —
-  /// value ignored — makes this provider re-read the row on the same signal,
-  /// with no new plumbing. The repository has no row streams (N04); when it
-  /// gains one this dependency is the single line to swap.
+  /// Freshness signal: every mutation path in the app says "catalogue
+  /// changed" to [catalogueChangesProvider] (cover replace, materializer, edit
+  /// save, remove/restore, import, restore, wishlist move; ADR 0031). Watching
+  /// it here — value ignored — makes this provider re-read the row on that
+  /// signal. Until November 2026 the signal was the Library list's own state,
+  /// which also changed when the user only scrolled or typed (review finding
+  /// P3-M4). The repository has no row streams (N04); when it gains one this
+  /// dependency is the single line to swap.
   ///
   /// `null` = the row no longer exists. A repository `Left` is thrown so the
   /// screen sees `AsyncError` (same idiom as `LibraryController._load`).
@@ -561,12 +570,14 @@ class CatalogueItemByIdFamily extends Family<AsyncValue<CatalogueItem?>> {
 /// fresh row (a cover file the janitor had already deleted came back as the
 /// row's cover).
 ///
-/// Freshness signal: every mutation path in the app already invalidates or
-/// refreshes [libraryControllerProvider] (cover replace, materializer, edit
-/// save, remove/restore, import, restore, wishlist move). Watching it here —
-/// value ignored — makes this provider re-read the row on the same signal,
-/// with no new plumbing. The repository has no row streams (N04); when it
-/// gains one this dependency is the single line to swap.
+/// Freshness signal: every mutation path in the app says "catalogue
+/// changed" to [catalogueChangesProvider] (cover replace, materializer, edit
+/// save, remove/restore, import, restore, wishlist move; ADR 0031). Watching
+/// it here — value ignored — makes this provider re-read the row on that
+/// signal. Until November 2026 the signal was the Library list's own state,
+/// which also changed when the user only scrolled or typed (review finding
+/// P3-M4). The repository has no row streams (N04); when it gains one this
+/// dependency is the single line to swap.
 ///
 /// `null` = the row no longer exists. A repository `Left` is thrown so the
 /// screen sees `AsyncError` (same idiom as `LibraryController._load`).
@@ -585,12 +596,14 @@ class CatalogueItemByIdProvider
   /// fresh row (a cover file the janitor had already deleted came back as the
   /// row's cover).
   ///
-  /// Freshness signal: every mutation path in the app already invalidates or
-  /// refreshes [libraryControllerProvider] (cover replace, materializer, edit
-  /// save, remove/restore, import, restore, wishlist move). Watching it here —
-  /// value ignored — makes this provider re-read the row on the same signal,
-  /// with no new plumbing. The repository has no row streams (N04); when it
-  /// gains one this dependency is the single line to swap.
+  /// Freshness signal: every mutation path in the app says "catalogue
+  /// changed" to [catalogueChangesProvider] (cover replace, materializer, edit
+  /// save, remove/restore, import, restore, wishlist move; ADR 0031). Watching
+  /// it here — value ignored — makes this provider re-read the row on that
+  /// signal. Until November 2026 the signal was the Library list's own state,
+  /// which also changed when the user only scrolled or typed (review finding
+  /// P3-M4). The repository has no row streams (N04); when it gains one this
+  /// dependency is the single line to swap.
   ///
   /// `null` = the row no longer exists. A repository `Left` is thrown so the
   /// screen sees `AsyncError` (same idiom as `LibraryController._load`).

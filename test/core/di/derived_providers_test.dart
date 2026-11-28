@@ -4,9 +4,10 @@
 /// injectable clock so overdue/due-soon state rolls over while a screen stays
 /// mounted.
 ///
-/// The mutation signal is the list controller (N03 precedent): every mutation
-/// path in the app already invalidates or refreshes `libraryControllerProvider`
-/// / `wishlistControllerProvider`.
+/// The mutation signal for catalogue rows is `catalogueChangesProvider`
+/// (ADR 0031): every write path says "changed" to it. Until November 2026
+/// it was the Library list's own state. The wishlist's signal is still its
+/// list controller, `wishlistControllerProvider`.
 ///
 /// Every test keeps the derived provider ALIVE with an active listener — a
 /// bare `container.read` would dispose the autoDispose provider after use and
@@ -18,7 +19,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
-import 'package:pitaka/features/library/application/library_controller.dart';
+import 'package:pitaka/features/library/application/catalogue_changes.dart';
 import 'package:pitaka/features/library/domain/catalogue_item_page.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/library_query.dart';
@@ -29,6 +30,8 @@ import 'package:pitaka/features/vault/application/vault_session_controller.dart'
 import 'package:pitaka/features/vault/domain/entities/borrower.dart';
 import 'package:pitaka/features/vault/domain/entities/vault_data.dart';
 import 'package:pitaka/features/vault/domain/entities/vault_session_state.dart';
+
+import '../../support/fake_vault_session.dart';
 
 /// In-memory book repo over a MUTABLE list, so a test can change the
 /// catalogue behind the provider's back and then fire the mutation signal.
@@ -224,13 +227,12 @@ void main() {
       final container = makeContainer(repo);
       final sub = container.listen(libraryLanguagesProvider, (_, __) {});
       addTearDown(sub.close);
-      await container.read(libraryControllerProvider.future);
       expect(await container.read(libraryLanguagesProvider.future), ['Hindi']);
 
       repo.books.add(
         const CatalogueItem(id: 2, title: 'Dune', language: 'English'),
       );
-      await container.read(libraryControllerProvider.notifier).refresh();
+      container.read(catalogueChangesProvider.notifier).changed();
 
       expect(
         await container.read(libraryLanguagesProvider.future),
@@ -245,14 +247,13 @@ void main() {
       final container = makeContainer(repo);
       final sub = container.listen(bookTitleProvider(bookId: 1), (_, __) {});
       addTearDown(sub.close);
-      await container.read(libraryControllerProvider.future);
       expect(
         await container.read(bookTitleProvider(bookId: 1).future),
         'Old title',
       );
 
       repo.books[0] = const CatalogueItem(id: 1, title: 'New title');
-      await container.read(libraryControllerProvider.notifier).refresh();
+      container.read(catalogueChangesProvider.notifier).changed();
 
       expect(
         await container.read(bookTitleProvider(bookId: 1).future),
@@ -294,6 +295,85 @@ void main() {
 
       final after = container.read(borrowerProfileProvider(1));
       expect(after!.stats.overdueRate, 1);
+    });
+  });
+
+  // Review finding P4-M4 (decision D84): the Library screen's line for a
+  // locked vault may say that a vault exists and is locked, and nothing
+  // else. So its rule is held to the session's state alone: true for
+  // "locked", false for every other state, also while the state is not
+  // known.
+  group('P4-M4: loanStatusHidden follows the session state alone', () {
+    Future<bool> hiddenFor(VaultSessionController Function() session) async {
+      final container = ProviderContainer(
+        overrides: [vaultSessionControllerProvider.overrideWith(session)],
+      );
+      addTearDown(container.dispose);
+      final sub = container.listen(loanStatusHiddenProvider, (_, __) {});
+      addTearDown(sub.close);
+      // Let the session's build end (or fail, or stay pending).
+      await Future<void>.delayed(Duration.zero);
+      return container.read(loanStatusHiddenProvider);
+    }
+
+    test('a locked vault: true', () async {
+      expect(
+        await hiddenFor(() => FixedVaultSession(const VaultLocked())),
+        isTrue,
+      );
+    });
+
+    test('no vault: false', () async {
+      expect(
+        await hiddenFor(() => FixedVaultSession(const VaultUninitialized())),
+        isFalse,
+      );
+    });
+
+    test('an unlocked vault: false', () async {
+      expect(
+        await hiddenFor(
+          () => FixedVaultSession(const VaultUnlocked(VaultData.empty)),
+        ),
+        isFalse,
+      );
+    });
+
+    test('the state not known yet: false', () async {
+      expect(await hiddenFor(PendingVaultSession.new), isFalse);
+    });
+
+    test('the session failed to build: false', () async {
+      expect(await hiddenFor(FailingVaultSession.new), isFalse);
+    });
+
+    test('it follows an unlock and a lock', () async {
+      late FixedVaultSession session;
+      final container = ProviderContainer(
+        overrides: [
+          vaultSessionControllerProvider.overrideWith(
+            () => session = FixedVaultSession(const VaultLocked()),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      final seen = <bool>[];
+      final sub = container.listen(
+        loanStatusHiddenProvider,
+        (_, next) => seen.add(next),
+        fireImmediately: true,
+      );
+      addTearDown(sub.close);
+      await container.read(vaultSessionControllerProvider.future);
+      await container.pump();
+
+      session.show(const VaultUnlocked(VaultData.empty));
+      await container.pump();
+      session.show(const VaultLocked());
+      await container.pump();
+
+      // False before the state is known, then locked, unlocked, locked.
+      expect(seen, [false, true, false, true]);
     });
   });
 }

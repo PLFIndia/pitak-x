@@ -23,7 +23,7 @@ library;
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
-import 'package:pitaka/features/library/application/library_controller.dart';
+import 'package:pitaka/features/library/application/catalogue_changes.dart';
 import 'package:pitaka/features/periodicals/application/periodicals_controller.dart';
 import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
@@ -89,9 +89,10 @@ class PeriodicalFormController extends _$PeriodicalFormController {
       AsyncData.new,
     );
     if (result.isRight()) {
-      ref
-        ..invalidate(periodicalsControllerProvider)
-        ..invalidate(libraryControllerProvider);
+      // The series list is told directly; the items (a series edit
+      // re-projects its issues) through "catalogue changed" (ADR 0031).
+      ref.invalidate(periodicalsControllerProvider);
+      ref.read(catalogueChangesProvider.notifier).changed();
     }
   }
 }

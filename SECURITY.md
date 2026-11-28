@@ -19,8 +19,7 @@ Please do **not** open a public issue for a suspected vulnerability.
 
 - Vault cryptography and the biometric key path
   (`rust/`, `lib/features/vault/`, `lib/core/crypto/`)
-- The `.pitabak` backup format and restore path (including Kotlin-app
-  archive compatibility)
+- The `.pitabak` backup format and restore path
 - Import parsers (CSV / JSON / ZIP handling)
 - The published-catalogue reader (`PublishedCatalogueCodec`, its bounded
   fetch/query adapters and the cover resolver) — remote JSON/image parsing
@@ -45,6 +44,11 @@ notes (honest limits)"). Please do not report them as vulnerabilities:
   plus the old passphrase still opens that copy.
 - **App-lock ≠ vault lock** — the optional app gate is a screen cover; it
   does not lock or encrypt the vault.
+- **The app does not hide that a borrowers vault exists** — while a vault
+  exists and is locked, the Library screen says so in one line, to anyone
+  who sees that screen (also in a screenshot or in the list of recent
+  apps). The line is the same for every locked vault: what is in the
+  vault, and whether anything is lent out, is not shown while it is locked.
 - **`String` tokens for GitHub / ISBN / Cloudflare APIs** — their
   HTTP/plugin APIs are `String`-typed, so those three tokens transit as
   immutable strings and cannot be wiped from memory like the vault passphrase
@@ -59,6 +63,11 @@ notes (honest limits)"). Please do not report them as vulnerabilities:
   rotate certificates; pinning would be an availability/privacy trade-off
   worse than the MitM risk (ADR 0010). TLS with the system trust store, a
   fixed API origin, refused redirects and bounded responses are the mitigations.
+- **Choosing a file has no time limit** — Restore, Import and Merge read a
+  private, size-capped copy of the file you choose. If the app that serves
+  the file stays connected and stops sending, Pitak goes on waiting, and no
+  other file can be chosen until the app is restarted. Nothing is restored
+  or imported by it (ADR 0026).
 
 ## Response
 

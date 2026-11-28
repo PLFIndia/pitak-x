@@ -7,7 +7,7 @@
 ///    `base64(salt).base64(iv).base64(ciphertext)`. This is ALREADY ciphertext
 ///    (Argon2id-AES-GCM over the user passphrase), so it is stored as a plain
 ///    file rather than in `flutter_secure_storage` — wrapping ciphertext a
-///    second time buys no confidentiality (mirrors the Kotlin app's deliberate
+///    second time buys no confidentiality (a deliberate
 ///    choice to keep this blob in plain storage). The user passphrase, which is
 ///    the only thing that unlocks it, never touches disk.
 ///
@@ -29,6 +29,13 @@ const String _blobFileName = 'vault_backup_blob';
 /// S), so it is safe to keep as a plain file. Present only when biometric
 /// unlock is enrolled; its absence means "not enrolled".
 const String _bioBlobFileName = 'vault_biometric_blob';
+
+/// What SQLite appends to a database's file name for the files it keeps
+/// next to it while it writes: the rollback journal, and the two files of
+/// write-ahead logging. The vault uses the rollback journal (SQLite's
+/// default; the Rust core sets no other mode); the other two are listed so
+/// that a later change of mode cannot slip past the checks below.
+const List<String> _sqliteSideFileSuffixes = ['-journal', '-wal', '-shm'];
 
 /// Reads/writes the persistent vault's database path and wrapped-key blob.
 final class VaultStore implements VaultArtifactsStore {
@@ -77,6 +84,24 @@ final class VaultStore implements VaultArtifactsStore {
     final blob = File(_blobPath);
     if (blob.existsSync()) blob.deleteSync();
     clearBioBlob();
+  }
+
+  /// See [VaultArtifactsStore.hasUnfinishedWrite]: true when any SQLite
+  /// side file lies next to `borrowers.db`.
+  @override
+  bool hasUnfinishedWrite() => _sqliteSideFileSuffixes.any(
+    (suffix) => File('$dbPath$suffix').existsSync(),
+  );
+
+  /// Copies `borrowers.db` to [targetPath] for the backup (BR4).
+  ///
+  /// Asynchronous on purpose: the caller is the UI isolate, and a vault
+  /// file can be large. `File.copy` does the work off that isolate, so the
+  /// screen keeps painting. The file is opaque ciphertext; nothing here
+  /// reads it.
+  @override
+  Future<void> snapshotDatabaseTo(String targetPath) async {
+    await File(dbPath).copy(targetPath);
   }
 
   /// Reads the wrapped-key blob, or null if no vault is set up.
@@ -169,7 +194,7 @@ final class VaultStore implements VaultArtifactsStore {
       sourceDb.copySync(dbPath);
       // A hot journal / WAL is part of the database's state after a crash;
       // leaving it behind would silently drop committed vault writes.
-      for (final suffix in const ['-journal', '-wal', '-shm']) {
+      for (final suffix in _sqliteSideFileSuffixes) {
         final side = File('${source.dbPath}$suffix');
         if (side.existsSync()) side.copySync('$dbPath$suffix');
       }

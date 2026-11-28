@@ -104,6 +104,17 @@ jobs:
         run: |
           python3 tool/check_fastlane_changelog_chars.py 33
           python3 -m unittest discover -s tool -p 'test_check_fastlane_changelog_chars.py'
+      # The script that measures a backup or a restore on a device is run by
+      # hand, with a phone attached. Its tests need no device: they read
+      # texts that were copied from one.
+      - name: Device-run measuring script (its tests)
+        run: python3 -m unittest discover -s tool -p 'test_device_run_measure.py'
+      # The check of the merged Android manifest runs in the `fdroid-purity`
+      # job, which has Gradle. Its tests need no Gradle: they write small
+      # manifests themselves, and they read the list in git once
+      # (`android/merged-permissions.txt`) to see that it can be read.
+      - name: Merged-manifest check (its tests)
+        run: python3 -m unittest discover -s tool -p 'test_check_merged_manifest.py'
       # Includes the migration matrix (all 25 book + 16 wishlist columns survive
       # restore) and the fail-closed restore/vault-mapping tests. Goldens run
       # in their own step below so a renderer mismatch is never mistaken for
@@ -218,6 +229,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      # The JDK that runs Gradle is named HERE, not left to the runner.
+      # Until 2026-11 this job used whatever Java `ubuntu-latest` shipped.
+      # When that label moved from ubuntu-24.04 to ubuntu-26.04, the first
+      # `./gradlew` call of this job failed after 19 seconds with nothing
+      # but "What went wrong: 25.0.5" (run 43811850151): the Gradle 8.14
+      # this build uses does not start on so new a Java. 21 is the newest
+      # JDK the build allows (docs/RELEASING.md §7: "JDK ≤ 21").
+      # This is the only job that runs Gradle, so it is the only one that
+      # needs a JDK. SHA looked up at pin time, 2026-11-16.
+      - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
+        with:
+          distribution: temurin
+          java-version: '21'
       - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with:
           flutter-version-file: .fvmrc
@@ -269,3 +293,54 @@ jobs:
             exit 1
           fi
           echo "positive control OK: the play flavor resolves Google code, so the fdroid check is live."
+      # The MERGED manifest is the one that ships: the app's own manifest
+      # joined with the manifest of every plugin and library. A plugin can add
+      # a permission there without a line of the app changing. Until 2026-11
+      # the camera plugin added the microphone and two shared-storage
+      # permissions that way, while PRIVACY.md said the app had no such
+      # access, and nothing compared the two.
+      #
+      # `tool/check_merged_manifest.py` holds the RELEASE manifest of BOTH
+      # flavors to the list in git (`android/merged-permissions.txt`), wants
+      # every hardware feature marked "not required", and refuses any
+      # `com.google.` name in the F-Droid manifest. NOT exempt for Dependabot
+      # PRs: a plugin update is exactly how a new permission arrives. What to
+      # do when it is red: docs/RELEASING.md §2.
+      #
+      # Why in THIS job: it is the only one with Gradle. The two tasks merge
+      # manifests and compile nothing (no Dart, no Rust; they took about a
+      # second in a local run on 2026-11-18).
+      #
+      # FAIL CLOSED, as the gate above: a Gradle failure ends the step (the
+      # shell runs with `-e`), and the script itself refuses a missing file,
+      # a file that is not a manifest, and a manifest without any permission.
+      # Both flavors are judged before the step fails, so one run shows both.
+      - name: Merged manifest asks only for the listed permissions (both flavors)
+        working-directory: android
+        run: |
+          ./gradlew :app:processFdroidReleaseManifest :app:processPlayReleaseManifest
+          merged=../build/app/intermediates/merged_manifests
+          status=0
+          python3 ../tool/check_merged_manifest.py --flavor fdroid \
+            "${merged}/fdroidRelease/processFdroidReleaseManifest/AndroidManifest.xml" || status=1
+          python3 ../tool/check_merged_manifest.py --flavor play \
+            "${merged}/playRelease/processPlayReleaseManifest/AndroidManifest.xml" || status=1
+          exit "${status}"
+      # Android unit tests (JUnit, `android/app/src/test/kotlin`): the app's
+      # own native code — the bounded copy and the channel of the document
+      # picker, and the wiping of the biometric vault secret. Until
+      # 2026-11 no job ran them, so they guarded nothing unless someone
+      # remembered to run Gradle by hand.
+      #
+      # Why in THIS job: it already has what the tests need (Flutter, the
+      # resolved packages and the generated Gradle wrapper). Both flavors
+      # are run because both compile `src/main`. The debug variant is the
+      # cheap one: it builds the Dart side without ahead-of-time compiling.
+      # No Rust cross-compile was seen for these tasks in a local run.
+      #
+      # LAST on purpose (same rule as the golden step above): a failing step
+      # skips everything after it, and a failing unit test must never hide
+      # the result of the purity gate.
+      - name: Android unit tests (both flavors)
+        working-directory: android
+        run: ./gradlew :app:testFdroidDebugUnitTest :app:testPlayDebugUnitTest

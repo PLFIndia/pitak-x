@@ -1,56 +1,20 @@
 import 'dart:async';
+import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:image/image.dart' as im;
 import 'package:pitaka/features/import_export/application/export_library_use_case.dart'
     show defaultPdfLabels, kPdfFooterAttribution;
 import 'package:pitaka/features/import_export/domain/pdf_column.dart';
 import 'package:pitaka/features/import_export/domain/pdf_render_port.dart';
 import 'package:pitaka/features/import_export/domain/pdf_render_progress.dart';
-import 'package:pitaka/features/import_export/domain/pdf_text_raster.dart';
 import 'package:pitaka/features/import_export/infrastructure/pdf_library_renderer.dart';
+import 'package:pitaka/features/import_export/infrastructure/pdf_text_tiles.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 
-/// A 1x1 transparent PNG — the smallest image `PdfImage.file` can decode, so
-/// the fake tiles below take the REAL embed path (decode + XObject) without
-/// needing `dart:ui`.
-final _onePxPng = Uint8List.fromList([
-  0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, //
-  0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
-  0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4, 0x89, 0x00, 0x00, 0x00,
-  0x0D, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9C, 0x63, 0x00, 0x01, 0x00, 0x00,
-  0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00, 0x00, 0x00, 0x00, 0x49,
-  0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
-]);
-
-/// Counts every text run the renderer asks for and remembers the order, so a
-/// test can tell WHEN a row was rasterized (N10-e: per row, not all up front)
-/// and how many rows a cancelled render touched. Optionally yields to the
-/// event loop per call, like the real `dart:ui` rasterizer does.
-class _CountingRasterizer implements PdfTextRasterizer {
-  _CountingRasterizer({this.yieldPerCall = false});
-
-  final bool yieldPerCall;
-  final List<String> runs = [];
-
-  @override
-  Future<RasterizedText?> raster(
-    String text, {
-    required double fontSize,
-    required bool bold,
-    required int colorArgb,
-  }) async {
-    runs.add(text);
-    if (yieldPerCall) await Future<void>.delayed(Duration.zero);
-    return RasterizedText(
-      pngBytes: _onePxPng,
-      widthPt: text.length * 6.0,
-      heightPt: 14,
-      baselinePt: 11,
-    );
-  }
-}
+import '../../support/pdf_tile_fakes.dart';
 
 void main() {
   // Asset loading (fonts) needs the test binding.
@@ -105,24 +69,100 @@ void main() {
     expectValidPdf(bytes);
   });
 
-  test('renders Devanagari (Hindi) titles without throwing', () async {
-    // This is the exact failure case that crashed Helvetica (Latin-1 only).
-    final books = [
-      const CatalogueItem(
-        title: 'भारत: गांधी के बाद',
-        author: 'Ramachandra Guha',
-      ),
-      const CatalogueItem(title: 'गोदान', author: 'प्रेमचंद'),
+  group('text that needs shaping (ADR 0033)', () {
+    const books = [
+      CatalogueItem(title: 'भारत: गांधी के बाद', author: 'Ramachandra Guha'),
+      CatalogueItem(title: 'गोदान', author: 'प्रेमचंद'),
     ];
-    final bytes = await renderer.render(
-      libraryName: 'मेरी लाइब्रेरी',
-      books: books,
-      columns: cols(),
-      footerAttribution: kPdfFooterAttribution,
-      regularFonts: await regular(),
-      boldFonts: await bold(),
-    );
-    expectValidPdf(bytes);
+
+    test('without a rasterizer the run ENDS: such text is never written '
+        'unshaped, even when a font of its script is fed', () async {
+      // Until 2026-11 this render went through and wrote the Devanagari
+      // with `drawString`, letter after letter, which draws it wrongly.
+      await expectLater(
+        renderer.render(
+          libraryName: 'मेरी लाइब्रेरी',
+          books: books,
+          columns: cols(),
+          footerAttribution: kPdfFooterAttribution,
+          regularFonts: await regular(),
+          boldFonts: await bold(),
+        ),
+        throwsA(isA<PdfTextPictureMissing>()),
+      );
+    });
+
+    test('with a rasterizer each such text is a picture in the finished '
+        'file, and the Latin text beside it is not', () async {
+      final raster = CountingPdfRasterizer();
+      final bytes = await renderer.render(
+        libraryName: 'मेरी लाइब्रेरी',
+        books: books,
+        columns: cols(),
+        footerAttribution: kPdfFooterAttribution,
+        regularFonts: await regular(),
+        boldFonts: await bold(),
+        textRasterizer: raster,
+      );
+      expectValidPdf(bytes);
+      expect(
+        raster.runs,
+        unorderedEquals([
+          'मेरी लाइब्रेरी',
+          'भारत: गांधी के बाद',
+          'गोदान',
+          'प्रेमचंद',
+        ]),
+      );
+      // Each picture is two objects of the file (pixels and transparency).
+      expect(countPdfPictureObjects(bytes), 2 * raster.runs.length);
+    });
+
+    test('the name of the library is asked of the BOLD font and a row of the '
+        'regular one', () async {
+      // Regular is the Latin face; bold is left to the built-in Helvetica,
+      // which has no "Š". So the name needs a picture and the row does not.
+      final raster = CountingPdfRasterizer();
+      await renderer.render(
+        libraryName: 'Šárka’s Library',
+        books: const [CatalogueItem(title: 'Šárka')],
+        columns: cols(),
+        footerAttribution: kPdfFooterAttribution,
+        regularFonts: [
+          await rootBundle.load('assets/fonts/NotoSans-Regular.ttf'),
+        ],
+        textRasterizer: raster,
+      );
+      expect(raster.runs, ['Šárka’s Library']);
+    });
+
+    test('a Latin library, set up as the app sets it up (the Latin fonts and '
+        'a rasterizer), holds no picture at all', () async {
+      final raster = CountingPdfRasterizer();
+      final bytes = await renderer.render(
+        libraryName: 'Riverside Library',
+        subtitle: 'Donated by Ram Sharma',
+        books: List.generate(
+          200,
+          (i) => CatalogueItem(
+            title: 'Šárka’s book number $i – a long title that wraps',
+            author: 'Author $i',
+            isbn: '9780000${i.toString().padLeft(6, '0')}',
+            publishedYear: 1900 + (i % 120),
+          ),
+        ),
+        columns: cols(),
+        footerAttribution: kPdfFooterAttribution,
+        regularFonts: [
+          await rootBundle.load('assets/fonts/NotoSans-Regular.ttf'),
+        ],
+        boldFonts: [await rootBundle.load('assets/fonts/NotoSans-Bold.ttf')],
+        textRasterizer: raster,
+      );
+      expectValidPdf(bytes);
+      expect(raster.runs, isEmpty);
+      expect(countPdfPictureObjects(bytes), 0);
+    });
   });
 
   test('paginates a large library without throwing', () async {
@@ -164,41 +204,43 @@ void main() {
     test(
       'the subtitle is shaped once as page chrome, before any row',
       () async {
-        final raster = _CountingRasterizer();
+        final raster = CountingPdfRasterizer();
+        // In Devanagari: a Latin subtitle is real text and is never
+        // handed to the rasterizer.
+        const subtitle = 'राम शर्मा द्वारा दान';
         await renderer.render(
           libraryName: 'Riverside Library',
-          subtitle: 'Donated by Ram Sharma',
+          subtitle: subtitle,
           books: const [
-            CatalogueItem(title: 'Godaan'),
-            CatalogueItem(title: 'Nirmala'),
+            CatalogueItem(title: 'गोदान'),
+            CatalogueItem(title: 'निर्मला'),
           ],
           columns: cols(),
           footerAttribution: kPdfFooterAttribution,
           textRasterizer: raster,
         );
-        final subtitleAt = raster.runs.indexOf('Donated by Ram Sharma');
+        final subtitleAt = raster.runs.indexOf(subtitle);
         expect(subtitleAt, isNot(-1));
         // Pinned chrome (not the per-row cache): rasterized exactly once and
-        // before the first row's serial "1".
-        expect(
-          raster.runs.where((r) => r == 'Donated by Ram Sharma'),
-          hasLength(1),
-        );
-        expect(subtitleAt, lessThan(raster.runs.indexOf('1')));
+        // before the first row's title.
+        expect(raster.runs.where((r) => r == subtitle), hasLength(1));
+        expect(raster.runs.indexOf('गोदान'), isNot(-1));
+        expect(subtitleAt, lessThan(raster.runs.indexOf('गोदान')));
       },
     );
 
     test('a blank subtitle draws nothing', () async {
-      final raster = _CountingRasterizer();
+      final raster = CountingPdfRasterizer();
       await renderer.render(
-        libraryName: 'Lib',
+        libraryName: 'पुस्तकालय',
         subtitle: '   ',
-        books: const [CatalogueItem(title: 'X')],
+        books: const [CatalogueItem(title: 'गोदान')],
         columns: cols(),
         footerAttribution: kPdfFooterAttribution,
         textRasterizer: raster,
       );
-      expect(raster.runs.where((r) => r.trim().isEmpty), isEmpty);
+      // The name and the title were asked for; a blank text never is.
+      expect(raster.runs, ['पुस्तकालय', 'गोदान']);
     });
   });
 
@@ -216,26 +258,44 @@ void main() {
   });
 
   group('N10-e — bounded tiles, progress, cancel (shaped-image mode)', () {
-    // Every title/author/ISBN is unique so nothing dedups: the tile count is
-    // the honest measure of what the renderer holds on to.
+    // Every title and author is unique and in Devanagari, so each is a
+    // picture of its own and nothing dedups: the count of pictures is the
+    // honest measure of what the renderer holds on to. Both are short enough
+    // to stand on one line, so a row is exactly TWO pictures. The ISBN, the
+    // year and the quantity are digits: real text, no picture.
+    //
+    // Keep these libraries small: every picture is two objects of the PDF
+    // document with 64 KiB of buffer each while it is built.
     List<CatalogueItem> uniqueRows(int n) => List.generate(
       n,
       (i) => CatalogueItem(
-        title: 'Unique title number $i with some words',
-        author: 'Author $i',
+        title: 'किताब संख्या $i',
+        author: 'लेखक $i',
         isbn: '9780000${i.toString().padLeft(6, '0')}',
         publishedYear: 1900 + (i % 120),
         copyCount: 1 + (i % 3),
       ),
     );
 
-    test('the tile cache never holds more than the bound', () async {
-      final raster = _CountingRasterizer();
+    // The same rows in Latin letters: real text throughout.
+    List<CatalogueItem> latinRows(int n) => List.generate(
+      n,
+      (i) => CatalogueItem(
+        title: 'Unique title number $i with some words',
+        author: 'Author $i',
+        isbn: '9780000${i.toString().padLeft(6, '0')}',
+      ),
+    );
+
+    test('the tile cache never holds more than the bound, and every picture '
+        'asked for is in the finished file', () async {
+      final raster = CountingPdfRasterizer();
       final seen = <PdfRenderProgress>[];
-      const bound = 64;
+      const bound = 2;
+      const rows = 250;
       final bytes = await renderer.render(
         libraryName: 'Big',
-        books: uniqueRows(2000),
+        books: uniqueRows(rows),
         columns: cols(),
         footerAttribution: kPdfFooterAttribution,
         textRasterizer: raster,
@@ -243,14 +303,17 @@ void main() {
         maxCachedTiles: bound,
       );
       expectValidPdf(bytes);
-      // 2000 rows × (serial + title + author + isbn) is ≥ 8,000 distinct
-      // runs — two orders of magnitude over the bound — yet the cache must
-      // still top out at the bound.
+      // 250 rows × (title + author) is 500 distinct pictures — two orders of
+      // magnitude over the bound — yet the cache must still top out at the
+      // bound.
+      expect(raster.runs, hasLength(2 * rows));
       expect(raster.runs.toSet().length, greaterThan(bound * 100));
       final peak = seen
           .map((p) => p.cachedTiles)
           .reduce((a, b) => a > b ? a : b);
-      expect(peak, lessThanOrEqualTo(bound), reason: 'peak cache $peak');
+      expect(peak, bound, reason: 'peak cache $peak');
+      // The pictures took the real embed path: two objects each.
+      expect(countPdfPictureObjects(bytes), 2 * raster.runs.length);
     });
 
     test('the default bound is 512 tiles', () {
@@ -258,7 +321,7 @@ void main() {
     });
 
     test('rows are rasterized as they are drawn, not all up front', () async {
-      final raster = _CountingRasterizer();
+      final raster = CountingPdfRasterizer();
       final firstRowSeenAt = <int, int>{};
       var rowsDoneAtLastCallback = -1;
       await renderer.render(
@@ -274,13 +337,13 @@ void main() {
         },
       );
       expect(rowsDoneAtLastCallback, 120);
-      // When row 1 was reported done, the last row's ISBN (a single run —
-      // ISBNs never wrap) must NOT have been rasterized yet. HEAD
+      // When row 1 was reported done, the last row's author (a single run —
+      // these authors never wrap) must NOT have been rasterized yet. HEAD
       // pre-rasterized every row before drawing any.
       final runsWhenRow1Done = firstRowSeenAt[1]!;
-      final lastIsbnIndex = raster.runs.indexOf('9780000000119');
-      expect(lastIsbnIndex, isNot(-1));
-      expect(lastIsbnIndex, greaterThanOrEqualTo(runsWhenRow1Done));
+      final lastAuthorIndex = raster.runs.indexOf('लेखक 119');
+      expect(lastAuthorIndex, isNot(-1));
+      expect(lastAuthorIndex, greaterThanOrEqualTo(runsWhenRow1Done));
     });
 
     test('progress is monotonic, starts at 0 and ends at rowsTotal', () async {
@@ -290,7 +353,7 @@ void main() {
         books: uniqueRows(150),
         columns: cols(),
         footerAttribution: kPdfFooterAttribution,
-        textRasterizer: _CountingRasterizer(),
+        textRasterizer: CountingPdfRasterizer(),
         onProgress: seen.add,
       );
       expect(seen.first.rowsDone, 0);
@@ -311,7 +374,7 @@ void main() {
       final seen = <PdfRenderProgress>[];
       await renderer.render(
         libraryName: 'Latin',
-        books: uniqueRows(10),
+        books: latinRows(10),
         columns: cols(),
         footerAttribution: kPdfFooterAttribution,
         regularFonts: await regular(),
@@ -324,7 +387,7 @@ void main() {
     });
 
     test('cancel stops at the next row boundary and yields no bytes', () async {
-      final raster = _CountingRasterizer();
+      final raster = CountingPdfRasterizer();
       final token = RenderCancelToken();
       final books = uniqueRows(500);
       await expectLater(
@@ -342,14 +405,14 @@ void main() {
         throwsA(isA<PdfRenderCancelled>()),
       );
       // Row 11 (index 10) may have been rasterized by the time the check
-      // runs; row 12 must not have been (ISBNs are single, unwrapped runs).
-      expect(raster.runs, contains(books[9].isbn));
-      expect(raster.runs, isNot(contains(books[11].isbn)));
-      expect(raster.runs, isNot(contains(books.last.isbn)));
+      // runs; row 12 must not have been (authors are single, unwrapped runs).
+      expect(raster.runs, contains(books[9].author));
+      expect(raster.runs, isNot(contains(books[11].author)));
+      expect(raster.runs, isNot(contains(books.last.author)));
     });
 
     test('a token cancelled before the call renders nothing', () async {
-      final raster = _CountingRasterizer();
+      final raster = CountingPdfRasterizer();
       final token = RenderCancelToken()..cancel();
       await expectLater(
         renderer.render(
@@ -368,7 +431,7 @@ void main() {
     test('the UI isolate is not starved: a timer fires mid-render', () async {
       // The real rasterizer awaits the engine per run; the fake yields once
       // per call the same way. A pending 1 ms timer must get its turn long
-      // before a 300-row render finishes.
+      // before a 150-row render (300 pictures) finishes.
       final sw = Stopwatch()..start();
       var firedAt = -1;
       final timer = Timer(const Duration(milliseconds: 1), () {
@@ -376,10 +439,10 @@ void main() {
       });
       await renderer.render(
         libraryName: 'Yield',
-        books: uniqueRows(300),
+        books: uniqueRows(150),
         columns: cols(),
         footerAttribution: kPdfFooterAttribution,
-        textRasterizer: _CountingRasterizer(yieldPerCall: true),
+        textRasterizer: CountingPdfRasterizer(yieldPerCall: true),
       );
       final took = sw.elapsedMilliseconds;
       timer.cancel();
@@ -388,6 +451,61 @@ void main() {
         firedAt,
         lessThan(took ~/ 2),
         reason: 'fired at $firedAt ms, render took $took ms',
+      );
+    });
+
+    test('the event loop gets a turn WHILE the finished file is written '
+        '(ADR 0033)', () async {
+      // Writing the file is the last part of a render, after the last row
+      // was reported. The renderer asks the `pdf` package to pause between
+      // the objects it writes, so that the progress row keeps moving and a
+      // tap is heard; the package pauses only once 4 ms of work have passed
+      // (`io/event_loop_balancer.dart`).
+      //
+      // So the file of this test must take TIME to write. Its pictures are
+      // noise, which does not compress: 60 of them take about 90 ms on a
+      // laptop of 2026, twenty times what one pause needs.
+      final random = Random(7);
+      final noise = im.Image(width: 375, height: 49, numChannels: 4);
+      for (final pixel in noise) {
+        pixel
+          ..r = random.nextInt(256)
+          ..g = random.nextInt(256)
+          ..b = random.nextInt(256)
+          ..a = random.nextInt(256);
+      }
+      final picture = Uint8List.fromList(im.encodePng(noise));
+
+      // 30 rows, NOT a multiple of 20: the pass over the rows gives the
+      // event loop a turn of its own after every 20th row, and a turn right
+      // after the last row would hide what this test is about.
+      const rows = 30;
+      var turnsAfterTheLastRow = 0;
+      Timer? probe;
+      final bytes = await renderer.render(
+        libraryName: 'Write',
+        books: uniqueRows(rows),
+        columns: cols(),
+        footerAttribution: kPdfFooterAttribution,
+        textRasterizer: CountingPdfRasterizer(
+          answer: (text) => CountingPdfRasterizer.tileOf(text, bytes: picture),
+        ),
+        onProgress: (p) {
+          if (p.rowsDone == rows) {
+            // Fires at the next turn of the event loop, whenever that is.
+            probe = Timer(Duration.zero, () => turnsAfterTheLastRow += 1);
+          }
+        },
+      );
+      probe?.cancel();
+      expectValidPdf(bytes);
+      expect(countPdfPictureObjects(bytes), 2 * 2 * rows);
+      expect(
+        turnsAfterTheLastRow,
+        1,
+        reason:
+            'between the last row and the finished file the event loop '
+            'never got a turn: the file was written in one piece',
       );
     });
   });

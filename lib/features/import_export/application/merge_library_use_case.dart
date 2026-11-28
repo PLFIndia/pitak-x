@@ -1,8 +1,7 @@
 /// Multi-maintainer library merge (application layer, PLAN-merge.md).
 ///
-/// Dart port of Kotlin `MergeLibraryUseCase`, adapted to this codebase's
-/// conventions: it returns `Either<Failure, MergeOutcome>` (AGENTS.md §5 — no
-/// throwing across layers) instead of Kotlin's throwing/sealed-only model, and
+/// By this codebase's conventions it returns `Either<Failure, MergeOutcome>`
+/// (AGENTS.md §5 — no throwing across layers), and
 /// the pure reconciliation lives in `LibraryMergeEngine` (domain).
 ///
 /// Unlike `ImportLibraryUseCase` (a one-shot "load a file into my library"),

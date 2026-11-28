@@ -184,7 +184,9 @@ void main() {
 
       final create = await h.container.read(createBackupUseCaseProvider.future);
       final backup = _unwrap(await create());
-      expect(backup.bytes, isNotEmpty);
+      // BR4: the backup is a file. BR6: the restore below reads that file.
+      expect(backup.sizeBytes, greaterThan(0));
+      expect(File(backup.path).lengthSync(), backup.sizeBytes);
 
       // Make restore prove its input came from the archive, not from surviving
       // live state. The changed live vault must also be replaced by the
@@ -197,10 +199,13 @@ void main() {
       var sawArchivedVault = false;
       h.vault.onRead = () async {
         sawArchivedVault = true;
+        // BR6: the staged copy lies in the one run folder of this restore,
+        // under the app's temporary folder.
+        final run = Directory(
+          '${h.directory.path}/app_temp/restore_work',
+        ).listSync().whereType<Directory>().single;
         expect(
-          File(
-            '${h.directory.path}/restore_work/borrowers.db',
-          ).readAsBytesSync(),
+          File('${run.path}/borrowers.db').readAsBytesSync(),
           originalVaultBytes,
         );
       };
@@ -208,7 +213,7 @@ void main() {
       final restorer = await h.container.read(restoreBackupProvider.future);
       final passphrase = ReplacementHarness.secret();
       final result = await restorer.restore(
-        archiveBytes: backup.bytes,
+        archivePath: backup.path,
         passphrase: passphrase,
       );
       passphrase.dispose();
@@ -330,8 +335,15 @@ void main() {
         expect(failure, isA<StorageFailure>());
       }
       expect(result.toNullable(), isNull);
+      // BR4: backups are built under the app's temporary folder (the
+      // harness points it at `app_temp`). The old Documents folder is
+      // never written, and no run folder was even asked for.
       expect(
         Directory('${h.directory.path}/backup_create_work').existsSync(),
+        isFalse,
+      );
+      expect(
+        Directory('${h.directory.path}/app_temp').existsSync(),
         isFalse,
         reason: 'the strict Drift read refuses before writer scratch work',
       );

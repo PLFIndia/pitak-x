@@ -24,9 +24,9 @@ import 'package:pitaka/features/settings/domain/app_settings.dart';
 import 'package:pitaka/features/settings/domain/settings_repository.dart';
 
 /// Settings store that only answers `load()` with the defaults — enough for
-/// `libraryControllerProvider` (the catalogue mutation signal the S13
-/// controllers watch or fire) to build, since its `build` watches the
-/// persisted sort through the settings controller.
+/// `libraryControllerProvider` (the Library list, which reads again when a
+/// controller of S13 says "catalogue changed") to build, since its `build`
+/// watches the persisted sort through the settings controller.
 class FakeSettings implements SettingsRepository {
   @override
   Future<AppSettings> load() async => AppSettings.defaults;

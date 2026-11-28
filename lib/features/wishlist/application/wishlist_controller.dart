@@ -9,7 +9,7 @@ library;
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
-import 'package:pitaka/features/library/application/library_controller.dart';
+import 'package:pitaka/features/library/application/catalogue_changes.dart';
 import 'package:pitaka/features/wishlist/application/wishlist_use_cases.dart';
 import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
@@ -57,9 +57,9 @@ class WishlistController extends _$WishlistController {
   /// on screen with a message on a `Left`.
   ///
   /// The wishlist is re-read whatever the outcome (a rolled-back write leaves
-  /// the row unchanged, but the list may have been stale anyway); the library
-  /// list is invalidated only when a book was actually inserted, so a failed or
-  /// no-op purchase does not trigger a needless reload.
+  /// the row unchanged, but the list may have been stale anyway); "catalogue
+  /// changed" is said only when a book was actually inserted (ADR 0031), so a
+  /// failed or no-op purchase does not make the app read the catalogue again.
   Future<Either<Failure, MarkPurchasedOutcome>> markPurchased(
     int id, {
     bool moveToLibrary = false,
@@ -70,7 +70,7 @@ class WishlistController extends _$WishlistController {
     final insertedBook =
         moveToLibrary &&
         result.fold((_) => false, (o) => o is MarkPurchasedSuccess);
-    if (insertedBook) ref.invalidate(libraryControllerProvider);
+    if (insertedBook) ref.read(catalogueChangesProvider.notifier).changed();
     return result;
   }
 }

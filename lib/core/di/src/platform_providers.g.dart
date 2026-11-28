@@ -47,6 +47,32 @@ final appTempDirProvider = FutureProvider<Directory>.internal(
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef AppTempDirRef = FutureProviderRef<Directory>;
+String _$runsOnAndroidHash() => r'e98a592fb3acab10ed5eee8ebdc5ace58986c7a2';
+
+/// Whether the app REALLY runs on Android: `Platform.isAndroid`, the system
+/// underneath.
+///
+/// Not `defaultTargetPlatform`: a widget test pretends to be Android, and
+/// code that deletes files by the shape of their name (the clean-up of the
+/// old file picker's copies, decision D33) must not believe that on a
+/// developer's machine. Overridden only by a test that brings a folder of
+/// its own.
+///
+/// Copied from [runsOnAndroid].
+@ProviderFor(runsOnAndroid)
+final runsOnAndroidProvider = AutoDisposeProvider<bool>.internal(
+  runsOnAndroid,
+  name: r'runsOnAndroidProvider',
+  debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+      ? null
+      : _$runsOnAndroidHash,
+  dependencies: null,
+  allTransitiveDependencies: null,
+);
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef RunsOnAndroidRef = AutoDisposeProviderRef<bool>;
 String _$appCacheDirHash() => r'8e7b3bf55b87c922ed208502df9677c7d8a4bb18';
 
 /// The app's cache directory, where saved copies of other libraries'
@@ -166,6 +192,150 @@ final screenSecurityProvider = AutoDisposeProvider<ScreenSecurity>.internal(
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef ScreenSecurityRef = AutoDisposeProviderRef<ScreenSecurity>;
+String _$deviceResourcesHash() => r'120a521c0366068ef6c9c5bb395d84957be6bed3';
+
+/// How much free storage and available memory the device has (backup
+/// rework BR9), for the notice before a backup and before a restore. A
+/// narrow platform channel without arguments; off Android every figure is
+/// "unknown". Overridden in tests with a fake.
+///
+/// Copied from [deviceResources].
+@ProviderFor(deviceResources)
+final deviceResourcesProvider = AutoDisposeProvider<DeviceResources>.internal(
+  deviceResources,
+  name: r'deviceResourcesProvider',
+  debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+      ? null
+      : _$deviceResourcesHash,
+  dependencies: null,
+  allTransitiveDependencies: null,
+);
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef DeviceResourcesRef = AutoDisposeProviderRef<DeviceResources>;
+String _$deviceCamerasHash() => r'e692139852c2b83e182c9c10473591baf0d32e02';
+
+/// Whether this phone has a camera (review finding P4-M8): the question a
+/// scan page asks before it shows the scanner, so that a phone without a
+/// camera gets a sentence instead of an empty page. Backed by the camera
+/// plugin; where that is missing the answer is "could not be read".
+/// Overridden in tests with a fake.
+///
+/// Copied from [deviceCameras].
+@ProviderFor(deviceCameras)
+final deviceCamerasProvider = AutoDisposeProvider<DeviceCameras>.internal(
+  deviceCameras,
+  name: r'deviceCamerasProvider',
+  debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+      ? null
+      : _$deviceCamerasHash,
+  dependencies: null,
+  allTransitiveDependencies: null,
+);
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef DeviceCamerasRef = AutoDisposeProviderRef<DeviceCameras>;
+String _$appSettingsOpenerHash() => r'5158eff7a61db53776bede090b802e54ff34ce2a';
+
+/// The way to Pitak's own page of the phone's settings (review finding
+/// P4-M8), for the "Open settings" button a scan page and the cover camera
+/// show when the camera is refused. A narrow platform channel without
+/// arguments. "Not available" wherever the app does not really run on
+/// Android ([runsOnAndroid]): the button is then not built. Overridden in
+/// tests with a fake.
+///
+/// Copied from [appSettingsOpener].
+@ProviderFor(appSettingsOpener)
+final appSettingsOpenerProvider =
+    AutoDisposeProvider<AppSettingsOpener>.internal(
+      appSettingsOpener,
+      name: r'appSettingsOpenerProvider',
+      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+          ? null
+          : _$appSettingsOpenerHash,
+      dependencies: null,
+      allTransitiveDependencies: null,
+    );
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef AppSettingsOpenerRef = AutoDisposeProviderRef<AppSettingsOpener>;
+String _$documentPickerHash() => r'9b3b7b966893793152339777d4fa3513c0080695';
+
+/// The app's own document picker (backup rework BR5b): lets the user choose
+/// one document and keeps a private copy of it that is never larger than a
+/// cap. Android only; elsewhere every pick answers "not available" (D19).
+/// Overridden in tests with a fake.
+///
+/// keepAlive (justified): this object remembers which picked copies are IN
+/// USE in this app session, so that a sweep never deletes a file a restore
+/// is still reading. An auto-disposed instance would forget that between
+/// two reads (the same reason as `backupWorkArea`).
+///
+/// Copied from [documentPicker].
+@ProviderFor(documentPicker)
+final documentPickerProvider = FutureProvider<DocumentPicker>.internal(
+  documentPicker,
+  name: r'documentPickerProvider',
+  debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+      ? null
+      : _$documentPickerHash,
+  dependencies: null,
+  allTransitiveDependencies: null,
+);
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef DocumentPickerRef = FutureProviderRef<DocumentPicker>;
+String _$pickedDocumentReaderHash() =>
+    r'7fe31d241c380fb1482b9f3b49ba903cde1d439c';
+
+/// Reads the private copy of a picked document into memory, under a cap
+/// (decision D24). Import and Merge use it: they need a file's text, and
+/// the picker above hands out a copy on disk. Overridden in widget tests
+/// with a fake that reads at once.
+///
+/// Copied from [pickedDocumentReader].
+@ProviderFor(pickedDocumentReader)
+final pickedDocumentReaderProvider =
+    AutoDisposeProvider<PickedDocumentReader>.internal(
+      pickedDocumentReader,
+      name: r'pickedDocumentReaderProvider',
+      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+          ? null
+          : _$pickedDocumentReaderHash,
+      dependencies: null,
+      allTransitiveDependencies: null,
+    );
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef PickedDocumentReaderRef = AutoDisposeProviderRef<PickedDocumentReader>;
+String _$documentSaverHash() => r'b53bb4facfb999e40a9ee0f55e635ea13dc9c59a';
+
+/// Saves a copy of one finished file of the app (a backup, an export) where
+/// the user says, through the system's own save window (review finding
+/// P4-M6). Overridden in widget tests with a fake that answers at once.
+///
+/// Auto-disposed: the saver keeps nothing between two calls.
+///
+/// Copied from [documentSaver].
+@ProviderFor(documentSaver)
+final documentSaverProvider = AutoDisposeProvider<DocumentSaver>.internal(
+  documentSaver,
+  name: r'documentSaverProvider',
+  debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+      ? null
+      : _$documentSaverHash,
+  dependencies: null,
+  allTransitiveDependencies: null,
+);
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef DocumentSaverRef = AutoDisposeProviderRef<DocumentSaver>;
 String _$fileShareServiceHash() => r'4caa4196352d292bcbf88099f9a02fb2e0deb5ba';
 
 /// Hands generated files (exports, backups) to the OS share sheet. Overridden

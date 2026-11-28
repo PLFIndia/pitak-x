@@ -6,8 +6,13 @@
 /// a merge WRITES the catalogue, so once started it must finish even if the
 /// user navigates away, and the library-list refresh must not depend on the
 /// page still being there. The page only renders the MergeUiState and
-/// forwards intents (pick → mergeText, decision → applyJoin/applyOverwrite,
-/// review row → resolve).
+/// forwards intents (choose a file → mergeFile, decision →
+/// applyJoin/applyOverwrite, review row → resolve).
+///
+/// THE CHOSEN FILE (decision D24): [MergeController.mergeFile] lets the user
+/// choose it through the app's own picker, as a private copy that is never
+/// larger than the text cap, and owns everything that happens to it (see
+/// `picked_text_file.dart`). The page never sees the file or its bytes.
 ///
 /// Lifecycle pattern modelled on `ImportController`/`PublishController`:
 /// `ref.keepAlive()` pins this autoDispose element for the run, `_running`
@@ -22,236 +27,31 @@
 /// others, and a completed write refreshes the library list from here.
 library;
 
+import 'dart:convert';
+
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/core/platform/document_picker.dart';
+import 'package:pitaka/core/platform/picked_document_reader.dart';
 import 'package:pitaka/features/import_export/application/merge_library_use_case.dart';
-import 'package:pitaka/features/library/application/library_controller.dart';
-import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
-import 'package:pitaka/features/library/domain/merge/library_merge_engine.dart';
+import 'package:pitaka/features/import_export/application/merge_ui_state.dart';
+import 'package:pitaka/features/import_export/application/picked_text_file.dart';
+import 'package:pitaka/features/import_export/domain/import_limits.dart';
+import 'package:pitaka/features/library/application/catalogue_changes.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
+
+// The states this controller shows live in a file of their own; exported
+// so that a page that imports the controller gets them with it.
+export 'package:pitaka/features/import_export/application/merge_ui_state.dart';
 
 part 'merge_controller.g.dart';
 
-/// Lifecycle of one merge attempt, owned by [MergeController] (N11).
-sealed class MergeUiState {
-  const MergeUiState();
-}
-
-/// Nothing picked yet.
-final class MergeIdle extends MergeUiState {
-  /// Creates the idle state.
-  const MergeIdle();
-}
-
-/// A merge (or an apply) is running.
-final class MergeRunning extends MergeUiState {
-  /// Creates the running state.
-  const MergeRunning();
-}
-
-/// The incoming file belongs to a DIFFERENT library: the user must choose
-/// Join or Overwrite. Preserved across a failed apply (with [applyFailure]
-/// set) so the user can retry or pick the other option — a failed apply must
-/// not drop them off the decision.
-final class MergeNeedsDecision extends MergeUiState {
-  /// Creates the decision state for [decision].
-  const MergeNeedsDecision(
-    this.decision, {
-    this.applyFailure,
-    this.applying = false,
-  });
-
-  /// The pending join/overwrite decision.
-  final MergeDiffersDecision decision;
-
-  /// Why the last apply attempt failed, or null when not attempted/failed.
-  final Failure? applyFailure;
-
-  /// True while an apply (join/overwrite) is in flight — buttons disable.
-  final bool applying;
-}
-
-/// The merge was applied. [result] carries the counts AND every omission the
-/// user must hear about — skipped rows, adjustments, a replaced catalogue, an
-/// identity that could not be adopted (N07) — so the page can be honest.
-/// [review] is the per-row review list built from the result's conflicts and
-/// possible duplicates (conflicts first, engine order), each with its own
-/// status.
-final class MergeDone extends MergeUiState {
-  /// Creates the done state with [result]; the review list is derived.
-  MergeDone(this.result) : review = _reviewItemsOf(result);
-
-  const MergeDone._(this.result, this.review);
-
-  /// The applied merge (or replacement) result.
-  final MergeResult result;
-
-  /// One item per conflict / possible duplicate, in display order.
-  final List<MergeReviewItem> review;
-
-  /// Items the user has not resolved yet (pending or failed).
-  int get openCount => review.where((i) => i.isOpen).length;
-
-  /// True while one row's write is in flight.
-  bool get isResolving => review.any((i) => i.status is ReviewApplying);
-
-  /// The same state with the [index]th item's status replaced.
-  MergeDone withItemStatus(int index, MergeReviewStatus status) {
-    final next = List<MergeReviewItem>.of(review);
-    next[index] = next[index]._withStatus(status);
-    return MergeDone._(result, List.unmodifiable(next));
-  }
-
-  static List<MergeReviewItem> _reviewItemsOf(MergeResult result) {
-    final items = <MergeReviewItem>[
-      for (final c in result.conflicts)
-        MergeReviewItem._(
-          kind: MergeReviewKind.conflict,
-          local: c.local,
-          incoming: c.incoming,
-          similarity: 1,
-          matchedBy: c.matchedBy,
-        ),
-      for (final d in result.possibleDuplicates)
-        MergeReviewItem._(
-          kind: switch (d.reason) {
-            DuplicateReason.similarTitle => MergeReviewKind.similarTitle,
-            // The key holder is a persisted local row (a claimed one) OR an
-            // earlier row from the same file (never persisted under that
-            // object). Only the latter has nothing to overwrite.
-            DuplicateReason.identityKey =>
-              d.local.id == CatalogueItem.emptyId
-                  ? MergeReviewKind.inFileCollision
-                  : MergeReviewKind.identityKey,
-          },
-          local: d.local,
-          incoming: d.incoming,
-          similarity: d.similarity,
-          matchedBy: null,
-        ),
-    ];
-    return List.unmodifiable(items);
-  }
-}
-
-/// Why a row needs the user's attention (N07). Drives the card's headline
-/// and which actions make sense.
-enum MergeReviewKind {
-  /// Same book (uid/ISBN match), differing catalogue fields.
-  conflict,
-
-  /// No-ISBN incoming row resembling a local no-ISBN book (fuzzy).
-  similarTitle,
-
-  /// The incoming row's uid/ISBN is held by a book on this device that
-  /// another row of the file already claimed.
-  identityKey,
-
-  /// The incoming row's uid/ISBN is held by an EARLIER row of the same file.
-  /// "Take theirs" is impossible: there is no local book to replace.
-  inFileCollision,
-}
-
-/// Lifecycle of one review row.
-sealed class MergeReviewStatus {
-  const MergeReviewStatus();
-}
-
-/// Awaiting the user's choice.
-final class ReviewPending extends MergeReviewStatus {
-  /// Creates the pending status.
-  const ReviewPending();
-}
-
-/// The chosen resolution is being written.
-final class ReviewApplying extends MergeReviewStatus {
-  /// Creates the applying status.
-  const ReviewApplying();
-}
-
-/// The resolution was applied.
-final class ReviewResolved extends MergeReviewStatus {
-  /// Creates the resolved status for [resolution].
-  const ReviewResolved(this.resolution);
-
-  /// What the user chose.
-  final MergeResolution resolution;
-}
-
-/// The last attempt failed; the row stays open for a retry.
-final class ReviewFailed extends MergeReviewStatus {
-  /// Creates the failed status with [failure].
-  const ReviewFailed(this.failure);
-
-  /// The typed failure (never raw exception text, §5).
-  final Failure failure;
-}
-
-/// One conflict / possible duplicate awaiting (or past) the user's decision.
-final class MergeReviewItem {
-  const MergeReviewItem._({
-    required this.kind,
-    required this.local,
-    required this.incoming,
-    required this.similarity,
-    required this.matchedBy,
-    this.status = const ReviewPending(),
-  });
-
-  /// Why this row is here.
-  final MergeReviewKind kind;
-
-  /// The book already on the winning side (a local row — or, for
-  /// [MergeReviewKind.inFileCollision], the earlier incoming row).
-  final CatalogueItem local;
-
-  /// The incoming book.
-  final CatalogueItem incoming;
-
-  /// Jaccard similarity for [MergeReviewKind.similarTitle]; 1.0 otherwise.
-  final double similarity;
-
-  /// What established a [MergeReviewKind.conflict] match; null otherwise.
-  final MatchKind? matchedBy;
-
-  /// Where this row is in its lifecycle.
-  final MergeReviewStatus status;
-
-  /// True when the user can still act on this row.
-  bool get isOpen => status is ReviewPending || status is ReviewFailed;
-
-  /// False for an in-file collision: [local] was never persisted, so there
-  /// is no row on this device to overwrite. Also false when the two sides
-  /// are different KINDS (ADR 0013 D6/D8: an item cannot change its kind
-  /// after creation — overwriting in place would flip it). The page hides
-  /// the button; the use case refuses the call regardless.
-  bool get canTakeTheirs =>
-      kind != MergeReviewKind.inFileCollision && local.kind == incoming.kind;
-
-  MergeReviewItem _withStatus(MergeReviewStatus next) => MergeReviewItem._(
-    kind: kind,
-    local: local,
-    incoming: incoming,
-    similarity: similarity,
-    matchedBy: matchedBy,
-    status: next,
-  );
-}
-
-/// The merge itself failed (parse, storage, unexpected) — safe copy only.
-final class MergeFailed extends MergeUiState {
-  /// Creates the failed state with [failure].
-  const MergeFailed(this.failure);
-
-  /// The typed failure (never raw exception text, §5).
-  final Failure failure;
-}
-
-/// Runs merges for the Merge screen; idle until [mergeText] is called.
+/// Runs merges for the Merge screen; idle until [mergeFile] is called.
 @riverpod
 class MergeController extends _$MergeController {
-  /// True while [mergeText] runs — a second pick is refused (N11).
+  /// True while a merge runs, from the tap on "choose a file" until its
+  /// result is there. A second one is refused (N11).
   bool _running = false;
 
   /// True after this element was disposed (container teardown mid-run).
@@ -272,18 +72,104 @@ class MergeController extends _$MergeController {
     _ => false,
   };
 
+  /// True while a Join or a Replace is being written. A new merge is
+  /// refused meanwhile, for the same reason as [_resolving]: two writes to
+  /// the catalogue at once, and the one that ends last would set the state
+  /// over the other's result.
+  bool get _applying => switch (state) {
+    MergeNeedsDecision(:final applying) => applying,
+    _ => false,
+  };
+
+  /// Whether a new merge may start now. One getter for both ways in, so
+  /// that neither can forget a reason.
+  bool get _mayStart => !(_running || _resolving || _applying || _disposed);
+
   /// Parses and merges [text]: same library ID → applied immediately
   /// ([MergeDone]); different ID → [MergeNeedsDecision] for the page.
-  Future<void> mergeText(String text) async {
-    if (_running || _resolving || _disposed) return;
+  Future<void> mergeText(String text) => _run(() async => text);
+
+  /// Lets the user choose a library file and merges it, as [mergeText] does
+  /// with a text.
+  ///
+  /// Answers null when there is nothing to tell the user: the file was
+  /// handed to the merge (its result is this controller's state), the
+  /// picker was closed without a choice, or a merge, a choice or a review
+  /// row is being worked on. Otherwise it answers WHY no file was taken,
+  /// and the page says so. In both of the "nothing merged" cases the state
+  /// goes back to what it was before the tap, so a pending choice and the
+  /// review rows of an earlier merge stay on the page.
+  ///
+  /// The state is [MergeRunning] from the tap on, also while the picker is
+  /// open and while a file kept online is fetched. While it is, a Join, a
+  /// Replace and a review row all refuse to start, so nothing else can
+  /// write the state that is put back.
+  Future<PickedFileProblem?> mergeFile() async {
+    PickedFileProblem? problem;
+    await _run(() async {
+      // Both are fetched BEFORE the picker opens. With them in hand the
+      // copy of the file can be read and removed even when this controller
+      // is torn down while the user is still choosing.
+      final DocumentPicker picker;
+      final PickedDocumentReader reader;
+      try {
+        picker = await ref.read(documentPickerProvider.future);
+        reader = ref.read(pickedDocumentReaderProvider);
+      } on Object {
+        // The picker could not be set up (its folder could not be found,
+        // for one). For the user that is a pick that failed.
+        problem = PickedFileProblem.failed;
+        return null;
+      }
+      final picked = await pickAndReadText(
+        picker: picker,
+        reader: reader,
+        // The cap the parser has for a text: UTF-8 never has more
+        // characters than bytes, so a byte cap is a sound early reject.
+        maxBytes: ImportLimits.defaults.maxTextChars,
+        // Merge hands every file to its parser, which says what is wrong
+        // with it in Merge's own words.
+        refuseZip: false,
+      );
+      switch (picked) {
+        case PickedTextNothing():
+          return null;
+        case PickedTextProblem(problem: final found):
+          problem = found;
+          return null;
+        case PickedTextRead(:final bytes):
+          // Malformed UTF-8 is decoded leniently (as Import does), so that
+          // the PARSER rejects it with a sentence instead of a throw here.
+          return utf8.decode(bytes, allowMalformed: true);
+      }
+    });
+    return problem;
+  }
+
+  /// Runs one merge. [source] answers the text to merge, or null for "there
+  /// is no text and nothing went wrong" (a picker that was closed, a file
+  /// that was not taken): the state then goes back to what it was.
+  Future<void> _run(Future<String?> Function() source) async {
+    if (!_mayStart) return;
     _running = true;
     // keepAlive for the duration of the run: without it, popping the page
     // mid-merge lets autoDispose destroy this element while the use case is
     // still writing — the terminal state would be swallowed and a rebuilt
     // page could start a SECOND concurrent merge.
     final link = ref.keepAlive();
+    // What the page showed before this run, to put back when nothing is
+    // merged. Nothing else can change the state meanwhile: see [mergeFile].
+    final before = state;
     state = const MergeRunning();
     try {
+      final text = await source();
+      if (text == null) {
+        if (!_disposed) state = before;
+        return;
+      }
+      // When this controller was torn down while the picker was open, this
+      // read throws (a disposed `ref` cannot be used), the catch below
+      // takes it, and nothing is merged.
       final useCase = await ref.read(mergeLibraryUseCaseProvider.future);
       final result = await useCase.call(text);
       if (!_disposed) {
@@ -385,7 +271,7 @@ class MergeController extends _$MergeController {
         result.match(ReviewFailed.new, (_) => ReviewResolved(resolution)),
       );
       if (result.isRight() && resolution != MergeResolution.keepMine) {
-        ref.invalidate(libraryControllerProvider);
+        ref.read(catalogueChangesProvider.notifier).changed();
       }
     } on Object {
       _publishRowStatus(
@@ -398,7 +284,7 @@ class MergeController extends _$MergeController {
   }
 
   /// Writes a row status into the current [MergeDone]. The state cannot have
-  /// left [MergeDone] meanwhile (`mergeText` is refused while resolving), so
+  /// left [MergeDone] meanwhile (a new merge is refused while resolving), so
   /// the type check only guards a disposed-and-rebuilt element.
   void _publishRowStatus(int index, MergeReviewStatus status) {
     if (_disposed) return;
@@ -408,10 +294,10 @@ class MergeController extends _$MergeController {
   }
 
   /// Terminal state for a successful apply: the catalogue changed, so
-  /// refresh the library list from HERE (N11) — a popped Merge page cannot
-  /// leave the list underneath stale.
+  /// say so from HERE (N11; ADR 0031) — a popped Merge page cannot leave
+  /// the lists underneath stale.
   MergeUiState _merged(MergeResult result) {
-    ref.invalidate(libraryControllerProvider);
+    ref.read(catalogueChangesProvider.notifier).changed();
     return MergeDone(result);
   }
 }

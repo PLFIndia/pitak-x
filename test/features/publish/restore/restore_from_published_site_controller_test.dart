@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/core/async/serial_op_queue.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/features/library/application/catalogue_changes.dart';
 import 'package:pitaka/features/publish/application/restore/restore_from_published_site_controller.dart';
 import 'package:pitaka/features/publish/application/restore/restore_from_published_site_progress.dart';
 import 'package:pitaka/features/publish/application/restore/restore_from_published_site_state.dart';
@@ -50,6 +51,9 @@ void main() {
     final state = container.read(restoreFromPublishedSiteControllerProvider);
     expect(state.status, RestoreFromPublishedSiteStatus.success);
     expect(state.summary?.itemsAdded, 1);
+    // D151: the items it added are said once to the "catalogue changed"
+    // signal, so the lists read again.
+    expect(container.read(catalogueChangesProvider), 1);
     controller().clearResult();
     expect(
       container.read(restoreFromPublishedSiteControllerProvider).status,
@@ -118,6 +122,7 @@ void main() {
       RestoreFromPublishedSiteStatus.cancelled,
     );
     expect((await h.fixture.books.getAll()).toNullable(), isEmpty);
+    expect(container.read(catalogueChangesProvider), 0);
   });
 
   test('cancellation is disabled during the writing phase', () {

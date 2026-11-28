@@ -1,9 +1,9 @@
 /// Result of parsing an import file (AGENTS.md §3.1, pure Dart).
 ///
-/// Mirror of Kotlin `ImportPayload`: parsed rows plus a list of per-row parse
+/// Parsed rows plus a list of per-row parse
 /// errors. Importers MUST NOT throw on a malformed row — they collect a
 /// human-readable error so the user sees a count of what could and couldn't be
-/// ingested (Kotlin D26: no terminal dead-ends).
+/// ingested (no terminal dead-ends).
 library;
 
 import 'package:pitaka/core/error/failure.dart';
@@ -77,10 +77,10 @@ class ImportPayload {
   bool get isEmpty => items.isEmpty && periodicals.isEmpty && wishlist.isEmpty;
 }
 
-/// Common interface for every import-file reader (Kotlin `Importer`).
+/// Common interface for every import-file reader.
 //
 // Single-method, but kept as an interface so the sniffer and use cases can
-// depend on the abstraction across the JSON/CSV/bundle implementations.
+// depend on the abstraction across the JSON and CSV implementations.
 // ignore: one_member_abstracts
 abstract interface class Importer {
   /// Parses [text] into an [ImportPayload]. Implementations must not throw on

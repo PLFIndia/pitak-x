@@ -7,7 +7,7 @@ part of 'issue_list_controller.dart';
 // **************************************************************************
 
 String _$issueListControllerHash() =>
-    r'893a195ec6e1543d0bcc618506305418d038a57b';
+    r'e2374f4e83d89f2bc2e5a6c6e0db86ed1eb8b43d';
 
 /// Copied from Dart SDK
 class _SystemHash {

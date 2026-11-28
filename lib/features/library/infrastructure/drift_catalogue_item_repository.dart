@@ -1,8 +1,7 @@
 /// Drift-backed implementation of [CatalogueItemRepository] (AGENTS.md §3.3).
 ///
 /// Side effects live at this edge; expected failures are caught and returned as
-/// typed [Failure]s (fail-closed). UUIDs are minted here at first persist,
-/// mirroring Kotlin `BookMapper.toEntity`.
+/// typed [Failure]s (fail-closed). UUIDs are minted here at first persist.
 ///
 /// ## Ordering, filtering AND paging happen INSIDE SQLite (N10-d, review N10)
 ///
