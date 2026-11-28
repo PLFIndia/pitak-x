@@ -58,10 +58,10 @@ was taken out.
 ## Handoff
 
 For an agent or a person who starts with no memory of the earlier
-sessions. Written on 2026-11-28, about 11:35, at the stop of the
-fifth session of stage 10's planning: the design, and its go-ahead.
-Everything here was true when it was written; check the repository
-before relying on it.
+sessions. Written on 2026-11-28, about 14:45, at a stop of stage 10's
+build after its step 5 of 10 (a build that runs long stops after a
+whole step and hands over, D100). Everything here was true when it
+was written; check the repository before relying on it.
 
 Read "How to use this file", then this section, then the bird's-eye
 view. The sections after it are reference: the two plans, the device
@@ -78,9 +78,14 @@ runs, the open items and questions, the traps, the decisions.
   bird's-eye view says which part, and ADR 0033 says what is not
   solved. Left in the table besides stage 10: "later, each with a
   plan of its own" (two findings about packages).
-- **Stage 10 (P4-B1, the borrowers vault) is DESIGNED and has its
-  go-ahead** (D242), and is NOT built: no file under `lib/` or
-  `test/` is changed for it. Planned on 2026-11-27 and 2026-11-28,
+- **Stage 10 (P4-B1, the borrowers vault) is IN ITS BUILD** (the
+  go-ahead: D242). Steps 1 to 5 of the ten of its design's order are
+  built and lie in the WORKING TREE, not committed and not staged
+  (a stage's commits come after its review stop): 11 files changed
+  and 8 new, under `lib/`, `test/` and `android/`. After step 5 the
+  four Dart checks were green (2026-11-28, 13:43); Kotlin's unit
+  tests were green after step 1, the one step that changed Kotlin.
+  Steps 6 to 10 are not begun. Planned on 2026-11-27 and 2026-11-28,
   in five sessions (D218 to D243): the finding read again in today's
   code and confirmed; today's behaviour looked at on the phone
   (D219); two looks in emulator images, of Android 7.0 and of
@@ -89,8 +94,12 @@ runs, the open items and questions, the traps, the decisions.
   stage; the design, with ten choices of its own, each accepted
   (D235 to D240); the texts of the app and of the documents as
   drafts, accepted (D241). All of it is in its private file,
-  `p4b1-in-detail.md` (sections 1 to 68): the design is its
-  sections 52 and 53, the documents' drafts its section 62. Four
+  `p4b1-in-detail.md` (sections 1 to 69): the design is its
+  sections 52 and 53, the documents' drafts its section 62. Its
+  section 69 is the build so far: what each step built, what its
+  tests saw, which files lie in the working tree, and where the
+  build differs from the design. Those points are put to the
+  maintainer at the review stop; none is decided. Four
   things that are not of the stage are items of the private
   tracker: T29 (the Restore page, seen in the look on the phone;
   D224), T30 (an idea read in another app; D230), T31 (seen in the
@@ -115,33 +124,41 @@ runs, the open items and questions, the traps, the decisions.
 
 In this order:
 
-1. Confirms the state: `git status -sb` (nothing but the nine review
-   files, untracked), `git log` (the head is this file's latest
-   commit, on top of `c295097`; every commit pushed),
-   `git remote -v`, and the CI run of the head. Runs the Dart checks
-   once, the tests some minutes after analyze: they are the build's
-   baseline.
-   The numbers to compare with: `build_runner` changes nothing,
-   format 0 changed of 1,553 files, analyze 47, 8,269 Dart tests (run
-   last on 2026-11-27, at 15:38; the two sessions after it did not
-   run the checks, and nothing under `lib/` or `test/` has changed
-   since); Kotlin 144 in each flavour
-   (offline, 2026-11-26); Rust 45 passed and 2 ignored (CI).
-2. **Stage 10 (P4-B1), the build** (D242). Reads `p4b1-in-detail.md`
-   in full first. Builds in the order of its section 52.11, each
-   step with its tests first and seen red; what a device must show
-   is its section 52.12, each look with its own yes; the documents
-   are written from its section 62 in the step before the looks,
-   and what differs from a draft by then is shown again. A pause
-   only where the design does not hold. Nothing is committed before
-   the review stop.
+1. Confirms the state: `git status -sb` (the build's files, 11
+   changed and 8 new, none staged, and the nine review files,
+   untracked; the design file's section 69.6 counts them), `git log`
+   (the head is this file's latest commit, on top of `f055bb4`;
+   every commit pushed), `git remote -v`, and the CI run of the
+   head. Reads `p4b1-in-detail.md` in full, and compares the working
+   tree with what its section 69 says, BEFORE anything is changed.
+   Runs the Dart checks once, the tests some minutes after analyze:
+   they are the baseline for the rest of the build.
+   The numbers to compare with, all with steps 1 to 5 in the tree:
+   `build_runner` changes nothing (the same `git status` before and
+   after), format 0 changed of 1,561 files, analyze 47, 8,380 Dart
+   tests (2026-11-28, 13:36 to 13:43); Kotlin 144 in each flavour
+   (offline, 2026-11-28, 12:37); Rust 45 passed and 2 ignored (CI;
+   nothing under `rust/` is changed).
+2. **Stage 10 (P4-B1), the rest of its build** (D242): steps 6 to 10
+   of the design file's section 52.11; its section 69.6 says what
+   each still needs. Each step with its tests first and seen red,
+   and every guard switched off once; what a device must show is
+   its section 52.12, each look with its own yes; the documents are
+   written from its section 62 in step 9, and what differs from a
+   draft by then is shown again. A pause only where the design does
+   not hold. At the review stop the points that section 69 marks
+   are shown, one by one. Nothing is committed before the review
+   stop.
 
 ### State of the repository
 
 - Branch `reviewFixes`, begun on `origin/main` (`fe8a2c4`); every
   commit on it is pushed. `git status -sb` says whether a later
-  commit is not pushed yet. The working tree holds nothing that is
-  not committed, but for the nine review files. In
+  commit is not pushed yet. The working tree holds the build of
+  stage 10, steps 1 to 5, NOT committed and not staged (11 files
+  changed, 8 new), and the nine review files. That work exists
+  nowhere else: no `git stash`, `git checkout`, `git restore` or
+  `git clean` there. In
   `build/app/outputs/flutter-apk/` lie the release APK of 2026-11-25,
   15:48 (the code of `9a25349` but for comments that were changed
   after it was built) and a debug APK of 2026-11-26, 20:47 (the code
@@ -232,6 +249,11 @@ In this order:
   run. Read-only calls to GitHub (`gh run view`, `gh pr view`) have
   been used without asking.
 - A planning session writes no code before the go-ahead (D21).
+- A yes covers what the question named and no more. Where an older
+  go-ahead would allow more (a build, after a question about its
+  baseline), the agent says so and asks before it goes on
+  (2026-11-28: a session went on into a build that way; said first
+  in its report).
 - A stage is not done before the checks are green, the result is
   written down, and its CI run is green to the end, every job.
 - A test that proves a change is written first and run against the
@@ -322,6 +344,10 @@ row from CI; the Dart checks again on 2026-11-27 at `197a489`, at
 | Rust | fmt and clippy clean; 45 passed, 2 ignored |
 | CI | four jobs green: Flutter (analyze, format, test, the 10 golden tests), Rust core, OSV scan, F-Droid flavor purity (with the merged manifest and the Android unit tests) |
 
+With stage 10's steps 1 to 5 in the working tree (2026-11-28, 13:43):
+format 0 changed of 1,561 files, analyze the same 47, 8,380 tests
+passed (about 7 minutes); the other rows are the same.
+
 `cargo deny check` and the OSV scan fetch from the network: they are
 left to CI, or need a yes. Golden images are judged on Linux only; a
 stage that changes a screen with a golden needs the `update-goldens`
@@ -388,7 +414,14 @@ Names a later stage builds on (the full account is in ADR 0009, ADR
   `~/pitak-device-runs/stage10-p4b1/`; under `plan-draft/` and
   `plan-draft-5/` the drafts of this file's text of the fourth and
   the fifth session; under `before-5/` the files as they were
-  before the fifth session's writes).
+  before the fifth session's writes; under `before-6/` the files as
+  they were before the build began, and beside them the logs of its
+  baseline (`baseline6-*.log`); under `build/` the logs of the
+  build's steps 1 to 5 (`s1-*` to `s5-*`), `checks.sh`, which runs
+  the four Dart checks, and `trial.py`, which changes one line under
+  `lib/`, runs the tests, says which failed and puts the file back,
+  with one list of trials for each step; under `plan-draft-6/` the
+  draft of this file's text of the sixth session).
 
 ### Could be done if the maintainer wants
 
@@ -459,7 +492,7 @@ the private tracker.
 
 | | Id | Area | Where it stands |
 |---|---|---|---|
-| [ ] | P4-B1 | the borrowers vault | stage 10: designed, with its go-ahead (D242); not built |
+| [ ] | P4-B1 | the borrowers vault | stage 10: in its build (D242); steps 1 to 5 of 10 are in the working tree, not committed |
 | [ ] | P3-B2, the rest | PDF export | in no stage (ADR 0033 names it) |
 | [ ] | P3-B3, the rest | restore | in no stage |
 | [ ] | P2-M2 | a package (the catalogue's database) | later, a plan of its own (D62) |
@@ -579,7 +612,7 @@ and no code is written before its go-ahead (D21).
 | 7 | P4-M2 with P3-M4, and P4-m13 (D150) | the library list | done 2026-11-22. D148 to D162. `08995df`, `bcb3b63`; pushed (`e81d187..d87b8cb`). CI run 44993054071 at `d87b8cb`, green at the second attempt of one job. P3-M4 in part, its box stays open |
 | 8 | P4-M6 | how a file leaves the app | done 2026-11-23. D163 to D203. `0d54038`, `cf07ad8`, `bfac8d5`, `93d5c91`, `bc1ef0f`; pushed (`67ce4b5..048246b`). CI run 45198289279 at `048246b`, green |
 | 9 | P3-B2 | PDF export | done 2026-11-26. D206, D208 to D217. `9a25349`, `82672f8`; pushed (`a329fdf..82672f8`). CI run 45848395788 at `82672f8`, green. P3-B2 in part, its box stays open |
-| 10 | P4-B1; with it P1-m4 and its hand-over P1-H14 (D221) | the borrowers vault | planned on 2026-11-27 and 2026-11-28. D218 to D243. Designed, with its go-ahead (D242). Not built |
+| 10 | P4-B1; with it P1-m4 and its hand-over P1-H14 (D221) | the borrowers vault | planned on 2026-11-27 and 2026-11-28. D218 to D243. Designed, with its go-ahead (D242). In its build since 2026-11-28: steps 1 to 5 of 10 are in the working tree, not committed |
 | later, each with a plan of its own | P2-M2; the rest of P2-M3 | two packages | not read |
 
 Every "where" of the review reports is of 2026-11-10. Each place is
@@ -860,6 +893,16 @@ again are kept; the stories behind them are in git history.
   `rust/tests/sqlcipher_source_pin.rs` (D75; `docs/RELEASING.md` §9).
 **Writing tests**
 
+- `vaultStoreProvider` hands out the concrete `VaultStore`, a
+  `final class`: a test cannot give the vault session a stand-in
+  store. A file operation that fails is made with a folder nobody
+  may write to (`chmod 500` on the test's own folder from inside the
+  test, put back with `addTearDown`; `legacy_picker_copies_test.dart`
+  shows it); the ORDER of a store's file operations is seen with
+  `IOOverrides.runZoned(createFile: ...)`.
+- After a rule changes, a test far away may still pin the old rule:
+  search `test/` for the old behaviour before the whole run, which
+  takes seven minutes to say so.
 - A helper next to tests must not be called `…_test.dart`:
   `flutter test` loads every such file and fails when it has no `main`.
 - A function given to `Isolate.run` or `Isolate.spawn` must be
